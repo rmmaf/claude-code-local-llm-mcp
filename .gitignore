@@ -1,0 +1,17 @@
+# Node
+node_modules/
+npm-debug.log*
+*.tgz
+
+# Build output
+dist/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Test / coverage
+coverage/
+.vitest/
