@@ -29,7 +29,7 @@ describe("malformed-output retry policy", () => {
     const result = await runImplement(
       { spec: "Update the line.", files: ["a.txt"] },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(calls.length).toBe(2);
@@ -61,7 +61,7 @@ describe("malformed-output retry policy", () => {
       await runImplement(
         { spec: "Update both files.", files: ["a.txt", "b.txt"] },
         testConfig(root),
-        { fetchImpl }
+        { fetchImpl, platform: "linux" }
       );
       throw new Error("expected ToolError");
     } catch (error) {
@@ -86,7 +86,7 @@ describe("malformed-output retry policy", () => {
     const result = await runImplement(
       { spec: "Update the line.", files: ["a.txt"] },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(calls.length).toBe(2);
@@ -104,7 +104,7 @@ describe("malformed-output retry policy", () => {
     ]);
 
     await expect(
-      runImplement({ spec: "Update.", files: ["a.txt"] }, testConfig(root), { fetchImpl })
+      runImplement({ spec: "Update.", files: ["a.txt"] }, testConfig(root), { fetchImpl, platform: "linux" })
     ).rejects.toMatchObject({
       code: "model_output_malformed",
       message: expect.stringContaining("truncated"),
@@ -121,7 +121,7 @@ describe("malformed-output retry policy", () => {
     const result = await runImplement(
       { spec: "Update the line.", files: ["a.txt"] },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(calls.length).toBe(1);

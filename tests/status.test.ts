@@ -5,14 +5,14 @@ import { makeTempRoot, queuedFetch, testConfig, unreachableFetch } from "./helpe
 
 describe("status", () => {
   it("reports reachable: false with the lms hint when the endpoint is down — and never throws", async () => {
-    const result = await runStatus(testConfig(makeTempRoot()), { fetchImpl: unreachableFetch() });
+    const result = await runStatus(testConfig(makeTempRoot()), { fetchImpl: unreachableFetch(), platform: "linux" });
 
     expect(result.reachable).toBe(false);
     expect(result.hint).toBe("start LM Studio's server with `lms server start`");
     expect(result.models).toEqual([]);
     expect(result.profile_models.solo.available).toBeNull();
     expect(result.profile_models.ide.available).toBeNull();
-    expect(result.auto_profile.profile).toBe("solo"); // non-macOS sandbox default
+    expect(result.auto_profile.profile).toBe("solo"); // injected platform "linux" -> solo, deterministic
     expect(result.config.base_url).toBe("http://localhost:1234/v1");
   });
 
@@ -23,7 +23,7 @@ describe("status", () => {
         data: [{ id: "test-solo-model" }, { id: "some-other-model" }],
       },
     ]);
-    const result = await runStatus(testConfig(makeTempRoot()), { fetchImpl });
+    const result = await runStatus(testConfig(makeTempRoot()), { fetchImpl, platform: "linux" });
 
     expect(calls[0]?.url).toBe("http://localhost:1234/v1/models");
     expect(result.reachable).toBe(true);
@@ -37,7 +37,7 @@ describe("status", () => {
 
   it("does not throw on a malformed /models response", async () => {
     const { fetchImpl } = queuedFetch([{ unexpected: "shape" }]);
-    const result = await runStatus(testConfig(makeTempRoot()), { fetchImpl });
+    const result = await runStatus(testConfig(makeTempRoot()), { fetchImpl, platform: "linux" });
     expect(result.reachable).toBe(false);
     expect(result.hint).toBe("start LM Studio's server with `lms server start`");
   });

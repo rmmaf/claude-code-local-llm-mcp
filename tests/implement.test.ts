@@ -41,7 +41,7 @@ describe("implement", () => {
     const result = await runImplement(
       { spec: "Use a template literal and add punctuation.", files: ["src/greet.ts"] },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(result.applied).toBe(false);
@@ -87,7 +87,7 @@ describe("implement", () => {
         files: ["src/greet.ts", "README.md", "unchanged.txt"],
       },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(result.files_changed).toEqual(["src/greet.ts", "README.md"]);
@@ -105,7 +105,7 @@ describe("implement", () => {
     const result = await runImplement(
       { spec: "Use a template literal.", files: ["src/greet.ts"], mode: "apply" },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(result.applied).toBe(true);
@@ -124,7 +124,7 @@ describe("implement", () => {
     const result = await runImplement(
       { spec: "Change greeting.", files: ["src/greet.ts"], mode: "apply" },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(result.files_changed).toEqual(["src/greet.ts"]);
@@ -147,7 +147,7 @@ describe("implement", () => {
         mode: "apply",
       },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     const request = calls[0]?.body as { messages: Array<{ content: string }> };
@@ -163,7 +163,7 @@ describe("implement", () => {
     const result = await runImplement(
       { spec: "Change greeting.", files: ["src/greet.ts"], profile: "ide" },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(result.profile).toBe("ide");

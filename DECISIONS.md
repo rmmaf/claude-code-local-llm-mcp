@@ -54,6 +54,25 @@ stdout purity.
   the server computes unified diffs with jsdiff `createTwoFilesPatch` using
   `a/` and `b/` prefixes. LLM-authored diffs are rejected by design (broken
   hunks); full-file output + server-side diffing is deterministic.
+- **Parsing strategy (revised after the pre-ship review):** blocks are parsed
+  with a line-anchored segment parser, not a lazy regex. Opening tags must
+  start a line; the closing tag must sit alone on its own line (exactly the
+  format the model is taught); within a segment, content runs to the **last**
+  line-anchored `</file>` before the next opening tag. Consequences: file
+  content may mention `</file>` or `<think>` inline (regexes, docs, test
+  strings) without being truncated or excised; text outside blocks —
+  reasoning, `<think>` spans, prose — is simply ignored, so no global
+  think-strip runs over file content. Known limitation: a file whose content
+  contains a *line-anchored* `<file path=...>` opening tag (essentially only
+  files documenting this very protocol) degrades to a detectable
+  missing-file retry/error rather than silent corruption.
+- **Trailing newlines:** the block format forces a newline before the closing
+  tag, so a file that does not end in `\n` cannot round-trip byte-exactly
+  through the prompt. The embed appends one newline to such files, and the
+  diff step treats "identical except for that appended trailing newline" as
+  unchanged — a verbatim echo of a no-trailing-newline (or empty) file
+  produces no diff and no write. A file receiving real edits does gain a
+  trailing newline, which the diff reports honestly.
 - jsdiff emits a `===` separator line before the `---`/`+++` headers. I strip
   everything above the `---` header and emit a `diff --git a/x b/x` line
   instead, so output looks like a normal git diff. Compatibility is proven by
@@ -110,7 +129,21 @@ stdout purity.
   also not exist and must resolve inside the root. Parent directories are
   created as needed.
 - `scaffold` writes directly (no diff gate) and returns `created` paths +
-  summary, per spec.
+  summary, per spec. It validates **every** returned path before writing any
+  file (a late validation failure must not leave a half-written scaffold),
+  and the parser's normalized map keys collapse duplicate spellings
+  (`x.ts` vs `./x.ts`) to one file instead of erroring after a partial write.
+- **`mode: "apply"` is a regeneration, not a replay.** The server is
+  stateless: apply re-runs generation and writes what the fresh generation
+  returns. This is inherent to the four-tool surface (there is no "apply this
+  patch" input). Mitigation: temperature 0.1 keeps variance low, the apply
+  response returns the diff of what was *actually* written for re-checking,
+  and the README/tool descriptions tell the orchestrator to apply the
+  reviewed patch itself (`git apply`) when byte-exactness matters.
+- `diffStats` counts only lines inside hunks (state machine keyed on
+  `diff --git` / `@@`), because a bare `startsWith("---")` prefix test
+  misclassifies removed SQL/Lua `--` comments and added `++i;`-style lines
+  as file headers.
 - `status` never throws: every probe (HTTP, RAM, profile) is wrapped; an
   unreachable endpoint yields `reachable: false` plus the exact hint string
   "start LM Studio's server with `lms server start`".
@@ -152,6 +185,32 @@ stdout purity.
   stdout parses as JSON-RPC — the stdout-purity proof.
 - git-apply compatibility is proven by running real `git init`/`git apply`
   against generated diffs in a temp repo.
+
+## Pre-ship adversarial review
+
+Before pushing, the codebase went through a multi-agent adversarial review
+(five independent lenses — spec compliance, pipeline correctness, security,
+packaging, tests/docs — with every finding attacked by three independent
+refuters). The security and packaging lenses found nothing. Confirmed
+findings, all fixed and covered by `tests/regression.test.ts`:
+
+1. Lazy-regex block parsing truncated file content containing a literal
+   `</file>`, and the global `<think>` strip could corrupt content containing
+   those literals → replaced with the line-anchored segment parser above.
+2. Files without a trailing newline (and empty files) could never round-trip
+   unchanged — a verbatim echo produced a phantom diff and a pointless write
+   → lossless embed + trailing-newline-aware unchanged check.
+3. `diffStats` skipped removed `--`-comment lines and added `++`-prefixed
+   lines as if they were headers → hunk-aware counting.
+4. `scaffold` could write a file and then throw `target_exists` when the
+   model emitted the same path in two spellings → normalized parse keys +
+   validate-all-before-writing.
+5. Tests that exercised profile auto-selection without injecting a platform
+   would shell out to real `sysctl`/`memory_pressure` on macOS and fail
+   depending on live free RAM → every such test now injects
+   `platform: "linux"`.
+6. README/tool descriptions implied `mode: "apply"` applies the previously
+   reviewed diff; it actually regenerates → documented honestly (see above).
 
 ## Things that cannot be verified in this sandbox (listed in README too)
 

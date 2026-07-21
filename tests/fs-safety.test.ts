@@ -77,7 +77,7 @@ describe("path safety", () => {
     const root = makeTempRoot();
     const { fetchImpl, calls } = queuedFetch([]);
     const error = await expectToolError(
-      runImplement({ spec: "x", files: ["../../etc/passwd"] }, testConfig(root), { fetchImpl }),
+      runImplement({ spec: "x", files: ["../../etc/passwd"] }, testConfig(root), { fetchImpl, platform: "linux" }),
       "path_escape"
     );
     expect(error.message).toContain("../../etc/passwd");
@@ -158,7 +158,7 @@ describe("file content safety", () => {
       runImplement(
         { spec: "x", files: ["big1.txt", "big2.txt"] },
         testConfig(root, { maxFileKb: 1024, maxContextKb: 512 }),
-        { fetchImpl }
+        { fetchImpl, platform: "linux" }
       ),
       "context_too_large"
     );
@@ -171,7 +171,7 @@ describe("file content safety", () => {
     const root = makeTempRoot();
     const { fetchImpl } = queuedFetch([]);
     await expectToolError(
-      runImplement({ spec: "x", files: ["nope.ts"] }, testConfig(root), { fetchImpl }),
+      runImplement({ spec: "x", files: ["nope.ts"] }, testConfig(root), { fetchImpl, platform: "linux" }),
       "file_not_found"
     );
   });

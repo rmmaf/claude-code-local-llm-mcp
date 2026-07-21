@@ -1,5 +1,4 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
 
 import type { Config } from "../config.js";
 import { diffStats, unifiedFileDiff } from "../diff.js";
@@ -12,8 +11,10 @@ import {
 } from "../fs-safety.js";
 import { chatCompletion, type ChatMessage, type FetchLike, type Usage } from "../llm-client.js";
 import { log } from "../logger.js";
-import { FILE_BLOCK_FORMAT, parseFileBlocks } from "../parse.js";
+import { FILE_BLOCK_FORMAT, normalizeRel, parseFileBlocks } from "../parse.js";
 import { autoSelectProfile, type CommandRunner, type Profile } from "../profile.js";
+
+export { normalizeRel };
 
 /** Injection points for tests: mocked fetch, canned memory probes. */
 export interface ToolDeps {
@@ -55,11 +56,6 @@ ${FILE_BLOCK_FORMAT}
 const FIX_SYSTEM_PROMPT = `${IMPLEMENT_SYSTEM_PROMPT}
 - You are fixing a concrete reported failure. Make the MINIMAL targeted change that resolves the error output. Do not refactor, rewrite, reformat, or "improve" anything the fix does not require.`;
 
-/** Normalize a model-emitted or declared path for comparison ("./src/x.ts" ≡ "src/x.ts"). */
-export function normalizeRel(p: string): string {
-  return path.posix.normalize(p.trim().replace(/\\/g, "/")).replace(/^\.\//, "");
-}
-
 interface LoadedFile {
   rel: string;
   abs: string;
@@ -93,6 +89,17 @@ async function statAll(root: string, paths: string[]): Promise<Array<{ rel: stri
   return out;
 }
 
+/**
+ * Embed file content between its tag lines losslessly for files that end in a
+ * newline, and with one appended newline otherwise (the closing tag must sit
+ * on its own line). The trailing-newline-only delta this can introduce is
+ * canceled out by effectivelyUnchanged() on the way back.
+ */
+function embedContent(content: string): string {
+  if (content === "" || content.endsWith("\n")) return content;
+  return `${content}\n`;
+}
+
 function buildUserMessage(
   args: GenerationArgs,
   editable: LoadedFile[],
@@ -110,17 +117,28 @@ function buildUserMessage(
   if (context.length > 0) {
     parts.push("# Read-only context files (reference only — never return these)", "");
     for (const file of context) {
-      parts.push(`<context path="${file.rel}">`, file.content.replace(/\n$/, ""), "</context>", "");
+      parts.push(`<context path="${file.rel}">\n${embedContent(file.content)}</context>`, "");
     }
   }
   parts.push("# Editable files — return the complete final content of every one of these", "");
   for (const file of editable) {
-    parts.push(`<file path="${file.rel}">`, file.content.replace(/\n$/, ""), "</file>", "");
+    parts.push(`<file path="${file.rel}">\n${embedContent(file.content)}</file>`, "");
   }
   parts.push(
     `Respond with exactly ${editable.length} <file> block(s), one per editable file listed above, and nothing else.`
   );
   return parts.join("\n");
+}
+
+/**
+ * A returned file counts as unchanged when it is byte-identical to disk, or
+ * differs only by the trailing newline the block format forces onto files
+ * that do not end in one — otherwise a verbatim echo of such a file would
+ * produce a phantom one-character diff (and a pointless write in apply mode).
+ */
+function effectivelyUnchanged(oldContent: string, newContent: string): boolean {
+  if (oldContent === newContent) return true;
+  return !oldContent.endsWith("\n") && newContent === `${oldContent}\n`;
 }
 
 function correctiveMessage(problem: string, missing: string[]): string {
@@ -225,8 +243,7 @@ export async function runGeneration(
     usage.completion_tokens += result.usage.completion_tokens;
 
     const parsed = parseFileBlocks(result.content, (p) => declared.has(normalizeRel(p)));
-    const returned = new Map<string, string>();
-    for (const [p, content] of parsed.files) returned.set(normalizeRel(p), content);
+    const returned = parsed.files; // keys already normalized by the parser
     const missing = [...declared.keys()].filter((p) => !returned.has(p));
 
     if (result.finishReason === "length") {
@@ -265,7 +282,7 @@ export async function runGeneration(
   const changes: Array<{ rel: string; abs: string; added: number; removed: number; content: string }> = [];
   for (const [rel, file] of declared) {
     const updated = outcome.files.get(rel);
-    if (updated === undefined) continue;
+    if (updated === undefined || effectivelyUnchanged(file.content, updated)) continue;
     const fileDiff = unifiedFileDiff(file.rel, file.content, updated);
     if (fileDiff === "") continue;
     const stats = diffStats(fileDiff);

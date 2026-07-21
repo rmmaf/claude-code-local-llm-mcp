@@ -11,7 +11,7 @@ Use it for: multi-file implementations from a clear spec, boilerplate, test gene
 
 Do NOT use it for: architecture decisions, API design, subtle debugging, or security-sensitive code — do those yourself. Do not use it to create brand-new files (use scaffold) or to fix a failing test/build on delegated code (use fix).
 
-Never paste file contents into any argument — pass paths relative to the project root; every path in "files" must already exist on disk. Start with mode "diff" (the default), review the returned diff, then either re-run with mode "apply" or apply the patch yourself.`;
+Never paste file contents into any argument — pass paths relative to the project root; every path in "files" must already exist on disk. Start with mode "diff" (the default) and review the returned diff. To land it, either apply the reviewed patch yourself (byte-exact), or re-run with mode "apply" — the server is stateless, so "apply" re-generates before writing; its returned diff is what was actually written, so check it still matches what you approved.`;
 
 export const implementInputSchema = {
   spec: z
@@ -40,7 +40,7 @@ export const implementInputSchema = {
     .enum(["diff", "apply"])
     .optional()
     .describe(
-      '"diff" (default) returns the patch without touching disk — the review gate. "apply" writes the changes atomically.'
+      '"diff" (default) returns the patch without touching disk — the review gate. "apply" re-runs generation and writes the result atomically; its returned diff is what was actually written, so verify it matches the diff you reviewed (or apply that patch yourself for byte-exact results).'
     ),
 };
 

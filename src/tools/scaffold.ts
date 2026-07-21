@@ -6,9 +6,9 @@ import type { Config } from "../config.js";
 import { atomicWriteFile, resolveSafePath, ToolError } from "../fs-safety.js";
 import { chatCompletion, type ChatMessage, type Usage } from "../llm-client.js";
 import { log } from "../logger.js";
-import { FILE_BLOCK_FORMAT, parseFileBlocks } from "../parse.js";
+import { FILE_BLOCK_FORMAT, normalizeRel, parseFileBlocks } from "../parse.js";
 import { autoSelectProfile, type Profile } from "../profile.js";
-import { normalizeRel, type ToolDeps } from "./shared.js";
+import type { ToolDeps } from "./shared.js";
 
 export const scaffoldToolName = "scaffold";
 
@@ -155,9 +155,11 @@ export async function runScaffold(
     );
   }
 
-  const created: string[] = [];
+  // Validate every path first, write only after all pass — a late validation
+  // failure must not leave a half-written scaffold behind.
+  const writes: Array<{ rel: string; abs: string; content: string }> = [];
   for (const [rel, content] of files) {
-    const resolved = await resolveSafePath(config.root, normalizeRel(rel), { mustExist: false });
+    const resolved = await resolveSafePath(config.root, rel, { mustExist: false });
     let exists = true;
     try {
       await fs.access(resolved.abs);
@@ -171,9 +173,14 @@ export async function runScaffold(
         { path: resolved.rel }
       );
     }
-    await atomicWriteFile(resolved.abs, content);
-    created.push(resolved.rel);
-    log.info(`scaffold created ${resolved.rel} (${content.length} chars)`);
+    writes.push({ rel: resolved.rel, abs: resolved.abs, content });
+  }
+
+  const created: string[] = [];
+  for (const write of writes) {
+    await atomicWriteFile(write.abs, write.content);
+    created.push(write.rel);
+    log.info(`scaffold created ${write.rel} (${write.content.length} chars)`);
   }
 
   const specExcerpt = wordCap(args.spec.trim().split(/\r?\n/)[0] ?? "", 30);
