@@ -194,4 +194,13 @@ describe("atomic writes", () => {
     const entries = await fs.readdir(root);
     expect(entries).toEqual(["file.txt"]);
   });
+
+  it("cleans up the temp file when the final rename fails", async () => {
+    const root = makeTempRoot();
+    const target = path.join(root, "collision");
+    await fs.mkdir(path.join(target, "occupied"), { recursive: true }); // rename onto a non-empty dir fails
+    await expect(atomicWriteFile(target, "x\n")).rejects.toThrow();
+    const entries = await fs.readdir(root);
+    expect(entries).toEqual(["collision"]); // no orphaned .collision.*.tmp
+  });
 });

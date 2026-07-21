@@ -213,14 +213,16 @@ export async function atomicWriteFile(absPath: string, content: string): Promise
   const tmp = path.join(dir, `.${path.basename(absPath)}.${randomBytes(6).toString("hex")}.tmp`);
   const handle = await fs.open(tmp, "wx", 0o644);
   try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    try {
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await fs.rename(tmp, absPath);
   } catch (error) {
+    // A failed write (e.g. ENOSPC) must not orphan the temp file any more
+    // than a failed rename would.
     await fs.rm(tmp, { force: true }).catch(() => {
       log.warn(`failed to clean up temp file ${tmp}`);
     });
