@@ -1,0 +1,39 @@
+{
+  "name": "local-coder-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that delegates code implementation to a local LLM served by LM Studio — Claude plans, the local model writes, only diffs cross the wire",
+  "license": "MIT",
+  "author": "Rodrigo Monteiro de Moraes de Arruda Falcão",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rmmaf/claude-code-local-llm-mcp.git"
+  },
+  "type": "module",
+  "bin": {
+    "local-coder-mcp": "dist/server.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "smoke-test": "tsx scripts/smoke-test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "diff": "^9.0.0",
+    "zod": "^3.25.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
