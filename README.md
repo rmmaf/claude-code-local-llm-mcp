@@ -159,6 +159,8 @@ No arguments. Reports LM Studio reachability, available model IDs, whether the t
 4. Claude runs tests; failures go to `fix(spec, error_output, files)` — the repair loop stays local
 5. After 2 failed local attempts on the same unit, Claude takes over that unit itself
 
+> **Note on `mode: "apply"`:** the server is stateless, so `apply` re-runs generation before writing rather than replaying the previously returned patch. At temperature 0.1 the output is normally the same, and the `apply` response includes the diff of what was *actually* written — have Claude confirm it matches the reviewed diff. For a byte-exact guarantee, have Claude apply the reviewed patch itself (`git apply`).
+
 Add this to your project's `CLAUDE.md` so Claude Code delegates on its own:
 
 ```markdown

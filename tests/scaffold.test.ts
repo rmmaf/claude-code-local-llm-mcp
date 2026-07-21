@@ -21,7 +21,7 @@ describe("scaffold", () => {
     const { fetchImpl, calls } = queuedFetch([]);
 
     await expect(
-      runScaffold({ spec: "New module.", target_path: "existing.ts" }, testConfig(root), { fetchImpl })
+      runScaffold({ spec: "New module.", target_path: "existing.ts" }, testConfig(root), { fetchImpl, platform: "linux" })
     ).rejects.toMatchObject({ code: "target_exists" });
     expect(calls.length).toBe(0);
   });
@@ -34,7 +34,7 @@ describe("scaffold", () => {
     const result = await runScaffold(
       { spec: "A module exporting the answer.", target_path: "src/answer.ts" },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(result.created).toEqual(["src/answer.ts"]);
@@ -53,7 +53,7 @@ describe("scaffold", () => {
     const result = await runScaffold(
       { spec: "A widget module.", target_path: "src/widget" },
       testConfig(root),
-      { fetchImpl }
+      { fetchImpl, platform: "linux" }
     );
 
     expect(result.created.sort()).toEqual(["src/widget/index.ts", "src/widget/widget.ts"]);
@@ -71,7 +71,7 @@ describe("scaffold", () => {
       await runScaffold(
         { spec: "New module.", target_path: "src/right.ts" },
         testConfig(root),
-        { fetchImpl }
+        { fetchImpl, platform: "linux" }
       );
       throw new Error("expected ToolError");
     } catch (error) {
@@ -86,7 +86,7 @@ describe("scaffold", () => {
     const root = makeTempRoot();
     const { fetchImpl } = queuedFetch([]);
     await expect(
-      runScaffold({ spec: "x", target_path: "../outside.ts" }, testConfig(root), { fetchImpl })
+      runScaffold({ spec: "x", target_path: "../outside.ts" }, testConfig(root), { fetchImpl, platform: "linux" })
     ).rejects.toMatchObject({ code: "path_escape" });
   });
 });
