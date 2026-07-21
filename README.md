@@ -16,25 +16,49 @@ LM Studio · http://localhost:1234/v1  (MLX engine, JIT load + TTL unload)
       └─ ide:  Qwen2.5-Coder-14B 4-bit (~8.5 GB)
 ```
 
-## Requirements
+## Installation (macOS, step by step)
 
-- macOS on Apple Silicon (reference machine: MacBook Pro M4 Max, 36 GB unified memory)
-- [LM Studio](https://lmstudio.ai) with the **MLX** engine
-- LM Studio's server running headless: `lms server start`
-- **JIT model loading** and **TTL auto-unload** enabled in LM Studio's server settings (so models load on demand and free memory when idle)
-- Models downloaded:
+Target machine: any Apple Silicon Mac; the defaults are tuned for 36 GB unified memory (reference: MacBook Pro M4 Max). You need roughly **26 GB of free disk** for the two default models.
 
-  ```bash
-  lms get mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2
-  lms get qwen2.5-coder-14b-instruct   # or via the LM Studio UI
-  ```
+### 1. Prerequisites
 
-  Run `lms ls` afterwards — if your local identifiers differ from the defaults above, set `LOCAL_CODER_MODEL_SOLO` / `LOCAL_CODER_MODEL_IDE` accordingly.
-- Node.js ≥ 18 (Claude Code already requires this)
+- **Node.js ≥ 18** — check with `node --version`; install from [nodejs.org](https://nodejs.org) or `brew install node` if missing.
+- **Claude Code** — the `claude` CLI you already use.
+- **LM Studio** — download from [lmstudio.ai](https://lmstudio.ai), open it once (this installs the MLX engine on Apple Silicon).
 
-## Install
+### 2. Set up the LM Studio CLI (`lms`)
 
-One line, straight from GitHub — no npm publish involved:
+```bash
+~/.lmstudio/bin/lms bootstrap   # adds `lms` to your PATH
+lms --version
+```
+
+### 3. Start the server and enable JIT loading
+
+```bash
+lms server start                # serves http://localhost:1234/v1
+```
+
+In LM Studio's **Developer** tab, make sure **JIT model loading** is enabled and set a **TTL / auto-unload** so models load on demand and free your RAM when idle. With that on, you never load models manually — the first `implement` call loads the model, the TTL unloads it later.
+
+### 4. Download the two models
+
+```bash
+lms get mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2   # solo profile, ~17 GB
+lms get qwen2.5-coder-14b-instruct                                # ide profile, ~8.5 GB (or via the UI)
+```
+
+This is the only step that downloads from Hugging Face, and LM Studio handles it — installing the MCP server itself (next step) downloads no models. Afterwards run `lms ls`; if your local identifiers differ from the two above, set `LOCAL_CODER_MODEL_SOLO` / `LOCAL_CODER_MODEL_IDE` accordingly (see Configuration).
+
+### 5. Install the MCP server into Claude Code
+
+Pre-warm the build once in a terminal (the first `npx github:` run clones and compiles, which can exceed Claude Code's default 30 s MCP startup timeout):
+
+```bash
+npx -y github:rmmaf/claude-code-local-llm-mcp --version
+```
+
+Then register it:
 
 ```bash
 claude mcp add local-coder -- npx -y github:rmmaf/claude-code-local-llm-mcp
@@ -53,13 +77,51 @@ claude mcp add local-coder -e LM_STUDIO_URL=http://localhost:1234/v1 -- npx -y g
 claude mcp add local-coder -- npx -y github:rmmaf/claude-code-local-llm-mcp#v0.1.0
 ```
 
-**First-launch note:** the first `npx github:` run clones the repo and builds it, which can exceed Claude Code's default 30 s MCP startup timeout. Pre-warm once in a terminal:
+If startup still times out, raise it: `MCP_TIMEOUT=120000 claude`.
 
-```bash
-npx -y github:rmmaf/claude-code-local-llm-mcp --version
+### 6. Verify
+
+Start `claude` in any project and ask:
+
+> Run the local-coder status tool.
+
+You should see `reachable: true`, both profile models listed as available, your RAM numbers, and which profile auto-selection would pick. If `reachable` is `false`, run `lms server start` and check again.
+
+## How to use it
+
+The division of labor: **you talk to Claude normally** — Claude decides (or you tell it) to delegate the mechanical typing to the local model.
+
+**Delegate explicitly.** In Claude Code, say things like:
+
+> Use local-coder to implement the CSV export function in src/csv.ts with tests in tests/csv.test.ts. Review the diff before applying.
+
+Claude will write a tight spec, call `implement` with the two file paths (never the contents), get a unified diff back, review it, and either apply it or iterate. A typical unit goes:
+
+1. Claude plans and writes a spec for one unit of work
+2. `implement(spec, files, mode: "diff")` → the local model generates; the server returns a diff
+3. Claude reviews the diff (cheap — it's just a diff) → applies it, or rejects with feedback
+4. Claude runs your tests; failures go to `fix(spec, error_output, files)` — the repair loop stays local
+5. After 2 failed local attempts on the same unit, Claude takes over that unit itself
+
+**New files:** "Use local-coder to scaffold a `useDebounce` hook under src/hooks" → `scaffold` writes new files directly (it refuses to touch anything that exists).
+
+**Make delegation automatic.** Add this to your project's `CLAUDE.md` so Claude routes work to the local model on its own:
+
+```markdown
+## Local delegation policy
+- Delegate to mcp__local-coder__implement: multi-file implementations from a
+  clear spec, boilerplate, test generation, mechanical refactors, docstrings.
+- Delegate new-file creation from a spec to mcp__local-coder__scaffold.
+- Keep in Claude: architecture decisions, API design, subtle debugging,
+  security-sensitive code, and final review of every diff before apply.
+- Never paste file contents into tool arguments — pass relative paths.
+- Route test/lint failures on delegated code through mcp__local-coder__fix.
+- Escalate to yourself after 2 failed local attempts on the same unit.
 ```
 
-…or raise the timeout with `MCP_TIMEOUT` (e.g. `MCP_TIMEOUT=120000 claude`).
+**What to expect:** the first call after idle time is slow (JIT loads ~17 GB into memory — tens of seconds), subsequent calls are much faster; a multi-file generation can take minutes on a 30B model. Everything heavy happens locally; your Anthropic bill sees only specs and diffs.
+
+> **Note on `mode: "apply"`:** the server is stateless, so `apply` re-runs generation before writing rather than replaying the previously returned patch. At temperature 0.1 the output is normally the same, and the `apply` response includes the diff of what was *actually* written — have Claude confirm it matches the reviewed diff. For a byte-exact guarantee, have Claude apply the reviewed patch itself (`git apply`).
 
 ## Configuration
 
@@ -151,30 +213,6 @@ Generate **new files only** from a spec. Refuses if the target exists; writes di
 
 No arguments. Reports LM Studio reachability, available model IDs, whether the two configured profile models are present, total/free RAM, which profile auto-selection would pick right now, and the effective config. Never fails — an unreachable endpoint yields `reachable: false` with the hint: start LM Studio's server with `lms server start`.
 
-## The workflow this enables
-
-1. Claude Code plans and decomposes; writes a tight spec per unit
-2. `implement(spec, files, mode: "diff")` → local model generates; server returns diff
-3. Claude reviews the diff (cheap) → approves via `mode: "apply"` (or applies the patch itself), or rejects with feedback
-4. Claude runs tests; failures go to `fix(spec, error_output, files)` — the repair loop stays local
-5. After 2 failed local attempts on the same unit, Claude takes over that unit itself
-
-> **Note on `mode: "apply"`:** the server is stateless, so `apply` re-runs generation before writing rather than replaying the previously returned patch. At temperature 0.1 the output is normally the same, and the `apply` response includes the diff of what was *actually* written — have Claude confirm it matches the reviewed diff. For a byte-exact guarantee, have Claude apply the reviewed patch itself (`git apply`).
-
-Add this to your project's `CLAUDE.md` so Claude Code delegates on its own:
-
-```markdown
-## Local delegation policy
-- Delegate to mcp__local-coder__implement: multi-file implementations from a
-  clear spec, boilerplate, test generation, mechanical refactors, docstrings.
-- Delegate new-file creation from a spec to mcp__local-coder__scaffold.
-- Keep in Claude: architecture decisions, API design, subtle debugging,
-  security-sensitive code, and final review of every diff before apply.
-- Never paste file contents into tool arguments — pass relative paths.
-- Route test/lint failures on delegated code through mcp__local-coder__fix.
-- Escalate to yourself after 2 failed local attempts on the same unit.
-```
-
 ## Smoke test (manual, on your Mac)
 
 CI is fully offline (all model calls mocked). The live end-to-end check runs only on your machine, against real LM Studio:
@@ -196,7 +234,7 @@ It calls `status`, then runs a toy `implement` in a throwaway git repo, prints t
 - **First call fails but `status` says reachable** — JIT model loading may be disabled, so the model is never loaded on demand. Enable JIT loading (and TTL auto-unload) in LM Studio's server settings, or load the model manually with `lms load`.
 - **Timeouts on long generations** — 30B-class models can take minutes on multi-file tasks. Raise `LOCAL_CODER_TIMEOUT_MS`, narrow the spec, or send fewer files.
 - **Memory** — the default 4-bit DWQ solo model (~17 GB) fits under the default macOS GPU wired limit on a 36 GB machine with no sysctl changes; only larger quants require raising `iogpu.wired_limit_mb`. When memory is tight, pass `profile: "ide"` or let auto-selection do it.
-- **MCP server fails to start in Claude Code** — usually the first-launch build exceeding the 30 s startup timeout; see the pre-warm note under Install.
+- **MCP server fails to start in Claude Code** — usually the first-launch build exceeding the 30 s startup timeout; see the pre-warm step under Installation.
 
 ## Development
 
