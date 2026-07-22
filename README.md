@@ -141,6 +141,21 @@ All environment variables are optional, with sane defaults:
 
 **Profiles.** `solo` targets the 30B model (~17 GB) for when the machine is mostly yours; `ide` targets the 14B model (~8.5 GB) for when an IDE, browser, or meeting stack is eating memory. When a tool call omits `profile`, the server auto-selects: free RAM ≥ `LOCAL_CODER_SOLO_MIN_FREE_GB` → `solo`, else `ide` (measured via `memory_pressure`, falling back to `vm_stat`; non-macOS or measurement failure defaults to `solo`). The decision and numbers are logged to stderr.
 
+**Overriding the models.** The two profiles point at whatever model IDs you set in `LOCAL_CODER_MODEL_SOLO` / `LOCAL_CODER_MODEL_IDE`. To point them at different models you already have in LM Studio, re-register the server with `-e` overrides (add `--scope user` to make it available in every project, not just the current one):
+
+```bash
+claude mcp remove local-coder
+
+claude mcp add --scope user local-coder \
+  -e LOCAL_CODER_MODEL_SOLO="qwen3-coder-30b-a3b-instruct-dwq-v2" \
+  -e LOCAL_CODER_MODEL_IDE="qwen2.5-coder-14b-instruct-mlx" \
+  -- npx -y github:rmmaf/claude-code-local-llm-mcp
+```
+
+The model IDs must match exactly what `lms ls` prints — matching is case-insensitive, but the publisher prefix (if any) is part of the ID. Run the `status` tool afterwards: both profile models should report `available: true`.
+
+If `claude mcp remove` reports it can't find the server, run `claude mcp list` to see which scope it's registered in and remove it from there (`claude mcp remove --scope local local-coder` forces the project scope).
+
 ## Tools
 
 All four tools take **relative file paths only — never file contents**. The server reads files from disk itself; pasting contents into arguments defeats the whole design.
