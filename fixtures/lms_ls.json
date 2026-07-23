@@ -1,0 +1,23 @@
+[
+  {
+    "path": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2",
+    "modelKey": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2",
+    "format": "safetensors",
+    "sizeBytes": 17179869184,
+    "architecture": "qwen3_moe"
+  },
+  {
+    "path": "qwen2.5-coder-14b-instruct",
+    "modelKey": "qwen2.5-coder-14b-instruct",
+    "format": "gguf",
+    "sizeBytes": 8589934592,
+    "architecture": "qwen2"
+  },
+  {
+    "path": "text-embedding-nomic-embed-text-v1.5",
+    "modelKey": "nomic-embed-text-v1.5",
+    "format": "gguf",
+    "sizeBytes": 84934656,
+    "architecture": "nomic-bert"
+  }
+]

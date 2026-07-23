@@ -13,7 +13,9 @@
     "local-coder-mcp": "dist/server.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "models.example.csv",
+    "models.example.txt"
   ],
   "engines": {
     "node": ">=18"

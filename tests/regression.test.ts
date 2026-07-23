@@ -22,6 +22,7 @@ import {
   chatBody,
   fileBlock,
   makeTempRoot,
+  noLmsRunner,
   queuedFetch,
   testConfig,
   writeFileTree,
@@ -72,7 +73,7 @@ describe("trailing-newline and empty-file round-trips", () => {
     const result = await runImplement(
       { spec: "No change needed.", files: ["a.txt"], mode: "apply" },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.files_changed).toEqual([]);
@@ -89,7 +90,7 @@ describe("trailing-newline and empty-file round-trips", () => {
     const result = await runImplement(
       { spec: "No change needed.", files: ["empty.txt"] },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.files_changed).toEqual([]);
@@ -106,7 +107,7 @@ describe("trailing-newline and empty-file round-trips", () => {
     const result = await runImplement(
       { spec: "Flip OLD to false.", files: ["fmt.ts"] },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.files_changed).toEqual(["fmt.ts"]);
@@ -144,7 +145,7 @@ describe("scaffold duplicate-spelling handling", () => {
     const result = await runScaffold(
       { spec: "A module.", target_path: "newmod" },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.created).toEqual(["newmod/a.ts"]);
