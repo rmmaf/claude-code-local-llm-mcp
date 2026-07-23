@@ -1,0 +1,3 @@
+mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2
+qwen2.5-coder-14b-instruct
+mlx-community/Qwen2.5-Coder-7B-Instruct-4bit

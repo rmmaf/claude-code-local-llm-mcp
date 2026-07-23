@@ -32,10 +32,13 @@ export const implementInputSchema = {
     .describe(
       "Read-only reference files (types, interfaces, examples) included in the model prompt but never modified. Relative paths only."
     ),
-  profile: z
-    .enum(["solo", "ide"])
+  model: z
+    .string()
+    .min(1)
     .optional()
-    .describe("Model profile. Omit for memory-based auto-selection (solo = 30B model, ide = 14B fallback)."),
+    .describe(
+      "Exact model name to run, as it appears in LM Studio / the models CSV (sent verbatim as the chat model). Omit to auto-pick the largest configured model that fits free RAM. Call the `models` tool first to choose by objective + memory."
+    ),
   mode: z
     .enum(["diff", "apply"])
     .optional()
