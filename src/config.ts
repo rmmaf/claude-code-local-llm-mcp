@@ -1,13 +1,19 @@
+import path from "node:path";
+
 import { log } from "./logger.js";
+import type { ModelEntry } from "./models-csv.js";
 
 export interface Config {
   /** Absolute path of the project root every relative path is resolved against. */
   root: string;
   /** OpenAI-compatible base URL, e.g. http://localhost:1234/v1 */
   baseUrl: string;
-  modelSolo: string;
-  modelIde: string;
-  soloMinFreeGb: number;
+  /** Path to the models catalog CSV, or null to use the built-in default catalog. */
+  modelsCsvPath: string | null;
+  /** Fraction of free RAM a model's on-disk size may occupy to count as "fits" (0–1). */
+  memFitFraction: number;
+  /** The model catalog (model + objective). Filled from the CSV after loadConfig. */
+  models: ModelEntry[];
   temperature: number;
   maxOutputTokens: number;
   timeoutMs: number;
@@ -17,9 +23,7 @@ export interface Config {
 
 export const DEFAULTS = {
   baseUrl: "http://localhost:1234/v1",
-  modelSolo: "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2",
-  modelIde: "qwen2.5-coder-14b-instruct",
-  soloMinFreeGb: 20,
+  memFitFraction: 0.85,
   temperature: 0.1,
   maxOutputTokens: 8192,
   timeoutMs: 300_000,
@@ -44,16 +48,39 @@ function numberFromEnv(
   return value;
 }
 
+/** A fraction in (0, 1]: reuses numberFromEnv (finite, > 0) then clamps anything above 1 down to 1. */
+function fractionFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const value = numberFromEnv(env, name, fallback);
+  if (value > 1) {
+    log.warn(`clamping ${name}=${value} to 1 (must be in (0, 1])`);
+    return 1;
+  }
+  return value;
+}
+
+/**
+ * Load configuration from the environment. `models` is left empty here — the
+ * server (and smoke test) fill it via loadModelCatalog(config.modelsCsvPath)
+ * after load, so loadConfig stays synchronous and file-free for unit tests.
+ */
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   root: string = process.cwd()
 ): Config {
+  const rawCsv = env.LOCAL_CODER_MODELS_CSV;
+  const modelsCsvPath =
+    rawCsv === undefined || rawCsv.trim() === ""
+      ? null
+      : path.isAbsolute(rawCsv)
+        ? rawCsv
+        : path.resolve(root, rawCsv);
+
   return {
     root,
     baseUrl: (env.LM_STUDIO_URL ?? DEFAULTS.baseUrl).replace(/\/+$/, ""),
-    modelSolo: env.LOCAL_CODER_MODEL_SOLO ?? DEFAULTS.modelSolo,
-    modelIde: env.LOCAL_CODER_MODEL_IDE ?? DEFAULTS.modelIde,
-    soloMinFreeGb: numberFromEnv(env, "LOCAL_CODER_SOLO_MIN_FREE_GB", DEFAULTS.soloMinFreeGb),
+    modelsCsvPath,
+    memFitFraction: fractionFromEnv(env, "LOCAL_CODER_MEM_FIT_FRACTION", DEFAULTS.memFitFraction),
+    models: [],
     temperature: numberFromEnv(env, "LOCAL_CODER_TEMPERATURE", DEFAULTS.temperature, { allowZero: true }),
     maxOutputTokens: numberFromEnv(env, "LOCAL_CODER_MAX_OUTPUT_TOKENS", DEFAULTS.maxOutputTokens),
     timeoutMs: numberFromEnv(env, "LOCAL_CODER_TIMEOUT_MS", DEFAULTS.timeoutMs),

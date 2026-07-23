@@ -9,10 +9,11 @@ import {
   resolveSafePath,
   ToolError,
 } from "../fs-safety.js";
+import type { CommandRunner } from "../exec.js";
 import { chatCompletion, type ChatMessage, type FetchLike, type Usage } from "../llm-client.js";
 import { log } from "../logger.js";
 import { FILE_BLOCK_FORMAT, normalizeRel, parseFileBlocks } from "../parse.js";
-import { autoSelectProfile, type CommandRunner, type Profile } from "../profile.js";
+import { resolveModel } from "../selection.js";
 
 export { normalizeRel };
 
@@ -27,7 +28,7 @@ export interface GenerationArgs {
   spec: string;
   files: string[];
   context_files?: string[] | undefined;
-  profile?: Profile | undefined;
+  model?: string | undefined;
   mode?: "diff" | "apply" | undefined;
   /** fix only: the failing test/compiler/linter output. */
   error_output?: string | undefined;
@@ -39,7 +40,7 @@ export interface GenerationResult {
   files_changed: string[];
   applied: boolean;
   model: string;
-  profile: Profile;
+  selection_reason: string;
   latency_ms: number;
   usage: Usage;
 }
@@ -214,9 +215,7 @@ export async function runGeneration(
   const editable = await loadFiles(config.root, editablePaths, config.maxFileKb);
   const context = await loadFiles(config.root, contextPaths, config.maxFileKb);
 
-  const profile =
-    args.profile ?? (await autoSelectProfile(config, deps.runner, deps.platform)).profile;
-  const model = profile === "solo" ? config.modelSolo : config.modelIde;
+  const { model, reason } = await resolveModel(args.model, config, deps);
 
   const declared = new Map(editable.map((f) => [normalizeRel(f.rel), f]));
   const messages: ChatMessage[] = [
@@ -274,7 +273,7 @@ export async function runGeneration(
         (lastMissing.length > 0 ? `Missing files: ${lastMissing.join(", ")}. ` : "") +
         "Consider narrowing the spec, sending fewer files, or raising LOCAL_CODER_MAX_OUTPUT_TOKENS if truncated.",
       "model_output_malformed",
-      { problem: lastProblem, missing_files: lastMissing, model, profile }
+      { problem: lastProblem, missing_files: lastMissing, model }
     );
   }
 
@@ -303,7 +302,7 @@ export async function runGeneration(
     files_changed: changes.map((c) => c.rel),
     applied: mode === "apply" && changes.length > 0,
     model,
-    profile,
+    selection_reason: reason,
     latency_ms: Date.now() - started,
     usage,
   };

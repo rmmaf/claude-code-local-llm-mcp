@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { loadConfig } from "../src/config.js";
+import { loadModelCatalog } from "../src/models-csv.js";
 import { runImplement } from "../src/tools/implement.js";
 import { runStatus } from "../src/tools/status.js";
 
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
 
   // Step 1: status
   const config = loadConfig(process.env, process.cwd());
+  config.models = await loadModelCatalog(config.modelsCsvPath);
   const status = await runStatus(config);
   process.stderr.write(`${JSON.stringify(status, null, 2)}\n\n`);
   if (!status.reachable) {
@@ -46,10 +48,15 @@ async function main(): Promise<void> {
     );
   }
   pass(`LM Studio reachable at ${config.baseUrl} (${status.models.length} model(s) listed)`);
-  if (status.profile_models.solo.available !== true && status.profile_models.ide.available !== true) {
+  const availableInCatalog = status.catalog.filter((m) => m.available === true);
+  process.stderr.write(
+    `catalog: ${status.catalog.length} model(s), ${availableInCatalog.length} available in /models, ` +
+      `lms ${status.lms_available ? "OK" : "unavailable"}; auto-selection would pick ${status.auto_selection.model}.\n`
+  );
+  if (availableInCatalog.length === 0) {
     process.stderr.write(
-      "warn: neither configured profile model appears in /models — with JIT loading this can still " +
-        "work, but check `lms ls` and LOCAL_CODER_MODEL_SOLO / LOCAL_CODER_MODEL_IDE on a failure below.\n"
+      "warn: no catalog model appears in /models — with JIT loading this can still work, but check " +
+        "`lms ls` and the models CSV (LOCAL_CODER_MODELS_CSV) on a failure below.\n"
     );
   }
 
@@ -63,6 +70,7 @@ async function main(): Promise<void> {
   execFileSync("git", ["init", "-q"], { cwd: root });
 
   const smokeConfig = loadConfig(process.env, root);
+  smokeConfig.models = await loadModelCatalog(smokeConfig.modelsCsvPath);
   process.stderr.write(`\nRunning a toy implement against ${root} (this loads the model — may take a while)...\n`);
   const started = Date.now();
   const result = await runImplement(
@@ -82,7 +90,7 @@ async function main(): Promise<void> {
   process.stderr.write(`-------------------------------------------------------------------\n`);
   process.stderr.write(`summary: ${result.summary}\n`);
   process.stderr.write(
-    `model: ${result.model} · profile: ${result.profile} · latency: ${elapsed}s · ` +
+    `model: ${result.model} · ${result.selection_reason} · latency: ${elapsed}s · ` +
       `tokens: ${result.usage.prompt_tokens} in / ${result.usage.completion_tokens} out\n\n`
   );
 

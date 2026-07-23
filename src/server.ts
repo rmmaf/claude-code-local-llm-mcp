@@ -15,6 +15,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadConfig } from "./config.js";
 import { ToolError } from "./fs-safety.js";
 import { log } from "./logger.js";
+import { loadModelCatalog } from "./models-csv.js";
 import {
   implementInputSchema,
   implementToolDescription,
@@ -22,6 +23,12 @@ import {
   runImplement,
 } from "./tools/implement.js";
 import { fixInputSchema, fixToolDescription, fixToolName, runFix } from "./tools/fix.js";
+import {
+  modelsInputSchema,
+  modelsToolDescription,
+  modelsToolName,
+  runModels,
+} from "./tools/models.js";
 import {
   runScaffold,
   scaffoldInputSchema,
@@ -88,6 +95,7 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
+  config.models = await loadModelCatalog(config.modelsCsvPath);
   const server = new McpServer({ name: "local-coder", version });
 
   server.registerTool(
@@ -142,10 +150,27 @@ async function main(): Promise<void> {
     }
   );
 
+  server.registerTool(
+    modelsToolName,
+    {
+      title: "List local model catalog",
+      description: modelsToolDescription,
+      inputSchema: modelsInputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => {
+      try {
+        return jsonResult(await runModels(config, args));
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+
   await server.connect(new StdioServerTransport());
   log.info(
     `local-coder v${version} ready (root=${config.root}, endpoint=${config.baseUrl}, ` +
-      `solo=${config.modelSolo}, ide=${config.modelIde})`
+      `models_csv=${config.modelsCsvPath ?? "(built-in defaults)"}, catalog=${config.models.length} model(s))`
   );
 }
 

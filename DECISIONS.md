@@ -11,7 +11,11 @@ src/
   server.ts        entry point: shebang, --version flag, McpServer + stdio transport, tool registration
   config.ts        env parsing with defaults; the Config object is passed explicitly everywhere (no globals)
   logger.ts        stderr-only logger; the only sanctioned way to print anything
-  profile.ts       RAM detection + profile auto-selection; pure parsers exported for fixture tests
+  exec.ts          the shared subprocess primitive (CommandRunner) used by the memory + lms probes
+  memory.ts        RAM detection (macOS memory_pressure/vm_stat, os fallback); pure parsers for fixture tests
+  lms.ts           `lms ls`/`lms ps --json` model-size probe; pure parser for fixture tests
+  models-csv.ts    the model catalog: CSV parser + loader + built-in default catalog
+  selection.ts     name matching, size-vs-RAM fit, single/multi model selection, resolveModel
   fs-safety.ts     path resolution/containment, size caps, binary sniff, atomic writes
   llm-client.ts    plain-fetch OpenAI-compatible client (chat completions + model listing), timeout via AbortController
   parse.ts         <think> stripping, <file path="..."> block parsing, declared-file validation
@@ -22,8 +26,9 @@ src/
     fix.ts         tool: fix
     scaffold.ts    tool: scaffold
     status.ts      tool: status
+    models.ts      tool: models (catalog + size/fit discovery and recommendation)
 tests/             vitest, fully offline, fetch mocked
-fixtures/          memory_pressure / vm_stat sample outputs, canned model responses
+fixtures/          memory_pressure / vm_stat / lms_ls.json / models.csv sample outputs, canned model responses
 scripts/
   smoke-test.ts    live end-to-end check for the user's Mac; never run in CI
 ```
@@ -151,18 +156,49 @@ stdout purity.
   object (`{ "error": { "code", "message", ... } }`) — structured enough for
   the orchestrator to branch on, human-readable enough to debug.
 
-## Profile auto-selection
+## Model selection (replaces the old solo/ide profiles)
 
-- macOS: total RAM from `sysctl -n hw.memsize`; free percentage parsed from
-  `memory_pressure` ("System-wide memory free percentage: NN%"); free bytes =
-  total × pct. Fallback: `vm_stat` — (free + inactive + speculative) pages ×
-  page size. Free GB ≥ `LOCAL_CODER_SOLO_MIN_FREE_GB` → `solo`, else `ide`.
-- Non-macOS or any parse/exec failure → `solo` (per spec), with the reason
-  logged to stderr. Decision + numbers always logged to stderr.
-- Parsers are pure string functions in `profile.ts`, unit-tested against
-  fixture outputs; command execution is injected so tests never shell out.
-- `status` reports RAM on non-macOS too, via Node's `os.totalmem/freemem`
-  (display only — auto-selection still returns `solo` off-macOS).
+The binary solo/ide profile was replaced with catalog + size-vs-memory
+selection. The catalog is a headerless CSV (`model,objective`) pointed at by
+`LOCAL_CODER_MODELS_CSV`; with none set, a built-in default catalog keeps the
+zero-config path working.
+
+- **Decision locus is Claude Code, not the server.** The server exposes the
+  data — a `models` tool returning, per catalog model, its objective, `/models`
+  availability, `lms ls` size, and whether it fits free RAM — and Claude matches
+  the free-text objective to the task itself (no NLP in the server).
+  `implement`/`fix`/`scaffold` take an explicit `model` string; omitting it
+  falls back to the largest catalog model that fits free RAM (memory-only, since
+  objective matching is Claude's job).
+- **Sizes come from the `lms` CLI** (`lms ls --json`, optionally `lms ps --json`
+  for loaded state), shelled out through the same injected `CommandRunner` the
+  memory probes use, with a pure parser + a captured `fixtures/lms_ls.json`. The
+  OpenAI `/models` endpoint only lists ids, not sizes, so `lms` is the size
+  source; if it's absent, sizes/fit are null and selection degrades to catalog
+  order. No `@lmstudio/sdk` dependency was added.
+- **Fit** is `size ≤ free RAM × LOCAL_CODER_MEM_FIT_FRACTION` (default 0.85). It
+  is advisory: runtime footprint exceeds on-disk weight (KV cache/context), and
+  macOS unified memory has a separate GPU wired limit, so a positive fit is
+  necessary, not sufficient. The fraction is a tunable heuristic.
+- **RAM detection is unchanged** (macOS `sysctl` + `memory_pressure`→`vm_stat`,
+  `os.freemem/totalmem` elsewhere); it just moved from `profile.ts` to
+  `memory.ts`. Command execution is still injected so tests never shell out.
+- **Three-surface name matching** (CSV ↔ `/models` ↔ `lms ls`) is the central
+  correctness risk, since the three identifier spaces aren't guaranteed equal
+  (publisher prefixes, quant/format suffixes). `matchModel` tries exact
+  normalized first, then a conservative fuzzy pass (basename and
+  quant-suffix-stripped equality — never substring containment, so different
+  parameter sizes don't collide), and always surfaces the match quality
+  (`exact`/`fuzzy`/`none`) so mismatches are visible. Docs tell users to keep the
+  CSV byte-identical to `lms ls`.
+- **Multi-model packing** for concurrent agents (the `models` tool's
+  `concurrent_models`) is greedy largest-first and advisory — LM Studio
+  loads/unloads independently and free RAM shifts between probe and load, so the
+  tool reports what should fit and also every model's size for Claude to pack by
+  objective.
+- `loadConfig` stays synchronous; the CSV is read afterward (`config.models =
+  await loadModelCatalog(config.modelsCsvPath)`) in `server.ts`/`smoke-test.ts`,
+  keeping config unit tests file-free.
 
 ## Packaging
 
@@ -181,7 +217,7 @@ stdout purity.
 - `fetch` is injected into the pipeline (`deps.fetch`) and stubbed per test —
   no network, ever. The stdio integration test spawns `node dist/server.js`
   and speaks real JSON-RPC over stdin/stdout; it asserts (a) initialize works,
-  (b) `tools/list` returns exactly the four tools, and (c) **every byte** on
+  (b) `tools/list` returns exactly the five tools, and (c) **every byte** on
   stdout parses as JSON-RPC — the stdout-purity proof.
 - git-apply compatibility is proven by running real `git init`/`git apply`
   against generated diffs in a temp repo.
@@ -218,6 +254,8 @@ findings, all fixed and covered by `tests/regression.test.ts`:
   install path from a fresh clone (verified here only via local `npm pack` +
   `npx .`).
 - Live LM Studio behavior: JIT load latency, TTL unload, real Qwen output
-  quality, actual `memory_pressure`/`vm_stat` output on the user's macOS
-  version (parsers are tested against captured fixtures).
+  quality, actual `memory_pressure`/`vm_stat` output and `lms ls --json` /
+  `lms ps --json` shape on the user's macOS + `lms` version (parsers are tested
+  against captured fixtures — the `lms` JSON schema in particular varies by
+  version and should be re-checked against your `lms`).
 - `scripts/smoke-test.ts` end-to-end (it requires live LM Studio by design).
