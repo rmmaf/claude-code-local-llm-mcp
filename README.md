@@ -142,7 +142,7 @@ All environment variables are optional, with sane defaults:
 
 ## Model selection
 
-Instead of two fixed profiles, `local-coder` chooses a model from a **catalog** by two criteria: **what the model is for** (its objective) and **whether it fits the free RAM** on the machine right now.
+`local-coder` picks which local model to run from a **catalog** you define, weighing two things: **what each model is for** (its objective) and **whether it fits the free RAM** on the machine right now.
 
 **The catalog** is a headerless CSV with two columns — the model name exactly as LM Studio references it, and a short English description of what it's good for:
 
@@ -151,7 +151,13 @@ mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2,Large capable general-pur
 qwen2.5-coder-14b-instruct,"Smaller, faster coding model for low-memory situations or concurrent agents"
 ```
 
-Point `LOCAL_CODER_MODELS_CSV` at it (a relative path resolves against the project root). An objective containing a comma must be double-quoted; blank lines and `#` comment lines are ignored. Keep the model column **byte-identical** to what `lms ls` prints so the sizes line up. With no CSV set, a built-in default catalog (the two models above) is used. A sample lives in [`models.example.csv`](models.example.csv).
+Point `LOCAL_CODER_MODELS_CSV` at it — a relative path resolves against the project root. Three rules:
+
+- Keep the model column **byte-identical** to what `lms ls` prints, so sizes line up.
+- Double-quote any objective containing a comma; blank lines and `#` comments are ignored.
+- With no CSV set, the server uses a built-in default catalog (the two models above).
+
+A sample lives in [`models.example.csv`](models.example.csv).
 
 **How a model gets picked.** Claude Code drives the choice:
 
@@ -159,7 +165,11 @@ Point `LOCAL_CODER_MODELS_CSV` at it (a relative path resolves against the proje
 2. Claude matches the objective to the task at hand and passes the chosen model name as the `model` argument to `implement` / `fix` / `scaffold`.
 3. If a work tool is called **without** `model`, the server falls back to the largest catalog model that fits free RAM (objective matching is Claude's job, via the `models` tool).
 
-Fit is `size ≤ free RAM × LOCAL_CODER_MEM_FIT_FRACTION`. It is **advisory** — a model's runtime footprint (KV cache, context) exceeds its on-disk weight, and on macOS unified memory the GPU wired limit can still block a load — so treat a positive fit as necessary, not sufficient. Model sizes come from the `lms` CLI; if `lms` isn't on the server's PATH, sizes and fit are reported as `null` and selection falls back to catalog order. RAM is measured on macOS via `memory_pressure` (falling back to `vm_stat`); other platforms use Node's `os.freemem()`, which excludes reclaimable cache on Linux, so `fits` is conservative there.
+**How "fits" is decided.** A model fits when `size ≤ free RAM × LOCAL_CODER_MEM_FIT_FRACTION` (default `0.85`). Treat it as advisory, not a guarantee:
+
+- A model's runtime footprint (KV cache, context) runs larger than its on-disk weight, and on macOS the GPU wired limit can still block a load — so a positive fit is *necessary, not sufficient*.
+- Sizes come from the `lms` CLI. If `lms` isn't on the server's PATH, sizes and fit read as `null`, and selection falls back to catalog order.
+- Free RAM is read on macOS via `memory_pressure` (falling back to `vm_stat`); elsewhere via Node's `os.freemem()`, which excludes reclaimable cache on Linux — so `fits` is conservative there.
 
 To set the CSV path at registration time (add `--scope user` to make it available in every project):
 
