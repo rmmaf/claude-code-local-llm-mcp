@@ -149,19 +149,18 @@ stdout purity.
   `diff --git` / `@@`), because a bare `startsWith("---")` prefix test
   misclassifies removed SQL/Lua `--` comments and added `++i;`-style lines
   as file headers.
-- `status` never throws: every probe (HTTP, RAM, profile) is wrapped; an
+- `status` never throws: every probe (HTTP, RAM, lms) is wrapped; an
   unreachable endpoint yields `reachable: false` plus the exact hint string
   "start LM Studio's server with `lms server start`".
 - Tool errors are returned as MCP `isError: true` results whose text is a JSON
   object (`{ "error": { "code", "message", ... } }`) — structured enough for
   the orchestrator to branch on, human-readable enough to debug.
 
-## Model selection (replaces the old solo/ide profiles)
+## Model selection
 
-The binary solo/ide profile was replaced with catalog + size-vs-memory
-selection. The catalog is a headerless CSV (`model,objective`) pointed at by
-`LOCAL_CODER_MODELS_CSV`; with none set, a built-in default catalog keeps the
-zero-config path working.
+Model choice is driven by a catalog + size-vs-memory fit. The catalog is a
+headerless CSV (`model,objective`) pointed at by `LOCAL_CODER_MODELS_CSV`; with
+none set, a built-in default catalog keeps the zero-config path working.
 
 - **Decision locus is Claude Code, not the server.** The server exposes the
   data — a `models` tool returning, per catalog model, its objective, `/models`
@@ -180,9 +179,9 @@ zero-config path working.
   is advisory: runtime footprint exceeds on-disk weight (KV cache/context), and
   macOS unified memory has a separate GPU wired limit, so a positive fit is
   necessary, not sufficient. The fraction is a tunable heuristic.
-- **RAM detection is unchanged** (macOS `sysctl` + `memory_pressure`→`vm_stat`,
-  `os.freemem/totalmem` elsewhere); it just moved from `profile.ts` to
-  `memory.ts`. Command execution is still injected so tests never shell out.
+- **RAM detection** lives in `memory.ts` (macOS `sysctl` +
+  `memory_pressure`→`vm_stat`, `os.freemem/totalmem` elsewhere). Command
+  execution is injected so tests never shell out.
 - **Three-surface name matching** (CSV ↔ `/models` ↔ `lms ls`) is the central
   correctness risk, since the three identifier spaces aren't guaranteed equal
   (publisher prefixes, quant/format suffixes). `matchModel` tries exact
@@ -241,7 +240,7 @@ findings, all fixed and covered by `tests/regression.test.ts`:
 4. `scaffold` could write a file and then throw `target_exists` when the
    model emitted the same path in two spellings → normalized parse keys +
    validate-all-before-writing.
-5. Tests that exercised profile auto-selection without injecting a platform
+5. Tests that exercised memory-based selection without injecting a platform
    would shell out to real `sysctl`/`memory_pressure` on macOS and fail
    depending on live free RAM → every such test now injects
    `platform: "linux"`.
