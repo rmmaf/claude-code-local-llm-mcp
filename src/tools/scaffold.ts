@@ -7,7 +7,7 @@ import { atomicWriteFile, resolveSafePath, ToolError } from "../fs-safety.js";
 import { chatCompletion, type ChatMessage, type Usage } from "../llm-client.js";
 import { log } from "../logger.js";
 import { FILE_BLOCK_FORMAT, normalizeRel, parseFileBlocks } from "../parse.js";
-import { autoSelectProfile, type Profile } from "../profile.js";
+import { resolveModel } from "../selection.js";
 import type { ToolDeps } from "./shared.js";
 
 export const scaffoldToolName = "scaffold";
@@ -31,10 +31,13 @@ export const scaffoldInputSchema = {
     .describe(
       "Relative path for the new file, or a directory (trailing slash or no file extension) for multi-file generation. Must not exist yet."
     ),
-  profile: z
-    .enum(["solo", "ide"])
+  model: z
+    .string()
+    .min(1)
     .optional()
-    .describe("Model profile. Omit for memory-based auto-selection (solo = 30B model, ide = 14B fallback)."),
+    .describe(
+      "Exact model name to run, as it appears in LM Studio / the models CSV (sent verbatim as the chat model). Omit to auto-pick the largest configured model that fits free RAM. Call the `models` tool first to choose by objective + memory."
+    ),
 };
 
 const argsSchema = z.object(scaffoldInputSchema);
@@ -45,7 +48,7 @@ export interface ScaffoldResult {
   summary: string;
   created: string[];
   model: string;
-  profile: Profile;
+  selection_reason: string;
   latency_ms: number;
   usage: Usage;
 }
@@ -88,9 +91,7 @@ export async function runScaffold(
   const dirMode = args.target_path.endsWith("/") || path.posix.extname(normalizeRel(args.target_path)) === "";
   const targetRel = normalizeRel(target.rel);
 
-  const profile =
-    args.profile ?? (await autoSelectProfile(config, deps.runner, deps.platform)).profile;
-  const model = profile === "solo" ? config.modelSolo : config.modelIde;
+  const { model, reason } = await resolveModel(args.model, config, deps);
 
   const instruction = dirMode
     ? `Create one or more new files under the directory "${targetRel}/". Every <file> block's path must start with "${targetRel}/".`
@@ -151,7 +152,7 @@ export async function runScaffold(
     throw new ToolError(
       `The local model failed to produce valid scaffold output after a corrective retry: ${lastProblem}.`,
       "model_output_malformed",
-      { problem: lastProblem, model, profile }
+      { problem: lastProblem, model }
     );
   }
 
@@ -191,7 +192,7 @@ export async function runScaffold(
     ),
     created,
     model,
-    profile,
+    selection_reason: reason,
     latency_ms: Date.now() - started,
     usage,
   };

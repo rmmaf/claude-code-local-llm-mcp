@@ -9,9 +9,12 @@ import { runImplement } from "../src/tools/implement.js";
 import {
   chatBody,
   fileBlock,
+  lmsListBody,
   makeTempRoot,
+  noLmsRunner,
   queuedFetch,
   testConfig,
+  fakeRunner,
   writeFileTree,
 } from "./helpers.js";
 
@@ -41,7 +44,7 @@ describe("implement", () => {
     const result = await runImplement(
       { spec: "Use a template literal and add punctuation.", files: ["src/greet.ts"] },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.applied).toBe(false);
@@ -61,7 +64,7 @@ describe("implement", () => {
     await gitApply(root, result.diff);
     expect(await fs.readFile(path.join(root, "src/greet.ts"), "utf8")).toBe(UPDATED);
 
-    // The prompt carried the file content and spec; profile solo model used.
+    // The prompt carried the file content and spec; no sizes -> first catalog model.
     const request = calls[0]?.body as { model: string; messages: Array<{ content: string }> };
     expect(request.model).toBe("test-solo-model");
     expect(request.messages.some((m) => m.content.includes('Hello " + name'))).toBe(true);
@@ -87,7 +90,7 @@ describe("implement", () => {
         files: ["src/greet.ts", "README.md", "unchanged.txt"],
       },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.files_changed).toEqual(["src/greet.ts", "README.md"]);
@@ -105,7 +108,7 @@ describe("implement", () => {
     const result = await runImplement(
       { spec: "Use a template literal.", files: ["src/greet.ts"], mode: "apply" },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.applied).toBe(true);
@@ -124,7 +127,7 @@ describe("implement", () => {
     const result = await runImplement(
       { spec: "Change greeting.", files: ["src/greet.ts"], mode: "apply" },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(result.files_changed).toEqual(["src/greet.ts"]);
@@ -147,7 +150,7 @@ describe("implement", () => {
         mode: "apply",
       },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     const request = calls[0]?.body as { messages: Array<{ content: string }> };
@@ -155,19 +158,46 @@ describe("implement", () => {
     expect(await fs.readFile(path.join(root, "src/types.ts"), "utf8")).toBe("export type Name = string;\n");
   });
 
-  it("explicit ide profile picks the ide model", async () => {
+  it("sends an explicit model verbatim without probing", async () => {
     const root = makeTempRoot();
     await writeFileTree(root, { "src/greet.ts": ORIGINAL });
     const { fetchImpl, calls } = queuedFetch([chatBody(fileBlock("src/greet.ts", UPDATED))]);
 
     const result = await runImplement(
-      { spec: "Change greeting.", files: ["src/greet.ts"], profile: "ide" },
+      { spec: "Change greeting.", files: ["src/greet.ts"], model: "test-ide-model" },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
-    expect(result.profile).toBe("ide");
     expect(result.model).toBe("test-ide-model");
+    expect(result.selection_reason).toContain("explicit model requested");
+    expect((calls[0]?.body as { model: string }).model).toBe("test-ide-model");
+  });
+
+  it("auto-picks the largest catalog model that fits free RAM when model is omitted", async () => {
+    const root = makeTempRoot();
+    await writeFileTree(root, { "src/greet.ts": ORIGINAL });
+    const { fetchImpl, calls } = queuedFetch([chatBody(fileBlock("src/greet.ts", UPDATED))]);
+    const GB = 1024 ** 3;
+    const runner = fakeRunner({
+      sysctl: () => `${32 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 50%\n", // ~16 GB free, ~13.6 usable
+      lms: () =>
+        lmsListBody([
+          { id: "test-solo-model", sizeBytes: 18 * GB },
+          { id: "test-ide-model", sizeBytes: 8 * GB },
+        ]),
+    });
+
+    const result = await runImplement(
+      { spec: "Change greeting.", files: ["src/greet.ts"] },
+      testConfig(root),
+      { fetchImpl, platform: "darwin", runner }
+    );
+
+    // 18 GB doesn't fit ~13.6 usable; 8 GB does.
+    expect(result.model).toBe("test-ide-model");
+    expect(result.selection_reason).toContain("fitting usable free RAM");
     expect((calls[0]?.body as { model: string }).model).toBe("test-ide-model");
   });
 });

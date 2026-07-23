@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { Config } from "../src/config.js";
+import type { CommandRunner } from "../src/exec.js";
 import type { FetchLike } from "../src/llm-client.js";
 
 export function makeTempRoot(prefix = "local-coder-test-"): string {
@@ -14,9 +15,13 @@ export function testConfig(root: string, overrides: Partial<Config> = {}): Confi
   return {
     root,
     baseUrl: "http://localhost:1234/v1",
-    modelSolo: "test-solo-model",
-    modelIde: "test-ide-model",
-    soloMinFreeGb: 20,
+    modelsCsvPath: null,
+    memFitFraction: 0.85,
+    // First entry is the deterministic fallback pick when no sizes are available.
+    models: [
+      { model: "test-solo-model", objective: "large capable coder" },
+      { model: "test-ide-model", objective: "small fast coder" },
+    ],
     temperature: 0.1,
     maxOutputTokens: 8192,
     timeoutMs: 30_000,
@@ -24,6 +29,31 @@ export function testConfig(root: string, overrides: Partial<Config> = {}): Confi
     maxContextKb: 512,
     ...overrides,
   };
+}
+
+/** A CommandRunner driven by a map of command → stdout. Throws for anything unmapped. */
+export function fakeRunner(handlers: Record<string, () => string>): CommandRunner {
+  return async (command) => {
+    const handler = handlers[command];
+    if (!handler) throw new Error(`unexpected command: ${command}`);
+    return handler();
+  };
+}
+
+/**
+ * A CommandRunner where every command fails. Keeps unit tests hermetic on dev
+ * machines that actually have `lms` installed: sizes stay unknown, so model
+ * selection falls back to catalog order deterministically.
+ */
+export function noLmsRunner(): CommandRunner {
+  return async (command) => {
+    throw new Error(`command not available in tests: ${command}`);
+  };
+}
+
+/** Build a canned `lms ls --json` body from {id, sizeBytes} entries. */
+export function lmsListBody(models: Array<{ id: string; sizeBytes: number }>): string {
+  return JSON.stringify(models.map((m) => ({ path: m.id, sizeBytes: m.sizeBytes })));
 }
 
 export interface ChatBodyOptions {

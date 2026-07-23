@@ -1,7 +1,7 @@
 /**
  * Integration test against the REAL built server over stdio. Proves:
  *  - the entrypoint responds to MCP initialize and tools/list
- *  - exactly the four tools are exposed, with schemas
+ *  - exactly the five tools are exposed, with schemas
  *  - a real tools/call round-trip works (status, against a dead endpoint)
  *  - stdout purity: every byte on stdout is JSON-RPC — no stray logging
  */
@@ -91,14 +91,14 @@ describe("stdio server integration", () => {
     expect(init?.result?.serverInfo?.name).toBe("local-coder");
   });
 
-  it("exposes exactly the four tools with complete schemas", () => {
+  it("exposes exactly the five tools with complete schemas", () => {
     const list = messages.find((m) => m.id === 2);
     const tools = list?.result?.tools as Array<{
       name: string;
       description?: string;
       inputSchema?: { properties?: Record<string, unknown>; required?: string[] };
     }>;
-    expect(tools.map((t) => t.name).sort()).toEqual(["fix", "implement", "scaffold", "status"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["fix", "implement", "models", "scaffold", "status"]);
 
     const byName = new Map(tools.map((t) => [t.name, t]));
     for (const tool of tools) {
@@ -106,14 +106,15 @@ describe("stdio server integration", () => {
       expect(tool.description!.length).toBeGreaterThan(100);
     }
     expect(Object.keys(byName.get("implement")!.inputSchema!.properties!).sort()).toEqual(
-      ["context_files", "files", "mode", "profile", "spec"]
+      ["context_files", "files", "mode", "model", "spec"]
     );
     expect(byName.get("implement")!.inputSchema!.required).toEqual(["spec", "files"]);
     expect(Object.keys(byName.get("fix")!.inputSchema!.properties!)).toContain("error_output");
     expect(byName.get("fix")!.inputSchema!.required).toContain("error_output");
     expect(Object.keys(byName.get("scaffold")!.inputSchema!.properties!).sort()).toEqual(
-      ["profile", "spec", "target_path"]
+      ["model", "spec", "target_path"]
     );
+    expect(Object.keys(byName.get("models")!.inputSchema!.properties!)).toContain("concurrent_models");
   });
 
   it("serves a real tools/call round-trip (status against a dead endpoint)", () => {

@@ -9,6 +9,7 @@ import {
   chatBody,
   fileBlock,
   makeTempRoot,
+  noLmsRunner,
   queuedFetch,
   testConfig,
   writeFileTree,
@@ -29,7 +30,7 @@ describe("malformed-output retry policy", () => {
     const result = await runImplement(
       { spec: "Update the line.", files: ["a.txt"] },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(calls.length).toBe(2);
@@ -61,7 +62,7 @@ describe("malformed-output retry policy", () => {
       await runImplement(
         { spec: "Update both files.", files: ["a.txt", "b.txt"] },
         testConfig(root),
-        { fetchImpl, platform: "linux" }
+        { fetchImpl, platform: "linux", runner: noLmsRunner() }
       );
       throw new Error("expected ToolError");
     } catch (error) {
@@ -86,7 +87,7 @@ describe("malformed-output retry policy", () => {
     const result = await runImplement(
       { spec: "Update the line.", files: ["a.txt"] },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(calls.length).toBe(2);
@@ -104,7 +105,7 @@ describe("malformed-output retry policy", () => {
     ]);
 
     await expect(
-      runImplement({ spec: "Update.", files: ["a.txt"] }, testConfig(root), { fetchImpl, platform: "linux" })
+      runImplement({ spec: "Update.", files: ["a.txt"] }, testConfig(root), { fetchImpl, platform: "linux", runner: noLmsRunner() })
     ).rejects.toMatchObject({
       code: "model_output_malformed",
       message: expect.stringContaining("truncated"),
@@ -121,7 +122,7 @@ describe("malformed-output retry policy", () => {
     const result = await runImplement(
       { spec: "Update the line.", files: ["a.txt"] },
       testConfig(root),
-      { fetchImpl, platform: "linux" }
+      { fetchImpl, platform: "linux", runner: noLmsRunner() }
     );
 
     expect(calls.length).toBe(1);
