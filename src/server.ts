@@ -14,6 +14,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { loadConfig } from "./config.js";
 import { ToolError } from "./fs-safety.js";
+import { runGenerateCatalog } from "./generate-catalog.js";
 import { log } from "./logger.js";
 import { loadModelCatalog } from "./models-csv.js";
 import {
@@ -91,6 +92,13 @@ async function main(): Promise<void> {
 
   if (process.argv.includes("--version") || process.argv.includes("-v")) {
     process.stdout.write(`${version}\n`);
+    return;
+  }
+
+  // Subcommand: scan local models and write a catalog CSV, then exit before the
+  // MCP transport starts (like --version, this is a one-shot CLI, not the server).
+  if (process.argv[2] === "generate-models-csv") {
+    process.exitCode = await runGenerateCatalog(process.argv.slice(3));
     return;
   }
 

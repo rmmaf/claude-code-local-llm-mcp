@@ -198,6 +198,22 @@ none set, a built-in default catalog keeps the zero-config path working.
 - `loadConfig` stays synchronous; the CSV is read afterward (`config.models =
   await loadModelCatalog(config.modelsCsvPath)`) in `server.ts`/`smoke-test.ts`,
   keeping config unit tests file-free.
+- **Catalog generation is a subcommand, not a tool.** `generate-models-csv`
+  (`src/generate-catalog.ts`, dispatched by `server.ts` before the transport
+  starts, like `--version`) scans the models present via `getLmsModels` —
+  falling back to `/models` ids, sizeless, when `lms` is absent — and writes the
+  `model,objective` CSV. Objectives come from Hugging Face: the model id is
+  stripped of quant/format suffixes (the `QUANT_SUFFIX_RE` from `selection.ts`,
+  applied case-preserving) to a repo-id guess, tried directly and then via
+  `?search=`, and composed from `pipeline_tag`/tags — with a name-based
+  heuristic fallback on any miss or `--offline`. A subcommand rather than a 6th
+  MCP tool keeps it invocable with no clone via `npx github:… generate-models-csv`,
+  adds no dependency, and — as a one-shot CLI, not the server — may write the CSV
+  to stdout. The repo had a CSV *parser* but no *serializer*, so a small
+  RFC-4180 field encoder was added, proven by round-tripping through
+  `parseModelsCsv` in tests. Re-runs with `--out` merge: existing rows and their
+  objectives are preserved (and their HF lookup skipped), so a user's or Claude's
+  refinements survive and only newly-downloaded models are looked up.
 
 ## Packaging
 
