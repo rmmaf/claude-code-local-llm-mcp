@@ -11,6 +11,8 @@ const execFileAsync = promisify(execFile);
 export type CommandRunner = (command: string, args: string[]) => Promise<string>;
 
 export const defaultRunner: CommandRunner = async (command, args) => {
-  const { stdout } = await execFileAsync(command, args, { timeout: 10_000 });
+  // 16 MiB buffer: `lms ls --json` can be sizable for a large model library;
+  // the tiny memory-probe outputs are unaffected by the higher cap.
+  const { stdout } = await execFileAsync(command, args, { timeout: 10_000, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
 };

@@ -159,7 +159,7 @@ Point `LOCAL_CODER_MODELS_CSV` at it (a relative path resolves against the proje
 2. Claude matches the objective to the task at hand and passes the chosen model name as the `model` argument to `implement` / `fix` / `scaffold`.
 3. If a work tool is called **without** `model`, the server falls back to the largest catalog model that fits free RAM (objective matching is Claude's job, via the `models` tool).
 
-Fit is `size ≤ free RAM × LOCAL_CODER_MEM_FIT_FRACTION`. It is **advisory** — a model's runtime footprint (KV cache, context) exceeds its on-disk weight, and on macOS unified memory the GPU wired limit can still block a load — so treat a positive fit as necessary, not sufficient. Model sizes come from the `lms` CLI; if `lms` isn't on the server's PATH, sizes and fit are reported as `null` and selection falls back to catalog order. RAM is measured on macOS via `memory_pressure` (falling back to `vm_stat`); other platforms use Node's `os.freemem()`.
+Fit is `size ≤ free RAM × LOCAL_CODER_MEM_FIT_FRACTION`. It is **advisory** — a model's runtime footprint (KV cache, context) exceeds its on-disk weight, and on macOS unified memory the GPU wired limit can still block a load — so treat a positive fit as necessary, not sufficient. Model sizes come from the `lms` CLI; if `lms` isn't on the server's PATH, sizes and fit are reported as `null` and selection falls back to catalog order. RAM is measured on macOS via `memory_pressure` (falling back to `vm_stat`); other platforms use Node's `os.freemem()`, which excludes reclaimable cache on Linux, so `fits` is conservative there.
 
 To set the CSV path at registration time (add `--scope user` to make it available in every project):
 
