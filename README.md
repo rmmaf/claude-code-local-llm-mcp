@@ -50,9 +50,20 @@ lms get mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2   # ~17 GB
 lms get qwen2.5-coder-14b-instruct                                # ~8.5 GB (or via the UI)
 ```
 
-This is the only step that downloads from Hugging Face, and LM Studio handles it — installing the MCP server itself (next step) downloads no models. Afterwards run `lms ls` to see the exact identifiers you have; those go in the models CSV (see [Model selection](#model-selection)). With no CSV configured, the server falls back to a built-in default catalog of the two models above.
+This is the only step that downloads from Hugging Face, and LM Studio handles it — installing the MCP server itself downloads no models. The next step turns whatever you downloaded here into your catalog automatically. (With no catalog configured, the server falls back to a built-in default of the two models above.)
 
-### 5. Install the MCP server into Claude Code
+### 5. Generate your model catalog
+
+Scan the models you just downloaded and write them to a catalog CSV. Model names come out byte-identical to LM Studio, and each model's **objective** (what it's good for) is looked up on Hugging Face automatically:
+
+```bash
+npx -y github:rmmaf/claude-code-local-llm-mcp generate-models-csv \
+  --out "$HOME/.config/local-coder/models.csv"
+```
+
+Add `--offline` to skip the Hugging Face lookups and derive objectives from model names alone. Re-run it whenever you download new models — existing rows (including objectives you've refined) are preserved, and only the new models are looked up. See [Model selection](#model-selection) for the CSV format and the `models` tool that reads it.
+
+### 6. Install the MCP server into Claude Code
 
 Pre-warm the build once in a terminal (the first `npx github:` run clones and compiles, which can exceed Claude Code's default 30 s MCP startup timeout):
 
@@ -60,17 +71,21 @@ Pre-warm the build once in a terminal (the first `npx github:` run clones and co
 npx -y github:rmmaf/claude-code-local-llm-mcp --version
 ```
 
-Then register it:
+Then register it, pointing it at the catalog you generated:
 
 ```bash
-claude mcp add local-coder -- npx -y github:rmmaf/claude-code-local-llm-mcp
+claude mcp add local-coder \
+  -e LOCAL_CODER_MODELS_CSV="$HOME/.config/local-coder/models.csv" \
+  -- npx -y github:rmmaf/claude-code-local-llm-mcp
 ```
 
 Variants:
 
 ```bash
 # available in every project, not just the current one
-claude mcp add --scope user local-coder -- npx -y github:rmmaf/claude-code-local-llm-mcp
+claude mcp add --scope user local-coder \
+  -e LOCAL_CODER_MODELS_CSV="$HOME/.config/local-coder/models.csv" \
+  -- npx -y github:rmmaf/claude-code-local-llm-mcp
 
 # with environment overrides
 claude mcp add local-coder -e LM_STUDIO_URL=http://localhost:1234/v1 -- npx -y github:rmmaf/claude-code-local-llm-mcp
@@ -81,7 +96,7 @@ claude mcp add local-coder -- npx -y github:rmmaf/claude-code-local-llm-mcp#v0.1
 
 If startup still times out, raise it: `MCP_TIMEOUT=120000 claude`.
 
-### 6. Verify
+### 7. Verify
 
 Start `claude` in any project and ask:
 
@@ -185,7 +200,23 @@ If `claude mcp remove` reports it can't find the server, run `claude mcp list` t
 
 ### Generating the models CSV
 
-Have Claude Code build the CSV for you from a plain list of model names (one per line, e.g. what `lms ls` shows), using the [Hugging Face MCP tools](https://huggingface.co/settings/mcp) to research each model's intended use. Put your model names in a `models.txt` (see [`models.example.txt`](models.example.txt)) and paste this prompt:
+**The easy way — scan your local models.** `generate-models-csv` reads the models present in LM Studio (via `lms ls`, falling back to the `/models` endpoint), writes each name byte-identical to how LM Studio references it, and fills in the `objective` by looking the model up on Hugging Face (its `pipeline_tag` and tags), with a name-based guess when a model isn't found:
+
+```bash
+# with the MCP installed via npx:
+npx -y github:rmmaf/claude-code-local-llm-mcp generate-models-csv --out ~/.config/local-coder/models.csv
+
+# or from a clone of this repo:
+npm run generate-models-csv -- --out ~/.config/local-coder/models.csv
+```
+
+- Omit `--out` to print the CSV to stdout instead of writing a file.
+- `--offline` skips Hugging Face and derives objectives from model names alone.
+- Re-running with `--out` **preserves** objectives already in the file (including any you or Claude refined) and only looks up newly-downloaded models — so it's safe to run again after every `lms get`.
+
+Then set `LOCAL_CODER_MODELS_CSV` to the file and run the `models` (or `status`) tool to confirm availability, sizes, and fit.
+
+**The hand-curated way — richer objectives via Claude.** For objectives written from a model's card rather than its tags, have Claude Code build the CSV from a plain list of model names (one per line, e.g. what `lms ls` shows) using the [Hugging Face MCP tools](https://huggingface.co/settings/mcp). Put your model names in a `models.txt` (see [`models.example.txt`](models.example.txt)) and paste this prompt:
 
 > I have a file `models.txt` with one LM Studio model name per line. Create `models.csv` — a headerless CSV with two columns, `model,objective` — with one row per input line.
 >
@@ -193,7 +224,7 @@ Have Claude Code build the CSV for you from a plain list of model names (one per
 >
 > Write `objective` as one concise English phrase (≤ ~15 words) describing what the model is best used for (e.g. "General multi-language code generation and refactoring", "Small fast coding model for low-memory or concurrent-agent use"). Keep the `model` column **byte-identical to the input line** so it matches LM Studio exactly. Double-quote any objective containing a comma. Never drop a line — if you can't find a model on Hugging Face, write a best-guess objective from its name. Output only the CSV rows, no header.
 
-Then set `LOCAL_CODER_MODELS_CSV` to the file's path and run the `models` (or `status`) tool to confirm availability, sizes, and fit.
+Both paths write the same headerless format, so you can scan first and have Claude polish specific objectives afterward.
 
 ## Tools
 
@@ -288,7 +319,7 @@ It calls `status`, then runs a toy `implement` in a throwaway git repo, prints t
 ## Troubleshooting
 
 - **`reachable: false` / connection refused** — LM Studio's server isn't running: `lms server start`. If it runs on another host/port, set `LM_STUDIO_URL`.
-- **HTTP 404 / model errors** — the model name doesn't match LM Studio. Run `lms ls` and make your CSV `model` column (or the `model` argument) byte-identical to what it prints; the `models` tool shows a match-quality flag to spot mismatches.
+- **HTTP 404 / model errors** — the model name doesn't match LM Studio. Run `lms ls` and make your CSV `model` column (or the `model` argument) byte-identical to what it prints; the `models` tool shows a match-quality flag to spot mismatches. Generating the catalog with `generate-models-csv` sidesteps this — it copies names straight from `lms ls` — so re-run it after downloading new models to keep the catalog in sync.
 - **First call fails but `status` says reachable** — JIT model loading may be disabled, so the model is never loaded on demand. Enable JIT loading (and TTL auto-unload) in LM Studio's server settings, or load the model manually with `lms load`.
 - **Timeouts on long generations** — 30B-class models can take minutes on multi-file tasks. Raise `LOCAL_CODER_TIMEOUT_MS`, narrow the spec, or send fewer files.
 - **Memory** — the default 4-bit DWQ 30B model (~17 GB) fits under the default macOS GPU wired limit on a 36 GB machine with no sysctl changes; only larger quants require raising `iogpu.wired_limit_mb`. When memory is tight, pick a smaller model via the `models` tool (or omit `model` to let size-fit selection do it), and tune `LOCAL_CODER_MEM_FIT_FRACTION`.
