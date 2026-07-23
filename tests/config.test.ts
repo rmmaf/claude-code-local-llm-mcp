@@ -46,6 +46,10 @@ describe("config", () => {
     expect(config.modelsCsvPath).toBe("/project/config/models.csv");
   });
 
+  it("clamps a mem fit fraction above 1 down to 1", () => {
+    expect(loadConfig({ LOCAL_CODER_MEM_FIT_FRACTION: "1.5" }, "/p").memFitFraction).toBe(1);
+  });
+
   it("falls back to defaults on unparseable numeric env values", () => {
     const config = loadConfig(
       {

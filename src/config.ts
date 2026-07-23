@@ -48,6 +48,16 @@ function numberFromEnv(
   return value;
 }
 
+/** A fraction in (0, 1]: reuses numberFromEnv (finite, > 0) then clamps anything above 1 down to 1. */
+function fractionFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const value = numberFromEnv(env, name, fallback);
+  if (value > 1) {
+    log.warn(`clamping ${name}=${value} to 1 (must be in (0, 1])`);
+    return 1;
+  }
+  return value;
+}
+
 /**
  * Load configuration from the environment. `models` is left empty here — the
  * server (and smoke test) fill it via loadModelCatalog(config.modelsCsvPath)
@@ -69,7 +79,7 @@ export function loadConfig(
     root,
     baseUrl: (env.LM_STUDIO_URL ?? DEFAULTS.baseUrl).replace(/\/+$/, ""),
     modelsCsvPath,
-    memFitFraction: numberFromEnv(env, "LOCAL_CODER_MEM_FIT_FRACTION", DEFAULTS.memFitFraction),
+    memFitFraction: fractionFromEnv(env, "LOCAL_CODER_MEM_FIT_FRACTION", DEFAULTS.memFitFraction),
     models: [],
     temperature: numberFromEnv(env, "LOCAL_CODER_TEMPERATURE", DEFAULTS.temperature, { allowZero: true }),
     maxOutputTokens: numberFromEnv(env, "LOCAL_CODER_MAX_OUTPUT_TOKENS", DEFAULTS.maxOutputTokens),
