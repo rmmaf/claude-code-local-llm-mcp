@@ -89,6 +89,8 @@ Start `claude` in any project and ask:
 
 You should see `reachable: true`, your model catalog with each model's availability and size, your RAM numbers, and which model the memory-only fallback would auto-pick. If `reachable` is `false`, run `lms server start` and check again.
 
+Prefer a guided, measured setup? [`CALIBRATION.md`](CALIBRATION.md) is a paste-into-Claude prompt that installs the server and calibrates every local model with a test battery before writing the catalog.
+
 ## How to use it
 
 The division of labor: **you talk to Claude normally** — Claude decides (or you tell it) to delegate the mechanical typing to the local model.
@@ -194,6 +196,8 @@ Have Claude Code build the CSV for you from a plain list of model names (one per
 > Write `objective` as one concise English phrase (≤ ~15 words) describing what the model is best used for (e.g. "General multi-language code generation and refactoring", "Small fast coding model for low-memory or concurrent-agent use"). Keep the `model` column **byte-identical to the input line** so it matches LM Studio exactly. Double-quote any objective containing a comma. Never drop a line — if you can't find a model on Hugging Face, write a best-guess objective from its name. Output only the CSV rows, no header.
 
 Then set `LOCAL_CODER_MODELS_CSV` to the file's path and run the `models` (or `status`) tool to confirm availability, sizes, and fit.
+
+This gives you a bootstrap catalog from model cards. To write objectives from **measured behaviour** instead — a per-model test battery covering contract adherence, editing, bug repair, constraints, and context handling — run the calibration prompt in [`CALIBRATION.md`](CALIBRATION.md).
 
 ## Tools
 
