@@ -23,6 +23,13 @@ import {
   runImplement,
 } from "./tools/implement.js";
 import { fixInputSchema, fixToolDescription, fixToolName, runFix } from "./tools/fix.js";
+import { gateInputSchema, gateToolDescription, gateToolName, runGate } from "./tools/gate.js";
+import {
+  repairInputSchema,
+  repairToolDescription,
+  repairToolName,
+  runRepair,
+} from "./tools/repair.js";
 import {
   modelsInputSchema,
   modelsToolDescription,
@@ -128,6 +135,34 @@ async function main(): Promise<void> {
     async (args) => {
       try {
         return jsonResult(await runScaffold(args, config));
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    gateToolName,
+    { title: "Run project checks, return only failures", description: gateToolDescription, inputSchema: gateInputSchema },
+    async (args) => {
+      try {
+        return jsonResult(await runGate(args, config));
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    repairToolName,
+    {
+      title: "Fix failing checks locally in a loop",
+      description: repairToolDescription,
+      inputSchema: repairInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonResult(await runRepair(args, config));
       } catch (error) {
         return errorResult(error);
       }

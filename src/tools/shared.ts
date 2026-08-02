@@ -22,6 +22,26 @@ export interface ToolDeps {
   fetchImpl?: FetchLike;
   runner?: CommandRunner;
   platform?: NodeJS.Platform;
+  /**
+   * Called with the exact bytes of every file `mode: "apply"` writes, as each
+   * write lands. `repair` uses it to know precisely what it wrote — inferring
+   * that by reading the file back cannot distinguish our write from someone
+   * else's, and a rollback that guesses wrong destroys the other one.
+   */
+  onFileWritten?: (rel: string, content: string) => void;
+  /**
+   * Bytes the caller expects each file to still hold. `mode: "apply"` verifies
+   * them immediately before writing and refuses the whole write on a mismatch.
+   * Generation takes minutes, so without this the model's output silently
+   * overwrites anything an editor or formatter did in the meantime.
+   */
+  expectedContent?: ReadonlyMap<string, string>;
+  /**
+   * Milliseconds left in the caller's wall-clock budget, re-read before EVERY
+   * model request. The corrective retry is a second request; giving it the
+   * timeout computed for the first is how a hard deadline gets doubled.
+   */
+  remainingMs?: () => number;
 }
 
 export interface GenerationArgs {
@@ -80,7 +100,7 @@ async function loadFiles(
  * Pre-flight the size caps across ALL files at once so the error names every
  * offender, not just the first (readTextFileSafe alone would stop at one).
  */
-async function statAll(root: string, paths: string[]): Promise<Array<{ rel: string; bytes: number }>> {
+export async function statAll(root: string, paths: string[]): Promise<Array<{ rel: string; bytes: number }>> {
   const out: Array<{ rel: string; bytes: number }> = [];
   for (const rel of paths) {
     const resolved = await resolveSafePath(root, rel, { mustExist: true });
@@ -229,13 +249,22 @@ export async function runGeneration(
   let lastMissing: string[] = [];
 
   for (let attempt = 1; attempt <= 2; attempt++) {
+    // Re-read the budget per attempt. The corrective retry is a whole second
+    // model request; reusing the first attempt's timeout lets a caller's hard
+    // deadline be exceeded by nearly another full request.
+    const remaining = deps.remainingMs?.() ?? Number.POSITIVE_INFINITY;
+    if (attempt > 1 && remaining <= 0) {
+      log.warn("no budget left for the corrective retry; giving up on this generation");
+      break;
+    }
+
     const result = await chatCompletion({
       baseUrl: config.baseUrl,
       model,
       messages,
       temperature: config.temperature,
       maxTokens: config.maxOutputTokens,
-      timeoutMs: config.timeoutMs,
+      timeoutMs: Math.max(1, Math.min(config.timeoutMs, remaining)),
       ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
     });
     usage.prompt_tokens += result.usage.prompt_tokens;
@@ -290,8 +319,51 @@ export async function runGeneration(
   }
 
   if (mode === "apply") {
+    // Compare-and-swap across ALL files before writing any of them, so a
+    // conflict on the second file cannot leave the first one written. An
+    // unreadable file counts as a mismatch: if we cannot confirm the bytes, we
+    // do not get to overwrite them.
+    if (deps.expectedContent !== undefined) {
+      const conflicts: string[] = [];
+      for (const change of changes) {
+        const expected = deps.expectedContent.get(normalizeRel(change.rel));
+        if (expected === undefined) continue;
+        const current = await fs.readFile(change.abs, "utf8").catch(() => null);
+        if (current !== expected) conflicts.push(change.rel);
+      }
+      if (conflicts.length > 0) {
+        throw new ToolError(
+          `Refusing to write: ${conflicts.join(", ")} changed on disk after this call started. ` +
+            `Something else is editing ${conflicts.length === 1 ? "that file" : "those files"}, and ` +
+            `overwriting would destroy the change.`,
+          "concurrent_modification",
+          { files: conflicts }
+        );
+      }
+    }
+
     for (const change of changes) {
+      // Re-check immediately before this file's own write. The sweep above
+      // catches the common case before anything is touched; this narrows the
+      // remaining check-to-write window from "the whole sweep" to a single
+      // syscall pair. It cannot be closed entirely without file locking —
+      // rename() is atomic but not conditional — so the guarantee is a narrowed
+      // window, not an eliminated one, and the tool description says so.
+      const expected = deps.expectedContent?.get(normalizeRel(change.rel));
+      if (expected !== undefined) {
+        const current = await fs.readFile(change.abs, "utf8").catch(() => null);
+        if (current !== expected) {
+          throw new ToolError(
+            `Refusing to write: ${change.rel} changed on disk between the check and the write.`,
+            "concurrent_modification",
+            { files: [change.rel] }
+          );
+        }
+      }
       await atomicWriteFile(change.abs, change.content);
+      // Report each write as it lands, so a throw part-way through still leaves
+      // the caller knowing exactly which files carry its bytes.
+      deps.onFileWritten?.(change.rel, change.content);
       log.info(`applied changes to ${change.rel} (+${change.added}/-${change.removed})`);
     }
   }

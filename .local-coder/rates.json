@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Token pricing for scripts/cost-meter.ts.",
+    "",
+    "`multipliers` are structural — they follow from how prompt caching is billed,",
+    "not from any one model's price sheet — so they rarely need touching.",
+    "",
+    "`inputPerMTok` is USD per million INPUT tokens and starts null on purpose:",
+    "a stale hardcoded price silently corrupts every dollar figure, while a",
+    "missing one makes the report fall back to input-equivalent units, which are",
+    "exact. Fill it in from https://claude.com/pricing to see dollars.",
+    "",
+    "`charsPerToken` is used ONLY to turn suppressed byte counts into an estimated",
+    "token count. Nothing in the absolute accounting depends on it."
+  ],
+  "multipliers": {
+    "input": 1.0,
+    "cacheWrite1h": 2.0,
+    "cacheWrite5m": 1.25,
+    "cacheRead": 0.1,
+    "output": 5.0
+  },
+  "models": {
+    "claude-opus-5": { "inputPerMTok": null },
+    "claude-sonnet-5": { "inputPerMTok": null },
+    "claude-haiku-4-5-20251001": { "inputPerMTok": null }
+  },
+  "charsPerToken": 3.7
+}

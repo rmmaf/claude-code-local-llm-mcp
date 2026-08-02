@@ -1,20 +1,40 @@
 # local-coder — hybrid orchestration MCP server
 
-**Claude plans. Your local Qwen implements. Only specs and diffs cross the metered API.**
+**Keep build output out of Claude's context, and keep the fix loop off the metered API.**
 
-`local-coder` is an MCP server that lets Claude Code delegate token-heavy code generation to a local LLM served by [LM Studio](https://lmstudio.ai). Claude Code stays what it's best at — planning, decomposing, spec-writing, and reviewing — while a strong local coding model (Qwen3-Coder-30B by default) does the actual typing, for free, on your own hardware.
+`local-coder` is an MCP server that cuts what a Claude Code session costs. It does that by attacking the two things that actually dominate the bill — not by delegating the typing.
 
-The core design rule: **file contents never round-trip through the orchestrator's context.** Claude sends a short spec plus file *paths*; this server reads the files from disk itself, prompts the local model, computes a unified diff, and returns only the diff plus a short summary. Claude reviews diffs, not files — so a 500-line implementation costs you a spec and a diff on the metered API instead of multiple full file round-trips.
+### Why the target is context, not generation
+
+A token that enters Claude's context is paid for **once as a cache write** and then **re-read on every later request in the session**:
+
+```
+cost(token entering at turn t of a session running to T)
+      = cache_write            (2.0x the input rate for a 1h cache)
+      + cache_read x (T - 1 - t)   (0.1x, once per later request)
+```
+
+Measured on a real 69-request session with `npm run cost-meter`: a token entering at turn 0 cost **8.8x** the input rate, and the resident context grew from 33K to 449K tokens. The same session's bill split **48% cache write, 36% cache read, 16% output, 0.4% fresh input**.
+
+So the ranking is forced:
+
+| Lever | What it removes | Multiplier |
+|---|---|---|
+| Keep build/test output out of context (`gate`) | tokens x every later re-read | **up to 8.8x** |
+| Collapse the fix loop into one call (`repair`) | whole turns, shrinking `T` for everything resident | **multiplicative** |
+| Delegate the writing (`implement`) | generated tokens only — and the diff still enters context | **5x, once** |
+
+Write-delegation is the *weakest* of the three and it is the one this project started with. It still ships, and still works, but it is no longer the headline.
 
 ```
 Claude Code (orchestrator, metered API)
-      │  stdio (MCP): spec + file paths ↓ · diff + summary ↑
-local-coder MCP server  ←→  project files on disk (read + patch directly)
-      │  HTTP: OpenAI-compatible chat completions
+      │  stdio (MCP): gate / repair / locate ↓ · structured failures + one diff ↑
+local-coder MCP server  ←→  project files + check commands on disk
+      │  HTTP: OpenAI-compatible chat completions (repair loop only)
 LM Studio · http://localhost:1234/v1  (MLX engine, JIT load + TTL unload)
-      └─ model catalog (CSV: model + objective) → pick by objective + size-vs-free-RAM
-         e.g. Qwen3-Coder-30B (~17 GB) · Qwen2.5-Coder-14B (~8.5 GB) · Qwen2.5-Coder-7B · …
 ```
+
+Every suppression is **reversible**: full output is written to `.local-coder/spill/` and its path returned. This is not politeness — a published study measured an arm that removed 38% of tool-output tokens and cost **6.8% more**, dropping patch application from 27/40 to 15/40, because it destroyed the verbatim anchors edits depend on.
 
 ## Installation (macOS, step by step)
 
@@ -113,15 +133,68 @@ Claude will write a tight spec, call `implement` with the two file paths (never 
 
 ```markdown
 ## Local delegation policy
-- Delegate to mcp__local-coder__implement: multi-file implementations from a
-  clear spec, boilerplate, test generation, mechanical refactors, docstrings.
+- Verify with mcp__local-coder__gate, never by running lint/tsc/tests through
+  Bash. One call runs them all and returns only structured failures.
+- When the gate is red and the fix is mechanical (type errors, failing
+  assertions, lint, missing imports), call mcp__local-coder__repair instead of
+  fixing and re-testing yourself. It loops locally and returns one diff.
 - Delegate new-file creation from a spec to mcp__local-coder__scaffold.
+- Use mcp__local-coder__implement only for bulk mechanical authoring — it saves
+  the smallest part of the bill.
 - Keep in Claude: architecture decisions, API design, subtle debugging,
   security-sensitive code, and final review of every diff before apply.
 - Never paste file contents into tool arguments — pass relative paths.
-- Route test/lint failures on delegated code through mcp__local-coder__fix.
 - Escalate to yourself after 2 failed local attempts on the same unit.
 ```
+
+### The Bash output hook: measured, dead, do not install it
+
+An earlier version of this project shipped a `PostToolUse` hook that condensed
+Bash output before it entered the context. **It does not work, and you should not
+install it.**
+
+`hooks/filter-tool-output.mjs` still exists in this repo, unregistered and inert.
+It condenses text correctly — 604 lines to 4 on a failing test run — and that was
+never the question. The question was whether `hookSpecificOutput.updatedToolOutput`
+changes what Claude Code actually *stores and bills*, and the answer, measured, is
+no: on a real command the hook ran, filtered 30,136 bytes down to 8,462, wrote its
+spill file — and the transcript recorded 30,000 characters of raw output anyway.
+The replacement never arrived.
+
+The most likely reason is a shape mismatch: the hook returns `updatedToolOutput`
+as a bare string, while a Bash result is `{stdout, stderr, interrupted, isImage}`.
+That is a cheap thing to retest, and the retest is written into `ROADMAP.md` as
+`G2`'s reopening condition — one attempt, threshold fixed in advance. Until a run
+clears it, nothing here should be installed and no saving may be attributed to it.
+
+**This costs you very little.** Across five real sessions, Bash was between 1.7%
+and 13.8% of all tool-result bytes, and most of that is `npm test` / `tsc` / `git`
+output — exactly what `gate` already handles, structurally, by parsing rather than
+truncating.
+
+## Measuring what it saves
+
+From a clone of this repo:
+
+```bash
+npm run cost-meter
+```
+
+Without one — it ships as a binary, so `npx` can run it against any project:
+
+```bash
+npx -y -p github:rmmaf/claude-code-local-llm-mcp local-coder-cost-meter
+```
+
+Reads Claude Code's own transcripts, so it reports **billed** quantities rather than estimates. Per session it prints the cost split, the context-growth curve, the multiplier a turn-0 token carries, which tools put the most bytes into context, and — once the local tools have run — an estimated saving per tool joined from `.local-coder/telemetry.jsonl`.
+
+```bash
+npm run cost-meter -- --last 5 --json
+```
+
+Fill in `models[...].inputPerMTok` in `.local-coder/rates.json` to see dollars; without it the report uses input-equivalent units, which are exact and are what the comparison actually needs.
+
+> Dollar figures are withheld unless **every** billed request in the session has a configured model price. A session that mixes a priced main model with an unpriced subagent model reports `null` rather than a partial sum wearing the label of a total.
 
 **What to expect:** the first call after idle time is slow (JIT loads ~17 GB into memory — tens of seconds), subsequent calls are much faster; a multi-file generation can take minutes on a 30B model. Everything heavy happens locally; your Anthropic bill sees only specs and diffs.
 
@@ -201,7 +274,37 @@ This gives you a bootstrap catalog from model cards. To write objectives from **
 
 ## Tools
 
-The file-writing tools (`implement`, `fix`, `scaffold`) take **relative file paths only — never file contents**; the server reads files from disk itself, and pasting contents into arguments defeats the whole design. `status` and `models` are read-only diagnostics.
+The file-writing tools (`repair`, `implement`, `fix`, `scaffold`) take **relative file paths only — never file contents**; the server reads files from disk itself, and pasting contents into arguments defeats the whole design. `status` and `models` are read-only diagnostics.
+
+### `gate`
+
+Runs the project's lint / type-check / test commands and returns **only structured failures** — path, line, code, message — deduplicated, ranked so located failures survive the cap, with the full raw output spilled to disk. Needs no local model.
+
+| Argument | Type | Notes |
+|---|---|---|
+| `checks` | `"all" \| "lint" \| "types" \| "test"` | Default `"all"`. |
+| `max_failures` | number | Per check, default 25. The rest stay in the spill file and `truncated` says how many. |
+
+Check commands come from `.local-coder/checks.json`; if absent they are inferred from `tsconfig.json`, `package.json` deps, an eslint config, or `pyproject.toml`. Only tools whose config actually exists on disk are proposed — a check that fails because it was never configured teaches you to ignore the gate.
+
+Measured against this repo: **67,190 bytes of raw `tsc` + `vitest` output → 1,724 bytes returned (97% smaller)**, with all four real failures located.
+
+### `repair`
+
+The turn-collapse tool, and the largest single lever here. Snapshots the exact bytes of every file, then loops locally: run `gate` → feed the structured failures to the local model → apply → re-run `gate`, until green or the round/time budget runs out. Returns **one** cumulative diff.
+
+| Argument | Type | Notes |
+|---|---|---|
+| `files` | string[] | Editable files, relative paths. Required. |
+| `spec` | string | What must be true once the checks pass. Required. |
+| `checks` | `"all" \| "lint" \| "types" \| "test"` | Which checks gate the loop. |
+| `max_rounds` | number | Default 3, max 10. |
+| `budget_seconds` | number | Wall-clock ceiling, default 300. |
+| `context_files`, `model` | string[], string | As in `implement`. |
+
+**Safety.** If the loop cannot reach green, every file is restored to its original bytes and the best attempt is returned as an *unapplied* diff alongside the remaining failures. A round that makes things worse cannot discard a round that made them better — the best state seen is what gets returned. The working tree is never left broken.
+
+It writes to the real working tree rather than a scratch worktree, because most projects' checks need the full tree; the byte snapshot is what makes that safe.
 
 ### `implement`
 
@@ -315,6 +418,8 @@ Everything in CI is mocked and sandbox-verified. The following could **not** be 
 2. Live LM Studio behavior: JIT load latency, TTL unload, real Qwen3/Qwen2.5 output quality against the `<file>`-block contract (the corrective-retry path exists for occasional format misses).
 3. `memory_pressure` / `vm_stat` output on your macOS version, and `lms ls --json` output on your `lms` version (parsers are tested against captured fixtures; any parse failure safely degrades — sizes become `null` and selection falls back to catalog order).
 4. `scripts/smoke-test.ts` end-to-end — it exists precisely to verify all of the above: `npm run smoke-test`.
+5. That the `invocation_id` our tools return survives into Claude Code's stored `toolUseResult`. The cost meter's exact telemetry join depends on it, and it has not been observed — the same class of unchecked assumption that killed the hook. One `gate` call with the server installed settles it: `provenanceUnavailable` must come back `false`.
+6. `repair` against a live local model. Its loop, budget, best-attempt tracking and byte-exact restore are all covered offline with a mocked model; what remains unmeasured is whether a real local model actually closes mechanical failures within 3 rounds, and how long a round costs.
 
 ## License
 
