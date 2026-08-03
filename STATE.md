@@ -5,33 +5,32 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**The Mac is green end to end** (`run 2026-08-03-mac-02`): install, `lms`,
-server, status, a coder-only catalog with 4 of 4 models matched and sized, the
-smoke test, and the full suite. The `<file>`-block contract is verified against
-a real local model. The one red test was a Windows path literal, fixed in
-`3c6242a`; the real slugs there confirm the one platform-dependent half.
-**B1 fell and G1 reopened**: meter $119.11 vs `/usage` $35.96, +231% against a
-5% threshold, and the two never measured the same quantity.
+**The `repair` payloads exist** (`run 2026-08-03-mac-06`, archived under
+`evidence/`). The previous run called them missing; telemetry writes
+`rounds_used` under the name `turns_collapsed`. B3: 12 of 20, median 98.67%, and
+3 of 11 calls made context *worse*. B6: 10 calls with a red gate, 2 closed, both
+in one round, and 3 `max_rounds` calls that improved nothing over 10 rounds.
+Two instrument defects fixed: `llm_timeout` now reports `budget` instead of
+blaming the model, and the per-round trace reaches telemetry — without it B7 was
+never measurable at all.
 
 ## Next action
 
-**Run a task on the Mac that delegates the writing to the local model.** The
-first session there produced two real `gate` calls (99.46% each, B3 now has 3
-of the 20 it asks for) but **no `repair` data at all**: both gates passed, so
-no failure ever existed to close, and no local-model tool ran. B6 and B7 need
-a task whose correctness is not reachable in one pass. Record which model ran —
-free RAM moved 28.2 → 15.6 → 27.8 GB across runs and at 15.6 the pick silently
-changed from the 30B to the 14B.
+**Decide B0's output contract before another B6 run.** While `shared.ts:78`
+demands every editable file whole against an 8192-token cap, a truncated
+response throws and is logged `model_failed`, indistinguishable from a loop that
+genuinely failed. Every B6 number carries that until the contract changes or the
+tools are scoped to small files in writing.
 
 ## Waiting on
 
-- **B5 needs a different repository** — this one configures 2 checks, so 1
-  collapsed turn is its structural ceiling and a ≥ 2 threshold is unreachable
-- B3 needs 19 more real `gate` calls; just keep verifying with `gate`
+- **The Mac's uncommitted `selectModelsBestFit`** — no push credentials there;
+  route is `git show --format="" HEAD` pasted here, applied by hand.
+- **B5 needs a different repository** — this one configures 2 checks.
 
 ## Do not redo
 
+- **A field absent from the log is not absent from the code.** B6 ran on a
+  narrative for a whole session because a grep for `rounds_used` missed the
+  column holding exactly that under another name. Read the writer.
 - **Verify with `npm test`, not `npx vitest run`** — the latter skips the build.
-- **Never report an inferred cause as an observed one.** Ten reviews of
-  `mac-check.sh` were all this, and the last one hit the *justification*, not
-  the code. Quote whatever actually knows, or say you did not look.

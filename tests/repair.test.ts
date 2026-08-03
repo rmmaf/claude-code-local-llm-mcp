@@ -224,6 +224,70 @@ describe("repair loop", () => {
     expect(entries[0]?.bytes_raw).toBeGreaterThan(0);
   });
 
+  it("writes the per-round timings to telemetry, not just the call total", async () => {
+    // B7 is the median of model_latency_ms + gate_ms per ROUND. The row used to
+    // carry only the call total and the round count, so the log could not
+    // answer it on any run — dividing one by the other bills the first gate and
+    // the rollback to the rounds. See run 2026-08-03-mac-06.
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody(fileBlock("src/math.ts", WORSE)),
+      chatBody(fileBlock("src/math.ts", FIXED)),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 2 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(4), code: 2 },
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<Record<string, unknown>>;
+    };
+    expect(detail.rounds).toHaveLength(2);
+    expect(detail.rounds?.[0]).toMatchObject({ round: 1, failures_before: 4, failures_after: 2 });
+    expect(detail.rounds?.[1]).toMatchObject({ round: 2, failures_before: 2, failures_after: 0 });
+    expect(typeof detail.rounds?.[0]?.model_ms).toBe("number");
+    expect(typeof detail.rounds?.[0]?.gate_ms).toBe("number");
+    // No error on a round that produced usable output — the field is what tells
+    // a truncated response (B0) apart from a round that simply did not fix it.
+    expect(detail.rounds?.[0]).not.toHaveProperty("error");
+  });
+
+  it("calls a generation the deadline cut off `budget`, not the model's fault", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // A request that never comes back, honouring the abort signal exactly as
+    // fetch does — so the timeout is raised where the real one is, by the
+    // controller in llm-client, and not simulated by a thrown string.
+    // config.timeoutMs defaults to exactly DEFAULT_BUDGET_SECONDS, so this is
+    // the ordinary case rather than a corner: 3 of 4 `model_failed` rows in run
+    // 2026-08-03-mac-06 sat at 300-326 s against a 300 s budget.
+    const fetchImpl = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("The operation was aborted."));
+        });
+      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+
+    const result = await runRepair({ ...baseArgs, budget_seconds: 1, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+    });
+
+    expect(result.stopped_because).toBe("budget");
+    // ...and the reason survives the relabelling, which is the only thing that
+    // makes relabelling safe.
+    expect(result.rounds[0]?.error).toMatch(/timed out/i);
+    expect(await fs.readFile(path.join(root, "src/math.ts"), "utf8")).toBe(BROKEN);
+  });
+
   it("feeds the gate's structured failures to the model, not raw build output", async () => {
     const root = tempRoot();
     await setup(root);

@@ -124,12 +124,23 @@ pre-registered as its own premise before anything is measured against it.
   `gate` calls from ordinary work, read from `.local-coder/telemetry.jsonl`. The
   experiment used to run the hook; G2 closed, so the premise now stands or falls
   on the tool that actually does the suppressing.
-- **Measured:** 98.1% (97,544 → 1,814 bytes) on the first `gate` call ever made
-  from *inside* a session, `run 2026-08-03-win-01`; 97% on a direct invocation,
-  `run 2026-08-02-win-01`. **One real point out of the twenty the experiment asks
-  for** — the premise is not decided. The 99% figure from a 604-line failing test
-  run is **no longer counted here**: it came from the hook, which G2 closed, so it
-  measures a component nothing uses.
+- **Measured:** median **98.67%** over **12** real in-session `gate` calls — 11
+  from `run 2026-08-03-mac-06`, plus the 98.1% (97,544 → 1,814 bytes) of
+  `run 2026-08-03-win-01`. **12 of the 20 the experiment asks for**, so the
+  premise is not decided, but the median sits far above both the 60% assumption
+  and the 40% fall line. The 97% of `run 2026-08-02-win-01` is excluded: it was a
+  direct invocation, and the experiment says *from ordinary work*. The 99% figure
+  from a 604-line failing test run is **not counted here** either — it came from
+  the hook, which G2 closed, so it measures a component nothing uses.
+- **The distribution is bimodal, and that is the finding the median hides.**
+  **3 of the 11** calls made the context **worse**: two at 213 → 823 bytes
+  (−286%) and one at 1,395 → 1,938 (−39%). The mechanism is mechanical, not
+  anomalous — when a check emits a couple of failing lines, `gate`'s structured
+  envelope costs more than the raw text it replaces, and nothing in the tool
+  compares the two. A tool that cannot lose to its own input would return the raw
+  output whenever raw is smaller. This does not bear on B3, which is a median
+  premise and passing it comfortably; it is recorded as a design defect so the
+  headline number does not bury it.
 - **Falls if:** median < 40% over 20 real `gate` calls.
 - **If it falls:** structured extraction is worth less than assumed and the whole
   first lever shrinks — `gate` would still collapse turns (B5), but its byte
@@ -170,6 +181,11 @@ pre-registered as its own premise before anything is measured against it.
   ceiling here, and a premise whose threshold is ≥ 2 can never be met in this
   venue. Measuring it needs a project with three or more configured checks. Do not
   read the 1 as evidence against the mechanism; it is evidence about the repo.
+  `run 2026-08-03-mac-06` shows the same ceiling from the other end: one call
+  narrowed to `checks: ["tsc"]` alone collapsed **0** turns and cost bytes on top
+  (1,395 → 1,938), so in that configuration `gate` is strictly negative on both
+  levers at once. Narrowing the checks is what makes it so — a caller's choice,
+  not a property of the tool.
 - **Falls if:** < 2 turns saved on median.
 - **If it falls:** the problem is almost certainly the **tool description** losing
   to the instinct to reach for Bash, not the tool. Rewrite the description before
@@ -206,16 +222,37 @@ pre-registered as its own premise before anything is measured against it.
   local model; every test uses a mocked one.
 - **Experiment:** 20 real mechanical failures (type errors, failing assertions,
   lint, missing imports); record `passed` and `rounds_used`.
-- **Measured:** **1 of 20, and it did not close.** `run 2026-08-03-mac-05`: 32
-  `tsc` errors from a real local-model diff. One call exhausted its time budget
-  producing nothing; a 2-round call went 32 → 12 without closing; a third 12 → 2;
-  a fourth closed the types; a fifth replaced the faulty algorithm. Convergence
-  took roughly four narrowed calls with hand-written specs, none of them closing
-  the failure in 3 rounds. **One task is not a rate — this does not decide B6.**
-  Raw payloads were not captured, so the round counts come from a session
-  narrative rather than from `rounds_used`, and B7 has nothing at all.
-  **B0 fell underneath this**, so part of what was measured here is the
-  whole-file output contract truncating, not the repair loop failing.
+- **Measured:** **1 task, 11 `repair` calls, and still not a rate.**
+  `run 2026-08-03-mac-06` recovered the payloads `run 2026-08-03-mac-05` reported
+  it could not find. They were never missing: telemetry writes `rounds_used`
+  under the name `turns_collapsed` — `repair.ts:654` and `repair.ts:680` are the
+  same expression — so a search for `rounds_used` in the log was always going to
+  come back empty. Archived as `evidence/2026-08-03-mac-06.telemetry.jsonl`.
+  - **10 calls entered with a red gate; 2 closed.** The 11th ran on an
+    already-green tree (0 rounds, no files, the `gate.passed` branch that
+    `repair.ts:691` logs as *nothing to do*) and is excluded — a call with no
+    failure to close cannot count as a closure.
+  - **2 of 10 is not B6's rate and must not be read as one.** B6 counts
+    mechanical *failures*; those 10 calls are successive passes over roughly the
+    same failure, so the denominator is still about one task.
+  - **Both closures took exactly one round.** No second or third round closed
+    anything in this corpus.
+  - **3 of the 4 `max_rounds` calls returned `files: []`** — and that is stronger
+    than a low close rate. `files` derives from `best.contents`
+    (`repair.ts:598`), which is replaced only when a round *lowers* the failure
+    count, so an empty list after exhausting the rounds means no round ever
+    improved on the original bytes. Those three burned 4, 3 and 3 rounds: **10
+    rounds of local generation that reduced the failure count zero times.**
+  - **This corrects the previous run's wording.** "It did not close" was wrong as
+    written — two calls did close, both in one round. What no single call did was
+    close the *original* failure within 3 rounds.
+  **B0 fell underneath this and the payload cannot separate them:** a truncated
+  response (`finish_reason=length`, `shared.ts:283`) throws after the corrective
+  retry and lands under `stopped_because: "model_failed"` — the same label a
+  request killed by the deadline used to get. The deadline half is fixed in this
+  commit (`llm_timeout` → `budget`); the truncation half is not, so a
+  `model_failed` row still means *either* B0 *or* the loop, and B6 cannot be
+  measured cleanly until the output contract is decided.
 - **Falls if:** < 30%.
 - **If it falls:** `repair` degrades to a one-shot `fix` with a gate around it,
   and the turn-collapse lever is worth roughly a third of the estimate.
@@ -228,7 +265,21 @@ pre-registered as its own premise before anything is measured against it.
   run, on the target hardware. Untested.
 - **Experiment:** the same 20 failures as B6; take the median of
   `model_latency_ms + gate_ms` per round.
-- **Measured:** — (no run)
+- **Measured:** **the experiment could not have been run — on this run or any
+  earlier one — and that was an instrument gap, not a missing run.** Every round
+  already measures `model_latency_ms` and `gate_ms` (`repair.ts:65`) and hands
+  them to the *caller* in `rounds[]`; `telemetry.record` kept only the call total
+  and the round count (`repair.ts:673`). So B7's statistic was never in the log,
+  and the gap would have swallowed the next run too. **Fixed in this commit**:
+  the per-round trace is now written into the telemetry detail.
+  What `run 2026-08-03-mac-06` supports meanwhile is an **upper bound**:
+  `latency_ms / rounds` over the 10 calls that had a failure to fix has a median
+  of **93.6 s** (per call, seconds: 9.8, 13.9, 52.1, 77.7, 85.2, 102.0, 222.0,
+  300.1, 305.5, 325.9). It over-attributes on purpose — it charges the first
+  gate, the rollback and the tree fingerprint to the rounds — so the true figure
+  is below it. Above the 90 s assumption, below the 150 s fall line, from about
+  one task. **It does not decide B7**; it is a different statistic, recorded so
+  the assumption stops being unexamined.
 - **Falls if:** median > 150 s.
 - **If it falls:** three rounds cost more wall-clock than the user will accept.
   Lower `max_rounds` to 2, or pick a smaller model, and re-measure B6 after.

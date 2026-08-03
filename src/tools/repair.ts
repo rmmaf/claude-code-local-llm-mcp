@@ -526,6 +526,7 @@ async function repairLoop(
       let touched: string[] = [];
       let roundError: string | undefined;
       let concurrentEdit = false;
+      let timedOut = false;
 
       try {
         const generation = await runGeneration(
@@ -553,6 +554,7 @@ async function repairLoop(
       } catch (error) {
         roundError = error instanceof Error ? error.message : String(error);
         concurrentEdit = error instanceof ToolError && error.code === "concurrent_modification";
+        timedOut = error instanceof ToolError && error.code === "llm_timeout";
         log.warn(
           concurrentEdit
             ? `repair round ${round}: aborting without writing — ${roundError}`
@@ -572,7 +574,22 @@ async function repairLoop(
           gate_ms: 0,
           error: roundError,
         });
-        stoppedBecause = concurrentEdit ? "concurrent_edit" : "model_failed";
+        // A request the deadline CUT OFF is a budget stop, not a model failure.
+        // The `budget` branch above only runs between rounds, so a timeout
+        // inside generation used to be filed as `model_failed` — and
+        // `config.timeoutMs` defaults to exactly `DEFAULT_BUDGET_SECONDS`, so
+        // round 1 alone can consume the whole budget and then blame the model.
+        // Measured: 3 of 4 `model_failed` rows sat at 300-326 s against a 300 s
+        // budget, `run 2026-08-03-mac-06`.
+        //
+        // The test is the error's code, NOT the clock. "Out of budget" and "the
+        // model was cut off" are different claims: a model that answers with
+        // unusable output and merely spends the budget doing it has failed on
+        // its own merits, and a clock check would relabel that too — losing the
+        // one distinction this exists to draw. `llm_timeout` is raised only
+        // where the abort actually fired (`llm-client.ts`), so it says the
+        // request never finished rather than that time happened to run out.
+        stoppedBecause = concurrentEdit ? "concurrent_edit" : timedOut ? "budget" : "model_failed";
         break;
       }
 
@@ -685,6 +702,24 @@ async function repairLoop(
       files: changed,
       stats: diff === "" ? null : diffStats(diff),
       checks: summarizeGate(gate).map((c) => ({ name: c.name, passed: c.passed })),
+      // The per-round trace, which until now went only to the caller. B7 asks
+      // for the median of `model_latency_ms + gate_ms` per round; the row used
+      // to carry the call total and the round count, so dividing one by the
+      // other was the best anyone could do — and that charges the first gate,
+      // the rollback and the tree fingerprint to the rounds. B7 was therefore
+      // not measurable from telemetry on ANY past run, which is why it still
+      // has no data (`run 2026-08-03-mac-06`). `error` comes along because
+      // `stopped_because` cannot separate a truncated response — B0 — from
+      // output that was merely wrong, and the distinction decides whether a
+      // failed round counts against `repair` or against the output contract.
+      rounds: rounds.map((r) => ({
+        round: r.round,
+        model_ms: r.model_latency_ms,
+        gate_ms: r.gate_ms,
+        failures_before: r.failures_before,
+        failures_after: r.failures_after,
+        ...(r.error === undefined ? {} : { error: r.error }),
+      })),
     },
   });
 
