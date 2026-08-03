@@ -74,18 +74,48 @@ export const RATES_REL_PATH = path.join(".local-coder", "rates.json");
  * priced — the same fail-closed choice as leaving `inputPerMTok` null.
  */
 export function rateKey(model: string, speed: string | null): string {
-  return speed === null || speed === "standard" ? model : `${model}@${speed}`;
+  return speed === null || speed === "standard" ? model : `${model}${SPEED_SEPARATOR}${speed}`;
 }
 
-/** Resolve the effective multipliers for one model (global defaults + overrides). */
-export function multipliersFor(rates: Rates, model: string): RateMultipliers {
-  const override = rates.models[model]?.multipliers;
-  return override ? { ...rates.multipliers, ...override } : rates.multipliers;
+const SPEED_SEPARATOR = "@";
+
+/**
+ * The model a rate key is a speed variant of, or null when the key is a bare
+ * model. (A Vertex dated-snapshot id such as `claude-opus-4-5@20251101` splits
+ * here too. That is harmless and arguably right: the snapshot inherits the base
+ * model's ratios, and its price is still looked up under the exact full key.)
+ */
+function baseModelOf(key: string): string | null {
+  const at = key.indexOf(SPEED_SEPARATOR);
+  return at <= 0 ? null : key.slice(0, at);
 }
 
-/** USD per million input tokens for a model, or null when not configured. */
-export function inputPriceFor(rates: Rates, model: string): number | null {
-  return rates.models[model]?.inputPerMTok ?? null;
+/**
+ * Resolve the effective multipliers for one rate key: global defaults, then the
+ * base model's overrides, then the speed variant's.
+ *
+ * **Multipliers layer across the speed suffix and the price deliberately does
+ * not.** The ratios are structural — fast mode's $50/$10 output is still 5x
+ * input — so an override a user set for a model holds at every speed, and
+ * dropping it because the request happened to run fast would silently change
+ * their cost model. The base price is the opposite: it doubles in fast mode, so
+ * it must be stated per speed or left unknown (see `inputPriceFor`).
+ */
+export function multipliersFor(rates: Rates, key: string): RateMultipliers {
+  const base = baseModelOf(key);
+  const baseOverride = base === null ? undefined : rates.models[base]?.multipliers;
+  const keyOverride = rates.models[key]?.multipliers;
+  if (baseOverride === undefined && keyOverride === undefined) return rates.multipliers;
+  return { ...rates.multipliers, ...baseOverride, ...keyOverride };
+}
+
+/**
+ * USD per million input tokens for a rate key, or null when not configured.
+ * No fall-back to the base model: a speed variant that is not priced is
+ * unknown, never the standard rate — see `rateKey`.
+ */
+export function inputPriceFor(rates: Rates, key: string): number | null {
+  return rates.models[key]?.inputPerMTok ?? null;
 }
 
 function mergeMultipliers(raw: unknown): RateMultipliers {

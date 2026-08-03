@@ -13,7 +13,13 @@ import {
   priceUsage,
   scopeTelemetry,
 } from "../src/cost/report.js";
-import { DEFAULT_MULTIPLIERS, DEFAULT_RATES, loadRates } from "../src/cost/rates.js";
+import {
+  DEFAULT_MULTIPLIERS,
+  DEFAULT_RATES,
+  inputPriceFor,
+  loadRates,
+  multipliersFor,
+} from "../src/cost/rates.js";
 import { listTranscripts, projectTranscriptDir, readTranscript } from "../src/cost/transcript.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { makeTempRoot } from "./helpers.js";
@@ -1188,5 +1194,37 @@ describe("speed is part of the price", () => {
   it("treats an explicit standard speed as the bare model key", async () => {
     const usd = await reportWith("standard", { "test-model": { inputPerMTok: 3 } });
     expect(usd).toBeCloseTo(15, 6);
+  });
+
+  // Multipliers layer across the speed suffix; the price deliberately does not.
+  // Dropping a user's override because the request happened to run fast would
+  // silently change their cost model — the regression this pair pins down.
+  it("keeps a model's multiplier override when the request ran fast", () => {
+    const rates = {
+      ...DEFAULT_RATES,
+      models: {
+        "test-model": { inputPerMTok: 3, multipliers: { ...DEFAULT_MULTIPLIERS, output: 9 } },
+        "test-model@fast": { inputPerMTok: 6 },
+      },
+    };
+    expect(multipliersFor(rates, "test-model@fast").output).toBe(9);
+    expect(multipliersFor(rates, "test-model@fast").cacheRead).toBe(DEFAULT_MULTIPLIERS.cacheRead);
+  });
+
+  it("lets a speed variant's own override win over the base model's", () => {
+    const rates = {
+      ...DEFAULT_RATES,
+      models: {
+        "test-model": { inputPerMTok: 3, multipliers: { ...DEFAULT_MULTIPLIERS, output: 9 } },
+        "test-model@fast": { inputPerMTok: 6, multipliers: { ...DEFAULT_MULTIPLIERS, output: 11 } },
+      },
+    };
+    expect(multipliersFor(rates, "test-model@fast").output).toBe(11);
+  });
+
+  it("does not fall back to the base model's price for an unpriced speed", () => {
+    const rates = { ...DEFAULT_RATES, models: { "test-model": { inputPerMTok: 3 } } };
+    expect(inputPriceFor(rates, "test-model@fast")).toBeNull();
+    expect(inputPriceFor(rates, "test-model")).toBe(3);
   });
 });
