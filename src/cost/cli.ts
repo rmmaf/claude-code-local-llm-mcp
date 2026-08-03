@@ -220,9 +220,14 @@ async function main(): Promise<void> {
             `differently, so their multipliers have different bases and do not add; ${span}${RESET}\n`
         );
       } else {
+        // NOT "priced differently" — with a price missing, these keys cannot be
+        // compared at all, and two unpriced keys may well share a price. Saying
+        // they differ would assert a fact the rates file does not contain.
         process.stdout.write(
-          `\n  ${DIM}entry cost not shown — ${anchor.keys.join(" + ")} are priced differently ` +
-            `(no single input rate to be a multiple of) and at least one has no price at all; ${span}${RESET}\n`
+          `\n  ${DIM}entry cost not shown — this context spans ${anchor.keys.join(" + ")} and ` +
+            `${anchor.unpricedKeys.join(", ")} ${anchor.unpricedKeys.length === 1 ? "has" : "have"} ` +
+            `no inputPerMTok in ${RATES_REL_PATH}, so there is no dollar figure and no way to tell ` +
+            `whether these keys share one input rate to be a multiple of; ${span}${RESET}\n`
         );
       }
     }

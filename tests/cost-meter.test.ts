@@ -1340,6 +1340,35 @@ describe("speed is part of the price", () => {
       expect(cost?.usdPerMTok).toBeCloseTo(4.0, 6); // write is turn 0's ($1 base), not fast's
     });
 
+    // Two unpriced keys may well share a price — the rates file simply does not
+    // say. Reporting "priced differently" here would assert a fact it does not
+    // contain, the same way "we did not look" must never read as "nothing
+    // changed". The report exposes the unpriced keys so the caller can say
+    // "unknown" instead of inventing a comparison.
+    it("does not claim two unpriced keys differ — it reports that they are unpriced", () => {
+      const noPrices = { ...DEFAULT_RATES, models: {} };
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast"), req(2, "fast")], noPrices);
+      expect(cost?.multiplier).toBeNull();
+      expect(cost?.usdPerMTok).toBeNull();
+      expect(cost?.keys).toEqual(["m", "m@fast"]);
+      expect(cost?.unpricedKeys).toEqual(["m", "m@fast"]);
+    });
+
+    it("lists only the keys actually missing a price", () => {
+      const partial = {
+        ...DEFAULT_RATES,
+        models: { "m": { inputPerMTok: 1 } },
+      };
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast")], partial);
+      expect(cost?.unpricedKeys).toEqual(["m@fast"]);
+      expect(cost?.usdPerMTok).toBeNull();
+    });
+
+    it("reports no unpriced keys when the whole segment is priced", () => {
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast")], rates);
+      expect(cost?.unpricedKeys).toEqual([]);
+    });
+
     it("returns null for an empty segment", () => {
       expect(entryCostOfSegment([], rates)).toBeNull();
     });

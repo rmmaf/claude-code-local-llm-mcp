@@ -198,6 +198,13 @@ export interface EntryCost {
   requests: number;
   /** Distinct rate keys in the segment, sorted. More than one means mixed. */
   keys: string[];
+  /**
+   * The subset of `keys` with no `inputPerMTok`. Non-empty means the segment's
+   * keys cannot be COMPARED, which is not the same as their being different —
+   * two unpriced keys may well share a price. Callers must say "unknown", never
+   * "priced differently", when this is non-empty.
+   */
+  unpricedKeys: string[];
 }
 
 /**
@@ -224,6 +231,7 @@ export function entryCostOfSegment(segment: readonly BilledRequest[], rates: Rat
 
   const keys = new Set<string>([firstKey]);
   const prices = new Set<number | null>([firstPrice]);
+  const unpricedKeys = new Set<string>(firstPrice === null ? [firstKey] : []);
   let rereadRatio = 0;
   let usd = firstPrice === null ? null : (writeRatio * firstPrice) / 1_000_000;
   for (const request of ordered) {
@@ -236,8 +244,10 @@ export function entryCostOfSegment(segment: readonly BilledRequest[], rates: Rat
     rereadRatio += cacheRead;
     // Each term meets its own key's price BEFORE being summed. That is what
     // makes this figure valid across a mixed segment and the ratio not.
-    if (price === null) usd = null;
-    else if (usd !== null) usd += (cacheRead * price) / 1_000_000;
+    if (price === null) {
+      usd = null;
+      unpricedKeys.add(key);
+    } else if (usd !== null) usd += (cacheRead * price) / 1_000_000;
   }
 
   // A ratio needs one base. One key is trivially one base even when unpriced;
@@ -251,6 +261,7 @@ export function entryCostOfSegment(segment: readonly BilledRequest[], rates: Rat
     ttl,
     requests: ordered.length,
     keys: [...keys].sort(),
+    unpricedKeys: [...unpricedKeys].sort(),
   };
 }
 

@@ -1137,3 +1137,23 @@ The general lesson is the one the file already had and I did not apply: a number
 that is dimensionally wrong looks exactly like a number that is right. The
 uniform case — which is every session so far — agreed with the correct answer
 throughout, which is why four rounds of review were needed to find it.
+
+### "Unknown" is not "different"
+
+The branch that fires when a mixed segment has an unpriced key said the keys
+"are priced differently". It cannot know that. Two keys with no `inputPerMTok`
+may share a price exactly; the rates file simply does not say. The message
+asserted a pricing fact the data does not contain — the same failure as letting
+"we did not look" read as "nothing changed", which this file already records
+for `treeFingerprint`, committed again three sections later.
+
+`EntryCost.unpricedKeys` now carries the keys actually missing a price, and the
+CLI names them and says the comparison cannot be made. The neighbouring branch
+keeps "priced differently" because there it is true: every price is known and
+they are not equal.
+
+Worth noting how narrow the survival path was. The wrong claim only printed for
+a segment that both mixes rate keys and lacks a price, on a line that until two
+commits ago never rendered at all. Three of the last four review findings lived
+in cases the live session cannot reach — which is the argument for reviewing
+the branch you cannot run, not the one you can.
