@@ -232,6 +232,45 @@ else
   skip "no status.json to compare against"
 fi
 
+# ---------------------------------- 5b. audit the catalog that is IN FORCE
+# Deliberately NOT conditional on anything above. A catalog can be fully
+# "available" and still be wrong — an already-exported placeholder CSV lists
+# only ids LM Studio offers, so the missing-model check above passes it and
+# says "nothing to do" over a catalog holding an embedding model and a
+# general-purpose model as the auto-selection pick.
+printf '\n%s\n' "5b. audit of the catalog actually in force"
+if [ -s "$OUT/status.json" ]; then
+  node -e '
+    const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const EMBED = /embed/i, CODER = /coder|code/i;
+    let bad = 0;
+    console.log("  catalog source: " + (s.config.models_csv_path ??
+      "BUILT-IN DEFAULT (no LOCAL_CODER_MODELS_CSV in this shell — if you meant to" +
+      "\n                  use your own CSV, it is NOT active right now)"));
+    const embeds = s.catalog.filter((m) => EMBED.test(m.model)).map((m) => m.model);
+    if (embeds.length) {
+      console.log("  embedding model(s) in the catalog: " + embeds.join(", "));
+      console.log("     these cannot serve chat completions — delete those lines");
+      bad++;
+    }
+    console.log("  auto-selection would use: " + s.auto_selection.model);
+    if (!CODER.test(s.auto_selection.model)) {
+      console.log("     that does not look like a coding model. Selection takes the largest");
+      console.log("     that FITS, so repair would run on it and B6/B7 would measure the");
+      console.log("     wrong model. Remove the larger non-coder entries.");
+      bad++;
+    }
+    process.exit(bad ? 1 : 0);
+  ' "$OUT/status.json" 2>/dev/null | tee -a "$SUMMARY"
+  if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+    pass "catalog in force looks sane"
+  else
+    fail "catalog in force needs editing — see the lines above"
+  fi
+else
+  skip "no status.json to audit"
+fi
+
 # ------------------------------------------------------------ 6. smoke test
 printf '\n%s\n' "6. smoke test — the <file>-block contract, end to end"
 if [ -s "$OUT/lmstudio-models.json" ]; then
