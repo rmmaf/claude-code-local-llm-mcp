@@ -5,21 +5,23 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B1 fell and G1 reopened.** Meter $119.11 vs `/usage` $35.96 — +231% against a
-5% threshold (`run 2026-08-03-win-04`). Two independent failures: the meter sees
-65% of `/usage`'s tokens for the same session, and `/usage` reports 20.0% of
-list price for its own tokens — the two never measured the same quantity. The
-transcript itself is consistent. `scripts/mac-check.sh` sets up and audits the
-Mac; its first run cleared install/lms/server/status and flagged the catalog.
+**The Mac is green end to end** (`run 2026-08-03-mac-02`): install, `lms`,
+server, status, a coder-only catalog with 4 of 4 models matched and sized, the
+smoke test, and the full suite. The `<file>`-block contract is verified against
+a real local model. The one red test was a Windows path literal, fixed in
+`3c6242a` and now confirmed against the real slugs on that machine.
+**B1 fell and G1 reopened**: meter $119.11 vs `/usage` $35.96, +231% against a
+5% threshold, and the two never measured the same quantity.
 
 ## Next action
 
-**On the Mac: trim the generated catalog to coder models, then run `repair` on a
-real failure.** B6 (`passed`, `rounds_used`) and B7 (`rounds[].model_latency_ms`,
-`gate_ms`) come from `repair`'s own payload and never touch the meter, so G1
-being reopened does not block them. Nothing meter-derived counts until the meter
-agrees with a comparator pre-registered as its own premise — `/usage` is not a
-list-price oracle.
+**Register the MCP on the Mac, restart, and run `repair` on a real failure.**
+Nothing has yet run inside a Claude Code session there — `~/.claude/projects`
+has no entry for the repo, which is why telemetry is still empty. B6 (`passed`,
+`rounds_used`) and B7 (`rounds[].model_latency_ms`, `gate_ms`) come from
+`repair`'s own payload, so a reopened G1 does not block them. Record which
+model ran: free RAM moved 28.2 → 15.6 → 18.1 GB across runs and at 15.6 the
+pick silently changed from the 30B to the 14B.
 
 ## Waiting on
 
@@ -30,7 +32,6 @@ list-price oracle.
 ## Do not redo
 
 - **Verify with `npm test`, not `npx vitest run`** — the latter skips the build.
-- Read timestamps from the clock in the command that writes them.
-- **Never report an inferred cause as an observed one.** B2, `treeFingerprint`
-  and four reviews of `mac-check.sh` were all this. Quote whatever actually
-  knows, or say you did not look — a guessed reason reads as a finding.
+- **Never report an inferred cause as an observed one.** Ten reviews of
+  `mac-check.sh` were all this, and the last one hit the *justification*, not
+  the code. Quote whatever actually knows, or say you did not look.
