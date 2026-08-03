@@ -527,6 +527,30 @@ async function repairLoop(
       let roundError: string | undefined;
       let concurrentEdit = false;
       let budgetCutItOff = false;
+      /**
+       * What `remaining` was when the request that may time out was issued —
+       * the INPUT to `min(config.timeoutMs, remaining)` in `shared.ts`, captured
+       * as it is read rather than reconstructed from the result.
+       *
+       * The output cannot answer this. `min` maps both "the budget had exactly
+       * `config.timeoutMs` left" and "the budget had more than that" onto the
+       * same applied value, and `Math.max(1, ...)` folds every sub-millisecond
+       * remainder onto 1 — so a tie is indistinguishable from a comfortable
+       * budget downstream. The tie is not a corner case either: `config.timeoutMs`
+       * and `DEFAULT_BUDGET_SECONDS` share a default, so round 1 hits it whenever
+       * the first gate costs nothing.
+       *
+       * Re-declared per round, so a later round cannot be judged on an earlier
+       * one's reading. `resolveModel` reads it too, before the attempt loop, and
+       * is harmlessly overwritten — it swallows its own timeout, so no
+       * `llm_timeout` of its making ever reaches the catch below.
+       */
+      let remainingAtIssue: number | null = null;
+      const trackedRemaining = (): number => {
+        const value = remainingMs();
+        remainingAtIssue = value;
+        return value;
+      };
 
       try {
         const generation = await runGeneration(
@@ -546,7 +570,7 @@ async function repairLoop(
             // Generation runs for minutes, so this is checked again immediately
             // before the write rather than trusted from here.
             expectedContent: new Map(snapshots.map((s) => [s.rel, s.lastWritten])),
-            remainingMs,
+            remainingMs: trackedRemaining,
           }
         );
         model = generation.model;
@@ -554,22 +578,17 @@ async function repairLoop(
       } catch (error) {
         roundError = error instanceof Error ? error.message : String(error);
         concurrentEdit = error instanceof ToolError && error.code === "concurrent_modification";
-        // WHICH ceiling fired, read from the ceiling itself rather than guessed
-        // afterwards. `llm_timeout` carries the timeout it applied, and
-        // `shared.ts` applies `min(config.timeoutMs, remaining)` — so a value
-        // BELOW `config.timeoutMs` is the budget having been the binding
-        // constraint, recorded at the moment the constraint was computed. A
-        // clock read here cannot recover that: by the time the abort has
-        // propagated, the deadline has usually passed no matter which limit
-        // fired, so it reports `budget` for per-request timeouts too.
-        // (`resolveModel`'s `/models` probe swallows its own timeout, so this
-        // is the generation's ceiling and not some earlier step's.)
-        const appliedTimeoutMs =
-          error instanceof ToolError && error.code === "llm_timeout"
-            ? error.details["timeout_ms"]
-            : undefined;
+        // WHICH ceiling fired, from the budget that was actually on the clock
+        // when the request went out — not from a clock read here, which by now
+        // has moved, and not from the applied timeout, which `min` has already
+        // made ambiguous. `<=` and not `<`: on a tie both ceilings bind at the
+        // same instant, the budget is spent either way, and one iteration later
+        // the loop's own between-rounds branch would call that `budget`.
         budgetCutItOff =
-          typeof appliedTimeoutMs === "number" && appliedTimeoutMs < config.timeoutMs;
+          error instanceof ToolError &&
+          error.code === "llm_timeout" &&
+          remainingAtIssue !== null &&
+          remainingAtIssue <= config.timeoutMs;
         log.warn(
           concurrentEdit
             ? `repair round ${round}: aborting without writing — ${roundError}`
@@ -601,8 +620,8 @@ async function repairLoop(
         // that hit `config.timeoutMs` with budget to spare: the ceiling it broke
         // was its own, and `budget` would claim an exhaustion that never
         // happened. Both mislabels corrupt the same telemetry, so neither is the
-        // safe default — which is why the branch reads the applied timeout above
-        // instead of consulting the clock.
+        // safe default — which is why the branch above reads the budget that was
+        // on the clock instead of guessing from what happened afterwards.
         stoppedBecause = concurrentEdit ? "concurrent_edit" : budgetCutItOff ? "budget" : "model_failed";
         break;
       }

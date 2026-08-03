@@ -354,6 +354,41 @@ describe("repair loop", () => {
     expect(result.stopped_because).toBe("model_failed");
   });
 
+  it("calls a dead heat between the two ceilings `budget`", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // remaining === config.timeoutMs exactly, so min() returns config.timeoutMs
+    // and the applied value can no longer tell a tie from a comfortable budget.
+    // Both ceilings bind at the same instant and the budget is spent either way
+    // — one iteration later the between-rounds branch would call this `budget`,
+    // so calling it anything else here contradicts the loop's own accounting.
+    // Not a corner case: config.timeoutMs and DEFAULT_BUDGET_SECONDS share a
+    // default, so round 1 lands on the tie whenever the first gate is free.
+    let elapsed = 0;
+    const fetchImpl = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("The operation was aborted."));
+        });
+      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+
+    const result = await runRepair(
+      { ...baseArgs, budget_seconds: 1, max_rounds: 1 },
+      testConfig(root, { timeoutMs: 50 }),
+      {
+        processRunner: async () => {
+          elapsed = 950; // leaves exactly 50 ms, the per-request limit to the ms
+          return { stdout: tscErrors(2), stderr: "", code: 2, timedOut: false };
+        },
+        fetchImpl,
+        runner: noLmsRunner(),
+        now: () => 1_000_000 + elapsed,
+      }
+    );
+
+    expect(result.stopped_because).toBe("budget");
+  });
+
   it("feeds the gate's structured failures to the model, not raw build output", async () => {
     const root = tempRoot();
     await setup(root);
