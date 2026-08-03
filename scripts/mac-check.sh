@@ -28,7 +28,10 @@ fi
 # Every run gets its own directory. Reusing one would let a step that failed
 # today be answered by yesterday's file, and would tar artifacts from several
 # runs into one archive — a measurement has to belong to exactly one run.
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+# Second precision alone collides when two runs start within the same second,
+# and mkdir -p reuses the directory silently, mixing two runs' files. The pid
+# makes it unique.
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 RESULTS_HOME="${LC_RESULTS:-$HOME/lc-results}"
 OUT="$RESULTS_HOME/$RUN_ID"
 ARCHIVE="$RESULTS_HOME/lc-results-$RUN_ID.tgz"
@@ -191,6 +194,12 @@ fi
 rm -f "$PROBE"
 
 # ------------------------------- 5. does the catalog match what you DOWNLOADED?
+# Set only by the branch below that actually wrote a file, so 5b reports what
+# happened instead of guessing from the filesystem. Existence was not enough:
+# the run directory can be shared when two runs start in the same second, or
+# when LC_RESULTS pins it, and a previous run's file would then be credited to
+# this one.
+CATALOG_WRITTEN=""
 printf '\n%s\n' "5. catalog vs what LM Studio actually offers"
 if [ -s "$OUT/status.json" ]; then
   node -e '
@@ -293,9 +302,11 @@ if [ -s "$OUT/status.json" ]; then
   ' "$OUT/status.json" "$OUT/models.local.csv" 2>/dev/null | tee -a "$SUMMARY"
   # PIPESTATUS is clobbered by the next pipeline, so read it on the next line.
   case "${PIPESTATUS[0]}" in
-    0) pass "wrote a coder-only catalog → $OUT/models.local.csv
+    0) CATALOG_WRITTEN="$OUT/models.local.csv"
+       pass "wrote a coder-only catalog → $OUT/models.local.csv
       to use it:  export LOCAL_CODER_MODELS_CSV=\"$OUT/models.local.csv\"" ;;
-    2) fail "no installed model looks like a coding model — see above" ;;
+    2) CATALOG_WRITTEN="$OUT/models.local.csv"
+       fail "no installed model looks like a coding model — see above" ;;
     *) skip "could not compare — LM Studio offered no models" ;;
   esac
 else
@@ -322,13 +333,12 @@ if [ -s "$OUT/status.json" ]; then
       // path goes stale the moment the next run starts. Both files work; say
       // which one is actually being read so the two paths on screen are not
       // mistaken for a conflict.
-      // Check it exists rather than assuming step 5 got that far: step 5 exits
-      // early when LM Studio lists no models, and is skipped entirely when the
-      // status probe failed. The run directory is created fresh each run, so a
-      // file present in it was written by this run — existence is enough.
+      // argv[3] is set by the caller ONLY on the branch that wrote a file, so
+      // this reports what step 5 did rather than what the directory contains.
+      // Checking existence instead would credit a file from an earlier run to
+      // this one whenever the run directory is shared.
       const written = process.argv[3];
-      const wroteOne = Boolean(written) && require("fs").existsSync(written);
-      if (wroteOne && src.csv_path !== written) {
+      if (written && src.csv_path !== written) {
         console.log("     (this run wrote a fresh one to " + written + " —");
         console.log("      the one above is from an earlier run and is what counts. Re-export");
         console.log("      only if you want the newest.)");
@@ -404,7 +414,7 @@ if [ -s "$OUT/status.json" ]; then
       }
     }
     process.exit(bad ? 1 : 0);
-  ' "$OUT/status.json" "$OUT/status.err" "$OUT/models.local.csv" 2>/dev/null | tee -a "$SUMMARY"
+  ' "$OUT/status.json" "$OUT/status.err" "$CATALOG_WRITTEN" 2>/dev/null | tee -a "$SUMMARY"
   if [ "${PIPESTATUS[0]}" -eq 0 ]; then
     pass "catalog in force looks sane"
   else
