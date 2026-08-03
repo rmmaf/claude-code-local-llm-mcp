@@ -176,6 +176,28 @@ pre-registered as its own premise before anything is measured against it.
   concluding anything about the mechanism.
 - **Status:** open
 
+## B0 — the delegation tools can operate on this project's own files
+
+- **Assumed:** implicitly, and never stated until it failed — (assumed)
+- **Source of the assumption:** none. It was never written down, which is why it
+  was never checked.
+- **Experiment:** call `implement` on a file of ordinary size for this
+  repository and see whether the result arrives complete.
+- **Measured:** **it does not.** `run 2026-08-03-mac-05`: `implement` truncated
+  repeatedly on `src/selection.ts` (380 lines) with `qwen3-coder-30b` and the
+  default 8192-token cap. `src/tools/shared.ts:78` requires the model to return
+  *the complete final content of every editable file*, so output is the **sum**
+  of the files in the request, regenerated on every attempt and every `repair`
+  round. `repair.ts` is 699 lines; `report.ts` 554.
+- **Falls if:** it already has — the ceiling is structural, not a tuning knob.
+- **If it falls:** B6 and B7 are measuring a tool that cannot reach the files
+  they claim to be about. Either the output contract stops being whole-file, or
+  the tools are scoped to small files and said to be. **Raising
+  `LOCAL_CODER_MAX_OUTPUT_TOKENS` buys headroom, not a fix:** the cost still
+  scales with total file size × rounds.
+- **Status:** **fallen**, and it precedes B6 — decide the contract before
+  spending more runs on close rates.
+
 ## B6 — `repair` closes ≥ 50% of mechanical failures within 3 rounds
 
 - **Assumed:** ≥ 50% — (assumed)
@@ -184,7 +206,16 @@ pre-registered as its own premise before anything is measured against it.
   local model; every test uses a mocked one.
 - **Experiment:** 20 real mechanical failures (type errors, failing assertions,
   lint, missing imports); record `passed` and `rounds_used`.
-- **Measured:** — (no run)
+- **Measured:** **1 of 20, and it did not close.** `run 2026-08-03-mac-05`: 32
+  `tsc` errors from a real local-model diff. One call exhausted its time budget
+  producing nothing; a 2-round call went 32 → 12 without closing; a third 12 → 2;
+  a fourth closed the types; a fifth replaced the faulty algorithm. Convergence
+  took roughly four narrowed calls with hand-written specs, none of them closing
+  the failure in 3 rounds. **One task is not a rate — this does not decide B6.**
+  Raw payloads were not captured, so the round counts come from a session
+  narrative rather than from `rounds_used`, and B7 has nothing at all.
+  **B0 fell underneath this**, so part of what was measured here is the
+  whole-file output contract truncating, not the repair loop failing.
 - **Falls if:** < 30%.
 - **If it falls:** `repair` degrades to a one-shot `fix` with a gate around it,
   and the turn-collapse lever is worth roughly a third of the estimate.
