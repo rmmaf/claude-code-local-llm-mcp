@@ -176,6 +176,50 @@ export function positionalMultiplier(t: number, T: number, m: RateMultipliers, t
   return write + m.cacheRead * Math.max(0, T - 1 - t);
 }
 
+export interface EntryCost {
+  /** Total multiple of the input rate paid by a token entering at turn 0. */
+  multiplier: number;
+  /** The write component, at turn 0's own rate and TTL. */
+  write: number;
+  ttl: "1h" | "5m";
+  /** Sum of the later requests' own cache-read multipliers. */
+  reread: number;
+  requests: number;
+  /** Distinct rate keys in the segment, sorted. More than one means mixed. */
+  keys: string[];
+}
+
+/**
+ * The exact cost of a token entering at turn 0 of one segment: the cache write
+ * at that first request's own rate and TTL, plus **each later request's own**
+ * cache-read rate.
+ *
+ * `positionalMultiplier` assumes a single rate for the whole segment. That is
+ * right for stating the model and wrong for measuring a real session: `/model`
+ * and `/fast` are both togglable mid-segment, and once either is, every re-read
+ * after the switch was being priced at the pre-switch rate — with the TTL taken
+ * from turn 0 alone. Summing per request costs nothing and cannot drift.
+ */
+export function entryCostOfSegment(segment: readonly BilledRequest[], rates: Rates): EntryCost | null {
+  const ordered = [...segment].sort((a, b) => a.index - b.index);
+  const first = ordered[0];
+  if (first === undefined) return null;
+
+  const keys = new Set<string>();
+  let reread = 0;
+  for (const request of ordered) {
+    const key = rateKey(request.model, request.speed);
+    keys.add(key);
+    // Turn 0 pays the write, not a re-read of itself.
+    if (request.index !== first.index) reread += multipliersFor(rates, key).cacheRead;
+  }
+
+  const firstM = multipliersFor(rates, rateKey(first.model, first.speed));
+  const ttl: "1h" | "5m" = first.usage.cacheWrite5m > first.usage.cacheWrite1h ? "5m" : "1h";
+  const write = ttl === "1h" ? firstM.cacheWrite1h : firstM.cacheWrite5m;
+  return { multiplier: write + reread, write, ttl, reread, requests: ordered.length, keys: [...keys].sort() };
+}
+
 export interface ToolSaving {
   tool: string;
   calls: number;

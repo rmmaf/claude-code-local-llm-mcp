@@ -19,8 +19,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { readTelemetry, TELEMETRY_REL_PATH } from "../telemetry.js";
-import { loadRates, multipliersFor, rateKey, RATES_REL_PATH } from "./rates.js";
-import { buildCounterfactual, buildSessionReport, positionalMultiplier, scopeTelemetry } from "./report.js";
+import { loadRates, RATES_REL_PATH } from "./rates.js";
+import { buildCounterfactual, buildSessionReport, entryCostOfSegment, scopeTelemetry } from "./report.js";
 import { listTranscripts, projectTranscriptDir, readTranscript } from "./transcript.js";
 
 // Built at runtime so no escape sequence has to survive a file round-trip.
@@ -191,18 +191,24 @@ async function main(): Promise<void> {
       if (request.isSidechain || request.index !== 0) continue;
       if (firstMain === undefined || request.segmentSize > firstMain.segmentSize) firstMain = request;
     }
-    if (firstMain !== undefined && firstMain.segmentSize > 1) {
-      // Same key the report priced with. Reading the bare model here would put
-      // a headline multiplier on screen that contradicts the USD above it.
-      const m = multipliersFor(rates, rateKey(firstMain.model, firstMain.speed));
-      const ttl = firstMain.usage.cacheWrite5m > firstMain.usage.cacheWrite1h ? "5m" : "1h";
-      const multiplier = positionalMultiplier(0, firstMain.segmentSize, m, ttl);
-      const write = ttl === "1h" ? m.cacheWrite1h : m.cacheWrite5m;
+    // Summed per request rather than multiplied out: `/model` and `/fast` can
+    // both be toggled mid-segment, and a single rate applied across the whole
+    // span would price every re-read after the switch at the pre-switch rate.
+    const anchor =
+      firstMain === undefined
+        ? null
+        : entryCostOfSegment(
+            transcript.requests.filter((r) => !r.isSidechain && r.segment === firstMain.segment),
+            rates
+          );
+    if (anchor !== null && anchor.requests > 1) {
+      const mixed = anchor.keys.length > 1 ? ` across ${anchor.keys.join(" + ")}` : "";
       process.stdout.write(
         `\n  ${BOLD}a token entering at turn 0 of this session's longest context costs ` +
-          `${multiplier.toFixed(1)}x the input rate${RESET}\n` +
-          `  ${DIM}${write} (cache write, ${ttl}) + ${m.cacheRead} x ${firstMain.segmentSize - 1} re-reads` +
-          `; that context ran ${firstMain.segmentSize} requests${RESET}\n`
+          `${anchor.multiplier.toFixed(1)}x the input rate${RESET}\n` +
+          `  ${DIM}${anchor.write} (cache write, ${anchor.ttl}) + ${anchor.reread.toFixed(1)} ` +
+          `summed over ${anchor.requests - 1} re-reads; that context ran ${anchor.requests} requests` +
+          `${mixed}${RESET}\n`
       );
     }
 

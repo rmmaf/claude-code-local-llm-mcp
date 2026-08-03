@@ -1092,3 +1092,21 @@ passing test suite: nothing asserted the line appears.
 future.** Both caught by review, not by me. Timestamps are read from the clock
 now — `new Date().toISOString()` in the same command that writes the row, never
 typed.
+
+### The headline is summed, not multiplied
+
+Reviving the headline was not enough: it still applied turn 0's rate across the
+whole segment via `positionalMultiplier`. That is the right way to *state* the
+model and the wrong way to *measure* a session — `/model` and `/fast` are both
+togglable mid-segment, so after either switch every re-read was being priced at
+the pre-switch rate, with the TTL read from turn 0 alone.
+
+`entryCostOfSegment` now sums each later request's own cache-read multiplier and
+takes the write from turn 0's own key and TTL. On a uniform segment it agrees
+with `positionalMultiplier` exactly — a test pins that, so the closed form stays
+the documented model and the sum stays the measurement. When a segment does span
+more than one rate key, the line names them rather than averaging them away.
+
+`positionalMultiplier` is unchanged and still used where a single rate is the
+right assumption: the counterfactual prices one tool call against the one
+request it was matched to.

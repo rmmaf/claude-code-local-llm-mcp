@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildCounterfactual,
   buildSessionReport,
+  entryCostOfSegment,
   positionalMultiplier,
   priceUsage,
   scopeTelemetry,
@@ -20,6 +21,7 @@ import {
   loadRates,
   multipliersFor,
 } from "../src/cost/rates.js";
+import type { BilledRequest } from "../src/cost/transcript.js";
 import { listTranscripts, projectTranscriptDir, readTranscript } from "../src/cost/transcript.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { makeTempRoot } from "./helpers.js";
@@ -1259,5 +1261,57 @@ describe("speed is part of the price", () => {
   it("reports no unpriced keys when everything is priced", async () => {
     const usd = await reportWith(undefined, { "test-model": { inputPerMTok: 3 } });
     expect(usd).not.toBeNull();
+  });
+
+  // /model and /fast are both togglable mid-segment. Applying turn 0's rate
+  // across the whole span prices every re-read after the switch wrongly, and
+  // the headline is the one number carrying the architecture's argument.
+  describe("entryCostOfSegment", () => {
+    const rates = {
+      ...DEFAULT_RATES,
+      models: {
+        "m": { inputPerMTok: 1, multipliers: { ...DEFAULT_MULTIPLIERS, cacheRead: 0.1 } },
+        "m@fast": { inputPerMTok: 2, multipliers: { ...DEFAULT_MULTIPLIERS, cacheRead: 0.5 } },
+      },
+    };
+    const req = (index: number, speed: string | null): BilledRequest =>
+      ({
+        requestId: `r${index}`,
+        sessionId: "s",
+        model: "m",
+        speed,
+        isSidechain: false,
+        timestampMs: index,
+        thread: "main",
+        segment: 0,
+        index,
+        segmentSize: 4,
+        usage: { ...zero, cacheWrite1h: 10 },
+        toolUses: [],
+      }) as BilledRequest;
+    const zero = { input: 0, cacheWrite1h: 0, cacheWrite5m: 0, cacheRead: 0, output: 0 };
+
+    it("sums each later request's own cache-read rate", () => {
+      // turn 0 standard, then two fast turns: 2.0 write + 0.5 + 0.5.
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast"), req(2, "fast")], rates);
+      expect(cost?.multiplier).toBeCloseTo(3.0, 6);
+      expect(cost?.keys).toEqual(["m", "m@fast"]);
+    });
+
+    it("agrees with positionalMultiplier when the segment is uniform", () => {
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "standard"), req(2, "standard")], rates);
+      const flat = positionalMultiplier(0, 3, multipliersFor(rates, "m"), "1h");
+      expect(cost?.multiplier).toBeCloseTo(flat, 6);
+    });
+
+    it("takes the write from turn 0, not from whichever request came first in the array", () => {
+      const cost = entryCostOfSegment([req(2, "fast"), req(0, "standard"), req(1, "fast")], rates);
+      expect(cost?.write).toBe(DEFAULT_MULTIPLIERS.cacheWrite1h); // turn 0 is standard
+      expect(cost?.multiplier).toBeCloseTo(3.0, 6);
+    });
+
+    it("returns null for an empty segment", () => {
+      expect(entryCostOfSegment([], rates)).toBeNull();
+    });
   });
 });
