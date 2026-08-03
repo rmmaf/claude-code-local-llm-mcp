@@ -299,6 +299,12 @@ export interface SelectionDeps {
   /** Present only to detect that the caller controls fetch — never used to probe. */
   fetchImpl?: FetchLike;
   /**
+   * Milliseconds left on the caller's hard deadline. `repair` sets one and
+   * enforces it round by round; a probe that ignored it could spend seconds
+   * before generation even starts and push the whole call past the wall.
+   */
+  remainingMs?: () => number;
+  /**
    * ONLY for the `/models` probe below — deliberately not the same field the
    * chat client uses. Sharing one fetch made this probe consume a queued test
    * response meant for the generation call, so every later request shifted by
@@ -345,12 +351,17 @@ export async function resolveModel(
   // machine running LM Studio, different elsewhere. Probe only with a fetch we
   // were actually handed, or the real one when nothing was injected at all.
   const probeFetch = deps.modelsFetchImpl ?? (deps.fetchImpl === undefined ? fetch : null);
+  // The probe spends wall-clock before generation starts, so it comes out of
+  // the caller's deadline like anything else. With nothing left it is skipped
+  // outright: sending the catalog id may fail, but blowing a hard budget on a
+  // lookup is the one outcome the deadline exists to prevent.
+  const remaining = deps.remainingMs?.() ?? Number.POSITIVE_INFINITY;
   let apiModelIds: string[] | null = null;
-  if (probeFetch !== null) {
+  if (probeFetch !== null && remaining > 0) {
     try {
       apiModelIds = await listModels(
         config.baseUrl,
-        Math.min(config.timeoutMs, RESOLVE_PROBE_TIMEOUT_MS),
+        Math.min(config.timeoutMs, RESOLVE_PROBE_TIMEOUT_MS, remaining),
         probeFetch
       );
     } catch (error) {
@@ -359,6 +370,8 @@ export async function resolveModel(
           `sending the catalog id as written`
       );
     }
+  } else if (probeFetch !== null) {
+    log.warn("selection: no budget left to list served models; sending the catalog id as written");
   }
   const report = buildCatalogReport(catalog, apiModelIds, lms, null, usableFree(memory, config.memFitFraction));
   const selection = selectModelForMemory(report, catalog);

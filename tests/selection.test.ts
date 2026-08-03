@@ -249,6 +249,54 @@ describe("resolveModel", () => {
     expect(sel.reason).toContain("served as");
   });
 
+  it("skips the probe when the caller has no budget left", async () => {
+    // repair enforces a hard wall-clock deadline round by round. A lookup that
+    // ignored it could spend seconds before generation even starts.
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model-mlx@8bit", sizeBytes: 8 * GB }]),
+    });
+    let probed = 0;
+    const modelsFetchImpl = async () => {
+      probed++;
+      return new Response(JSON.stringify({ data: [{ id: "test-ide-model-mlx@8bit" }] }), { status: 200 });
+    };
+    const sel = await resolveModel(undefined, config, {
+      platform: "darwin",
+      runner,
+      modelsFetchImpl,
+      remainingMs: () => 0,
+    });
+    expect(probed).toBe(0);
+    // Degrades to the catalog id, which is the honest answer when we could not look.
+    expect(sel.model).toBe("test-ide-model");
+  });
+
+  it("caps the probe timeout by the remaining budget", async () => {
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model-mlx@8bit", sizeBytes: 8 * GB }]),
+    });
+    // Never resolves: only a timeout shorter than the test's own patience ends it.
+    const modelsFetchImpl = (_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    const started = Date.now();
+    const sel = await resolveModel(undefined, config, {
+      platform: "darwin",
+      runner,
+      modelsFetchImpl: modelsFetchImpl as never,
+      remainingMs: () => 50,
+    });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(sel.model).toBe("test-ide-model");
+  });
+
   it("does not reach the network when the caller injected a fetch", async () => {
     // An injected chat fetch means the caller owns this process's network
     // surface. Probing past it would make the offline suite depend on whatever
