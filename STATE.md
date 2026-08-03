@@ -5,26 +5,24 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B1 fell and G1 reopened.** Meter $119.11 vs `/usage` $35.96 — +231% against
-a 5% threshold, both read within a minute (`run 2026-08-03-win-04`). Two
-independent failures: the meter counts 65% of `/usage`'s tokens for the same
-session, and `/usage` reports exactly 20.0% of published list price for its
-own tokens — the two sides never measured the same thing. The transcript is
-internally consistent: dedup clean, no missing `requestId`, `iterations`
-summing to the top level. `npm test`: **4 failed / 228 passed**.
+**B1 fell and G1 reopened.** Meter $119.11 vs `/usage` $35.96 — +231% against a
+5% threshold (`run 2026-08-03-win-04`). Two independent failures: the meter sees
+65% of `/usage`'s tokens for the same session, and `/usage` reports 20.0% of
+list price for its own tokens — the two never measured the same quantity. The
+transcript itself is consistent. `scripts/mac-check.sh` sets up and audits the
+Mac; its first run cleared install/lms/server/status and flagged the catalog.
 
 ## Next action
 
-**Decide what the meter is compared against and pre-register it as its own
-premise before measuring anything with it** — `/usage` is not a list-price
-oracle. Then close the scope gap: the 35% of tokens it counts and the
-transcript does not. Until the meter agrees nothing meter-derived counts
-(B12, `savedFraction`). B6/B7 come from `repair`'s own payload and never touch
-the meter, so the Mac is not blocked — `smoke-test` first, then `repair`.
+**On the Mac: trim the generated catalog to coder models, then run `repair` on a
+real failure.** B6 (`passed`, `rounds_used`) and B7 (`rounds[].model_latency_ms`,
+`gate_ms`) come from `repair`'s own payload and never touch the meter, so G1
+being reopened does not block them. Nothing meter-derived counts until the meter
+agrees with a comparator pre-registered as its own premise — `/usage` is not a
+list-price oracle.
 
 ## Waiting on
 
-- A real local model → B6 and B7; `repair` has never met one
 - **B5 needs a different repository** — this one configures 2 checks, so 1
   collapsed turn is its structural ceiling and a ≥ 2 threshold is unreachable
 - B3 needs 19 more real `gate` calls; just keep verifying with `gate`
@@ -32,5 +30,7 @@ the meter, so the Mac is not blocked — `smoke-test` first, then `repair`.
 ## Do not redo
 
 - **Verify with `npm test`, not `npx vitest run`** — the latter skips the build.
-- Read timestamps from the clock in the command that writes them. Twice this
-  session I typed one from memory and it landed in the future.
+- Read timestamps from the clock in the command that writes them.
+- **Never report an inferred cause as an observed one.** B2, `treeFingerprint`
+  and four reviews of `mac-check.sh` were all this. Quote whatever actually
+  knows, or say you did not look — a guessed reason reads as a finding.
