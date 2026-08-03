@@ -122,15 +122,39 @@ else
   trap '[ -n "${PROBE:-}" ] && rm -f "$PROBE"' EXIT INT TERM
 fi
 [ -n "$PROBE" ] && cat > "$PROBE" <<'TS'
+import { promises as fsp } from "node:fs";
 import { loadConfig } from "./src/config.js";
-import { loadModelCatalog } from "./src/models-csv.js";
+import { DEFAULT_MODEL_CATALOG, loadModelCatalog } from "./src/models-csv.js";
 import { runStatus } from "./src/tools/status.js";
 import { buildCatalogReport, serializeReport } from "./src/selection.js";
 import { getLmsModels } from "./src/lms.js";
 
 const config = loadConfig(process.env, process.cwd());
-config.models = await loadModelCatalog(config.modelsCsvPath);
+const csvPath = config.modelsCsvPath;
+config.models = await loadModelCatalog(csvPath);
 const status = await runStatus(config);
+
+// config.models_csv_path records the ENV VAR, not what loaded. loadModelCatalog
+// falls back to the built-in catalog on an unreadable file AND on a file with no
+// usable rows, warning only to stderr — so a set path proves intent, never that
+// the CSV is in force. Both fallbacks `return DEFAULT_MODEL_CATALOG` itself, so
+// reference identity settles it exactly, with no false positive on a CSV that
+// happens to list the same models.
+const usingDefault = config.models === DEFAULT_MODEL_CATALOG;
+let csvReadable = null;
+if (csvPath !== null) {
+  try { await fsp.access(csvPath); csvReadable = true; } catch { csvReadable = false; }
+}
+const catalog_source = {
+  csv_path: csvPath,
+  csv_readable: csvReadable,
+  in_force: usingDefault ? "built-in-default" : "csv",
+  detail:
+    csvPath === null ? "no LOCAL_CODER_MODELS_CSV set in this shell"
+    : !usingDefault ? `${config.models.length} model(s) loaded from the CSV`
+    : csvReadable === false ? "the path is set but the file could not be read"
+    : "the file was read but produced no usable rows",
+};
 
 // Size every model LM Studio OFFERS, not just the catalog ones, by running the
 // offered ids back through the server's own matcher. Reused rather than
@@ -146,7 +170,7 @@ const offered = buildCatalogReport(
   null,
   null
 ).map(serializeReport);
-process.stdout.write(JSON.stringify({ ...status, offered }, null, 2) + "\n");
+process.stdout.write(JSON.stringify({ ...status, offered, catalog_source }, null, 2) + "\n");
 TS
 if [ -n "$PROBE" ] && (cd "$REPO_ROOT" && npx tsx "$PROBE") > "$OUT/status.json" 2>"$OUT/status.err"; then
   pass "status captured → status.json"
@@ -244,9 +268,14 @@ if [ -s "$OUT/status.json" ]; then
     const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
     const EMBED = /embed/i, CODER = /coder|code/i;
     let bad = 0;
-    console.log("  catalog source: " + (s.config.models_csv_path ??
-      "BUILT-IN DEFAULT (no LOCAL_CODER_MODELS_CSV in this shell — if you meant to" +
-      "\n                  use your own CSV, it is NOT active right now)"));
+    const src = s.catalog_source;
+    console.log("  catalog in force: " + (src.in_force === "csv" ? src.csv_path : "BUILT-IN DEFAULT"));
+    console.log("     " + src.detail);
+    if (src.in_force !== "csv" && src.csv_path !== null) {
+      console.log("     LOCAL_CODER_MODELS_CSV points at " + src.csv_path + " but that file is");
+      console.log("     NOT what is running. Whatever you edited there is having no effect.");
+      bad++;
+    }
     const embeds = s.catalog.filter((m) => EMBED.test(m.model)).map((m) => m.model);
     if (embeds.length) {
       console.log("  embedding model(s) in the catalog: " + embeds.join(", "));
