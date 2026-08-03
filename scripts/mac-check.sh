@@ -200,54 +200,64 @@ if [ -s "$OUT/status.json" ]; then
       console.log("  LM Studio lists no models at all — nothing to match against.");
       process.exit(3);
     }
+    const EMBED = /embed/i, CODER = /coder|code/i;
+
+    // (a) Informational: catalog entries LM Studio does not offer.
     const missing = s.catalog.filter((m) => m.available !== true).map((m) => m.model);
     if (missing.length === 0) {
-      console.log("  every catalog model is offered by LM Studio. Nothing to do.");
-      process.exit(0);
+      console.log("  every model in the catalog in force is offered by LM Studio.");
+    } else {
+      // Squash to letters and digits so quantisation spellings collapse. The
+      // server matcher only strips HYPHEN-separated quant tokens (-4bit, -mlx),
+      // so LM Studio ids using @ (…-mlx@8bit) do not match it. GUESS, printed
+      // as one: it saves re-downloading a model that is already on disk.
+      const squash = (x) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+      for (const want of missing) {
+        const w = squash(want.split("/").pop());
+        const near = s.models.filter((h) => { const x = squash(h); return x.includes(w) || w.includes(x); });
+        console.log("  NOT offered: " + want +
+          (near.length ? "\n     but you appear to already have: " + near.join(", ") +
+                         "\n     (same base model, different id spelling — nothing to download)" : ""));
+      }
     }
 
-    // Squash to letters and digits so quantisation spellings collapse. The
-    // server matcher only strips HYPHEN-separated quant tokens (-4bit, -mlx),
-    // so LM Studio ids using @ (…-mlx@8bit) do not match it. GUESS, printed as
-    // one: it saves re-downloading a model that is already on disk.
-    const squash = (x) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
-    for (const want of missing) {
-      const w = squash(want.split("/").pop());
-      const near = s.models.filter((h) => { const x = squash(h); return x.includes(w) || w.includes(x); });
-      console.log("  NOT offered: " + want +
-        (near.length ? "\n     but you appear to already have: " + near.join(", ") +
-                       "\n     (same base model, different id spelling — nothing to download)" : ""));
-    }
+    // (b) Always write the recommendation — deliberately NOT conditional on
+    // anything above. The previous version only wrote a CSV when a catalog
+    // model was missing, so a catalog that was complete but wrong (every id
+    // present, a 27 GB general model at the top) could never be repaired by
+    // the same script that flagged it.
+    const usable = s.offered.filter((m) => !EMBED.test(m.model));
+    const embeds = s.offered.filter((m) => EMBED.test(m.model)).map((m) => m.model);
+    if (embeds.length) console.log("  excluded, cannot serve chat completions: " + embeds.join(", "));
 
-    const EMBED = /embed/i;
-    const rows = s.offered
-      .filter((m) => { if (EMBED.test(m.model)) { console.log("  skipping " + m.model + " — an embedding model cannot serve chat completions"); return false; } return true; })
-      .map((m) => ({ id: m.model, gb: m.size_gb, coder: /coder|code/i.test(m.model) }))
+    const coders = usable.filter((m) => CODER.test(m.model));
+    const rows = (coders.length ? coders : usable)
+      .map((m) => ({ id: m.model, gb: m.size_gb }))
       .sort((a, b) => (b.gb ?? -1) - (a.gb ?? -1));
-
     const csv = rows.map((r) =>
-      `${r.id},"${r.gb === null ? "size unknown" : r.gb + " GB"}, name suggests ${r.coder ? "a CODING model" : "general use"}. AUTO-GENERATED — rewrite this line; the objective is what model selection reads."`
+      `${r.id},"${r.gb === null ? "size unknown" : r.gb + " GB"}${coders.length ? " coding model" : ""}. AUTO-GENERATED — rewrite this; the objective is what model selection reads."`
     ).join("\n") + "\n";
     fs.writeFileSync(process.argv[2], csv);
-    console.log("  wrote " + rows.length + " model(s) → models.local.csv, largest first");
-    console.log("  (largest first matters: selection falls back to the FIRST entry when sizes are unknown)");
-    const coders = rows.filter((r) => r.coder).map((r) => r.id);
-    if (coders.length) console.log("  likely coding models, keep these: " + coders.join(", "));
-    if (rows.length && !rows[0].coder && coders.length) {
-      console.log("  WARNING: the largest entry (" + rows[0].id + ") does not look like a");
-      console.log("  coding model. Auto-selection takes the largest that FITS, so leaving it in");
-      console.log("  means repair runs on it — and B6/B7 would measure the wrong model.");
+
+    if (!coders.length) {
+      console.log("  NO model name looks like a coding model. Wrote all " + rows.length + " usable");
+      console.log("  model(s) instead — choose by hand. repair on a general-purpose model is not");
+      console.log("  what B6 and B7 mean to measure.");
+      process.exit(2);
     }
-    console.log("  delete the lines you do not want, then write real objectives.");
-    process.exit(1);
+    const left = usable.filter((m) => !CODER.test(m.model)).map((m) => m.model);
+    console.log("  wrote " + rows.length + " coding model(s) → models.local.csv, largest first");
+    console.log("  (largest first matters: selection falls back to the FIRST entry when sizes");
+    console.log("   are unknown, and to the largest that FITS when they are)");
+    if (left.length) console.log("  left out, not coding models: " + left.join(", "));
+    console.log("  rewrite the objectives before relying on the models tool — they are what it reads.");
+    process.exit(0);
   ' "$OUT/status.json" "$OUT/models.local.csv" 2>/dev/null | tee -a "$SUMMARY"
   # PIPESTATUS is clobbered by the next pipeline, so read it on the next line.
   case "${PIPESTATUS[0]}" in
-    0) pass "catalog matches the installed models" ;;
-    1) skip "catalog does not match. Either download the catalog models, or edit
-      $OUT/models.local.csv (fill in the objectives — they are what the model
-      gets chosen BY) and then:
-        export LOCAL_CODER_MODELS_CSV=\"$OUT/models.local.csv\"" ;;
+    0) pass "wrote a coder-only catalog → $OUT/models.local.csv
+      to use it:  export LOCAL_CODER_MODELS_CSV=\"$OUT/models.local.csv\"" ;;
+    2) fail "no installed model looks like a coding model — see above" ;;
     *) skip "could not compare — LM Studio offered no models" ;;
   esac
 else
