@@ -14,15 +14,25 @@ What may be built next, and the number that decides it.
 
 ---
 
-## G1 — cost meter · `closed`
+## G1 — cost meter · `open` (reopened)
 
-- **Delivered:** `scripts/cost-meter.ts`, `src/cost/{rates,transcript,report}.ts`,
-  `src/telemetry.ts`, `.local-coder/rates.json`.
-- **Gate that closed it:** it runs against real transcripts and reports billed
+- **Delivered:** `src/cost/{cli,rates,transcript,report}.ts`, `src/telemetry.ts`,
+  `.local-coder/rates.json`.
+- **Was closed by:** it runs against real transcripts and reports billed
   quantities, deduplicating 155 `assistant` records into 69 billed requests
   (`run 2026-08-02-win-01`).
-- **Reopens if:** B1 falls — the meter disagrees with `/usage` by more than 5%.
-  Then nothing else may be measured until it agrees.
+- **REOPENED by B1 falling** (`run 2026-08-03-win-04`): meter $119.11 vs `/usage`
+  $35.96, +231% against a 5% threshold. This is the reopening condition exactly
+  as it was written, so it applies exactly as it was written: **nothing
+  meter-derived may be measured until it agrees.** That covers B12 and anything
+  reading `savedFraction`. It does not cover B6 or B7, which come from `repair`'s
+  own returned payload and never touch the meter.
+- **Closes again when:** the meter agrees with a comparator to within 5%. Which
+  comparator is now an open question, not a detail: `/usage` reports 20.0% of
+  published list price for its own token counts, so it is not measuring
+  list-price API cost. **Pick and pre-register the comparator as its own premise
+  before running anything against it** — choosing it after seeing a disagreement
+  is how a threshold gets quietly fitted to the data.
 
 ## G2 — deterministic layer (PostToolUse hook) · `closed` (dead)
 

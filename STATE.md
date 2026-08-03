@@ -5,22 +5,22 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**The server is installed and the meter returns dollars.** The `invocation_id`
-echo is verified — it reached a `toolUseResult` and the meter joined on it,
-`provenanceUnavailable: false` (`run 2026-08-03-win-01`). One `gate` call:
-97,544 → 1,814 bytes, 98.1%. Prices came from Anthropic's sheet; the five
-multipliers in `rates.ts` already matched it exactly. Six review rounds found
-six pricing defects, every one in a branch this machine cannot reach.
-`npm test`: **4 failed / 228 passed**, the four pre-existing Windows failures.
+**B1 fell and G1 reopened.** Meter $119.11 vs `/usage` $35.96 — +231% against
+a 5% threshold, both read within a minute (`run 2026-08-03-win-04`). Two
+independent failures: the meter counts 65% of `/usage`'s tokens for the same
+session, and `/usage` reports exactly 20.0% of published list price for its
+own tokens — the two sides never measured the same thing. The transcript is
+internally consistent: dedup clean, no missing `requestId`, `iterations`
+summing to the top level. `npm test`: **4 failed / 228 passed**.
 
 ## Next action
 
-**Read `/usage` and compare against USD 117.98** — 412 requests, meter run at
-the same moment. That is B1, and `/usage` is gone once this session closes.
-Error ≤ 5% → B1 holds; > 5% → fixing the meter becomes the only work. Then the
-Mac: `npm run smoke-test` first (the `<file>`-block contract), then a session
-using `implement`/`repair`. B6 and B7 come from `repair`'s own returned payload
-(`passed`, `rounds_used`, `rounds[].model_latency_ms`), not from the meter.
+**Decide what the meter is compared against and pre-register it as its own
+premise before measuring anything with it** — `/usage` is not a list-price
+oracle. Then close the scope gap: the 35% of tokens it counts and the
+transcript does not. Until the meter agrees nothing meter-derived counts
+(B12, `savedFraction`). B6/B7 come from `repair`'s own payload and never touch
+the meter, so the Mac is not blocked — `smoke-test` first, then `repair`.
 
 ## Waiting on
 

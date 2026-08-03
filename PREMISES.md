@@ -48,19 +48,31 @@ That forces the priority order every premise below is organised around:
   writes to its own transcript, deduplicated by `requestId`; nothing is estimated.
 - **Experiment:** run `npm run cost-meter` against a session, compare its total
   against that session's `/usage` figures.
-- **Measured:** **nothing yet — the instrument is ready, the comparison is not.**
-  Prices came from Anthropic's published sheet on 2026-08-03; the five
-  multipliers already in `src/cost/rates.ts` matched it exactly, so only
-  `inputPerMTok` had to be filled in. The meter now returns dollars: $88.34 at
-  300 requests, $94.62 a few minutes later, `run 2026-08-03-win-02`.
-  **That growth is the point: both sides must be read at the same moment.** A
-  `/usage` figure from the end of a session compared against a meter snapshot
-  from its middle manufactures an error out of nothing. Read `/usage` and run the
-  meter back to back, at the end, and compute the error from that pair.
+- **Measured:** meter **$119.11**, `/usage` **$35.96**, read within a minute of
+  each other, `run 2026-08-03-win-04`. Error **+231%** against a 5% threshold.
 - **Falls if:** error > 5%.
 - **If it falls:** every other premise here loses its instrument. Fixing the meter
   becomes the only work until it agrees.
-- **Status:** open
+- **Status:** **fallen**
+
+**Two independent failures, and only one of them is the meter.**
+
+1. **Scope.** The meter counts 65% of `/usage`'s cache-read tokens for the same
+   session (input 64%, output 77%, write 66%). The transcript is internally
+   consistent — 251 duplicate groups all carrying identical usage and none
+   differing, no record missing a `requestId`, `usage.iterations` summing to the
+   top level — so this is not arithmetic. `/usage`'s "This session" covers a
+   different set of requests than one transcript file. Its scope could not be
+   determined from the data available.
+2. **Basis.** Fed `/usage`'s *own* token counts, published list rates give
+   $179.93 against the $35.96 it reports — exactly 20.0%. This is a Max-plan
+   subscription; the panel shows 5-hour and weekly limits. So the two sides do
+   not measure the same quantity even before the scope gap.
+
+**The threshold is not being revised after the fact.** B1 as written is falsified
+and stays that way. Failure 2 says the *experiment* was mis-specified — a
+finding, not an excuse — and a corrected instrument check has to be proposed and
+pre-registered as its own premise before anything is measured against it.
 
 ## B2 — `hookSpecificOutput.updatedToolOutput` changes what is BILLED, not only what is displayed
 
