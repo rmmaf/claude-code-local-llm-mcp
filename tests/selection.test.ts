@@ -82,6 +82,40 @@ describe("matchModel", () => {
     expect(matchModel("qwen2.5-coder-14b", ["llama-3-8b"]).value).toBeNull();
   });
 
+  it("sends the id LM Studio serves, not the one the catalog wrote down", () => {
+    // The whole point of matching a quant spelling: an entry reported available
+    // on a fuzzy match has to be REQUESTED under the id that matched. Sending
+    // the catalog id asks for a model the endpoint does not have, and the
+    // failure surfaces at generation time as a missing model rather than here.
+    const catalog = [{ model: "qwen2.5-coder-14b-instruct", objective: "x" }];
+    const served = ["qwen2.5-coder-14b-instruct-mlx@8bit"];
+    const lms = [
+      { id: served[0]!, ids: [served[0]!], sizeBytes: 15_000_000_000, quantization: null, path: null },
+    ];
+    const report = buildCatalogReport(catalog, served, lms, null, 30_000_000_000);
+    expect(report[0]!.available).toBe(true);
+    expect(report[0]!.model).toBe("qwen2.5-coder-14b-instruct");
+    expect(report[0]!.resolvedId).toBe(served[0]);
+    expect(selectModelForMemory(report, catalog).model).toBe(served[0]);
+  });
+
+  it("keeps the catalog id when /models was never consulted", () => {
+    const catalog = [{ model: "qwen2.5-coder-14b-instruct", objective: "x" }];
+    const report = buildCatalogReport(catalog, null, null, null, null);
+    expect(report[0]!.available).toBeNull();
+    expect(report[0]!.resolvedId).toBe("qwen2.5-coder-14b-instruct");
+  });
+
+  it("resolves the id on the no-sizes fallback path too", () => {
+    // Sizes unknown says nothing about which spelling the endpoint answers to.
+    const catalog = [{ model: "qwen2.5-coder-14b-instruct", objective: "x" }];
+    const served = ["qwen2.5-coder-14b-instruct-mlx@8bit"];
+    const report = buildCatalogReport(catalog, served, null, null, null);
+    const sel = selectModelForMemory(report, catalog);
+    expect(sel.model).toBe(served[0]);
+    expect(sel.reason).toContain("served as");
+  });
+
   it("does not let \"@\" stripping blur models apart", () => {
     // Quant distinguishes one base model; a different parameter count is a
     // different model, on either side of the separator.

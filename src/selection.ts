@@ -63,6 +63,16 @@ export function matchModel(
 export interface ModelReport {
   model: string;
   objective: string;
+  /**
+   * The id to actually SEND: the `/models` candidate this catalog entry matched,
+   * which is not the catalog id whenever the match was fuzzy. LM Studio spells
+   * quantisation in the id, so the catalog can say `…-14b-instruct` while the
+   * only thing served is `…-14b-instruct-mlx@8bit`. Reporting the entry as
+   * available on that match and then sending the catalog id asks for a model
+   * that does not exist. Falls back to the catalog id when `/models` was not
+   * consulted, which is the best that can be said then.
+   */
+  resolvedId: string;
   /** Present in `/models`? null when the endpoint was unreachable. */
   available: boolean | null;
   availableMatch: MatchQuality;
@@ -80,6 +90,8 @@ export interface ModelReport {
 export interface SerializedReport {
   model: string;
   objective: string;
+  /** The id that would actually be sent; differs from `model` on a fuzzy match. */
+  resolved_id: string;
   available: boolean | null;
   available_match: MatchQuality;
   size_gb: number | null;
@@ -93,6 +105,7 @@ export function serializeReport(r: ModelReport): SerializedReport {
   return {
     model: r.model,
     objective: r.objective,
+    resolved_id: r.resolvedId,
     available: r.available,
     available_match: r.availableMatch,
     size_gb: r.sizeGb,
@@ -127,8 +140,10 @@ export function buildCatalogReport(
   return catalog.map((entry) => {
     let available: boolean | null = null;
     let availableMatch: MatchQuality = "none";
+    let resolvedId = entry.model;
     if (apiModelIds !== null) {
       const m = matchModel(entry.model, apiModelIds);
+      if (m.value !== null) resolvedId = m.value;
       available = m.value !== null;
       availableMatch = m.quality;
     }
@@ -157,6 +172,7 @@ export function buildCatalogReport(
     return {
       model: entry.model,
       objective: entry.objective,
+      resolvedId,
       available,
       availableMatch,
       sizeBytes,
@@ -187,14 +203,27 @@ export function selectModelForMemory(report: ModelReport[], catalog: ModelEntry[
     for (const r of fitting) {
       if ((r.sizeBytes ?? 0) > (best.sizeBytes ?? 0)) best = r;
     }
-    return { model: best.model, reason: `largest catalog model fitting usable free RAM (${best.sizeGb} GB): ${best.model}` };
+    // Send what `/models` serves, not what the catalog calls it. Naming both
+    // when they differ, because a fuzzy match is the one case where the id in
+    // the request is not the id the user wrote down.
+    const via = best.resolvedId === best.model ? "" : ` (served as ${best.resolvedId})`;
+    return {
+      model: best.resolvedId,
+      reason: `largest catalog model fitting usable free RAM (${best.sizeGb} GB): ${best.model}${via}`,
+    };
   }
   const first = catalog[0] ?? DEFAULT_MODEL_CATALOG[0]!;
+  // Same rule on the fallback path: if `/models` matched this entry, that is
+  // the id being served, whatever the catalog calls it. Sizes being unknown
+  // says nothing about which spelling the endpoint answers to.
+  const firstRow = report.find((r) => r.model === first.model);
+  const sendable = firstRow?.resolvedId ?? first.model;
+  const via = sendable === first.model ? "" : ` (served as ${sendable})`;
   const anySize = report.some((r) => r.sizeBytes !== null);
   const reason = anySize
-    ? `no catalog model fit usable free RAM; falling back to the first configured model: ${first.model}`
-    : `no model sizes available (is \`lms\` installed and are the models downloaded?); falling back to the first configured model: ${first.model}`;
-  return { model: first.model, reason };
+    ? `no catalog model fit usable free RAM; falling back to the first configured model: ${first.model}${via}`
+    : `no model sizes available (is \`lms\` installed and are the models downloaded?); falling back to the first configured model: ${first.model}${via}`;
+  return { model: sendable, reason };
 }
 
 export interface MultiSelection {
@@ -234,7 +263,7 @@ export function selectModelsForMemory(
   if (usableFreeBytes === null) {
     const picked = ordered.slice(0, count);
     return {
-      models: picked.map((r) => r.model),
+      models: picked.map((r) => r.resolvedId),
       totalGb: bytesToGb(picked.reduce((s, r) => s + (r.sizeBytes ?? 0), 0)),
       fits: false,
       reason: `memory unknown; listing the ${picked.length} largest sized model(s) without a fit guarantee`,
@@ -252,7 +281,7 @@ export function selectModelsForMemory(
     }
   }
   return {
-    models: picked.map((r) => r.model),
+    models: picked.map((r) => r.resolvedId),
     totalGb: bytesToGb(sum),
     fits: picked.length === count,
     reason:
