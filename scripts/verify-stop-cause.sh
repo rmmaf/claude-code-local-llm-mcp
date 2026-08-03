@@ -31,6 +31,17 @@ TELEMETRY="$REPO_ROOT/.local-coder/telemetry.jsonl"
 SMALL="src/scratch-stopcause-small.ts"
 LARGE="src/scratch-stopcause-large.ts"
 
+# Bumped whenever setup and check stop agreeing about what they exchange —
+# state.env keys, the baseline's unit, the analyzer's exit codes. `check`
+# refuses a setup stamped with anything else rather than scoring a run under a
+# contract it no longer speaks. That mix is not hypothetical: a run directory
+# from an earlier version once had check print "Verified" for data its own
+# analyzer scored INCOMPLETE.
+CONTRACT="2"
+# A string the CURRENT analyzer must contain. Proof that the file about to run
+# is the one this script just wrote, not a leftover that survived a failed write.
+ANALYZER_MARKER="VERDICT: INCOMPLETE"
+
 GREEN=$'\033[32m'; RED=$'\033[31m'; YELLOW=$'\033[33m'; DIM=$'\033[2m'; BOLD=$'\033[1m'; OFF=$'\033[0m'
 
 SUMMARY=""
@@ -142,6 +153,7 @@ do_setup() {
   # Quoted: an unquoted path with a space becomes a command when `check` sources
   # this file.
   {
+    echo "contract='$CONTRACT'"
     echo "run_id='$RUN_ID'"
     echo "repo_root='$REPO_ROOT'"
     echo "baseline='$BASELINE'"
@@ -149,8 +161,10 @@ do_setup() {
   } > "$OUT/state.env"
   printf '%s\n' "$OUT" > "$POINTER"
 
+  # The analyzer is deliberately NOT written here. `check` writes it immediately
+  # before running it, so the scorer and the code reading its exit status always
+  # come from the same copy of this script — see the note there.
   write_fixtures "$OUT"
-  write_analyzer "$OUT"
 
   # A red gate is the precondition for every one of the three calls. Confirm it
   # rather than trust it — a fixture that compiles would make all three vacuous.
@@ -285,20 +299,37 @@ do_check() {
     echo "setup state missing at $OUT/state.env — run setup again" >&2
     exit 1
   fi
+  contract=""
   # shellcheck disable=SC1090
   . "$OUT/state.env"
   SUMMARY="$OUT/check.txt"
   : > "$SUMMARY"
 
   printf '\n%sverify-stop-cause — check%s\n' "$BOLD" "$OFF"
+
+  # Refuse a run directory this script did not make. Setup records what it and
+  # check agreed to exchange; a mismatch means the two halves are from different
+  # versions and any verdict would be a guess about the other half's intent.
+  if [ "$contract" != "$CONTRACT" ]; then
+    fail "that setup was made by a different version of this script (contract '${contract:-none}', this one speaks '$CONTRACT')"
+    note ""
+    note "STOPPING rather than scoring it. Re-run setup, then the prompts again:"
+    note "  bash scripts/verify-stop-cause.sh restore && bash scripts/verify-stop-cause.sh setup"
+    exit 1
+  fi
   printf '%s\n\n' "run: $run_id"
 
-  # Rewritten HERE, not reused from setup. Setup may have run against an older
-  # copy of this script, and an analyzer from then can answer with a contract
-  # this one no longer speaks — observed: a stale analyzer returned 0 for a run
-  # that established nothing, and the caller printed "Verified". The scorer and
-  # the code reading its status now always come from the same file.
+  # Written HERE, not reused from setup, and then PROVEN to be the new one.
+  # Observed: a run directory from an earlier version still held that version's
+  # analyzer, which returned 0 for a run that established nothing while the
+  # caller printed "Verified". Rewriting is not enough on its own — a failed
+  # write leaves the stale file in place and node runs it without complaint.
+  rm -f "$OUT/analyze.mjs"
   write_analyzer "$OUT"
+  if [ ! -f "$OUT/analyze.mjs" ] || ! grep -q "$ANALYZER_MARKER" "$OUT/analyze.mjs" 2>/dev/null; then
+    fail "could not write the analyzer to $OUT — refusing to run whatever is there"
+    exit 1
+  fi
 
   # The telemetry setup measured, not whichever clone this copy of the script
   # happens to sit in. A byte offset only means something against the same file.
