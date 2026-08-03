@@ -5,33 +5,33 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**The `repair` payloads exist** (`run 2026-08-03-mac-06`, archived under
-`evidence/`). The previous run called them missing; telemetry writes
-`rounds_used` under the name `turns_collapsed`. B3: 12 of 20, median 98.67%, and
-3 of 11 calls made context *worse*. B6: 10 calls with a red gate, 2 closed, both
-in one round, and 3 `max_rounds` calls that improved nothing over 10 rounds.
-Two instrument fixes: a cut-off generation reads as `budget` from the `remaining`
-that went into `min(config.timeoutMs, remaining)`, captured at issue — no
-downstream signal can recover it — and the per-round trace reaches telemetry,
-without which B7 was never measurable.
+**Both instrument defects found in `run 2026-08-03-mac-06` are fixed and
+tested.** `stopped_because` no longer blames the model for the budget: it reads
+the `remaining` that went into `min(config.timeoutMs, remaining)`, captured at
+issue, since no downstream signal recovers it. Four tests pin both sides of that
+boundary. The per-round trace now reaches telemetry — without it B7 was never
+measurable from the log, on any past run. `scripts/verify-stop-cause.sh`
+prepares, scores and cleans up the Mac run that confirms this against a real
+model; `check` returns 0 verified, 1 contradicted, 2 incomplete.
 
 ## Next action
 
-**Decide B0's output contract before another B6 run.** While `shared.ts:78`
-demands every editable file whole against an 8192-token cap, a truncated
-response throws and is logged `model_failed`, indistinguishable from a loop that
-genuinely failed. Every B6 number carries that until the contract changes or the
-tools are scoped to small files in writing.
+**Run the verifier on the Mac.** `setup`, paste the three prompts it prints,
+then `check`. It is the only source of a real `model_ms`, and B7 has none.
+**B0 is a separate, standing block:** while `shared.ts:78` demands every editable
+file whole against an 8192-token cap, a truncated response is logged
+`model_failed` and no B6 number reads clean.
 
 ## Waiting on
 
-- **The Mac's uncommitted `selectModelsBestFit`** — no push credentials there;
-  route is `git show --format="" HEAD` pasted here, applied by hand.
+- **The Mac's uncommitted `selectModelsBestFit`** — no push credentials there.
 - **B5 needs a different repository** — this one configures 2 checks.
 
 ## Do not redo
 
-- **A field absent from the log is not absent from the code.** B6 ran on a
-  narrative for a whole session because a grep for `rounds_used` missed the
-  column holding exactly that under another name. Read the writer.
+- **Never derive a cause from a signal that went through a lossy transform.**
+  Three passes at one branch: the error code alone, then a clock read after the
+  abort, then the output of the `min()` that discarded the distinction.
+- **A field absent from the log is not absent from the code** — B6 ran on a
+  narrative because a grep missed `rounds_used` under another name.
 - **Verify with `npm test`, not `npx vitest run`** — the latter skips the build.
