@@ -9,7 +9,7 @@ Ceiling: 25 lines below this header.
 server, status, a coder-only catalog with 4 of 4 models matched and sized, the
 smoke test, and the full suite. The `<file>`-block contract is verified against
 a real local model. The one red test was a Windows path literal, fixed in
-`3c6242a`; the real slugs there confirm the leading dash, not the dot rule.
+`3c6242a`; the real slugs there confirm the one platform-dependent half.
 **B1 fell and G1 reopened**: meter $119.11 vs `/usage` $35.96, +231% against a
 5% threshold, and the two never measured the same quantity.
 
