@@ -198,13 +198,22 @@ export interface EntryCost {
   requests: number;
   /** Distinct rate keys in the segment, sorted. More than one means mixed. */
   keys: string[];
-  /**
-   * The subset of `keys` with no `inputPerMTok`. Non-empty means the segment's
-   * keys cannot be COMPARED, which is not the same as their being different —
-   * two unpriced keys may well share a price. Callers must say "unknown", never
-   * "priced differently", when this is non-empty.
-   */
+  /** The subset of `keys` with no `inputPerMTok`. */
   unpricedKeys: string[];
+  /**
+   * Whether the segment has one input rate for a multiplier to be a multiple
+   * of. Three states, and the third is not the second:
+   *
+   * - `true`  — one key, or every price known and equal. `multiplier` is set.
+   * - `false` — two known prices differ. Settled by the prices we DO have, so
+   *             a missing third price cannot overturn it.
+   * - `null`  — genuinely unknown: the known prices do not settle it and at
+   *             least one key is unpriced. Two unpriced keys may share a price.
+   *
+   * Callers must not print `null` as "priced differently"; that asserts a fact
+   * the rates file does not contain.
+   */
+  sharesOneInputRate: boolean | null;
 }
 
 /**
@@ -252,11 +261,17 @@ export function entryCostOfSegment(segment: readonly BilledRequest[], rates: Rat
 
   // A ratio needs one base. One key is trivially one base even when unpriced;
   // several keys need identical, known prices before their ratios can be added.
+  // Two KNOWN prices that differ settle the question on their own — a further
+  // missing price cannot make unequal prices equal, so that case is `false`,
+  // not `null`.
+  const known = new Set([...prices].filter((p): p is number => p !== null));
   const oneBase = keys.size === 1 || (!prices.has(null) && prices.size === 1);
+  const sharesOneInputRate = oneBase ? true : known.size > 1 ? false : null;
   return {
     multiplier: oneBase ? writeRatio + rereadRatio : null,
     write: oneBase ? writeRatio : null,
     reread: oneBase ? rereadRatio : null,
+    sharesOneInputRate,
     usdPerMTok: usd === null ? null : usd * 1_000_000,
     ttl,
     requests: ordered.length,

@@ -220,14 +220,21 @@ async function main(): Promise<void> {
             `differently, so their multipliers have different bases and do not add; ${span}${RESET}\n`
         );
       } else {
-        // NOT "priced differently" — with a price missing, these keys cannot be
-        // compared at all, and two unpriced keys may well share a price. Saying
-        // they differ would assert a fact the rates file does not contain.
+        // Two claims, and only one of them is licensed at a time. Known prices
+        // that already differ settle the ratio question — a further missing
+        // price cannot make unequal prices equal. Known prices that do NOT
+        // settle it leave the answer unknown, and unknown is not "different":
+        // two unpriced keys may share a price exactly.
+        const missing =
+          `${anchor.unpricedKeys.join(", ")} ` +
+          `${anchor.unpricedKeys.length === 1 ? "has" : "have"} no inputPerMTok in ${RATES_REL_PATH}`;
+        const ratio =
+          anchor.sharesOneInputRate === false
+            ? `the priced ones already differ, so there is no single input rate to be a multiple of either`
+            : `and with that unknown there is no way to tell whether these keys share one input rate`;
         process.stdout.write(
-          `\n  ${DIM}entry cost not shown — this context spans ${anchor.keys.join(" + ")} and ` +
-            `${anchor.unpricedKeys.join(", ")} ${anchor.unpricedKeys.length === 1 ? "has" : "have"} ` +
-            `no inputPerMTok in ${RATES_REL_PATH}, so there is no dollar figure and no way to tell ` +
-            `whether these keys share one input rate to be a multiple of; ${span}${RESET}\n`
+          `\n  ${DIM}entry cost not shown — this context spans ${anchor.keys.join(" + ")}; ` +
+            `${missing}, so there is no dollar figure, and ${ratio}; ${span}${RESET}\n`
         );
       }
     }

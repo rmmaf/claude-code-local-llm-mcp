@@ -1157,3 +1157,20 @@ a segment that both mixes rate keys and lacks a price, on a line that until two
 commits ago never rendered at all. Three of the last four review findings lived
 in cases the live session cannot reach — which is the argument for reviewing
 the branch you cannot run, not the one you can.
+
+### Three states, not two
+
+Correcting "different" to "unknown" overcorrected. With prices $1, $2 and one
+missing, the known prices already settle it: a missing third price cannot make
+two unequal prices equal. Saying "no way to tell" there understates what the
+rates file does say — the mirror of the overstatement it replaced, and just as
+wrong.
+
+`sharesOneInputRate` is therefore `true | false | null`, and the third is not
+the second. `false` is a conclusion drawn from prices we have; `null` is the
+absence of one. The CLI prints a different sentence for each, and the ratio
+itself is emitted only on `true`.
+
+Two rounds of review on one sentence, in opposite directions. The pattern worth
+keeping: "we cannot tell" is a claim about the evidence and needs checking as
+carefully as the claim it replaces.

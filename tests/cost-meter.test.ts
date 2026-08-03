@@ -1352,6 +1352,7 @@ describe("speed is part of the price", () => {
       expect(cost?.usdPerMTok).toBeNull();
       expect(cost?.keys).toEqual(["m", "m@fast"]);
       expect(cost?.unpricedKeys).toEqual(["m", "m@fast"]);
+      expect(cost?.sharesOneInputRate).toBeNull(); // unknown — NOT false
     });
 
     it("lists only the keys actually missing a price", () => {
@@ -1362,6 +1363,37 @@ describe("speed is part of the price", () => {
       const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast")], partial);
       expect(cost?.unpricedKeys).toEqual(["m@fast"]);
       expect(cost?.usdPerMTok).toBeNull();
+      // One known price plus one unknown does not settle whether they match.
+      expect(cost?.sharesOneInputRate).toBeNull();
+    });
+
+    // A missing third price cannot make two unequal known prices equal, so this
+    // is settled — false, not unknown. Reporting it as unknown understates what
+    // the rates file actually says, the mirror of overstating it.
+    it("settles the ratio from known prices even when another key is unpriced", () => {
+      const partial = {
+        ...DEFAULT_RATES,
+        models: { "m": { inputPerMTok: 1 }, "m@fast": { inputPerMTok: 2 } },
+      };
+      const cost = entryCostOfSegment(
+        [req(0, "standard"), req(1, "fast"), { ...req(2, "slow"), model: "other" } as BilledRequest],
+        partial
+      );
+      expect(cost?.sharesOneInputRate).toBe(false);
+      expect(cost?.multiplier).toBeNull();
+      expect(cost?.usdPerMTok).toBeNull();
+      expect(cost?.unpricedKeys).toEqual(["other@slow"]);
+    });
+
+    it("marks a uniform segment as sharing one input rate", () => {
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "standard")], rates);
+      expect(cost?.sharesOneInputRate).toBe(true);
+    });
+
+    it("reports differing known prices as settled, not unknown", () => {
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast")], rates);
+      expect(cost?.sharesOneInputRate).toBe(false);
+      expect(cost?.usdPerMTok).toBeCloseTo(2.0 * 1 + 0.5 * 2, 6);
     });
 
     it("reports no unpriced keys when the whole segment is priced", () => {
