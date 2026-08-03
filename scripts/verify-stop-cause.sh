@@ -38,9 +38,13 @@ LARGE="src/scratch-stopcause-large.ts"
 # from an earlier version once had check print "Verified" for data its own
 # analyzer scored INCOMPLETE.
 CONTRACT="2"
-# A string the CURRENT analyzer must contain. Proof that the file about to run
-# is the one this script just wrote, not a leftover that survived a failed write.
-ANALYZER_MARKER="VERDICT: INCOMPLETE"
+# The analyzer's LAST line. Checking a string somewhere inside the file proves
+# only that the write got that far: a truncation landing after the marker but on
+# a statement boundary leaves valid JavaScript that runs to the end without ever
+# calling finish(), so node exits 0 having printed nothing — and an exit code of
+# 0 with no report is precisely what the caller used to translate as "Verified".
+# A sentinel on the final line is present only when the whole file is.
+ANALYZER_SENTINEL="// END-OF-ANALYZER-CONTRACT-2"
 
 GREEN=$'\033[32m'; RED=$'\033[31m'; YELLOW=$'\033[33m'; DIM=$'\033[2m'; BOLD=$'\033[1m'; OFF=$'\033[0m'
 
@@ -325,9 +329,9 @@ do_check() {
   # caller printed "Verified". Rewriting is not enough on its own — a failed
   # write leaves the stale file in place and node runs it without complaint.
   rm -f "$OUT/analyze.mjs"
-  write_analyzer "$OUT"
-  if [ ! -f "$OUT/analyze.mjs" ] || ! grep -q "$ANALYZER_MARKER" "$OUT/analyze.mjs" 2>/dev/null; then
-    fail "could not write the analyzer to $OUT — refusing to run whatever is there"
+  if ! write_analyzer "$OUT" || [ ! -f "$OUT/analyze.mjs" ] ||
+     [ "$(tail -n 1 "$OUT/analyze.mjs" 2>/dev/null)" != "$ANALYZER_SENTINEL" ]; then
+    fail "could not write a complete analyzer to $OUT — refusing to run whatever is there"
     exit 1
   fi
 
@@ -351,6 +355,16 @@ do_check() {
   status=$?
   cat "$SUMMARY"
 
+  # An exit code is a claim; the verdict line is the evidence for it. Requiring
+  # both means a run that somehow exits 0 without reaching its own conclusion —
+  # an analyzer that fell off the end, a node that died between the last write
+  # and the exit — cannot be read as success just because the number was right.
+  if ! grep -q "^VERDICT:" "$SUMMARY" 2>/dev/null; then
+    fail "the analyzer exited $status but never printed a verdict — treating this as no result"
+    note "     nothing was established; do NOT record this run"
+    return 1
+  fi
+
   printf '\nSend back: %s and %s\n' "$OUT/check.txt" "$OUT/rows.jsonl"
   # Three statuses, because "nothing failed" is not "the run verified anything".
   # An all-SKIP run used to come back 0 and read as success while having
@@ -364,8 +378,12 @@ do_check() {
   return "$status"
 }
 
+# Writes to a temporary path and only renames it into place once the sentinel is
+# on the last line. A half-written analyzer therefore never becomes the file
+# that runs — it stays a .part nobody looks at. Verifying after writing straight
+# to the target would still leave the damaged file there for the next run.
 write_analyzer() {
-  cat > "$1/analyze.mjs" <<'MJSEOF'
+  cat > "$1/analyze.part.mjs" <<'MJSEOF'
 // Scores the repair rows this run produced. Written by setup so `check` never
 // depends on a file the repo might not have at the version being tested.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -548,7 +566,21 @@ if (missing.length > 0) {
 say("VERDICT: verified — all 3 established. The label flipped with the ceiling and");
 say("nothing else, and B7 has a real per-round figure for the first time.");
 finish(0);
+// END-OF-ANALYZER-CONTRACT-2
 MJSEOF
+  # Complete only if the sentinel is the LAST line, and only then does it become
+  # the file that runs. Both node --check and the sentinel are needed: the first
+  # rejects a truncation that broke the syntax, the second rejects one that did
+  # not.
+  if [ "$(tail -n 1 "$1/analyze.part.mjs" 2>/dev/null)" != "$ANALYZER_SENTINEL" ]; then
+    rm -f "$1/analyze.part.mjs"
+    return 1
+  fi
+  if ! node --check "$1/analyze.part.mjs" >/dev/null 2>&1; then
+    rm -f "$1/analyze.part.mjs"
+    return 1
+  fi
+  mv -f "$1/analyze.part.mjs" "$1/analyze.mjs" || return 1
 }
 
 # -------------------------------------------------------------------- restore
