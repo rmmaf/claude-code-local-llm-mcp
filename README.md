@@ -418,7 +418,7 @@ Everything in CI is mocked and sandbox-verified. The following could **not** be 
 2. Live LM Studio behavior: JIT load latency, TTL unload, real Qwen3/Qwen2.5 output quality against the `<file>`-block contract (the corrective-retry path exists for occasional format misses).
 3. `memory_pressure` / `vm_stat` output on your macOS version, and `lms ls --json` output on your `lms` version (parsers are tested against captured fixtures; any parse failure safely degrades — sizes become `null` and selection falls back to catalog order).
 4. `scripts/smoke-test.ts` end-to-end — it exists precisely to verify all of the above: `npm run smoke-test`.
-5. That the `invocation_id` our tools return survives into Claude Code's stored `toolUseResult`. The cost meter's exact telemetry join depends on it, and it has not been observed — the same class of unchecked assumption that killed the hook. One `gate` call with the server installed settles it: `provenanceUnavailable` must come back `false`.
+5. ~~That the `invocation_id` our tools return survives into Claude Code's stored `toolUseResult`.~~ **Verified — `run 2026-08-03-win-01`.** The id came back inside a `toolUseResult` and the cost meter joined on it: `provenanceUnavailable: false`, `unmatched: 0`. This was the last unobserved assumption the meter rested on — the same class that killed the hook.
 6. `repair` against a live local model. Its loop, budget, best-attempt tracking and byte-exact restore are all covered offline with a mocked model; what remains unmeasured is whether a real local model actually closes mechanical failures within 3 rounds, and how long a round costs.
 
 ## License

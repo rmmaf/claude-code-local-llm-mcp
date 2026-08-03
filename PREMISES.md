@@ -104,10 +104,12 @@ That forces the priority order every premise below is organised around:
   `gate` calls from ordinary work, read from `.local-coder/telemetry.jsonl`. The
   experiment used to run the hook; G2 closed, so the premise now stands or falls
   on the tool that actually does the suppressing.
-- **Measured:** 97% on `tsc` + `vitest` output, `run 2026-08-02-win-01`. **One
-  synthetic point, not a 20-sample median** — the premise is not yet decided. The
-  99% figure from a 604-line failing test run is **no longer counted here**: it
-  came from the hook, which G2 closed, so it measures a component nothing uses.
+- **Measured:** 98.1% (97,544 → 1,814 bytes) on the first `gate` call ever made
+  from *inside* a session, `run 2026-08-03-win-01`; 97% on a direct invocation,
+  `run 2026-08-02-win-01`. **One real point out of the twenty the experiment asks
+  for** — the premise is not decided. The 99% figure from a 604-line failing test
+  run is **no longer counted here**: it came from the hook, which G2 closed, so it
+  measures a component nothing uses.
 - **Falls if:** median < 40% over 20 real `gate` calls.
 - **If it falls:** structured extraction is worth less than assumed and the whole
   first lever shrinks — `gate` would still collapse turns (B5), but its byte
@@ -142,8 +144,12 @@ That forces the priority order every premise below is organised around:
   Bash round-trips today; `gate` runs all configured checks in one call.
 - **Experiment:** count `gate` calls versus the Bash verification round-trips they
   replace, in the transcript, over 20 real tasks.
-- **Measured:** 1 turn collapsed on this repo (2 configured checks in one call),
-  `run 2026-08-02-win-01`. Not the ≥ 3-check case the premise is about.
+- **Measured:** 1 turn collapsed, `run 2026-08-03-win-01` (confirming
+  `run 2026-08-02-win-01`). **This repository cannot decide B5.** It configures two
+  checks — `tsc` and `npm-test`, no lint — so one collapsed turn is the structural
+  ceiling here, and a premise whose threshold is ≥ 2 can never be met in this
+  venue. Measuring it needs a project with three or more configured checks. Do not
+  read the 1 as evidence against the mechanism; it is evidence about the repo.
 - **Falls if:** < 2 turns saved on median.
 - **If it falls:** the problem is almost certainly the **tool description** losing
   to the instinct to reach for Bash, not the tool. Rewrite the description before
