@@ -141,20 +141,18 @@ const status = await runStatus(config);
 // reference identity settles it exactly, with no false positive on a CSV that
 // happens to list the same models.
 const usingDefault = config.models === DEFAULT_MODEL_CATALOG;
-let csvReadable = null;
-if (csvPath !== null) {
-  try { await fsp.access(csvPath); csvReadable = true; } catch { csvReadable = false; }
-}
 const catalog_source = {
   csv_path: csvPath,
-  csv_readable: csvReadable,
   in_force: usingDefault ? "built-in-default" : "csv",
-  detail:
-    csvPath === null ? "no LOCAL_CODER_MODELS_CSV set in this shell"
-    : !usingDefault ? `${config.models.length} model(s) loaded from the CSV`
-    : csvReadable === false ? "the path is set but the file could not be read"
-    : "the file was read but produced no usable rows",
+  models_loaded: config.models.length,
 };
+// No reason is guessed here on purpose. An earlier version probed the path with
+// fs.access and reported "read but no usable rows" whenever that succeeded --
+// but access is not readFile: a directory, a file with no read permission, or a
+// file created after loadModelCatalog already gave up all pass it, and the
+// stated reason would have been fiction. loadModelCatalog logs the real reason
+// from the real attempt to stderr, which the caller captures in status.err, so
+// 5b quotes that instead of re-deriving it.
 
 // Size every model LM Studio OFFERS, not just the catalog ones, by running the
 // offered ids back through the server's own matcher. Reused rather than
@@ -270,10 +268,22 @@ if [ -s "$OUT/status.json" ]; then
     let bad = 0;
     const src = s.catalog_source;
     console.log("  catalog in force: " + (src.in_force === "csv" ? src.csv_path : "BUILT-IN DEFAULT"));
-    console.log("     " + src.detail);
-    if (src.in_force !== "csv" && src.csv_path !== null) {
+    if (src.in_force === "csv") {
+      console.log("     " + src.models_loaded + " model(s) loaded from it");
+    } else if (src.csv_path === null) {
+      console.log("     no LOCAL_CODER_MODELS_CSV set in this shell");
+    } else {
       console.log("     LOCAL_CODER_MODELS_CSV points at " + src.csv_path + " but that file is");
       console.log("     NOT what is running. Whatever you edited there is having no effect.");
+      // Quote the server, do not infer. It logged why the real read failed.
+      let reason = null;
+      try {
+        reason = require("fs").readFileSync(process.argv[2], "utf8")
+          .split("\n").filter((l) => l.includes("models-csv:")).pop();
+      } catch (e) { /* status.err unreadable — say so rather than guess */ }
+      console.log(reason && reason.trim() !== ""
+        ? "     the server said: " + reason.trim()
+        : "     the server did not say why in status.err. Do not assume a reason.");
       bad++;
     }
     const embeds = s.catalog.filter((m) => EMBED.test(m.model)).map((m) => m.model);
@@ -290,7 +300,7 @@ if [ -s "$OUT/status.json" ]; then
       bad++;
     }
     process.exit(bad ? 1 : 0);
-  ' "$OUT/status.json" 2>/dev/null | tee -a "$SUMMARY"
+  ' "$OUT/status.json" "$OUT/status.err" 2>/dev/null | tee -a "$SUMMARY"
   if [ "${PIPESTATUS[0]}" -eq 0 ]; then
     pass "catalog in force looks sane"
   else
