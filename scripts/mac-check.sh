@@ -292,12 +292,37 @@ if [ -s "$OUT/status.json" ]; then
       console.log("     these cannot serve chat completions — delete those lines");
       bad++;
     }
-    console.log("  auto-selection would use: " + s.auto_selection.model);
+    const free = s.memory.usable_free_gb;
+    console.log("  auto-selection would use: " + s.auto_selection.model +
+      " (usable free: " + (free ?? "unknown") + " GB)");
     if (!CODER.test(s.auto_selection.model)) {
       console.log("     that does not look like a coding model. Selection takes the largest");
       console.log("     that FITS, so repair would run on it and B6/B7 would measure the");
       console.log("     wrong model. Remove the larger non-coder entries.");
       bad++;
+    }
+
+    // The check above is about THIS moment, and "largest that fits" moves with
+    // free RAM. A non-coder bigger than every coder is a trap that passes while
+    // memory is tight and fires the moment it is not — same catalog, different
+    // verdict, and the model under measurement changes without anyone editing
+    // anything. Flag it as latent rather than waiting for the run where it bites.
+    // Only when the current pick IS a coder — otherwise the warning above
+    // already covers it, and saying "not being picked right now" about the
+    // model that just got picked would contradict the line above it.
+    const sized = CODER.test(s.auto_selection.model)
+      ? s.catalog.filter((m) => m.size_gb !== null) : [];
+    const coderGb = sized.filter((m) => CODER.test(m.model)).map((m) => m.size_gb);
+    if (coderGb.length) {
+      const biggestCoder = Math.max.apply(null, coderGb);
+      const looming = sized.filter((m) => !CODER.test(m.model) && m.size_gb > biggestCoder);
+      if (looming.length) {
+        console.log("     LATENT: " + looming.map((m) => m.model + " (" + m.size_gb + " GB)").join(", "));
+        console.log("     is larger than every coding model in the catalog (biggest coder: " +
+          biggestCoder + " GB). It is not being picked right now only because it does not fit.");
+        console.log("     Free some memory and it wins, silently changing the model repair runs on.");
+        bad++;
+      }
     }
     process.exit(bad ? 1 : 0);
   ' "$OUT/status.json" "$OUT/status.err" 2>/dev/null | tee -a "$SUMMARY"
