@@ -309,9 +309,18 @@ describe("transcript parsing", () => {
     expect(transcript.skippedLines).toBe(1);
   });
 
+  // The slug comes from path.resolve, which is platform-dependent: a Windows
+  // absolute path is a RELATIVE path on POSIX, so resolve prepends cwd and the
+  // slug changes. Asserting one platform's literal made this fail on macOS.
+  // Expectations are written out by hand rather than computed with the same
+  // regex the implementation uses, which would only assert that a line equals
+  // itself.
   it("mirrors Claude Code's project slug, dots included", () => {
-    const dir = projectTranscriptDir("C:\\Users\\me\\proj\\.claude\\wt", "C:\\home");
-    expect(path.basename(dir)).toBe("C--Users-me-proj--claude-wt");
+    const [root, expected] =
+      process.platform === "win32"
+        ? ["C:\\Users\\me\\proj\\.claude\\wt", "C--Users-me-proj--claude-wt"]
+        : ["/Users/me/proj/.claude/wt", "-Users-me-proj--claude-wt"];
+    expect(path.basename(projectTranscriptDir(root, path.sep + "home"))).toBe(expected);
   });
 
   it("returns no transcripts for a missing directory", async () => {

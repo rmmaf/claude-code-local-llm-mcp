@@ -234,9 +234,21 @@ if [ -s "$OUT/status.json" ]; then
     const rows = (coders.length ? coders : usable)
       .map((m) => ({ id: m.model, gb: m.size_gb }))
       .sort((a, b) => (b.gb ?? -1) - (a.gb ?? -1));
-    const csv = rows.map((r) =>
-      `${r.id},"${r.gb === null ? "size unknown" : r.gb + " GB"}${coders.length ? " coding model" : ""}. AUTO-GENERATED — rewrite this; the objective is what model selection reads."`
-    ).join("\n") + "\n";
+
+    // The objective is not a comment: the models tool shows it to the
+    // orchestrator, which picks by purpose from exactly this text. An earlier
+    // version wrote "AUTO-GENERATED — rewrite this" into the field, so an
+    // unreviewed catalog fed the orchestrator an instruction aimed at a human.
+    // Write a real description instead, and mark it [auto] so 5b can tell a
+    // generated line from a reviewed one.
+    const size = (gb) => (gb === null ? "size unknown" : gb + " GB");
+    const kind = coders.length ? "coding model" : "model, NOT identified as a coding model";
+    const describe = (r, i, n) =>
+      n === 1 ? `Local ${kind} (${size(r.gb)}) [auto]`
+      : i === 0 ? `Largest local ${kind} here (${size(r.gb)}) — most capable, needs the most memory [auto]`
+      : i === n - 1 ? `Smallest local ${kind} here (${size(r.gb)}) — fastest, lowest memory, for concurrent agents [auto]`
+      : `Mid-size local ${kind} (${size(r.gb)}) [auto]`;
+    const csv = rows.map((r, i) => `${r.id},"${describe(r, i, rows.length)}"`).join("\n") + "\n";
     fs.writeFileSync(process.argv[2], csv);
 
     if (!coders.length) {
@@ -302,6 +314,19 @@ if [ -s "$OUT/status.json" ]; then
       console.log("     these cannot serve chat completions — delete those lines");
       bad++;
     }
+    // The objective is what the models tool shows the orchestrator when it
+    // picks by purpose. A catalog can be otherwise perfect and still be feeding
+    // it text this script wrote from a filename.
+    const auto = s.catalog.filter((m) => /\[auto\]/.test(m.objective || ""));
+    if (auto.length) {
+      console.log("     " + auto.length + " of " + s.catalog.length +
+        " objective(s) are still auto-described from the model name.");
+      console.log("     Auto-selection by memory ignores objectives, so B6/B7 are unaffected —");
+      console.log("     but the models tool reads these verbatim, so a model picked by purpose");
+      console.log("     would be picked from a guess about what the filename means.");
+      bad++;
+    }
+
     const free = s.memory.usable_free_gb;
     console.log("  auto-selection would use: " + s.auto_selection.model +
       " (usable free: " + (free ?? "unknown") + " GB)");
