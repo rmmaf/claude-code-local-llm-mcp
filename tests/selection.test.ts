@@ -47,9 +47,53 @@ describe("matchModel", () => {
     ).toBe("fuzzy");
   });
 
+  it("strips quant suffixes spelled with LM Studio's \"@\" separator", () => {
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@8bit"]).quality).toBe("fuzzy");
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@4bit"]).quality).toBe("fuzzy");
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@q4_k_m"]).quality).toBe("fuzzy");
+    // A mixed "-" then "@" run, which is what `lms ls` actually prints.
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct-mlx@8bit"]).quality).toBe("fuzzy");
+    // Publisher prefix and "@" quant at once: basename split, then strip.
+    expect(
+      matchModel("qwen2.5-coder-14b-instruct", ["lmstudio-community/qwen2.5-coder-14b-instruct-mlx@8bit"]).quality
+    ).toBe("fuzzy");
+    // And the other direction: the catalog carries the quant, the candidate doesn't.
+    expect(matchModel("qwen2.5-coder-14b-instruct@8bit", ["qwen2.5-coder-14b-instruct"]).quality).toBe("fuzzy");
+  });
+
+  it("returns the candidate id verbatim, quant suffix included", () => {
+    // Stripping is for comparison only. The id that comes back is what gets
+    // sent to LM Studio, so dropping the quant here would silently load a
+    // different quantization than the one on disk.
+    const r = matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct-mlx@8bit"]);
+    expect(r.value).toBe("qwen2.5-coder-14b-instruct-mlx@8bit");
+  });
+
+  it("still prefers an exact match over a stripped one", () => {
+    const r = matchModel("qwen2.5-coder-14b-instruct@8bit", [
+      "qwen2.5-coder-14b-instruct",
+      "qwen2.5-coder-14b-instruct@8bit",
+    ]);
+    expect(r).toEqual({ value: "qwen2.5-coder-14b-instruct@8bit", quality: "exact" });
+  });
+
   it("does not collide different parameter sizes", () => {
     expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-32b-instruct"]).quality).toBe("none");
     expect(matchModel("qwen2.5-coder-14b", ["llama-3-8b"]).value).toBeNull();
+  });
+
+  it("does not let \"@\" stripping blur models apart", () => {
+    // Quant distinguishes one base model; a different parameter count is a
+    // different model, on either side of the separator.
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-32b-instruct@8bit"]).quality).toBe("none");
+    expect(matchModel("qwen2.5-coder-14b-instruct@8bit", ["qwen2.5-coder-32b-instruct@q4_k_m"]).quality).toBe("none");
+    // Only a *known quant token* comes off, not whatever follows an "@" — the
+    // guard against this degrading into a plain split on "@".
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@turbo"]).quality).toBe("none");
+    // An "@" mid-id is not a trailing suffix and survives, even when a real
+    // quant suffix is stripped from the same id.
+    expect(matchModel("qwen2.5@8bit-coder-14b-instruct", ["qwen2.5-coder-14b-instruct"]).quality).toBe("none");
+    expect(matchModel("qwen2.5@8bit-coder-14b-instruct-mlx", ["qwen2.5-coder-14b-instruct"]).quality).toBe("none");
   });
 });
 

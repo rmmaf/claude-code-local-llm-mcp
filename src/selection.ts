@@ -14,7 +14,16 @@ export function normalizeId(s: string): string {
 
 // Quant/format/precision tokens that distinguish the same base model. Stripped
 // only for fuzzy matching, never to pick which quant actually runs.
-const QUANT_SUFFIX_RE = /(?:-(?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\d+(?:_k(?:_[ms])?)?)|-v\d+)+$/gi;
+//
+// LM Studio spells the separator both ways — "-" in qwen…-instruct-mlx and "@"
+// in qwen…-instruct-mlx@8bit or qwen…-instruct@q4_k_m — so either is accepted,
+// and the trailing `+` lets a mixed run ("-mlx@8bit") come off in one bite.
+// Two things keep this from loosening the match: the token list is closed, so a
+// parameter count ("-14b") is not strippable and 14b never collapses into 32b;
+// and it is anchored at `$`, so an "@" mid-id is not a trailing suffix and
+// survives. Not global — `$` admits one match, and the flag would only leave
+// `lastIndex` state for a future `.test()` to trip over.
+const QUANT_SUFFIX_RE = /(?:[-@](?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\d+(?:_k(?:_[ms])?)?|v\d+))+$/i;
 
 /** Candidate forms for fuzzy comparison: full, basename, and quant-stripped variants. */
 function fuzzyForms(id: string): Set<string> {
