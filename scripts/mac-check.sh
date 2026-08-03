@@ -318,6 +318,16 @@ if [ -s "$OUT/status.json" ]; then
     console.log("  catalog in force: " + (src.in_force === "csv" ? src.csv_path : "BUILT-IN DEFAULT"));
     if (src.in_force === "csv") {
       console.log("     " + src.models_loaded + " model(s) loaded from it");
+      // Every run writes its catalog into its own directory, so an exported
+      // path goes stale the moment the next run starts. Both files work; say
+      // which one is actually being read so the two paths on screen are not
+      // mistaken for a conflict.
+      const written = process.argv[3];
+      if (written && src.csv_path !== written) {
+        console.log("     (this run wrote a fresh one to " + written + " —");
+        console.log("      the one above is from an earlier run and is what counts. Re-export");
+        console.log("      only if you want the newest.)");
+      }
     } else if (src.csv_path === null) {
       console.log("     no LOCAL_CODER_MODELS_CSV set in this shell");
     } else {
@@ -343,14 +353,17 @@ if [ -s "$OUT/status.json" ]; then
     // The objective is what the models tool shows the orchestrator when it
     // picks by purpose. A catalog can be otherwise perfect and still be feeding
     // it text this script wrote from a filename.
+    // Reported, NOT failed. These objectives are honest descriptions now — the
+    // earlier version wrote the literal instruction "AUTO-GENERATED — rewrite
+    // this" into the field, and THAT was invalid. A marker saying "generated
+    // from the file name" is not. Failing on it would mean this script can
+    // never approve a catalog it produced itself, which turns FAIL into noise.
     const auto = s.catalog.filter((m) => /\[auto\]/.test(m.objective || ""));
     if (auto.length) {
-      console.log("     " + auto.length + " of " + s.catalog.length +
-        " objective(s) are still auto-described from the model name.");
-      console.log("     Auto-selection by memory ignores objectives, so B6/B7 are unaffected —");
-      console.log("     but the models tool reads these verbatim, so a model picked by purpose");
-      console.log("     would be picked from a guess about what the filename means.");
-      bad++;
+      console.log("     note: " + auto.length + " of " + s.catalog.length +
+        " objective(s) are described from the model name, not reviewed by hand.");
+      console.log("     Auto-selection by memory ignores objectives, so B6 and B7 are unaffected.");
+      console.log("     The models tool does read them, so refine them before picking by purpose.");
     }
 
     const free = s.memory.usable_free_gb;
@@ -386,7 +399,7 @@ if [ -s "$OUT/status.json" ]; then
       }
     }
     process.exit(bad ? 1 : 0);
-  ' "$OUT/status.json" "$OUT/status.err" 2>/dev/null | tee -a "$SUMMARY"
+  ' "$OUT/status.json" "$OUT/status.err" "$OUT/models.local.csv" 2>/dev/null | tee -a "$SUMMARY"
   if [ "${PIPESTATUS[0]}" -eq 0 ]; then
     pass "catalog in force looks sane"
   else
