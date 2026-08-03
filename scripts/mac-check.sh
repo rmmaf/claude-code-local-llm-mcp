@@ -322,8 +322,13 @@ if [ -s "$OUT/status.json" ]; then
       // path goes stale the moment the next run starts. Both files work; say
       // which one is actually being read so the two paths on screen are not
       // mistaken for a conflict.
+      // Check it exists rather than assuming step 5 got that far: step 5 exits
+      // early when LM Studio lists no models, and is skipped entirely when the
+      // status probe failed. The run directory is created fresh each run, so a
+      // file present in it was written by this run — existence is enough.
       const written = process.argv[3];
-      if (written && src.csv_path !== written) {
+      const wroteOne = Boolean(written) && require("fs").existsSync(written);
+      if (wroteOne && src.csv_path !== written) {
         console.log("     (this run wrote a fresh one to " + written + " —");
         console.log("      the one above is from an earlier run and is what counts. Re-export");
         console.log("      only if you want the newest.)");
