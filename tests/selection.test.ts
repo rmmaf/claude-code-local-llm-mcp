@@ -231,6 +231,44 @@ describe("resolveModel", () => {
     expect(sel.model).toBe("test-ide-model"); // 18 GB doesn't fit 13.6, 8 GB does
   });
 
+  it("sends the served spelling on the generation path, not the catalog one", async () => {
+    // The path a work tool takes when `model` is omitted. It used to pass null
+    // for the served ids, so nothing could be resolved and the catalog name
+    // went out to an endpoint that does not answer to it.
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model-mlx@8bit", sizeBytes: 8 * GB }]),
+    });
+    const served = { data: [{ id: "test-ide-model-mlx@8bit" }] };
+    const modelsFetchImpl = async () =>
+      new Response(JSON.stringify(served), { status: 200, headers: { "content-type": "application/json" } });
+    const sel = await resolveModel(undefined, config, { platform: "darwin", runner, modelsFetchImpl });
+    expect(sel.model).toBe("test-ide-model-mlx@8bit");
+    expect(sel.reason).toContain("served as");
+  });
+
+  it("does not reach the network when the caller injected a fetch", async () => {
+    // An injected chat fetch means the caller owns this process's network
+    // surface. Probing past it would make the offline suite depend on whatever
+    // is listening on localhost — green on a machine running LM Studio only.
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model", sizeBytes: 8 * GB }]),
+    });
+    let called = 0;
+    const fetchImpl = async () => {
+      called++;
+      return new Response("{}", { status: 200 });
+    };
+    const sel = await resolveModel(undefined, config, { platform: "darwin", runner, fetchImpl });
+    expect(called).toBe(0);
+    expect(sel.model).toBe("test-ide-model");
+  });
+
   it("auto-picks the largest fitting model when RAM is ample", async () => {
     const config = testConfig("/tmp");
     const runner = fakeRunner({

@@ -20,6 +20,12 @@ export { normalizeRel };
 /** Injection points for tests: mocked fetch, canned memory probes. */
 export interface ToolDeps {
   fetchImpl?: FetchLike;
+  /**
+   * Separate from `fetchImpl` on purpose: model resolution probes `/models`
+   * before generating, and sharing one fetch let that probe eat a queued test
+   * response meant for the chat call.
+   */
+  modelsFetchImpl?: FetchLike;
   runner?: CommandRunner;
   platform?: NodeJS.Platform;
   /**

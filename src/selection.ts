@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import type { CommandRunner } from "./exec.js";
 import { getLmsModels, type LmsLoadedModel, type LmsModel } from "./lms.js";
+import { listModels, type FetchLike } from "./llm-client.js";
 import { log } from "./logger.js";
 import { bytesToGb, getMemoryInfo, type MemoryInfo } from "./memory.js";
 import { DEFAULT_MODEL_CATALOG, type ModelEntry } from "./models-csv.js";
@@ -295,7 +296,20 @@ export function selectModelsForMemory(
 export interface SelectionDeps {
   runner?: CommandRunner;
   platform?: NodeJS.Platform;
+  /** Present only to detect that the caller controls fetch — never used to probe. */
+  fetchImpl?: FetchLike;
+  /**
+   * ONLY for the `/models` probe below — deliberately not the same field the
+   * chat client uses. Sharing one fetch made this probe consume a queued test
+   * response meant for the generation call, so every later request shifted by
+   * one. `DECISIONS.md`: an injection point belongs to one collaborator, and
+   * sharing it makes each caller a function of every other caller's call count.
+   */
+  modelsFetchImpl?: FetchLike;
 }
+
+/** Short on purpose: this runs before every auto-selected generation. */
+const RESOLVE_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Resolve which model a work tool (implement/fix/scaffold) should run. An
@@ -320,7 +334,33 @@ export async function resolveModel(
   const catalog = config.models.length > 0 ? config.models : DEFAULT_MODEL_CATALOG;
   const memory = await getMemoryInfo(deps.runner, deps.platform);
   const lms = await getLmsModels(deps.runner);
-  const report = buildCatalogReport(catalog, null, lms, null, usableFree(memory, config.memFitFraction));
+  // Ask what is actually served. Passing null here was the whole defect: the
+  // report then had nothing to resolve against, so an entry matched only by a
+  // quant spelling was requested under the catalog name and the generation
+  // failed on a model that does not exist. A probe failure degrades to null,
+  // which is the old behaviour and the honest answer — we did not find out.
+  // A caller that injected a chat fetch controls this process's network
+  // surface; reaching past it to the real endpoint would make the offline test
+  // suite depend on whatever happens to be listening on localhost — green on a
+  // machine running LM Studio, different elsewhere. Probe only with a fetch we
+  // were actually handed, or the real one when nothing was injected at all.
+  const probeFetch = deps.modelsFetchImpl ?? (deps.fetchImpl === undefined ? fetch : null);
+  let apiModelIds: string[] | null = null;
+  if (probeFetch !== null) {
+    try {
+      apiModelIds = await listModels(
+        config.baseUrl,
+        Math.min(config.timeoutMs, RESOLVE_PROBE_TIMEOUT_MS),
+        probeFetch
+      );
+    } catch (error) {
+      log.warn(
+        `selection: could not list served models (${error instanceof Error ? error.message : String(error)}); ` +
+          `sending the catalog id as written`
+      );
+    }
+  }
+  const report = buildCatalogReport(catalog, apiModelIds, lms, null, usableFree(memory, config.memFitFraction));
   const selection = selectModelForMemory(report, catalog);
   log.info(`selection: auto-picked ${selection.model} (${selection.reason})`);
   return selection;
