@@ -60,12 +60,28 @@ do_setup() {
     git -C "$REPO_ROOT" status --short > "$OUT/git-status.txt" 2>&1
     note "     (listed in $OUT/git-status.txt; setup continues without pulling)"
   else
-    if git -C "$REPO_ROOT" pull --rebase > "$OUT/git-pull.txt" 2>&1; then
+    # --ff-only, not --rebase: a rebase that stops on a conflict leaves the
+    # repository mid-rebase, and a script that walks away from that has made a
+    # mess it did not warn about. A fast-forward either happens or changes
+    # nothing at all.
+    if git -C "$REPO_ROOT" pull --ff-only > "$OUT/git-pull.txt" 2>&1; then
       pass "pulled: $(git -C "$REPO_ROOT" log -1 --format='%h %s' 2>/dev/null)"
     else
-      fail "git pull failed — see $OUT/git-pull.txt"
+      fail "git pull --ff-only failed (diverged history?) — see $OUT/git-pull.txt; nothing was changed"
     fi
   fi
+
+  # Refuse to write over anything already sitting at the fixture paths. They are
+  # obscure names, so this should never fire — but "should never" is not a
+  # reason to overwrite a file whose contents were never looked at.
+  for rel in "$SMALL" "$LARGE"; do
+    if [ -e "$REPO_ROOT/$rel" ]; then
+      fail "$rel already exists — refusing to overwrite it"
+      note "     if it is a leftover from an earlier run: bash scripts/verify-stop-cause.sh restore"
+      note "     if it is yours: move it, and nothing here will touch it"
+      exit 1
+    fi
+  done
 
   # The MCP server runs dist/server.js, so an unbuilt fix is an untested one.
   if (cd "$REPO_ROOT" && npm run build > "$OUT/build.txt" 2>&1); then
@@ -86,24 +102,33 @@ do_setup() {
     fail "dist/tools/repair.js missing — the build did not produce a server to run"
   fi
 
-  # Where the telemetry ends right now. `check` reads only past this line, so
-  # the 11 repair rows already in the log cannot be scored as this run's.
+  # Where the telemetry ends right now, in BYTES. `check` reads only past this
+  # offset, so the repair rows already in the log cannot be scored as this
+  # run's. Bytes and not lines: a line count has to agree with however the
+  # reader decides to split, and a single blank line in the log is enough to
+  # shift the cut by one row — which is a wrong answer that still looks like a
+  # measurement.
   BASELINE=0
   if [ -f "$TELEMETRY" ]; then
-    BASELINE="$(grep -c '' "$TELEMETRY" 2>/dev/null || echo 0)"
+    BASELINE="$(wc -c < "$TELEMETRY" 2>/dev/null | tr -d ' ')"
+    [ -n "$BASELINE" ] || BASELINE=0
   fi
-  note "telemetry baseline: $BASELINE rows"
+  note "telemetry baseline: $BASELINE bytes"
 
-  # The per-request ceiling in force. `check` compares the timeout the model
-  # actually got against this, which is what tells the two stop causes apart.
+  # Context only. This is what THIS shell sees, and the MCP server inherits the
+  # environment Claude Code was launched with, which need not be the same. It is
+  # recorded because it is worth knowing, and it is NOT what `check` scores
+  # against — see the analyzer, which learns the ceiling from the run itself.
   TIMEOUT_MS="${LOCAL_CODER_TIMEOUT_MS:-300000}"
-  note "LOCAL_CODER_TIMEOUT_MS as this shell sees it: $TIMEOUT_MS"
+  note "LOCAL_CODER_TIMEOUT_MS in this shell (context, not the server's): $TIMEOUT_MS"
 
+  # Quoted: an unquoted path with a space becomes a command when `check` sources
+  # this file.
   {
-    echo "run_id=$RUN_ID"
-    echo "repo_root=$REPO_ROOT"
-    echo "baseline=$BASELINE"
-    echo "timeout_ms=$TIMEOUT_MS"
+    echo "run_id='$RUN_ID'"
+    echo "repo_root='$REPO_ROOT'"
+    echo "baseline='$BASELINE'"
+    echo "timeout_ms='$TIMEOUT_MS'"
   } > "$OUT/state.env"
   printf '%s\n' "$OUT" > "$POINTER"
 
@@ -257,16 +282,18 @@ write_analyzer() {
 // depends on a file the repo might not have at the version being tested.
 import { readFileSync, writeFileSync } from "node:fs";
 
-const [file, baselineRaw, timeoutRaw, rowsOut] = process.argv.slice(2);
-const baseline = Number(baselineRaw);
-const configTimeoutMs = Number(timeoutRaw);
+const [file, baselineRaw, shellTimeoutRaw, rowsOut] = process.argv.slice(2);
+const baselineBytes = Number(baselineRaw);
+/** What the SETUP SHELL saw. Context for the reader; never a scoring input. */
+const shellTimeoutMs = Number(shellTimeoutRaw);
 
-const all = readFileSync(file, "utf8").split("\n").filter((l) => l.trim() !== "");
-// Only rows written after setup. Slicing by line offset rather than by
-// timestamp keeps a clock skew between the log and this process out of it.
-const fresh = all.slice(baseline);
+// Sliced as BYTES on the raw buffer, matching what `wc -c` recorded. Reading to
+// a string first and slicing that would count UTF-16 units, so one non-ASCII
+// character anywhere earlier in the log would shift the cut. A fragment at the
+// seam simply fails to parse below and is skipped.
+const fresh = readFileSync(file).subarray(baselineBytes).toString("utf8");
 const repairs = [];
-for (const line of fresh) {
+for (const line of fresh.split("\n")) {
   try {
     const row = JSON.parse(line);
     if (row.tool === "repair") repairs.push(row);
@@ -321,53 +348,67 @@ if (traced) {
   say("FAIL  no per-round trace in any row — dist/ is older than the fix, or no round ran");
 }
 
-// 2. The budget side. The applied ceiling must be BELOW the per-request one,
-//    which is what makes `budget` the honest label rather than a guess.
-const budgetRows = repairs.filter((r) => r.detail?.stopped_because === "budget");
-if (budgetRows.length === 0) {
-  say("SKIP  no row stopped on `budget` — prompt 2 did not run, or generation beat the 30 s budget");
+// 2 and 3. The two stop causes, scored against a ceiling LEARNED FROM THE RUN.
+//
+// The obvious comparison — applied vs LOCAL_CODER_TIMEOUT_MS as the setup shell
+// saw it — is not sound. The MCP server inherits the environment Claude Code
+// was launched with, and the shell that ran setup is a different process that
+// need not agree. Scoring against it would produce confident PASS/FAIL verdicts
+// resting on a number that may have had nothing to do with the run.
+//
+// The run can supply it instead. `applied = min(config.timeoutMs, remaining)`,
+// so applied never exceeds the ceiling and EQUALS it whenever the budget was
+// generous. Prompt 3 is built to be that call, so the largest applied value
+// observed is the ceiling. Every row is then scored by comparison against it:
+// below the ceiling means the budget was the binding constraint and the row
+// must say `budget`; at the ceiling means the request broke its own limit and
+// the row must say `model_failed`.
+const errText = (r) => (r.detail?.rounds ?? []).map((q) => q.error).filter(Boolean).join(" ");
+const timed = [];
+for (const r of repairs) {
+  const applied = appliedMs(errText(r));
+  if (applied !== null) timed.push({ stop: r.detail?.stopped_because, applied });
+}
+
+const truncated = repairs.filter((r) => /truncat/i.test(errText(r)));
+if (truncated.length > 0) {
+  say(`SKIP  ${truncated.length} row(s) failed by TRUNCATION rather than a timeout — that is B0,`);
+  say("      and those rows exercise the output contract, not the stop-cause branch");
+}
+
+const applied = timed.map((t) => t.applied);
+const distinct = [...new Set(applied)];
+if (timed.length === 0) {
+  say("SKIP  no timed-out row at all — neither stop cause can be checked");
+  say("      (prompt 2 and prompt 3 either did not run or never reached a timeout)");
+} else if (distinct.length < 2) {
+  say(`SKIP  every timed-out row applied the same ${distinct[0]} ms, so the ceiling cannot be`);
+  say("      told apart from the budget. Re-run prompts 2 and 3: they must differ in");
+  say("      budget_seconds, and only one of them may exceed the per-request ceiling.");
+  say(`      (for reference, the setup shell saw LOCAL_CODER_TIMEOUT_MS=${shellTimeoutMs},`);
+  say("       which is NOT evidence about the server and was not used to score anything)");
 } else {
-  let scored = false;
-  for (const r of budgetRows) {
-    const applied = appliedMs((r.detail.rounds ?? []).map((q) => q.error).join(" "));
-    if (applied === null) continue;
-    scored = true;
-    if (applied < configTimeoutMs) {
-      say(`PASS  budget row applied ${applied} ms, below the ${configTimeoutMs} ms per-request ceiling`);
-      say("      the budget really was the binding constraint, read from the ceiling itself");
+  const ceiling = Math.max(...applied);
+  say(`per-request ceiling learned from the run: ${ceiling} ms (largest applied timeout observed)`);
+  if (ceiling !== shellTimeoutMs) {
+    say(`      note: the setup shell saw ${shellTimeoutMs} ms. The server's is what matters and`);
+    say("      it is the learned value; a mismatch just means the two processes differ.");
+  }
+  let bad = 0;
+  for (const t of timed) {
+    const expected = t.applied < ceiling ? "budget" : "model_failed";
+    if (t.stop === expected) {
+      say(`PASS  applied ${t.applied} ms -> ${t.stop}${t.applied < ceiling ? " (the budget bound)" : " (its own ceiling bound)"}`);
     } else {
-      say(`FAIL  budget row applied ${applied} ms, NOT below ${configTimeoutMs} ms — mislabelled`);
+      bad++;
+      say(`FAIL  applied ${t.applied} ms should be ${expected}, row says ${t.stop}`);
     }
   }
-  if (!scored) say("SKIP  a row stopped on `budget` but carried no timeout text to cross-check");
+  say("");
+  say(bad === 0
+    ? "The label flipped with the ceiling and nothing else — which is the whole claim."
+    : `${bad} row(s) disagree with the ceiling that produced them: the fix is WRONG.`);
 }
-
-// 3. The model side. Same symptom, opposite label, and the number in the error
-//    says which ceiling produced it.
-const failedRows = repairs.filter((r) => r.detail?.stopped_because === "model_failed");
-if (failedRows.length === 0) {
-  say("SKIP  no row stopped on `model_failed` — prompt 3 did not run, or it closed instead");
-} else {
-  let verdict = null;
-  for (const r of failedRows) {
-    const text = (r.detail.rounds ?? []).map((q) => q.error).join(" ");
-    const applied = appliedMs(text);
-    if (applied !== null) {
-      verdict = applied >= configTimeoutMs
-        ? `PASS  model_failed row applied ${applied} ms, the full per-request ceiling — budget was NOT the constraint and was not blamed`
-        : `FAIL  model_failed row applied ${applied} ms, below ${configTimeoutMs} ms — the budget bound and should have been reported`;
-      break;
-    }
-    if (/truncat/i.test(text)) {
-      verdict = "SKIP  model_failed came from TRUNCATION, not a timeout — this is B0, and the timeout branch was not exercised";
-    }
-  }
-  say(verdict ?? "SKIP  a row stopped on `model_failed` with no timeout or truncation text to attribute it");
-}
-
-say("");
-say("Both labels present and cross-checked is the result worth having: same model,");
-say("same file, same failure, and the label flips only with budget_seconds.");
 
 console.log(out.join("\n"));
 MJSEOF
@@ -379,11 +420,20 @@ do_restore() {
   printf '\n%sverify-stop-cause — restore%s\n\n' "$BOLD" "$OFF"
   removed=0
   for rel in "$SMALL" "$LARGE"; do
-    if [ -f "$REPO_ROOT/$rel" ]; then
+    if [ ! -e "$REPO_ROOT/$rel" ]; then
+      skip "$rel was not there"
+      continue
+    fi
+    # Only delete what this script wrote. Both fixtures open with a marker line
+    # naming this script; anything else at that path belongs to someone else,
+    # and a cleanup step that deletes on the strength of a filename alone is how
+    # a verification run destroys work it was never asked to touch.
+    if head -n 1 "$REPO_ROOT/$rel" 2>/dev/null | grep -q "verify-stop-cause.sh"; then
       rm -f "$REPO_ROOT/$rel" && removed=$((removed + 1))
       pass "removed $rel"
     else
-      skip "$rel was not there"
+      fail "$rel exists but is NOT one of this script's fixtures — left untouched"
+      note "     first line: $(head -n 1 "$REPO_ROOT/$rel" 2>/dev/null)"
     fi
   done
   # The fixtures were new files, never edits, so nothing of yours needed
