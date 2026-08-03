@@ -15,13 +15,13 @@ a real local model. The one red test was a Windows path literal, fixed in
 
 ## Next action
 
-**Register the MCP on the Mac, restart, and run `repair` on a real failure.**
-Nothing has yet run inside a Claude Code session there — `~/.claude/projects`
-has no entry for the repo, which is why telemetry is still empty. B6 (`passed`,
-`rounds_used`) and B7 (`rounds[].model_latency_ms`, `gate_ms`) come from
-`repair`'s own payload, so a reopened G1 does not block them. Record which
-model ran: free RAM moved 28.2 → 15.6 → 18.1 GB across runs and at 15.6 the
-pick silently changed from the 30B to the 14B.
+**Run a task on the Mac that delegates the writing to the local model.** The
+first session there produced two real `gate` calls (99.46% each, B3 now has 3
+of the 20 it asks for) but **no `repair` data at all**: both gates passed, so
+no failure ever existed to close, and no local-model tool ran. B6 and B7 need
+a task whose correctness is not reachable in one pass. Record which model ran —
+free RAM moved 28.2 → 15.6 → 27.8 GB across runs and at 15.6 the pick silently
+changed from the 30B to the 14B.
 
 ## Waiting on
 
