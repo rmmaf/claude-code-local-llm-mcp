@@ -8,7 +8,15 @@
     "`inputPerMTok` is USD per million INPUT tokens and starts null on purpose:",
     "a stale hardcoded price silently corrupts every dollar figure, while a",
     "missing one makes the report fall back to input-equivalent units, which are",
-    "exact. Fill it in from https://claude.com/pricing to see dollars.",
+    "exact. Filled in 2026-08-03 from Anthropic's published API pricing.",
+    "",
+    "The multipliers above were checked against that same source and match it",
+    "exactly: output is 5x input on every model listed, cache read is 0.1x, and",
+    "cache write is 1.25x (5m TTL) / 2.0x (1h TTL). No per-model override needed.",
+    "",
+    "DATED: claude-sonnet-5 is at introductory pricing of $2.00/MTok through",
+    "2026-08-31 and reverts to $3.00 on 2026-09-01. The value below is the",
+    "introductory one — after that date it reads ~33% low until changed.",
     "",
     "`charsPerToken` is used ONLY to turn suppressed byte counts into an estimated",
     "token count. Nothing in the absolute accounting depends on it."
@@ -21,9 +29,15 @@
     "output": 5.0
   },
   "models": {
-    "claude-opus-5": { "inputPerMTok": null },
-    "claude-sonnet-5": { "inputPerMTok": null },
-    "claude-haiku-4-5-20251001": { "inputPerMTok": null }
+    "claude-opus-5": { "inputPerMTok": 5.0 },
+    "claude-opus-4-8": { "inputPerMTok": 5.0 },
+    "claude-opus-4-7": { "inputPerMTok": 5.0 },
+    "claude-opus-4-6": { "inputPerMTok": 5.0 },
+    "claude-sonnet-5": { "inputPerMTok": 2.0 },
+    "claude-sonnet-4-6": { "inputPerMTok": 3.0 },
+    "claude-haiku-4-5": { "inputPerMTok": 1.0 },
+    "claude-haiku-4-5-20251001": { "inputPerMTok": 1.0 },
+    "claude-fable-5": { "inputPerMTok": 10.0 }
   },
   "charsPerToken": 3.7
 }

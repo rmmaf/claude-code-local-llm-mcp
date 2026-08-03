@@ -48,7 +48,13 @@ That forces the priority order every premise below is organised around:
   writes to its own transcript, deduplicated by `requestId`; nothing is estimated.
 - **Experiment:** run `npm run cost-meter` against a session, compare its total
   against that session's `/usage` figures.
-- **Measured:** — (no run)
+- **Measured:** **half of it.** The meter side is pinned: **$88.34** over 300
+  billed requests, all `claude-opus-5`, `run 2026-08-03-win-02` — recorded
+  *before* `/usage` was read, so the comparison cannot be adjusted afterwards.
+  The `/usage` side has not been read, so **no error exists yet and B1 is not
+  decided.** Prices came from Anthropic's published sheet on 2026-08-03; the five
+  multipliers already in `src/cost/rates.ts` matched it exactly, so only
+  `inputPerMTok` had to be filled in.
 - **Falls if:** error > 5%.
 - **If it falls:** every other premise here loses its instrument. Fixing the meter
   becomes the only work until it agrees.
