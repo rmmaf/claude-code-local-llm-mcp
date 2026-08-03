@@ -267,7 +267,11 @@ if [ -s "$OUT/status.json" ]; then
       if (r.gb === null) return `Local ${kind}, size unknown [auto]`;
       const base = `Local ${kind}, ${r.gb} GB`;
       if (soleMax && r.gb === maxGb) return `${base} — the largest here; auto-selection prefers it whenever it fits [auto]`;
-      if (soleMin && r.gb === minGb) return `${base} — the smallest here; the one that still fits when memory is tight [auto]`;
+      // "still fits when memory is tight" promised an absolute outcome from a
+      // relative fact: the smallest model does not fit if free memory is below
+      // it either, and then nothing fits and selection falls back to the first
+      // catalog entry. Ordering is all that being smallest establishes.
+      if (soleMin && r.gb === minGb) return `${base} — the smallest here; the last to stop fitting as memory tightens [auto]`;
       return `${base} [auto]`;
     };
     const csv = rows.map((r) => `${r.id},"${describe(r)}"`).join("\n") + "\n";
