@@ -293,6 +293,13 @@ do_check() {
   printf '\n%sverify-stop-cause — check%s\n' "$BOLD" "$OFF"
   printf '%s\n\n' "run: $run_id"
 
+  # Rewritten HERE, not reused from setup. Setup may have run against an older
+  # copy of this script, and an analyzer from then can answer with a contract
+  # this one no longer speaks — observed: a stale analyzer returned 0 for a run
+  # that established nothing, and the caller printed "Verified". The scorer and
+  # the code reading its status now always come from the same file.
+  write_analyzer "$OUT"
+
   # The telemetry setup measured, not whichever clone this copy of the script
   # happens to sit in. A byte offset only means something against the same file.
   CHECK_TELEMETRY="$repo_root/.local-coder/telemetry.jsonl"
@@ -314,11 +321,15 @@ do_check() {
   cat "$SUMMARY"
 
   printf '\nSend back: %s and %s\n' "$OUT/check.txt" "$OUT/rows.jsonl"
-  if [ "$status" -ne 0 ]; then
-    printf '%sSomething above is FAIL — read it before running anything else.%s\n\n' "$RED" "$OFF"
-  else
-    printf '\n'
-  fi
+  # Three statuses, because "nothing failed" is not "the run verified anything".
+  # An all-SKIP run used to come back 0 and read as success while having
+  # established none of the three things it exists to establish.
+  case "$status" in
+    0) printf '%sVerified.%s All three objectives established.\n\n' "$GREEN" "$OFF" ;;
+    2) printf '%sIncomplete.%s Nothing contradicted the fix, but the run did not verify it.\n' "$YELLOW" "$OFF"
+       printf 'Re-run the prompts named above. Do not record this as a verification.\n\n' ;;
+    *) printf '%sFailed.%s A row contradicts the fix — read the verdict above.\n\n' "$RED" "$OFF" ;;
+  esac
   return "$status"
 }
 
@@ -351,6 +362,13 @@ writeFileSync(rowsOut, repairs.map((r) => JSON.stringify(r)).join("\n") + "\n");
 
 const out = [];
 const say = (s) => out.push(s);
+
+// The three things this run exists to establish. Each ends as PASS, FAIL, or
+// stays null for "never established". Tracking them by name is what stops an
+// all-SKIP run from exiting 0: nothing failed, but nothing was verified either,
+// and those are different answers. Reporting the second as success is how a
+// verifier comes back green having checked nothing.
+const objectives = { trace: null, budget: null, model_failed: null };
 
 say(`new repair rows since setup: ${repairs.length}`);
 if (repairs.length === 0) {
@@ -391,6 +409,7 @@ const traced = repairs.find(
 const hasField = repairs.some((r) => Array.isArray(r.detail?.rounds));
 if (traced) {
   const q = traced.detail.rounds.find((x) => typeof x.gate_ms === "number" && x.gate_ms > 0);
+  objectives.trace = "PASS";
   say(`PASS  per-round trace reaches telemetry — model_ms=${q.model_ms} gate_ms=${q.gate_ms}`);
   say(`      B7 has its first real per-round figure: ${((q.model_ms + q.gate_ms) / 1000).toFixed(1)} s`);
 } else if (repairs.some((r) => Array.isArray(r.detail?.rounds) && r.detail.rounds.length > 0)) {
@@ -399,6 +418,7 @@ if (traced) {
   say("SKIP  the trace field is present, so the fix IS deployed, but every row ran 0 rounds");
   say("      — the gate was already green. Nothing to rebuild; prompt 1 needs a red gate.");
 } else {
+  objectives.trace = "FAIL";
   say("FAIL  no trace field in any row — the server that wrote them predates the fix");
   say("      (rebuild and restart Claude Code; these rows cannot answer B7)");
 }
@@ -449,27 +469,54 @@ if (timed.length === 0) {
     say(`      note: the setup shell saw ${shellTimeoutMs} ms. The server's is what matters and`);
     say("      it is the learned value; a mismatch just means the two processes differ.");
   }
-  let bad = 0;
   for (const t of timed) {
     const expected = t.applied < ceiling ? "budget" : "model_failed";
+    const key = expected === "budget" ? "budget" : "model_failed";
     if (t.stop === expected) {
+      // A later PASS must not overwrite an earlier FAIL for the same objective.
+      if (objectives[key] !== "FAIL") objectives[key] = "PASS";
       say(`PASS  applied ${t.applied} ms -> ${t.stop}${t.applied < ceiling ? " (the budget bound)" : " (its own ceiling bound)"}`);
     } else {
-      bad++;
+      objectives[key] = "FAIL";
       say(`FAIL  applied ${t.applied} ms should be ${expected}, row says ${t.stop}`);
     }
   }
-  say("");
-  say(bad === 0
-    ? "The label flipped with the ceiling and nothing else — which is the whole claim."
-    : `${bad} row(s) disagree with the ceiling that produced them: the fix is WRONG.`);
 }
 
-console.log(out.join("\n"));
-// Exit non-zero when anything scored FAIL, so `check` can be trusted by its
-// status and not only by being read. SKIP is not a failure: it records that a
-// branch was not exercised, which is a different thing from being wrong.
-process.exit(out.some((l) => l.startsWith("FAIL")) ? 1 : 0);
+// ------------------------------------------------------------------- verdict
+//
+// Three outcomes, not two. "Nothing failed" and "the run established what it
+// set out to" are different claims, and only the second is success.
+const names = { trace: "per-round trace (B7)", budget: "budget stop cause", model_failed: "model_failed stop cause" };
+const failed = Object.keys(objectives).filter((k) => objectives[k] === "FAIL");
+const missing = Object.keys(objectives).filter((k) => objectives[k] === null);
+const done = Object.keys(objectives).filter((k) => objectives[k] === "PASS");
+
+say("");
+say("--- verdict ---");
+for (const k of Object.keys(objectives)) {
+  say(`  ${(objectives[k] ?? "NOT ESTABLISHED").padEnd(15)} ${names[k]}`);
+}
+/** Print everything collected, then exit. Nothing exits without printing. */
+const finish = (code) => {
+  console.log(out.join("\n"));
+  process.exit(code);
+};
+
+say("");
+if (failed.length > 0) {
+  say(`VERDICT: FAILED — ${failed.map((k) => names[k]).join(", ")} contradicts the fix.`);
+  finish(1);
+}
+if (missing.length > 0) {
+  say(`VERDICT: INCOMPLETE — ${done.length} of 3 established; still missing: ${missing.map((k) => names[k]).join(", ")}.`);
+  say("Nothing contradicted the fix, and nothing confirmed the missing part either.");
+  say("Re-run the prompts that were skipped; do NOT record this as a verification.");
+  finish(2);
+}
+say("VERDICT: verified — all 3 established. The label flipped with the ceiling and");
+say("nothing else, and B7 has a real per-round figure for the first time.");
+finish(0);
 MJSEOF
 }
 
