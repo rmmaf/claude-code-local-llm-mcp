@@ -125,9 +125,28 @@ fi
 import { loadConfig } from "./src/config.js";
 import { loadModelCatalog } from "./src/models-csv.js";
 import { runStatus } from "./src/tools/status.js";
+import { buildCatalogReport, serializeReport } from "./src/selection.js";
+import { getLmsModels } from "./src/lms.js";
+
 const config = loadConfig(process.env, process.cwd());
 config.models = await loadModelCatalog(config.modelsCsvPath);
-process.stdout.write(JSON.stringify(await runStatus(config), null, 2) + "\n");
+const status = await runStatus(config);
+
+// Size every model LM Studio OFFERS, not just the catalog ones, by running the
+// offered ids back through the server's own matcher. Reused rather than
+// re-parsed so the script cannot disagree with the server about identity.
+const lms = await getLmsModels();
+// serializeReport, not the raw report: buildCatalogReport returns camelCase and
+// status serialises to snake_case. Emitting the raw shape here would silently
+// give `offered` different field names from `catalog` in the same file.
+const offered = buildCatalogReport(
+  status.models.map((m) => ({ model: m, objective: "" })),
+  status.models,
+  lms,
+  null,
+  null
+).map(serializeReport);
+process.stdout.write(JSON.stringify({ ...status, offered }, null, 2) + "\n");
 TS
 if [ -n "$PROBE" ] && (cd "$REPO_ROOT" && npx tsx "$PROBE") > "$OUT/status.json" 2>"$OUT/status.err"; then
   pass "status captured → status.json"
@@ -155,20 +174,49 @@ if [ -s "$OUT/status.json" ]; then
   node -e '
     const fs = require("fs");
     const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const missing = s.catalog.filter((m) => m.available !== true).map((m) => m.model);
     if (s.models.length === 0) {
       console.log("  LM Studio lists no models at all — nothing to match against.");
       process.exit(3);
     }
+    const missing = s.catalog.filter((m) => m.available !== true).map((m) => m.model);
     if (missing.length === 0) {
       console.log("  every catalog model is offered by LM Studio. Nothing to do.");
       process.exit(0);
     }
-    console.log("  NOT offered by LM Studio: " + missing.join(", "));
-    console.log("  LM Studio does offer:     " + s.models.join(", "));
-    const csv = s.models.map((id) => `${id},"describe what this model is for"`).join("\n") + "\n";
+
+    // Squash to letters and digits so quantisation spellings collapse. The
+    // server matcher only strips HYPHEN-separated quant tokens (-4bit, -mlx),
+    // so LM Studio ids using @ (…-mlx@8bit) do not match it. GUESS, printed as
+    // one: it saves re-downloading a model that is already on disk.
+    const squash = (x) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+    for (const want of missing) {
+      const w = squash(want.split("/").pop());
+      const near = s.models.filter((h) => { const x = squash(h); return x.includes(w) || w.includes(x); });
+      console.log("  NOT offered: " + want +
+        (near.length ? "\n     but you appear to already have: " + near.join(", ") +
+                       "\n     (same base model, different id spelling — nothing to download)" : ""));
+    }
+
+    const EMBED = /embed/i;
+    const rows = s.offered
+      .filter((m) => { if (EMBED.test(m.model)) { console.log("  skipping " + m.model + " — an embedding model cannot serve chat completions"); return false; } return true; })
+      .map((m) => ({ id: m.model, gb: m.size_gb, coder: /coder|code/i.test(m.model) }))
+      .sort((a, b) => (b.gb ?? -1) - (a.gb ?? -1));
+
+    const csv = rows.map((r) =>
+      `${r.id},"${r.gb === null ? "size unknown" : r.gb + " GB"}, name suggests ${r.coder ? "a CODING model" : "general use"}. AUTO-GENERATED — rewrite this line; the objective is what model selection reads."`
+    ).join("\n") + "\n";
     fs.writeFileSync(process.argv[2], csv);
-    console.log("  wrote a starter catalog from what you actually have → models.local.csv");
+    console.log("  wrote " + rows.length + " model(s) → models.local.csv, largest first");
+    console.log("  (largest first matters: selection falls back to the FIRST entry when sizes are unknown)");
+    const coders = rows.filter((r) => r.coder).map((r) => r.id);
+    if (coders.length) console.log("  likely coding models, keep these: " + coders.join(", "));
+    if (rows.length && !rows[0].coder && coders.length) {
+      console.log("  WARNING: the largest entry (" + rows[0].id + ") does not look like a");
+      console.log("  coding model. Auto-selection takes the largest that FITS, so leaving it in");
+      console.log("  means repair runs on it — and B6/B7 would measure the wrong model.");
+    }
+    console.log("  delete the lines you do not want, then write real objectives.");
     process.exit(1);
   ' "$OUT/status.json" "$OUT/models.local.csv" 2>/dev/null | tee -a "$SUMMARY"
   # PIPESTATUS is clobbered by the next pipeline, so read it on the next line.
