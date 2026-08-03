@@ -574,22 +574,28 @@ async function repairLoop(
           gate_ms: 0,
           error: roundError,
         });
-        // A request the deadline CUT OFF is a budget stop, not a model failure.
-        // The `budget` branch above only runs between rounds, so a timeout
-        // inside generation used to be filed as `model_failed` — and
+        // A request THIS CALL'S DEADLINE cut off is a budget stop, not a model
+        // failure. The `budget` branch above only runs between rounds, so a
+        // timeout inside generation used to be filed as `model_failed` — and
         // `config.timeoutMs` defaults to exactly `DEFAULT_BUDGET_SECONDS`, so
         // round 1 alone can consume the whole budget and then blame the model.
         // Measured: 3 of 4 `model_failed` rows sat at 300-326 s against a 300 s
         // budget, `run 2026-08-03-mac-06`.
         //
-        // The test is the error's code, NOT the clock. "Out of budget" and "the
-        // model was cut off" are different claims: a model that answers with
-        // unusable output and merely spends the budget doing it has failed on
-        // its own merits, and a clock check would relabel that too — losing the
-        // one distinction this exists to draw. `llm_timeout` is raised only
-        // where the abort actually fired (`llm-client.ts`), so it says the
-        // request never finished rather than that time happened to run out.
-        stoppedBecause = concurrentEdit ? "concurrent_edit" : timedOut ? "budget" : "model_failed";
+        // Both halves of the conjunction are load-bearing, and each alone gets
+        // it wrong in a different direction:
+        //   - the CODE alone is not enough. The request's timeout is
+        //     `min(config.timeoutMs, remaining)` (`shared.ts`), so a small
+        //     per-request limit under a large budget raises `llm_timeout` with
+        //     minutes still on the clock — calling that `budget` would report an
+        //     exhausted ceiling that was never reached.
+        //   - the CLOCK alone is not enough either. A model that answers with
+        //     unusable output and merely spends the budget doing so has failed
+        //     on its own merits, and a bare clock check relabels that too.
+        // Together they say the one thing `budget` is supposed to mean: the
+        // generation was cut off, and what cut it off was this call's ceiling.
+        const budgetCutItOff = timedOut && remainingMs() <= 0;
+        stoppedBecause = concurrentEdit ? "concurrent_edit" : budgetCutItOff ? "budget" : "model_failed";
         break;
       }
 

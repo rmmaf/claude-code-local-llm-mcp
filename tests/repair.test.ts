@@ -288,6 +288,35 @@ describe("repair loop", () => {
     expect(await fs.readFile(path.join(root, "src/math.ts"), "utf8")).toBe(BROKEN);
   });
 
+  it("does not call a per-request timeout `budget` while the budget still holds", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // The request's ceiling is min(config.timeoutMs, remaining), so a small
+    // per-request limit under a generous budget raises the SAME llm_timeout
+    // with the call's own deadline nowhere near. Reporting `budget` here would
+    // claim an exhausted ceiling that was never reached — the mirror image of
+    // the bug above, and just as corrupting to the stop-cause telemetry.
+    const fetchImpl = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("The operation was aborted."));
+        });
+      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+
+    const result = await runRepair(
+      { ...baseArgs, budget_seconds: 300, max_rounds: 1 },
+      testConfig(root, { timeoutMs: 50 }),
+      {
+        processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
+        fetchImpl,
+        runner: noLmsRunner(),
+      }
+    );
+
+    expect(result.stopped_because).toBe("model_failed");
+    expect(result.rounds[0]?.error).toMatch(/timed out/i);
+  });
+
   it("feeds the gate's structured failures to the model, not raw build output", async () => {
     const root = tempRoot();
     await setup(root);
