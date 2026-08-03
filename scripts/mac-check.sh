@@ -241,14 +241,28 @@ if [ -s "$OUT/status.json" ]; then
     // unreviewed catalog fed the orchestrator an instruction aimed at a human.
     // Write a real description instead, and mark it [auto] so 5b can tell a
     // generated line from a reviewed one.
-    const size = (gb) => (gb === null ? "size unknown" : gb + " GB");
-    const kind = coders.length ? "coding model" : "model, NOT identified as a coding model";
-    const describe = (r, i, n) =>
-      n === 1 ? `Local ${kind} (${size(r.gb)}) [auto]`
-      : i === 0 ? `Largest local ${kind} here (${size(r.gb)}) — most capable, needs the most memory [auto]`
-      : i === n - 1 ? `Smallest local ${kind} here (${size(r.gb)}) — fastest, lowest memory, for concurrent agents [auto]`
-      : `Mid-size local ${kind} (${size(r.gb)}) [auto]`;
-    const csv = rows.map((r, i) => `${r.id},"${describe(r, i, rows.length)}"`).join("\n") + "\n";
+    const kind = coders.length ? "coding model" : "model (NOT identified as a coding model)";
+
+    // A superlative has to be earned. Sizes sort unknowns last, so the bottom
+    // row is not necessarily the smallest — an unsized model could be smaller
+    // than everything or larger than everything. Claim "largest"/"smallest"
+    // only when every size is known, there is more than one model, and the
+    // extreme is not tied. Otherwise state the size and stop.
+    const known = rows.filter((r) => r.gb !== null).map((r) => r.gb);
+    const allKnown = known.length === rows.length && rows.length > 1;
+    const maxGb = known.length ? Math.max.apply(null, known) : null;
+    const minGb = known.length ? Math.min.apply(null, known) : null;
+    const soleMax = allKnown && known.filter((g) => g === maxGb).length === 1;
+    const soleMin = allKnown && known.filter((g) => g === minGb).length === 1;
+
+    const describe = (r) => {
+      if (r.gb === null) return `Local ${kind}, size unknown [auto]`;
+      const base = `Local ${kind}, ${r.gb} GB`;
+      if (soleMax && r.gb === maxGb) return `${base} — the largest here, most capable, needs the most memory [auto]`;
+      if (soleMin && r.gb === minGb) return `${base} — the smallest here, fastest, lowest memory [auto]`;
+      return `${base} [auto]`;
+    };
+    const csv = rows.map((r) => `${r.id},"${describe(r)}"`).join("\n") + "\n";
     fs.writeFileSync(process.argv[2], csv);
 
     if (!coders.length) {
