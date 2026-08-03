@@ -382,8 +382,19 @@ do_check() {
 # on the last line. A half-written analyzer therefore never becomes the file
 # that runs — it stays a .part nobody looks at. Verifying after writing straight
 # to the target would still leave the damaged file there for the next run.
+#
+# The temporary is per-process and deleted before writing, and `cat`'s status is
+# read. All three matter, and the gap they close together is this: a run killed
+# between the write and the rename leaves behind a .part that is COMPLETE and
+# carries the sentinel. If the next invocation's redirect then fails to open the
+# file at all — read-only directory, permissions — nothing truncates it, and the
+# checks below would happily approve the previous run's analyzer and rename it
+# into place. Verifying the bytes cannot catch that: they are valid, just not
+# the ones this process wrote.
 write_analyzer() {
-  cat > "$1/analyze.part.mjs" <<'MJSEOF'
+  local part="$1/analyze.$$.part.mjs"
+  rm -f "$part"
+  cat > "$part" <<'MJSEOF'
 // Scores the repair rows this run produced. Written by setup so `check` never
 // depends on a file the repo might not have at the version being tested.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -568,19 +579,29 @@ say("nothing else, and B7 has a real per-round figure for the first time.");
 finish(0);
 // END-OF-ANALYZER-CONTRACT-2
 MJSEOF
+  # Read FIRST, before anything looks at the bytes: a redirect that never opened
+  # the file leaves whatever was there, and inspecting content cannot tell that
+  # apart from a successful write.
+  if [ $? -ne 0 ]; then
+    rm -f "$part"
+    return 1
+  fi
   # Complete only if the sentinel is the LAST line, and only then does it become
   # the file that runs. Both node --check and the sentinel are needed: the first
   # rejects a truncation that broke the syntax, the second rejects one that did
   # not.
-  if [ "$(tail -n 1 "$1/analyze.part.mjs" 2>/dev/null)" != "$ANALYZER_SENTINEL" ]; then
-    rm -f "$1/analyze.part.mjs"
+  if [ "$(tail -n 1 "$part" 2>/dev/null)" != "$ANALYZER_SENTINEL" ]; then
+    rm -f "$part"
     return 1
   fi
-  if ! node --check "$1/analyze.part.mjs" >/dev/null 2>&1; then
-    rm -f "$1/analyze.part.mjs"
+  if ! node --check "$part" >/dev/null 2>&1; then
+    rm -f "$part"
     return 1
   fi
-  mv -f "$1/analyze.part.mjs" "$1/analyze.mjs" || return 1
+  if ! mv -f "$part" "$1/analyze.mjs"; then
+    rm -f "$part"
+    return 1
+  fi
 }
 
 # -------------------------------------------------------------------- restore
