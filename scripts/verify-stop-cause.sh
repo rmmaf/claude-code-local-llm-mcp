@@ -84,22 +84,39 @@ do_setup() {
   done
 
   # The MCP server runs dist/server.js, so an unbuilt fix is an untested one.
+  #
+  # Everything from here down is a HARD STOP, not a report. A run whose server
+  # does not carry the fix produces rows that look exactly like real ones and
+  # mean nothing, and the earlier version of this script said so and then
+  # printed the prompts anyway — inviting a whole Mac session of invalid
+  # evidence. If the instrument is not in place, there is nothing to measure.
   if (cd "$REPO_ROOT" && npm run build > "$OUT/build.txt" 2>&1); then
     pass "npm run build"
   else
     fail "npm run build failed — see $OUT/build.txt; the server would load the OLD code"
+    note ""
+    note "STOPPING. Nothing was written to src/, and no prompts follow: rows produced"
+    note "by the old server are indistinguishable from real ones and would poison the log."
+    exit 1
   fi
 
   # Verify the built artifact actually carries the fix rather than assuming the
   # build picked it up. This is the whole reason the run is worth doing.
-  if [ -f "$REPO_ROOT/dist/tools/repair.js" ]; then
-    if grep -q "remainingAtIssue" "$REPO_ROOT/dist/tools/repair.js" 2>/dev/null; then
-      pass "dist carries the stop-cause fix (remainingAtIssue present)"
-    else
-      fail "dist/tools/repair.js does NOT contain the fix — every result below would be meaningless"
-    fi
-  else
+  if [ ! -f "$REPO_ROOT/dist/tools/repair.js" ]; then
     fail "dist/tools/repair.js missing — the build did not produce a server to run"
+    note ""
+    note "STOPPING. Nothing was written to src/, and no prompts follow."
+    exit 1
+  fi
+  if grep -q "remainingAtIssue" "$REPO_ROOT/dist/tools/repair.js" 2>/dev/null; then
+    pass "dist carries the stop-cause fix (remainingAtIssue present)"
+  else
+    fail "dist/tools/repair.js does NOT contain the fix"
+    note ""
+    note "STOPPING. Nothing was written to src/, and no prompts follow: this build"
+    note "predates the fix, so every row it wrote would be evidence about the old code."
+    note "Check that the pull actually landed: git -C \"$REPO_ROOT\" log -1"
+    exit 1
   fi
 
   # Where the telemetry ends right now, in BYTES. `check` reads only past this
@@ -138,13 +155,19 @@ do_setup() {
   # A red gate is the precondition for every one of the three calls. Confirm it
   # rather than trust it — a fixture that compiles would make all three vacuous.
   if (cd "$REPO_ROOT" && npx tsc --noEmit > "$OUT/tsc-precheck.txt" 2>&1); then
-    fail "tsc reports NO errors — the fixtures did not break the gate, so nothing below would run"
+    fail "tsc reports NO errors — the fixtures did not break the gate"
+    note ""
+    note "STOPPING. With a green gate `repair` returns on the spot with 0 rounds and"
+    note "no timings, which is the one row this run cannot use. Clean up first:"
+    note "  bash scripts/verify-stop-cause.sh restore"
+    exit 1
+  fi
+  if grep -q "scratch-stopcause" "$OUT/tsc-precheck.txt" 2>/dev/null; then
+    pass "tsc is red on the fixtures, so the gate has something to close"
   else
-    if grep -q "scratch-stopcause" "$OUT/tsc-precheck.txt" 2>/dev/null; then
-      pass "tsc is red on the fixtures, so the gate has something to close"
-    else
-      skip "tsc is red but not on the fixtures — check $OUT/tsc-precheck.txt before continuing"
-    fi
+    skip "tsc is red but NOT on the fixtures — something else in the repo is broken"
+    note "     see $OUT/tsc-precheck.txt. The prompts still follow, but a pre-existing"
+    note "     failure means repair is being asked to fix more than the fixtures."
   fi
 
   print_prompts "$TIMEOUT_MS"
@@ -189,7 +212,12 @@ JSEOF
     pass "fixtures written: $SMALL ($(grep -c '' "$REPO_ROOT/$SMALL") lines), $LARGE ($(grep -c '' "$REPO_ROOT/$LARGE") lines)"
     printf '%s\n%s\n' "$SMALL" "$LARGE" > "$out/fixtures.txt"
   else
-    fail "could not write the fixtures — nothing below can run"
+    fail "could not write the fixtures"
+    note ""
+    note "STOPPING. Without them the three prompts have nothing to repair."
+    note "Remove any partial file by hand: the restore step only deletes files"
+    note "carrying this script's marker, and a half-written one may not have it."
+    exit 1
   fi
 }
 
@@ -265,15 +293,33 @@ do_check() {
   printf '\n%sverify-stop-cause — check%s\n' "$BOLD" "$OFF"
   printf '%s\n\n' "run: $run_id"
 
-  if [ ! -f "$TELEMETRY" ]; then
-    fail "no telemetry at $TELEMETRY — did any repair call actually run?"
+  # The telemetry setup measured, not whichever clone this copy of the script
+  # happens to sit in. A byte offset only means something against the same file.
+  CHECK_TELEMETRY="$repo_root/.local-coder/telemetry.jsonl"
+  if [ "$repo_root" != "$REPO_ROOT" ]; then
+    skip "this script is in $REPO_ROOT but setup measured $repo_root"
+    note "     scoring $repo_root, which is where the baseline was taken"
+  fi
+
+  if [ ! -f "$CHECK_TELEMETRY" ]; then
+    fail "no telemetry at $CHECK_TELEMETRY — did any repair call actually run?"
     exit 1
   fi
 
-  node "$OUT/analyze.mjs" "$TELEMETRY" "$baseline" "$timeout_ms" "$OUT/rows.jsonl" \
-    | tee -a "$SUMMARY"
+  # Not piped into tee: a pipeline reports the exit status of its LAST command,
+  # so tee would swallow the analyzer's verdict and `check` would always look
+  # successful. Write, keep the status, then show it.
+  node "$OUT/analyze.mjs" "$CHECK_TELEMETRY" "$baseline" "$timeout_ms" "$OUT/rows.jsonl" >> "$SUMMARY" 2>&1
+  status=$?
+  cat "$SUMMARY"
 
-  printf '\nSend back: %s and %s\n\n' "$OUT/check.txt" "$OUT/rows.jsonl"
+  printf '\nSend back: %s and %s\n' "$OUT/check.txt" "$OUT/rows.jsonl"
+  if [ "$status" -ne 0 ]; then
+    printf '%sSomething above is FAIL — read it before running anything else.%s\n\n' "$RED" "$OFF"
+  else
+    printf '\n'
+  fi
+  return "$status"
 }
 
 write_analyzer() {
@@ -310,7 +356,7 @@ say(`new repair rows since setup: ${repairs.length}`);
 if (repairs.length === 0) {
   say("FAIL  nothing to score — no repair call reached the telemetry");
   console.log(out.join("\n"));
-  process.exit(0);
+  process.exit(1);
 }
 
 /** The ceiling the request actually got, as llm-client reports it verbatim. */
@@ -338,14 +384,23 @@ const traced = repairs.find(
   (r) => Array.isArray(r.detail?.rounds) &&
     r.detail.rounds.some((q) => typeof q.model_ms === "number" && typeof q.gate_ms === "number" && q.gate_ms > 0)
 );
+// `rounds` ABSENT and `rounds` EMPTY are different findings and used to share a
+// verdict. Absent means the server predates the fix; empty means the fix is in
+// and no round ran. Blaming the build for the second sends the reader off to
+// rebuild something that was never wrong.
+const hasField = repairs.some((r) => Array.isArray(r.detail?.rounds));
 if (traced) {
   const q = traced.detail.rounds.find((x) => typeof x.gate_ms === "number" && x.gate_ms > 0);
   say(`PASS  per-round trace reaches telemetry — model_ms=${q.model_ms} gate_ms=${q.gate_ms}`);
   say(`      B7 has its first real per-round figure: ${((q.model_ms + q.gate_ms) / 1000).toFixed(1)} s`);
 } else if (repairs.some((r) => Array.isArray(r.detail?.rounds) && r.detail.rounds.length > 0)) {
   say("SKIP  rounds are traced but none re-ran the gate (every round errored), so no gate_ms to report");
+} else if (hasField) {
+  say("SKIP  the trace field is present, so the fix IS deployed, but every row ran 0 rounds");
+  say("      — the gate was already green. Nothing to rebuild; prompt 1 needs a red gate.");
 } else {
-  say("FAIL  no per-round trace in any row — dist/ is older than the fix, or no round ran");
+  say("FAIL  no trace field in any row — the server that wrote them predates the fix");
+  say("      (rebuild and restart Claude Code; these rows cannot answer B7)");
 }
 
 // 2 and 3. The two stop causes, scored against a ceiling LEARNED FROM THE RUN.
@@ -411,6 +466,10 @@ if (timed.length === 0) {
 }
 
 console.log(out.join("\n"));
+// Exit non-zero when anything scored FAIL, so `check` can be trusted by its
+// status and not only by being read. SKIP is not a failure: it records that a
+// branch was not exercised, which is a different thing from being wrong.
+process.exit(out.some((l) => l.startsWith("FAIL")) ? 1 : 0);
 MJSEOF
 }
 
@@ -419,6 +478,7 @@ MJSEOF
 do_restore() {
   printf '\n%sverify-stop-cause — restore%s\n\n' "$BOLD" "$OFF"
   removed=0
+  refused=0
   for rel in "$SMALL" "$LARGE"; do
     if [ ! -e "$REPO_ROOT/$rel" ]; then
       skip "$rel was not there"
@@ -432,8 +492,11 @@ do_restore() {
       rm -f "$REPO_ROOT/$rel" && removed=$((removed + 1))
       pass "removed $rel"
     else
+      refused=$((refused + 1))
       fail "$rel exists but is NOT one of this script's fixtures — left untouched"
       note "     first line: $(head -n 1 "$REPO_ROOT/$rel" 2>/dev/null)"
+      note "     delete it yourself if you want it gone; a cleanup step does not get"
+      note "     to decide that about a file it did not write"
     fi
   done
   # The fixtures were new files, never edits, so nothing of yours needed
@@ -447,6 +510,9 @@ do_restore() {
     git -C "$REPO_ROOT" status --short
   fi
   printf '\n'
+  # Non-zero when something was left behind, so "restore" cannot look complete
+  # while a fixture path still holds a file nobody has accounted for.
+  [ "$refused" -eq 0 ]
 }
 
 case "${1:-}" in
