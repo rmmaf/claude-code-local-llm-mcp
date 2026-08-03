@@ -202,14 +202,29 @@ async function main(): Promise<void> {
             rates
           );
     if (anchor !== null && anchor.requests > 1) {
-      const mixed = anchor.keys.length > 1 ? ` across ${anchor.keys.join(" + ")}` : "";
-      process.stdout.write(
-        `\n  ${BOLD}a token entering at turn 0 of this session's longest context costs ` +
-          `${anchor.multiplier.toFixed(1)}x the input rate${RESET}\n` +
-          `  ${DIM}${anchor.write} (cache write, ${anchor.ttl}) + ${anchor.reread.toFixed(1)} ` +
-          `summed over ${anchor.requests - 1} re-reads; that context ran ${anchor.requests} requests` +
-          `${mixed}${RESET}\n`
-      );
+      const span = `that context ran ${anchor.requests} requests`;
+      if (anchor.multiplier !== null && anchor.write !== null && anchor.reread !== null) {
+        process.stdout.write(
+          `\n  ${BOLD}a token entering at turn 0 of this session's longest context costs ` +
+            `${anchor.multiplier.toFixed(1)}x the input rate${RESET}\n` +
+            `  ${DIM}${anchor.write} (cache write, ${anchor.ttl}) + ${anchor.reread.toFixed(1)} ` +
+            `summed over ${anchor.requests - 1} re-reads; ${span}${RESET}\n`
+        );
+      } else if (anchor.usdPerMTok !== null) {
+        // No single input rate to be a multiple OF, so the ratio is withheld
+        // rather than computed against an arbitrary one of the bases.
+        process.stdout.write(
+          `\n  ${BOLD}a token entering at turn 0 of this session's longest context costs ` +
+            `USD ${anchor.usdPerMTok.toFixed(2)} per million${RESET}\n` +
+            `  ${DIM}no "x the input rate" figure: ${anchor.keys.join(" + ")} are priced ` +
+            `differently, so their multipliers have different bases and do not add; ${span}${RESET}\n`
+        );
+      } else {
+        process.stdout.write(
+          `\n  ${DIM}entry cost not shown — ${anchor.keys.join(" + ")} are priced differently ` +
+            `(no single input rate to be a multiple of) and at least one has no price at all; ${span}${RESET}\n`
+        );
+      }
     }
 
     const growth = session.growth;

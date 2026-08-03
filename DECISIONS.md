@@ -1110,3 +1110,30 @@ more than one rate key, the line names them rather than averaging them away.
 `positionalMultiplier` is unchanged and still used where a single rate is the
 right assumption: the counterfactual prices one tool call against the one
 request it was matched to.
+
+### A multiplier is a ratio to *a* price, and mixed segments do not have one
+
+The summed headline was still wrong, and wrong in the way this file keeps
+warning about. Every multiplier is a ratio to **its own key's** input price.
+Summing `2.0` (a multiple of model m's $1) with `0.5` (a multiple of m@fast's
+$2) adds quantities with different bases and labels the result "x the input
+rate" — a rate no request in the segment actually paid. My own test asserted
+`3.0` for a segment whose true entry cost is $4.
+
+Two figures now, with different domains of validity:
+
+- **The ratio** is emitted only when the segment has one base: a single rate
+  key, or several keys with identical known prices. Otherwise it is `null` and
+  the CLI says why rather than picking one of the bases.
+- **USD per million** multiplies each term by its own key's price *before*
+  summing, so it stays valid however the segment mixes. It is `null` when any
+  key is unpriced.
+
+A single unpriced key still yields a ratio — one base, unknown magnitude, which
+is exactly what a multiplier is for. Two *different* unpriced keys do not: their
+prices cannot be shown to be equal.
+
+The general lesson is the one the file already had and I did not apply: a number
+that is dimensionally wrong looks exactly like a number that is right. The
+uniform case — which is every session so far — agreed with the correct answer
+throughout, which is why four rounds of review were needed to find it.

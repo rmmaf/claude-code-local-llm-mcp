@@ -1291,11 +1291,35 @@ describe("speed is part of the price", () => {
       }) as BilledRequest;
     const zero = { input: 0, cacheWrite1h: 0, cacheWrite5m: 0, cacheRead: 0, output: 0 };
 
-    it("sums each later request's own cache-read rate", () => {
-      // turn 0 standard, then two fast turns: 2.0 write + 0.5 + 0.5.
+    // m is $1/MTok and m@fast is $2/MTok, so their multipliers are ratios to
+    // different bases. 2.0 + 0.5 + 0.5 = 3.0 is NOT "3x the input rate": the
+    // real cost is 2.0x$1 + 0.5x$2 + 0.5x$2 = $4. Adding them is adding
+    // quantities with different units, and labelling the sum a multiple of a
+    // rate that no request paid.
+    it("withholds the ratio when the segment mixes input prices", () => {
       const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast"), req(2, "fast")], rates);
-      expect(cost?.multiplier).toBeCloseTo(3.0, 6);
+      expect(cost?.multiplier).toBeNull();
+      expect(cost?.write).toBeNull();
+      expect(cost?.reread).toBeNull();
       expect(cost?.keys).toEqual(["m", "m@fast"]);
+    });
+
+    it("still gives USD for a mixed segment, each term against its own price", () => {
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast"), req(2, "fast")], rates);
+      expect(cost?.usdPerMTok).toBeCloseTo(4.0, 6); // 2.0x$1 + 0.5x$2 + 0.5x$2
+    });
+
+    it("keeps the ratio when two keys happen to share an input price", () => {
+      const sameBase = {
+        ...DEFAULT_RATES,
+        models: {
+          "m": { inputPerMTok: 1, multipliers: { ...DEFAULT_MULTIPLIERS, cacheRead: 0.1 } },
+          "m@fast": { inputPerMTok: 1, multipliers: { ...DEFAULT_MULTIPLIERS, cacheRead: 0.5 } },
+        },
+      };
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "fast"), req(2, "fast")], sameBase);
+      expect(cost?.multiplier).toBeCloseTo(3.0, 6); // one base, so the ratios do add
+      expect(cost?.usdPerMTok).toBeCloseTo(3.0, 6);
     });
 
     it("agrees with positionalMultiplier when the segment is uniform", () => {
@@ -1304,10 +1328,16 @@ describe("speed is part of the price", () => {
       expect(cost?.multiplier).toBeCloseTo(flat, 6);
     });
 
+    it("keeps the ratio for a single unpriced key, where there is still one base", () => {
+      const unpriced = { ...DEFAULT_RATES, models: {} };
+      const cost = entryCostOfSegment([req(0, "standard"), req(1, "standard")], unpriced);
+      expect(cost?.multiplier).toBeCloseTo(DEFAULT_MULTIPLIERS.cacheWrite1h + DEFAULT_MULTIPLIERS.cacheRead, 6);
+      expect(cost?.usdPerMTok).toBeNull();
+    });
+
     it("takes the write from turn 0, not from whichever request came first in the array", () => {
       const cost = entryCostOfSegment([req(2, "fast"), req(0, "standard"), req(1, "fast")], rates);
-      expect(cost?.write).toBe(DEFAULT_MULTIPLIERS.cacheWrite1h); // turn 0 is standard
-      expect(cost?.multiplier).toBeCloseTo(3.0, 6);
+      expect(cost?.usdPerMTok).toBeCloseTo(4.0, 6); // write is turn 0's ($1 base), not fast's
     });
 
     it("returns null for an empty segment", () => {

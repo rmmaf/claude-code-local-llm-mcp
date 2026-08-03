@@ -177,13 +177,24 @@ export function positionalMultiplier(t: number, T: number, m: RateMultipliers, t
 }
 
 export interface EntryCost {
-  /** Total multiple of the input rate paid by a token entering at turn 0. */
-  multiplier: number;
-  /** The write component, at turn 0's own rate and TTL. */
-  write: number;
+  /**
+   * Total multiple of THE input rate — null when the segment does not have one.
+   * Every multiplier is a ratio to its own key's input price, so summing across
+   * keys priced differently adds quantities with different bases. Two keys that
+   * happen to share a price are fine; two keys at $1 and $2 are not.
+   */
+  multiplier: number | null;
+  /** The write component at turn 0's rate. Null when `multiplier` is. */
+  write: number | null;
+  /** Sum of the later requests' cache-read multipliers. Null when `multiplier` is. */
+  reread: number | null;
+  /**
+   * USD per million tokens entering at turn 0 — dimensionally sound whatever
+   * the segment mixes, because each term is multiplied by its own key's price
+   * before being summed. Null when any key in the segment has no price.
+   */
+  usdPerMTok: number | null;
   ttl: "1h" | "5m";
-  /** Sum of the later requests' own cache-read multipliers. */
-  reread: number;
   requests: number;
   /** Distinct rate keys in the segment, sorted. More than one means mixed. */
   keys: string[];
@@ -205,19 +216,42 @@ export function entryCostOfSegment(segment: readonly BilledRequest[], rates: Rat
   const first = ordered[0];
   if (first === undefined) return null;
 
-  const keys = new Set<string>();
-  let reread = 0;
+  const firstKey = rateKey(first.model, first.speed);
+  const firstM = multipliersFor(rates, firstKey);
+  const ttl: "1h" | "5m" = first.usage.cacheWrite5m > first.usage.cacheWrite1h ? "5m" : "1h";
+  const writeRatio = ttl === "1h" ? firstM.cacheWrite1h : firstM.cacheWrite5m;
+  const firstPrice = inputPriceFor(rates, firstKey);
+
+  const keys = new Set<string>([firstKey]);
+  const prices = new Set<number | null>([firstPrice]);
+  let rereadRatio = 0;
+  let usd = firstPrice === null ? null : (writeRatio * firstPrice) / 1_000_000;
   for (const request of ordered) {
+    if (request.index === first.index) continue; // turn 0 pays the write, not a re-read of itself
     const key = rateKey(request.model, request.speed);
     keys.add(key);
-    // Turn 0 pays the write, not a re-read of itself.
-    if (request.index !== first.index) reread += multipliersFor(rates, key).cacheRead;
+    const price = inputPriceFor(rates, key);
+    prices.add(price);
+    const cacheRead = multipliersFor(rates, key).cacheRead;
+    rereadRatio += cacheRead;
+    // Each term meets its own key's price BEFORE being summed. That is what
+    // makes this figure valid across a mixed segment and the ratio not.
+    if (price === null) usd = null;
+    else if (usd !== null) usd += (cacheRead * price) / 1_000_000;
   }
 
-  const firstM = multipliersFor(rates, rateKey(first.model, first.speed));
-  const ttl: "1h" | "5m" = first.usage.cacheWrite5m > first.usage.cacheWrite1h ? "5m" : "1h";
-  const write = ttl === "1h" ? firstM.cacheWrite1h : firstM.cacheWrite5m;
-  return { multiplier: write + reread, write, ttl, reread, requests: ordered.length, keys: [...keys].sort() };
+  // A ratio needs one base. One key is trivially one base even when unpriced;
+  // several keys need identical, known prices before their ratios can be added.
+  const oneBase = keys.size === 1 || (!prices.has(null) && prices.size === 1);
+  return {
+    multiplier: oneBase ? writeRatio + rereadRatio : null,
+    write: oneBase ? writeRatio : null,
+    reread: oneBase ? rereadRatio : null,
+    usdPerMTok: usd === null ? null : usd * 1_000_000,
+    ttl,
+    requests: ordered.length,
+    keys: [...keys].sort(),
+  };
 }
 
 export interface ToolSaving {
