@@ -317,6 +317,43 @@ describe("repair loop", () => {
     expect(result.rounds[0]?.error).toMatch(/timed out/i);
   });
 
+  it("reads which ceiling fired, not the clock, when the two disagree", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // The case that separates observing the cause from inferring it. The
+    // request is issued with 60 ms of budget left and a 50 ms per-request limit,
+    // so the PER-REQUEST limit is what binds and the model failed on its own
+    // ceiling. The deadline then passes while the abort propagates — so a clock
+    // read in the catch says "no budget left" and would report `budget`, which
+    // is a stop cause that did not happen. After a real abort the deadline has
+    // almost always passed, whichever limit fired, which is exactly why the
+    // clock cannot be the test.
+    let elapsed = 0;
+    const fetchImpl = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          elapsed = 5_000; // the deadline is now long past
+          reject(new Error("The operation was aborted."));
+        });
+      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+
+    const result = await runRepair(
+      { ...baseArgs, budget_seconds: 1, max_rounds: 1 },
+      testConfig(root, { timeoutMs: 50 }),
+      {
+        processRunner: async () => {
+          elapsed = 940; // the gate spends most of the budget
+          return { stdout: tscErrors(2), stderr: "", code: 2, timedOut: false };
+        },
+        fetchImpl,
+        runner: noLmsRunner(),
+        now: () => 1_000_000 + elapsed,
+      }
+    );
+
+    expect(result.stopped_because).toBe("model_failed");
+  });
+
   it("feeds the gate's structured failures to the model, not raw build output", async () => {
     const root = tempRoot();
     await setup(root);

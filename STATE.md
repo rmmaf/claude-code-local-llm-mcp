@@ -10,9 +10,10 @@ Ceiling: 25 lines below this header.
 `rounds_used` under the name `turns_collapsed`. B3: 12 of 20, median 98.67%, and
 3 of 11 calls made context *worse*. B6: 10 calls with a red gate, 2 closed, both
 in one round, and 3 `max_rounds` calls that improved nothing over 10 rounds.
-Two instrument fixes: a generation reads as `budget` only when it was cut off
-*and* this call's deadline is what cut it — either signal alone mislabels — and
-the per-round trace reaches telemetry, without which B7 was never measurable.
+Two instrument fixes: a cut-off generation reads as `budget` from the timeout it
+actually applied (`min(config.timeoutMs, remaining)`), not from a clock read
+after the abort, and the per-round trace reaches telemetry — without it B7 was
+never measurable.
 
 ## Next action
 

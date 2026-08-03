@@ -249,12 +249,13 @@ pre-registered as its own premise before anything is measured against it.
   **B0 fell underneath this and the payload cannot separate them:** a truncated
   response (`finish_reason=length`, `shared.ts:283`) throws after the corrective
   retry and lands under `stopped_because: "model_failed"` — the same label a
-  request killed by the deadline used to get. The deadline half is fixed: a
-  generation is reported as `budget` only when it was cut off (`llm_timeout`)
-  **and** the call's own deadline is what cut it off, since the request ceiling
-  is `min(config.timeoutMs, remaining)` and a small per-request limit can fire
-  with the budget untouched. The truncation half is **not** fixed, so a
-  `model_failed` row still means *either* B0 *or* the loop, and B6 cannot be
+  request killed by the deadline used to get. The deadline half is fixed, and by
+  **observing** which ceiling fired rather than inferring it: the request ceiling
+  is `min(config.timeoutMs, remaining)`, and `llm_timeout` carries the value it
+  applied, so a value below `config.timeoutMs` *is* the budget having bound. A
+  clock read after the abort cannot recover that — by then the deadline has
+  usually passed whichever limit fired. The truncation half is **not** fixed, so
+  a `model_failed` row still means *either* B0 *or* the loop, and B6 cannot be
   measured cleanly until the output contract is decided.
 - **Falls if:** < 30%.
 - **If it falls:** `repair` degrades to a one-shot `fix` with a gate around it,

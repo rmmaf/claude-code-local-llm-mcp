@@ -526,7 +526,7 @@ async function repairLoop(
       let touched: string[] = [];
       let roundError: string | undefined;
       let concurrentEdit = false;
-      let timedOut = false;
+      let budgetCutItOff = false;
 
       try {
         const generation = await runGeneration(
@@ -554,7 +554,22 @@ async function repairLoop(
       } catch (error) {
         roundError = error instanceof Error ? error.message : String(error);
         concurrentEdit = error instanceof ToolError && error.code === "concurrent_modification";
-        timedOut = error instanceof ToolError && error.code === "llm_timeout";
+        // WHICH ceiling fired, read from the ceiling itself rather than guessed
+        // afterwards. `llm_timeout` carries the timeout it applied, and
+        // `shared.ts` applies `min(config.timeoutMs, remaining)` — so a value
+        // BELOW `config.timeoutMs` is the budget having been the binding
+        // constraint, recorded at the moment the constraint was computed. A
+        // clock read here cannot recover that: by the time the abort has
+        // propagated, the deadline has usually passed no matter which limit
+        // fired, so it reports `budget` for per-request timeouts too.
+        // (`resolveModel`'s `/models` probe swallows its own timeout, so this
+        // is the generation's ceiling and not some earlier step's.)
+        const appliedTimeoutMs =
+          error instanceof ToolError && error.code === "llm_timeout"
+            ? error.details["timeout_ms"]
+            : undefined;
+        budgetCutItOff =
+          typeof appliedTimeoutMs === "number" && appliedTimeoutMs < config.timeoutMs;
         log.warn(
           concurrentEdit
             ? `repair round ${round}: aborting without writing — ${roundError}`
@@ -582,19 +597,12 @@ async function repairLoop(
         // Measured: 3 of 4 `model_failed` rows sat at 300-326 s against a 300 s
         // budget, `run 2026-08-03-mac-06`.
         //
-        // Both halves of the conjunction are load-bearing, and each alone gets
-        // it wrong in a different direction:
-        //   - the CODE alone is not enough. The request's timeout is
-        //     `min(config.timeoutMs, remaining)` (`shared.ts`), so a small
-        //     per-request limit under a large budget raises `llm_timeout` with
-        //     minutes still on the clock — calling that `budget` would report an
-        //     exhausted ceiling that was never reached.
-        //   - the CLOCK alone is not enough either. A model that answers with
-        //     unusable output and merely spends the budget doing so has failed
-        //     on its own merits, and a bare clock check relabels that too.
-        // Together they say the one thing `budget` is supposed to mean: the
-        // generation was cut off, and what cut it off was this call's ceiling.
-        const budgetCutItOff = timedOut && remainingMs() <= 0;
+        // Everything else here is the model's own failure, including a request
+        // that hit `config.timeoutMs` with budget to spare: the ceiling it broke
+        // was its own, and `budget` would claim an exhaustion that never
+        // happened. Both mislabels corrupt the same telemetry, so neither is the
+        // safe default — which is why the branch reads the applied timeout above
+        // instead of consulting the clock.
         stoppedBecause = concurrentEdit ? "concurrent_edit" : budgetCutItOff ? "budget" : "model_failed";
         break;
       }
