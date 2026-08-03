@@ -18,9 +18,20 @@
 
 set -u
 
-OUT="${LC_RESULTS:-$HOME/lc-results}"
 LMS_URL="${LM_STUDIO_URL:-http://localhost:1234/v1}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -z "$REPO_ROOT" ] || [ ! -f "$REPO_ROOT/package.json" ]; then
+  echo "cannot locate the repo root from ${BASH_SOURCE[0]} — run this from a clone" >&2
+  exit 1
+fi
+
+# Every run gets its own directory. Reusing one would let a step that failed
+# today be answered by yesterday's file, and would tar artifacts from several
+# runs into one archive — a measurement has to belong to exactly one run.
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+RESULTS_HOME="${LC_RESULTS:-$HOME/lc-results}"
+OUT="$RESULTS_HOME/$RUN_ID"
+ARCHIVE="$RESULTS_HOME/lc-results-$RUN_ID.tgz"
 
 mkdir -p "$OUT"
 SUMMARY="$OUT/summary.txt"
@@ -99,11 +110,18 @@ fi
 
 # ------------------------------------------------- 4. status, the real answer
 printf '\n%s\n' "4. status — catalog, sizes, memory, what auto-selection would pick"
-# Has to sit in the repo root so `./src/...` resolves; trapped so an interrupted
-# run does not leave the working tree dirty.
-PROBE="$REPO_ROOT/.mac-check-status.mts"
-trap 'rm -f "$PROBE"' EXIT INT TERM
-cat > "$PROBE" <<'TS'
+# Has to sit in the repo root so `./src/...` resolves. PID-suffixed and refused
+# if it already exists: a fixed name would clobber, and then DELETE, a file of
+# the same name that happened to be there. Trapped so an interrupted run does
+# not leave the working tree dirty.
+PROBE="$REPO_ROOT/.mac-check-status.$$.mts"
+if [ -e "$PROBE" ]; then
+  fail "refusing to overwrite an existing $PROBE"
+  PROBE=""
+else
+  trap '[ -n "${PROBE:-}" ] && rm -f "$PROBE"' EXIT INT TERM
+fi
+[ -n "$PROBE" ] && cat > "$PROBE" <<'TS'
 import { loadConfig } from "./src/config.js";
 import { loadModelCatalog } from "./src/models-csv.js";
 import { runStatus } from "./src/tools/status.js";
@@ -111,7 +129,7 @@ const config = loadConfig(process.env, process.cwd());
 config.models = await loadModelCatalog(config.modelsCsvPath);
 process.stdout.write(JSON.stringify(await runStatus(config), null, 2) + "\n");
 TS
-if (cd "$REPO_ROOT" && npx tsx "$PROBE") > "$OUT/status.json" 2>"$OUT/status.err"; then
+if [ -n "$PROBE" ] && (cd "$REPO_ROOT" && npx tsx "$PROBE") > "$OUT/status.json" 2>"$OUT/status.err"; then
   pass "status captured → status.json"
   node -e '
     const s = require(process.argv[1]);
@@ -153,6 +171,7 @@ if [ -s "$OUT/status.json" ]; then
     console.log("  wrote a starter catalog from what you actually have → models.local.csv");
     process.exit(1);
   ' "$OUT/status.json" "$OUT/models.local.csv" 2>/dev/null | tee -a "$SUMMARY"
+  # PIPESTATUS is clobbered by the next pipeline, so read it on the next line.
   case "${PIPESTATUS[0]}" in
     0) pass "catalog matches the installed models" ;;
     1) skip "catalog does not match. Either download the catalog models, or edit
@@ -200,14 +219,19 @@ else
       Claude Code session on this machine"
 fi
 
-tar -czf "$OUT.tgz" -C "$OUT" . 2>/dev/null && pass "archive → $OUT.tgz"
+if tar -czf "$ARCHIVE" -C "$OUT" . 2>"$OUT/tar.err"; then
+  pass "archive → $ARCHIVE"
+else
+  fail "could not write $ARCHIVE — see $OUT/tar.err. The per-run directory
+      $OUT still holds everything"
+fi
 
-printf '\n%s\n' "-------- summary --------"
-cat "$SUMMARY" | grep -E '^(PASS|FAIL|SKIP)' || true
+printf '\n%s\n' "-------- summary (run $RUN_ID) --------"
+grep -E '^(PASS|FAIL|SKIP)' "$SUMMARY" || true
 printf '\n%s\n' "Next, and only if the smoke test passed:"
 printf '%s\n' "  claude mcp add local-coder -e LOCAL_CODER_MODELS_CSV=\"\$LOCAL_CODER_MODELS_CSV\" -- node \"$REPO_ROOT/dist/server.js\""
 printf '%s\n' "  restart Claude Code, then work a real task using implement / repair."
 printf '%s\n' "  B6 comes from repair's payload (passed, rounds_used), B7 from"
 printf '%s\n' "  rounds[].model_latency_ms and gate_ms. Neither needs the cost meter,"
 printf '%s\n' "  which is why they are not blocked by G1 being reopened."
-printf '%s\n\n' "  Re-run this script afterwards to refresh $OUT.tgz with the telemetry."
+printf '%s\n\n' "  Re-run this script afterwards; it writes a NEW run directory and archive."

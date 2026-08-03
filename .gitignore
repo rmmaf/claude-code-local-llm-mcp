@@ -21,4 +21,4 @@ coverage/
 .local-coder/spill/
 
 # mac-check.sh probe, removed on exit; listed so an interrupted run cannot dirty the tree
-.mac-check-status.mts
+.mac-check-status.*.mts
