@@ -30,6 +30,11 @@ export interface BilledRequest {
   requestId: string;
   sessionId: string;
   model: string;
+  /**
+   * `usage.speed` as reported by Claude Code ("standard", "fast", ...), or null
+   * when the field is absent. Part of the price — see `rateKey` in rates.ts.
+   */
+  speed: string | null;
   isSidechain: boolean;
   timestampMs: number;
   /** Opaque id of the conversation thread: "main", or the root uuid of a subagent. */
@@ -87,6 +92,12 @@ interface RawRecord {
 
 function num(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** `usage.speed` when Claude Code reports one. Absent on older transcripts. */
+function readSpeed(raw: Record<string, unknown> | undefined): string | null {
+  const value = raw?.speed;
+  return typeof value === "string" && value !== "" ? value : null;
 }
 
 function readUsage(raw: Record<string, unknown> | undefined): TokenUsage {
@@ -237,6 +248,7 @@ export async function readTranscript(file: string): Promise<Transcript> {
       requestId: record.requestId,
       sessionId: record.sessionId ?? "",
       model: record.message?.model ?? "unknown",
+      speed: readSpeed(record.message?.usage),
       isSidechain,
       timestampMs: parseTime(record.timestamp),
       thread: isSidechain ? sidechainRoot(uuid, parents, sidechains) : "main",

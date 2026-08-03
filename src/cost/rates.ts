@@ -63,6 +63,20 @@ export const DEFAULT_RATES: Rates = {
 
 export const RATES_REL_PATH = path.join(".local-coder", "rates.json");
 
+/**
+ * The key a request is priced under. Speed is part of the price, not a detail
+ * of it: Claude Code's fast mode bills Opus at twice the standard rate while
+ * reporting the same model string, so pricing on the model alone would halve
+ * the total of any fast-mode session and blame the meter for the gap.
+ *
+ * Non-standard speeds get their own key ON PURPOSE. An unknown key resolves to
+ * a null price, which makes the whole session unpriced rather than wrongly
+ * priced — the same fail-closed choice as leaving `inputPerMTok` null.
+ */
+export function rateKey(model: string, speed: string | null): string {
+  return speed === null || speed === "standard" ? model : `${model}@${speed}`;
+}
+
 /** Resolve the effective multipliers for one model (global defaults + overrides). */
 export function multipliersFor(rates: Rates, model: string): RateMultipliers {
   const override = rates.models[model]?.multipliers;

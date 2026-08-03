@@ -48,13 +48,15 @@ That forces the priority order every premise below is organised around:
   writes to its own transcript, deduplicated by `requestId`; nothing is estimated.
 - **Experiment:** run `npm run cost-meter` against a session, compare its total
   against that session's `/usage` figures.
-- **Measured:** **half of it.** The meter side is pinned: **$88.34** over 300
-  billed requests, all `claude-opus-5`, `run 2026-08-03-win-02` — recorded
-  *before* `/usage` was read, so the comparison cannot be adjusted afterwards.
-  The `/usage` side has not been read, so **no error exists yet and B1 is not
-  decided.** Prices came from Anthropic's published sheet on 2026-08-03; the five
+- **Measured:** **nothing yet — the instrument is ready, the comparison is not.**
+  Prices came from Anthropic's published sheet on 2026-08-03; the five
   multipliers already in `src/cost/rates.ts` matched it exactly, so only
-  `inputPerMTok` had to be filled in.
+  `inputPerMTok` had to be filled in. The meter now returns dollars: $88.34 at
+  300 requests, $94.62 a few minutes later, `run 2026-08-03-win-02`.
+  **That growth is the point: both sides must be read at the same moment.** A
+  `/usage` figure from the end of a session compared against a meter snapshot
+  from its middle manufactures an error out of nothing. Read `/usage` and run the
+  meter back to back, at the end, and compute the error from that pair.
 - **Falls if:** error > 5%.
 - **If it falls:** every other premise here loses its instrument. Fixing the meter
   becomes the only work until it agrees.

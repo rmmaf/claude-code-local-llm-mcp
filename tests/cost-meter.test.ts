@@ -1135,3 +1135,58 @@ describe("against a real transcript, when one is present", () => {
     }
   });
 });
+
+/**
+ * Fast mode reports the SAME model string while billing at twice the rate.
+ * Pricing on the model alone therefore halves a fast-mode session's total —
+ * and a halved total reads as "the meter is broken", which is how a pricing
+ * bug gets mistaken for the instrument failing.
+ */
+describe("speed is part of the price", () => {
+  async function reportWith(
+    speed: string | undefined,
+    models: Record<string, { inputPerMTok: number }>
+  ): Promise<number | null> {
+    clock = 0;
+    const root = tempRoot();
+    const usage: Record<string, unknown> = {
+      input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1_000_000,
+    };
+    if (speed !== undefined) usage.speed = speed;
+    const file = await writeTranscript(root, [
+      assistantRecord("req-1", {}, { message: { model: "test-model", content: [], usage } }),
+    ]);
+    const transcript = await readTranscript(file);
+
+    await fs.mkdir(path.join(root, ".local-coder"), { recursive: true });
+    await fs.writeFile(path.join(root, ".local-coder", "rates.json"), JSON.stringify({ models }), "utf8");
+    return buildSessionReport(transcript, await loadRates(root)).breakdown.usd;
+  }
+
+  // 1M output tokens x the 5.0 output multiplier = 5M input-equivalent units.
+  it("charges fast mode at the fast rate, not the standard one", async () => {
+    const usd = await reportWith("fast", {
+      "test-model": { inputPerMTok: 3 },
+      "test-model@fast": { inputPerMTok: 6 },
+    });
+    expect(usd).toBeCloseTo(30, 6); // 5M units x $6/MTok — NOT the $15 the standard key gives
+  });
+
+  it("leaves a session unpriced when its speed has no price, rather than halving it", async () => {
+    const usd = await reportWith("fast", { "test-model": { inputPerMTok: 3 } });
+    expect(usd).toBeNull();
+  });
+
+  it("still prices transcripts written before Claude Code reported a speed", async () => {
+    const usd = await reportWith(undefined, { "test-model": { inputPerMTok: 3 } });
+    expect(usd).toBeCloseTo(15, 6);
+  });
+
+  it("treats an explicit standard speed as the bare model key", async () => {
+    const usd = await reportWith("standard", { "test-model": { inputPerMTok: 3 } });
+    expect(usd).toBeCloseTo(15, 6);
+  });
+});

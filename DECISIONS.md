@@ -1037,3 +1037,30 @@ holds the gates including the `G-stop` stopping criterion; `MEASUREMENTS.jsonl`
 holds every measured value with its `run_id`. The rule that keeps them honest:
 a `Measured:` line exists only with a run id, and a premise without an experiment
 does not go in `PREMISES.md` at all — it becomes prose here.
+
+### Speed is part of the price, and a snapshot is not a comparison
+
+Two defects, both introduced by the commit that filled in `inputPerMTok` and so
+both invisible while every dollar figure was `null`.
+
+**Claude Code's fast mode bills Opus at twice the standard rate and reports the
+same model string.** Pricing on the model alone halved any fast-mode session —
+and a halved total does not read as a pricing bug, it reads as *the meter is
+wrong*, which is exactly the conclusion B1 exists to draw. The field was there
+the whole time: `usage.speed` is present on all 628 records of the transcript I
+was measuring, saying `standard`. Requests are now priced under `model@speed`,
+and a speed with no entry is **unpriced rather than standard-priced** — the same
+fail-closed choice as leaving `inputPerMTok` null, for the same reason.
+
+**And I pre-registered a moving number.** Pinning the meter's total before
+reading `/usage` is the right instinct — it stops the comparison being adjusted
+after the fact — but the session was still running, so the figure grew from
+$88.34 to $94.62 while the record said $88.34. Comparing a later `/usage` against
+an earlier snapshot manufactures an error out of nothing. **Both sides of B1 must
+be read at the same moment, at the end of the session.** Pre-registration binds
+the method, not a number the method has not finished producing.
+
+**I also wrote a timestamp that had not happened yet** — `03:40:00Z` recorded at
+`03:27Z`, rounded from memory instead of read from the clock. Corrected in place
+rather than superseded: a superseding row is for a value that was true and
+stopped being true, and this one was never true. `git log -p` keeps the original.

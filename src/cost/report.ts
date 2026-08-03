@@ -1,4 +1,4 @@
-import { inputPriceFor, multipliersFor, type RateMultipliers, type Rates } from "./rates.js";
+import { inputPriceFor, multipliersFor, rateKey, type RateMultipliers, type Rates } from "./rates.js";
 import type { BilledRequest, TokenUsage, ToolResultRecord, Transcript } from "./transcript.js";
 import type { TelemetryRecord } from "../telemetry.js";
 
@@ -98,7 +98,8 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
     segments.add(`${request.thread}#${request.segment}`);
     addUsage(tokens, request.usage);
 
-    const priced = priceUsage(request.usage, multipliersFor(rates, request.model));
+    const key = rateKey(request.model, request.speed);
+    const priced = priceUsage(request.usage, multipliersFor(rates, key));
     units.input += priced.input;
     units.cacheWrite += priced.cacheWrite;
     units.cacheRead += priced.cacheRead;
@@ -107,8 +108,10 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
 
     // EVERY request must be priced, not any. A session that mixes a priced main
     // model with an unpriced subagent model would otherwise silently drop the
-    // subagent's cost and present the remainder as the session total.
-    const price = inputPriceFor(rates, request.model);
+    // subagent's cost and present the remainder as the session total. The key
+    // carries speed, so a fast-mode request is unpriced until fast is priced —
+    // never silently charged at the standard rate.
+    const price = inputPriceFor(rates, key);
     if (price === null) allPriced = false;
     else usd = (usd ?? 0) + (priced.total * price) / 1_000_000;
   }
@@ -118,7 +121,7 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
   let cumulative = 0;
   for (const request of transcript.requests) {
     if (request.isSidechain) continue;
-    cumulative += priceUsage(request.usage, multipliersFor(rates, request.model)).total;
+    cumulative += priceUsage(request.usage, multipliersFor(rates, rateKey(request.model, request.speed))).total;
     growth.push({ index: request.index, cacheRead: request.usage.cacheRead, cumulativeUnits: cumulative });
   }
 
@@ -331,7 +334,7 @@ export function buildCounterfactual(
       unverifiable++;
       const would = requestAtOrAfter(transcript.requests, Date.parse(entry.ts), "main");
       if (would !== null) {
-        const wm = multipliersFor(rates, would.model);
+        const wm = multipliersFor(rates, rateKey(would.model, would.speed));
         const wttl = would.usage.cacheWrite5m > would.usage.cacheWrite1h ? "5m" : "1h";
         const wmult = positionalMultiplier(would.index, would.segmentSize, wm, wttl);
         unverifiableUnits +=
@@ -380,7 +383,8 @@ export function buildCounterfactual(
       continue;
     }
 
-    const m = multipliersFor(rates, request.model);
+    const requestKey = rateKey(request.model, request.speed);
+    const m = multipliersFor(rates, requestKey);
     const ttl = request.usage.cacheWrite5m > request.usage.cacheWrite1h ? "5m" : "1h";
     const multiplier = positionalMultiplier(request.index, request.segmentSize, m, ttl);
 
@@ -401,7 +405,7 @@ export function buildCounterfactual(
     const entryUnits =
       (suppressed / rates.charsPerToken) * multiplier +
       entry.turns_collapsed * request.usage.cacheRead * m.cacheRead;
-    const price = inputPriceFor(rates, request.model);
+    const price = inputPriceFor(rates, requestKey);
     if (price === null) unpriced.add(entry.tool);
     else saving.usd = (saving.usd ?? 0) + (entryUnits * price) / 1_000_000;
   }
