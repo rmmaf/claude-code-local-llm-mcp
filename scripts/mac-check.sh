@@ -241,7 +241,9 @@ if [ -s "$OUT/status.json" ]; then
     // unreviewed catalog fed the orchestrator an instruction aimed at a human.
     // Write a real description instead, and mark it [auto] so 5b can tell a
     // generated line from a reviewed one.
-    const kind = coders.length ? "coding model" : "model (NOT identified as a coding model)";
+    // "coding model" is read off the file name, nothing more — say so, since
+    // this text is what the models tool hands the orchestrator.
+    const kind = coders.length ? "coding model by name" : "model, name does NOT suggest coding";
 
     // A superlative has to be earned. Sizes sort unknowns last, so the bottom
     // row is not necessarily the smallest — an unsized model could be smaller
@@ -255,11 +257,17 @@ if [ -s "$OUT/status.json" ]; then
     const soleMax = allKnown && known.filter((g) => g === maxGb).length === 1;
     const soleMin = allKnown && known.filter((g) => g === minGb).length === 1;
 
+    // Disk size supports exactly one claim: how much memory the weights need.
+    // It does NOT support "most capable" or "fastest", which earlier versions
+    // wrote. Quantisation and architecture break both: qwen3-coder-30b-a3b is
+    // a mixture-of-experts with ~3B active parameters, so it is the LARGEST on
+    // disk here and still likely faster per token than a dense 14B. Say what
+    // the number means for selection and stop.
     const describe = (r) => {
       if (r.gb === null) return `Local ${kind}, size unknown [auto]`;
       const base = `Local ${kind}, ${r.gb} GB`;
-      if (soleMax && r.gb === maxGb) return `${base} — the largest here, most capable, needs the most memory [auto]`;
-      if (soleMin && r.gb === minGb) return `${base} — the smallest here, fastest, lowest memory [auto]`;
+      if (soleMax && r.gb === maxGb) return `${base} — the largest here; auto-selection prefers it whenever it fits [auto]`;
+      if (soleMin && r.gb === minGb) return `${base} — the smallest here; the one that still fits when memory is tight [auto]`;
       return `${base} [auto]`;
     };
     const csv = rows.map((r) => `${r.id},"${describe(r)}"`).join("\n") + "\n";
