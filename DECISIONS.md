@@ -1064,3 +1064,31 @@ the method, not a number the method has not finished producing.
 `03:27Z`, rounded from memory instead of read from the clock. Corrected in place
 rather than superseded: a superseding row is for a value that was true and
 stopped being true, and this one was never true. `git log -p` keeps the original.
+
+### Speed-aware pricing, finished properly
+
+The speed key was applied in `report.ts` and not in `cli.ts`, so the CLI's
+headline multiplier was computed from the bare model while the USD printed four
+lines above it came from the speed key. Two numbers on one screen from two
+different multiplier sets. Both now go through `rateKey`.
+
+Two things the same review turned up, both worse than the inconsistency:
+
+**The "USD not shown" hint named the model, not the missing key.** With a fast
+request and a priced base model, it told the reader to fill in a line that was
+already filled in. `unpricedKeys` now carries the exact keys that had no price,
+and the hint prints those.
+
+**And the headline had never printed in a real session.** It anchored on the
+first request in the file; a resumed session opens with a leftover one-request
+segment, so `segmentSize > 1` was false and the line carrying the entire cost
+argument — 27.2x, measured — was silently absent every time. It now anchors on
+the longest main segment and prints that segment's size, so the figure cannot be
+read as covering more of the session than it does. A number that never renders
+is indistinguishable from a number that is wrong, and neither is visible from a
+passing test suite: nothing asserted the line appears.
+
+**Twice in one session I wrote a timestamp from memory and it landed in the
+future.** Both caught by review, not by me. Timestamps are read from the clock
+now — `new Date().toISOString()` in the same command that writes the row, never
+typed.

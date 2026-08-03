@@ -18,6 +18,13 @@ export interface CostBreakdown {
   share: Omit<CostUnits, "total">;
   /** USD, or null when no input price is configured for the model. */
   usd: number | null;
+  /**
+   * The rate keys that had no `inputPerMTok` — exactly why `usd` is null, and
+   * exactly what to add to `rates.json`. A key may carry a speed suffix
+   * (`model@fast`), so naming the bare model here would send the reader to a
+   * line that is already filled in.
+   */
+  unpricedKeys: string[];
 }
 
 export interface GrowthPoint {
@@ -92,6 +99,7 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
   const segments = new Set<string>();
   let usd: number | null = null;
   let allPriced = true;
+  const unpricedKeys = new Set<string>();
 
   for (const request of transcript.requests) {
     models.add(request.model);
@@ -112,8 +120,10 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
     // carries speed, so a fast-mode request is unpriced until fast is priced —
     // never silently charged at the standard rate.
     const price = inputPriceFor(rates, key);
-    if (price === null) allPriced = false;
-    else usd = (usd ?? 0) + (priced.total * price) / 1_000_000;
+    if (price === null) {
+      allPriced = false;
+      unpricedKeys.add(key);
+    } else usd = (usd ?? 0) + (priced.total * price) / 1_000_000;
   }
   if (!allPriced) usd = null;
 
@@ -143,7 +153,7 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
     mainThreadRequests: transcript.requests.filter((r) => !r.isSidechain).length,
     sidechainRequests: transcript.requests.filter((r) => r.isSidechain).length,
     segments: segments.size,
-    breakdown: { tokens, units, share: shareOf(units), usd },
+    breakdown: { tokens, units, share: shareOf(units), usd, unpricedKeys: [...unpricedKeys].sort() },
     growth,
     toolResultBytes: { total: totalBytes, byTool },
     skippedLines: transcript.skippedLines,

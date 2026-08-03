@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { readTelemetry, TELEMETRY_REL_PATH } from "../telemetry.js";
-import { loadRates, multipliersFor, RATES_REL_PATH } from "./rates.js";
+import { loadRates, multipliersFor, rateKey, RATES_REL_PATH } from "./rates.js";
 import { buildCounterfactual, buildSessionReport, positionalMultiplier, scopeTelemetry } from "./report.js";
 import { listTranscripts, projectTranscriptDir, readTranscript } from "./transcript.js";
 
@@ -167,24 +167,42 @@ async function main(): Promise<void> {
     if (breakdown.usd !== null) {
       process.stdout.write(`  ${BOLD}USD ${breakdown.usd.toFixed(2)}${RESET}\n`);
     } else {
+      // Name the keys that are actually missing, not the model. A key can carry
+      // a speed suffix, and pointing at the bare model would send the reader to
+      // a line they have already filled in.
+      const missing = breakdown.unpricedKeys.length > 0 ? breakdown.unpricedKeys : ["model"];
       process.stdout.write(
-        `  ${DIM}USD not shown — set models[${JSON.stringify(session.models[0] ?? "model")}].inputPerMTok ` +
+        `  ${DIM}USD not shown — set ${missing.map((k) => `models[${JSON.stringify(k)}].inputPerMTok`).join(", ")} ` +
           `in ${RATES_REL_PATH}${RESET}\n`
       );
     }
 
     // The punchline: what one token costs when it enters at the start of THIS
     // session, computed from this session's own length.
-    const firstMain = transcript.requests.find((r) => !r.isSidechain);
+    //
+    // Anchored on the LONGEST main segment, not the first request in the file.
+    // A resumed session opens with a leftover one-request segment, and reading
+    // that one made the whole line vanish behind `segmentSize > 1` — the number
+    // carrying the entire cost argument, silently absent on every resumed
+    // session. The segment size is printed so the figure cannot be read as
+    // covering more of the session than it does.
+    let firstMain: (typeof transcript.requests)[number] | undefined;
+    for (const request of transcript.requests) {
+      if (request.isSidechain || request.index !== 0) continue;
+      if (firstMain === undefined || request.segmentSize > firstMain.segmentSize) firstMain = request;
+    }
     if (firstMain !== undefined && firstMain.segmentSize > 1) {
-      const m = multipliersFor(rates, firstMain.model);
+      // Same key the report priced with. Reading the bare model here would put
+      // a headline multiplier on screen that contradicts the USD above it.
+      const m = multipliersFor(rates, rateKey(firstMain.model, firstMain.speed));
       const ttl = firstMain.usage.cacheWrite5m > firstMain.usage.cacheWrite1h ? "5m" : "1h";
       const multiplier = positionalMultiplier(0, firstMain.segmentSize, m, ttl);
       const write = ttl === "1h" ? m.cacheWrite1h : m.cacheWrite5m;
       process.stdout.write(
-        `\n  ${BOLD}a token entering at turn 0 of this session costs ` +
+        `\n  ${BOLD}a token entering at turn 0 of this session's longest context costs ` +
           `${multiplier.toFixed(1)}x the input rate${RESET}\n` +
-          `  ${DIM}${write} (cache write, ${ttl}) + ${m.cacheRead} x ${firstMain.segmentSize - 1} re-reads${RESET}\n`
+          `  ${DIM}${write} (cache write, ${ttl}) + ${m.cacheRead} x ${firstMain.segmentSize - 1} re-reads` +
+          `; that context ran ${firstMain.segmentSize} requests${RESET}\n`
       );
     }
 

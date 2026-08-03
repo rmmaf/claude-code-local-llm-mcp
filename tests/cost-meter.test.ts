@@ -1227,4 +1227,37 @@ describe("speed is part of the price", () => {
     expect(inputPriceFor(rates, "test-model@fast")).toBeNull();
     expect(inputPriceFor(rates, "test-model")).toBe(3);
   });
+
+  // "USD not shown — set models['test-model'].inputPerMTok" is worse than no
+  // hint at all when that line is already filled in and the speed key is what
+  // is missing. The report has to say which key, not which model.
+  it("names the unpriced KEY, not the model, so the hint is actionable", async () => {
+    clock = 0;
+    const root = tempRoot();
+    const file = await writeTranscript(root, [
+      assistantRecord("req-1", {}, {
+        message: {
+          model: "test-model",
+          content: [],
+          usage: { output_tokens: 1_000_000, speed: "fast" },
+        },
+      }),
+    ]);
+    const transcript = await readTranscript(file);
+    await fs.mkdir(path.join(root, ".local-coder"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, ".local-coder", "rates.json"),
+      JSON.stringify({ models: { "test-model": { inputPerMTok: 3 } } }),
+      "utf8"
+    );
+
+    const breakdown = buildSessionReport(transcript, await loadRates(root)).breakdown;
+    expect(breakdown.usd).toBeNull();
+    expect(breakdown.unpricedKeys).toEqual(["test-model@fast"]);
+  });
+
+  it("reports no unpriced keys when everything is priced", async () => {
+    const usd = await reportWith(undefined, { "test-model": { inputPerMTok: 3 } });
+    expect(usd).not.toBeNull();
+  });
 });
