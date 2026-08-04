@@ -200,6 +200,20 @@ pre-registered as its own premise before anything is measured against it.
   (1,395 → 1,938), so in that configuration `gate` is strictly negative on both
   levers at once. Narrowing the checks is what makes it so — a caller's choice,
   not a property of the tool.
+- **`run 2026-08-04-mac-10` observed the predicted failure mode directly.** A
+  real 8-hour session building a Tetris: **36 `Bash` calls, 0 `gate` calls, 0
+  `repair` calls.** The tool built to collapse verification into one call was
+  not reached for once, and the nine delegated fixes went to `fix` — the
+  one-shot — rather than to the loop that is the project's turn-collapse lever.
+  The "if it falls" line below wrote this outcome down before it happened, which
+  is the good news and also the whole problem: **a tool nobody calls cannot be
+  measured, and its description is what decides that, not its mechanism.**
+- **A limit the premise never stated: the gate only sees the configured checks.**
+  In that session the delegated work lived in `tetris/*.js`, which is on the path
+  of neither configured check, so `gate` returned **green on a broken artifact**
+  and `repair` had nothing to loop on. The failures became reachable only after a
+  human hand-wrote a test to produce error output. Delegating into a directory
+  the project does not already check leaves both tools blind.
 - **Falls if:** < 2 turns saved on median.
 - **If it falls:** the problem is almost certainly the **tool description** losing
   to the instinct to reach for Bash, not the tool. Rewrite the description before
@@ -251,6 +265,18 @@ pre-registered as its own premise before anything is measured against it.
   - **`scaffold` is deliberately not covered.** It does not go through
     `runGeneration`, and its files do not exist yet, so there is no input size to
     estimate an output from. Recorded rather than left as a silent hole.
+  - **`run 2026-08-04-mac-10` put a price on that hole.** Six `scaffold` calls
+    all returned `created` with no error, and the composed program did not run:
+    rotation inert, gravity inverted, malformed piece data. **`created` claims
+    only that syntactically parseable output was written at the requested path**
+    — not that the file does what the spec said, not that it composes.
+    `scaffold` is the one tool missing three nets at once: no gate, no output
+    pre-flight, and **no telemetry row at all**, so six calls of real work left
+    nothing in the log. Of the 2,055 lines it generated, **51.2% were dead code**
+    in the composition, because three of six files ignored a constraint carried
+    verbatim in every spec and one of them replaced the shared global instead of
+    extending it. That is what a 30B local model does with a cross-file contract
+    whose other side it cannot see.
   - **What did NOT happen:** the whole-file contract was not replaced with
     anchored search/replace blocks. That is **G7** in `ROADMAP.md`, with its
     opening threshold fixed in advance and decided by the corpus running under
@@ -542,6 +568,16 @@ pre-registered as its own premise before anything is measured against it.
   `tests/selection.test.ts`, 31,086 bytes, which `bytes/3.5` puts at 8,882
   tokens against a 8,192 cap, so the pre-flight refuses exactly the request that
   `run 2026-08-03-mac-05` truncated on. One point is a calibration, not a curve.
+- **THE EXPERIMENT IS NOT EXECUTABLE BELOW A TIMEOUT THRESHOLD, and the
+  threshold is now a number.** `run 2026-08-04-mac-10` measured **78.9 tok/s**
+  on this machine, so a response reaches `finish_reason: "length"` only after
+  **~208 s** of generation at a 16384-token cap. Any `config.timeoutMs` below
+  that makes the deadline fire first and truncation **unobservable** — at the
+  20000 ms this machine ran until then, B14 could not have produced a single
+  truncation no matter how bad the estimator was. **B14 therefore depends on
+  `D4`** (`ROADMAP.md` G5), which is a dependency nobody had written down, and
+  any run scoring B14 must record its `timeoutMs` against this threshold or the
+  zero it reports means nothing.
 - **The known unmodelled term:** reasoning tokens share the same budget.
   `DECISIONS.md` records that Qwen3 hybrid-thinking output has been seen and is
   stripped at parse time — but it was generated, and it was charged to

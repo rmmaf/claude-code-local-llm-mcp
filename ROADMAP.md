@@ -81,10 +81,15 @@ What may be built next, and the number that decides it.
 
 ## G5 — Mac diagnostics, reduced · `unevaluated`
 
+- **`D4` is MEASURED: 78.9 tok/s** (`run 2026-08-04-mac-10`, six `scaffold`
+  calls on `qwen3-coder-30b-a3b-instruct-dwq-v2`, 16,484 tokens over 208.3 s).
+  It turned out to matter for something nobody had connected to it: at a
+  16384-token cap a response cannot truncate before **~208 s**, so **B14 is not
+  executable at all below that `timeoutMs`** and reports zero truncations by
+  arithmetic rather than by merit.
 - **Still needed:** `D2` (real KV cache per context), `D3` (RAM ceiling and
   Auto-Evict), `D5` (Docker Desktop VM cost), `D10` (RAM floor with work apps
-  open), `D8` (output contract, stability, elision — now the engine of `repair`),
-  `D4` (tok/s — `repair` has a time budget, and a slow model makes B7 fall).
+  open), `D8` (output contract, stability, elision — now the engine of `repair`).
 - **Dropped unless B8 < 70%:** `D7` (RAG recall and index footprint).
 - **Changed shape:** the RAM planner now sizes **two small models** (a repairer
   and a triager) instead of squeezing in one 27B. The question moved from
