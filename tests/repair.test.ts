@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { contextExhausted } from "../src/contract-probe.js";
 import type { ProcessResult, ProcessRunner } from "../src/exec.js";
 import type { ToolError } from "../src/fs-safety.js";
 import { readTelemetry } from "../src/telemetry.js";
@@ -392,6 +393,100 @@ describe("repair loop", () => {
     // 6,000 + 2,200 = 8,200 against 8,192: the second attempt did fill the
     // window, and before this the round reported no tokens at all.
     expect(round?.attempts?.[1]).toMatchObject({ attempt: 2, prompt_tokens: 6_000 });
+  });
+
+  /**
+   * THE CORRECTIVE RETRY IS ITS OWN REQUEST AND MUST CLEAR ITS OWN PRE-FLIGHT.
+   * The check above the attempt loop cleared attempt 1; attempt 2 carries that
+   * whole response plus the correction, so it is strictly larger and used to go
+   * out unchecked — which is not only a hole in B16's denominator but the live
+   * failure the pre-flight exists to stop, since an overflowing request comes
+   * back as a closed, well-formed, SHORTER file that `repair` then writes.
+   */
+  it("does not send a corrective retry that would overflow the window", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // ~30 KB of unusable output: no <file> block, so a retry would normally
+    // fire, and big enough that appending it blows the 8,192-token window.
+    const { fetchImpl, calls } = queuedFetch([chatBody("x".repeat(30 * 1024))]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    // One model call, not two. The queue would have thrown on a second.
+    expect(calls).toHaveLength(1);
+    const round = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ error?: string; attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0];
+    expect(round?.attempts).toHaveLength(1);
+    expect(round?.error).toContain("corrective retry was NOT sent");
+  });
+
+  /**
+   * `envelope` says whether every declared block arrived and closed, and it is
+   * derived from the parsed blocks and NOTHING else. A response can reach
+   * `max_tokens` right after closing its last block: the envelope is complete
+   * even though the stop reason says `length`. Folding the signal into the
+   * outcome is the exact error B16 was written to correct, and over a
+   * 20-request denominator at a 10% bar a few such rows would fail it on an
+   * artefact of the label.
+   *
+   * The pipeline still retries — being conservative about applying a
+   * length-capped response is a separate, deliberate choice from how the
+   * response is MEASURED.
+   */
+  it("calls a length-capped response complete when every block did close", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody(fileBlock("src/math.ts", WORSE), { finishReason: "length" }),
+      chatBody(fileBlock("src/math.ts", FIXED)),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 32_768,
+    });
+
+    const attempts = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0]?.attempts;
+    expect(attempts?.[0]).toMatchObject({ finish_reason: "length", envelope: "complete" });
+    expect(attempts?.[0]).not.toHaveProperty("missing_files");
+  });
+
+  /**
+   * A server that omits `usage` — an older build, a proxy, a version skew —
+   * must produce null, not zero. Zeroes would make `contextExhausted` answer
+   * "fits" for every request and let B16 appear to hold on no token data at all.
+   * End to end, because the zero-filling lives in `chatCompletion`, three layers
+   * below the assertion.
+   */
+  it("records unknown token usage as null rather than zero", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody(fileBlock("src/math.ts", FIXED), { omitUsage: true }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const attempt = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0]?.attempts?.[0];
+    expect(attempt).toMatchObject({ prompt_tokens: null, completion_tokens: null });
+    expect(contextExhausted(attempt?.prompt_tokens as null, attempt?.completion_tokens as null, 8_192)).toBeNull();
   });
 
   /**

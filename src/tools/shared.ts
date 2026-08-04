@@ -102,6 +102,18 @@ export interface ToolDeps {
    */
   onModelResolved?: (model: string) => void;
   /**
+   * Called with each model response the moment it is parsed — before the diff,
+   * the compare-and-swap or the write, any of which can throw.
+   *
+   * A caller that instead reads `GenerationResult.attempts` only sees responses
+   * from generations that reached the return, so a `concurrent_modification` or
+   * a failed write silently removes an already-measured response from B16's
+   * denominator. Those are exactly the racy, partial-failure paths where the
+   * data is most worth having. Exceptions from this callback are logged and
+   * swallowed: it is bookkeeping.
+   */
+  onAttempt?: (attempt: GenerationAttempt) => void;
+  /**
    * Context window to judge the request against, bypassing both the config
    * setting and the `lms` probe. `repair` passes its own already-resolved value
    * so the loop does not re-probe once per round, and tests use it to exercise
@@ -135,19 +147,34 @@ export interface GenerationArgs {
  */
 export interface GenerationAttempt {
   attempt: number;
-  prompt_tokens: number;
-  completion_tokens: number;
+  /** Null when the server reported no usable `usage` — not zero. */
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  /**
+   * The server's stop reason, kept as its own INDEPENDENT field. It is reported
+   * and never folded into `envelope`, for the reason B14 exists: the moment a
+   * signal is allowed to stand in for an outcome, a quirk of the signal becomes
+   * a verdict about the work.
+   */
   finish_reason: string | null;
   /**
    * What the ENVELOPE looked like — whether every declared block arrived and
-   * closed. Deliberately not a contract verdict: `src/contract-probe.ts` also
+   * closed — derived from the parsed blocks and from nothing else.
+   *
+   * In particular NOT from `finish_reason`. A response can reach `max_tokens`
+   * immediately after closing its last block: the envelope is complete, and
+   * labelling it by the stop reason would file a sound response as a failure.
+   * Over a 20-request denominator with a 10% bar, a handful of those is enough
+   * to fail B16 on an artefact of the label.
+   *
+   * Also not a full contract verdict: `src/contract-probe.ts` additionally
    * scores `elided`, and that tier reads a run of deleted lines as dropped
    * content, which is invalid here because deleting lines is exactly what
    * `repair` is asked to do. The envelope half is unambiguous for any caller;
    * the elision half is only measurable under the diagnostic's probe spec,
    * whose task is a pure append.
    */
-  envelope: "complete" | "missing_blocks" | "no_blocks" | "length";
+  envelope: "complete" | "missing_blocks" | "no_blocks";
   missing_files: string[];
 }
 
@@ -359,8 +386,9 @@ export async function runGeneration(
   // one that filled the window. Re-resolving for the report could disagree with
   // what was actually enforced.
   const contextTokens = await resolveContextTokens(config, args.model, deps);
+  const editableStats = statted.filter((f) => editableSet.has(normalizeRel(f.rel)));
   enforceOutputCap(
-    statted.filter((f) => editableSet.has(normalizeRel(f.rel))),
+    editableStats,
     config.maxOutputTokens,
     config.outputBytesPerToken,
     config.outputUsableFraction,
@@ -396,6 +424,7 @@ export async function runGeneration(
   let outcome: ModelAttemptOutcome | null = null;
   let lastProblem = "";
   let lastMissing: string[] = [];
+  let retrySkippedForContext = false;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     // Re-read the budget per attempt. The corrective retry is a whole second
@@ -405,6 +434,41 @@ export async function runGeneration(
     if (attempt > 1 && remaining <= 0) {
       log.warn("no budget left for the corrective retry; giving up on this generation");
       break;
+    }
+
+    // THE RETRY IS ITS OWN REQUEST AND GETS ITS OWN PRE-FLIGHT. The check above
+    // the loop cleared attempt 1; attempt 2 carries that whole response plus the
+    // corrective message on top of it, so it is strictly larger and was going
+    // out unchecked. That is not only a hole in B16's denominator — "requests
+    // the pre-flight admitted" would have included one it never saw — it is the
+    // live failure this pre-flight exists to stop: an oversized request comes
+    // back as a closed, well-formed, SHORTER file, and `repair` writes it over
+    // the source.
+    //
+    // Measured from the real messages rather than re-derived from the files,
+    // because the appended response is the whole reason the size moved. That
+    // double-counts `PROMPT_OVERHEAD_TOKENS` by ~200 (the message bytes already
+    // include the system prompt and tag lines) — conservative, in the direction
+    // that skips a doubtful retry rather than sending one.
+    if (attempt > 1 && contextTokens !== null) {
+      const accumulated = messages.reduce((sum, m) => sum + Buffer.byteLength(m.content, "utf8"), 0);
+      try {
+        enforceOutputCap(
+          editableStats,
+          config.maxOutputTokens,
+          config.outputBytesPerToken,
+          config.outputUsableFraction,
+          { contextTokens, inputBytes: accumulated, inputBytesPerToken: config.inputBytesPerToken }
+        );
+      } catch (error) {
+        if (!(error instanceof ToolError) || error.code !== "context_would_overflow") throw error;
+        retrySkippedForContext = true;
+        log.warn(
+          `the corrective retry would not fit the ${contextTokens}-token window ` +
+            `(~${accumulated} B of prompt after appending the bad response); not sending it`
+        );
+        break;
+      }
     }
 
     const result = await chatCompletion({
@@ -423,21 +487,29 @@ export async function runGeneration(
     const returned = parsed.files; // keys already normalized by the parser
     const missing = [...declared.keys()].filter((p) => !returned.has(p));
 
-    attempts.push({
+    const record: GenerationAttempt = {
       attempt,
-      prompt_tokens: result.usage.prompt_tokens,
-      completion_tokens: result.usage.completion_tokens,
+      prompt_tokens: result.usageKnown ? result.usage.prompt_tokens : null,
+      completion_tokens: result.usageKnown ? result.usage.completion_tokens : null,
       finish_reason: result.finishReason,
+      // Blocks only. `finish_reason` is reported beside this, never inside it.
       envelope:
-        result.finishReason === "length"
-          ? "length"
-          : missing.length === 0
-            ? "complete"
-            : returned.size === 0
-              ? "no_blocks"
-              : "missing_blocks",
+        missing.length === 0 ? "complete" : returned.size === 0 ? "no_blocks" : "missing_blocks",
       missing_files: missing,
-    });
+    };
+    attempts.push(record);
+    // Handed over the moment it exists, because everything below — the diff, the
+    // compare-and-swap, the write — can throw, and a response measured and then
+    // lost to an apply-stage failure is a response silently dropped from B16's
+    // denominator. Wrapped for the same reason the telemetry writer never
+    // throws: bookkeeping must not turn a working call into an error.
+    try {
+      deps.onAttempt?.(record);
+    } catch (error) {
+      log.warn(
+        `onAttempt callback failed (continuing): ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
 
     if (result.finishReason === "length") {
       lastProblem =
@@ -463,8 +535,15 @@ export async function runGeneration(
 
   if (outcome === null) {
     throw new ToolError(
-      `The local model failed to produce valid output after a corrective retry: ${lastProblem}. ` +
+      `The local model failed to produce valid output${
+        retrySkippedForContext ? "" : " after a corrective retry"
+      }: ${lastProblem}. ` +
         (lastMissing.length > 0 ? `Missing files: ${lastMissing.join(", ")}. ` : "") +
+        (retrySkippedForContext
+          ? "The corrective retry was NOT sent: appending the bad response to the prompt would " +
+            "have overflowed the model's context window, and an overflowing request is what " +
+            "produces a closed-but-shortened file. "
+          : "") +
         "Consider narrowing the spec or sending fewer files. If it truncated, raising " +
         "LOCAL_CODER_MAX_OUTPUT_TOKENS only helps when that cap is what bound the answer — " +
         "prompt and answer share the model's context window, so past ~25 KB of editable source " +
@@ -482,6 +561,7 @@ export async function runGeneration(
         model,
         attempts,
         context_tokens: contextTokens,
+        retry_skipped_for_context: retrySkippedForContext,
       }
     );
   }

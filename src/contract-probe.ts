@@ -148,14 +148,18 @@ export const SILENT_ELISION_MIN_RUN = 3;
  * not. That separation is the whole lesson of B14.
  */
 export function contextExhausted(
-  promptTokens: number,
-  completionTokens: number,
+  promptTokens: number | null | undefined,
+  completionTokens: number | null | undefined,
   contextTokens: number | null | undefined
 ): boolean | null {
-  if (typeof contextTokens !== "number" || !Number.isFinite(contextTokens) || contextTokens <= 0) {
-    return null;
-  }
-  if (!Number.isFinite(promptTokens) || !Number.isFinite(completionTokens)) return null;
+  const counted = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0;
+  if (!counted(contextTokens) || contextTokens <= 0) return null;
+  // Unknown usage is null, NOT zero. A server that omits `usage` would otherwise
+  // report every request as costing nothing, and "0 + 0 < window" answers "fits"
+  // when the honest answer is "cannot tell" — a false negative that would let
+  // this premise appear to hold on no token data at all. See `ChatResult.usageKnown`.
+  if (!counted(promptTokens) || !counted(completionTokens)) return null;
   return promptTokens + completionTokens >= contextTokens;
 }
 

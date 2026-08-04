@@ -595,6 +595,13 @@ async function repairLoop(
    */
   const roundAttempts: Array<{ round: number; context_tokens: number | null } & GenerationAttempt> =
     [];
+  /**
+   * The window every round is judged against. `runRepair` resolved it once and
+   * put it in `deps`, and `runGeneration` short-circuits to that same value, so
+   * reading it here cannot disagree with what was actually enforced. Undefined
+   * would mean "probe", which repair never does per round — see `runRepair`.
+   */
+  const roundWindow = generationDeps.contextTokens ?? null;
   let stoppedBecause: RepairResult["stopped_because"] = "max_rounds";
 
   // The best state the loop ever produced, kept in memory. Nothing below writes
@@ -660,40 +667,27 @@ async function repairLoop(
             // before the write rather than trusted from here.
             expectedContent: new Map(snapshots.map((s) => [s.rel, s.lastWritten])),
             remainingMs: trackedRemaining,
+            // Recorded as each response is PARSED, not from the returned result.
+            // Raw numbers, never a derived verdict: `contextExhausted` in
+            // `src/contract-probe.ts` owns the rule, so it can be corrected
+            // later without invalidating rows already written.
+            //
+            // Through the callback rather than `generation.attempts` because the
+            // diff, the compare-and-swap and the write all come after the
+            // response and all can throw. A `concurrent_modification` or a
+            // failed write would otherwise delete an already-measured response
+            // from B16's denominator — silently, and only on the racy paths.
+            onAttempt: (attempt) => {
+              roundAttempts.push({ round, context_tokens: roundWindow, ...attempt });
+            },
           }
         );
         // `model` is not read back from the result: `onModelResolved` already
         // set it, from the same resolution, on the success and failure paths
         // alike. One source, so the two cannot drift.
         touched = generation.files_changed;
-        // Raw numbers per attempt, never a derived verdict: `contextExhausted`
-        // in `src/contract-probe.ts` owns the rule, so it can be corrected later
-        // without invalidating every row already written under the old one.
-        for (const attempt of generation.attempts) {
-          roundAttempts.push({ round, context_tokens: generation.context_tokens, ...attempt });
-        }
       } catch (error) {
         roundError = error instanceof Error ? error.message : String(error);
-        // The responses this throw discarded. `model_output_malformed` carries
-        // them because it is raised AFTER up to two responses were received and
-        // measured — losing them would drop B16's likeliest positives while
-        // keeping every negative, which biases the rate in one direction.
-        if (error instanceof ToolError) {
-          const carried = error.details.attempts;
-          // The window from the ERROR, not from this scope: it is the one the
-          // generation actually judged against, and reading it from anywhere
-          // else could disagree with what was enforced.
-          const window = error.details.context_tokens;
-          if (Array.isArray(carried)) {
-            for (const attempt of carried as GenerationAttempt[]) {
-              roundAttempts.push({
-                round,
-                context_tokens: typeof window === "number" ? window : null,
-                ...attempt,
-              });
-            }
-          }
-        }
         concurrentEdit = error instanceof ToolError && error.code === "concurrent_modification";
         // WHICH ceiling fired, from the budget that was actually on the clock
         // when the request went out — not from a clock read here, which by now

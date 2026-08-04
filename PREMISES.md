@@ -848,8 +848,16 @@ pre-registered as its own premise before anything is measured against it.
   likeliest positive — recording only the success path would drop the positives
   and keep every negative, biasing the rate in one direction. A round that never
   got a response carries no attempts at all, which is different from zero.
-  Denominator: requests the pre-flight **admitted**; a refusal is a fact about
-  the request, not a verdict on it.
+  Denominator: requests the pre-flight **admitted** — now true of the corrective
+  retry as well, which is checked against the accumulated messages and **skipped
+  rather than sent** when it will not fit. A refusal is a fact about the request,
+  not a verdict on it.
+- **Unknown token usage is excluded, never counted as zero.** `chatCompletion`
+  zero-fills a response body that carries no `usage`; `ChatResult.usageKnown`
+  keeps the distinction and the attempt row stores `null`, so `contextExhausted`
+  answers "cannot tell" instead of "fits". Otherwise a single dependency skew
+  would make every request look like it cost nothing and this premise could hold
+  on no data.
 - **VOID unless the corpus reaches the bar.** A run in which **no** admitted
   request exceeds **70% of `contextBudget`** is VOID, not a pass. This is
   corpus #1's lesson made a rule: a ladder that cannot reach the bar returns 0
@@ -891,14 +899,33 @@ pre-registered as its own premise before anything is measured against it.
   contributes the envelope half only, per the split above. **A run scored on
   `repair` rows alone bounds this premise from one side and must say so**; only a
   diagnostic run scores it whole.
-- **Found by adversarial review, before any of this was measured.** The first
-  version of the instrumentation compared `GenerationResult.usage` — a sum over
-  both requests — against a per-request window, and recorded nothing at all on
-  the `model_output_malformed` path. That combination invents positives on any
-  round that retried and discards the real ones, which would have produced a
-  rate with no relationship to the quantity. Recorded because the numbers this
-  premise will eventually carry are only as good as the row that produced them,
-  and this file is where an instrument's history belongs.
+- **The instrument was wrong six ways before it measured anything, and two
+  rounds of adversarial review found all six.** Recorded rather than quietly
+  fixed, because the numbers this premise will eventually carry are worth exactly
+  as much as the row that produced them — and because five of the six biased the
+  rate rather than breaking it, which is the kind of defect that ships.
+  - **Summed usage against a per-request window.** `GenerationResult.usage`
+    totals both requests; the retry carries the whole bad response plus the
+    correction, so any round that retried read as exhausted. False positives.
+  - **The `model_output_malformed` path recorded nothing**, and it is raised
+    after up to two measured responses — this premise's likeliest positives.
+  - **Apply-stage throws discarded measured responses.** Recording happened on
+    the return, so a `concurrent_modification` or a failed write silently
+    removed a response that had already arrived. Now handed over through
+    `onAttempt` the moment it is parsed.
+  - **The corrective retry never faced the pre-flight.** The check ran once
+    above the attempt loop; attempt 2 was strictly larger and unchecked. So the
+    denominator's own words — "requests the pre-flight admitted" — were false,
+    and worse, this was the live path on which an oversized request comes back
+    closed and short. The retry is now checked against the accumulated messages
+    and skipped rather than sent.
+  - **`finish_reason` was folded back into the outcome.** A response that closed
+    every block after hitting `max_tokens` was labelled by its stop reason
+    instead of its envelope — B14's exact error, committed inside the fix for
+    B14's exact error.
+  - **Absent `usage` became zero rather than unknown**, so a server that reports
+    no tokens would have made every request read as fitting, and this premise
+    could have "held" on no data at all.
 - **Status:** open
 
 ---
@@ -930,13 +957,14 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 329 passing** (333 total,
+`npm test` reports **4 failures / 332 passing** (336 total,
 `run 2026-08-04-win-02`). The same four, and the same causes, as when this was
 first recorded at 4/202 in `run 2026-08-02-win-03` — re-confirmed by a fresh
 `git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, again
 after importing the Mac's `D8` work (**+38 tests, no new failure**), and again
-adding B16 and the fixes its adversarial review forced (**+9**). The four, by name, so the count is checkable rather than
-trusted: `tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
+adding B16 and the fixes its two adversarial reviews forced (**+12**). The four,
+by name, so the count is checkable rather than trusted:
+`tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
 `tests/regression.test.ts:117`.
 
 **One unexplained discrepancy, recorded rather than smoothed over:** that Mac

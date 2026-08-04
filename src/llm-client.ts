@@ -16,7 +16,14 @@ export interface Usage {
 export interface ChatResult {
   content: string;
   finishReason: string | null;
+  /** Zero-filled when the server reported nothing — check `usageKnown` first. */
   usage: Usage;
+  /**
+   * False when `usage` is absent, non-numeric or negative in the response body.
+   * "Zero tokens" and "no measurement" are different facts, and anything scoring
+   * a request against a context window has to be able to tell them apart.
+   */
+  usageKnown: boolean;
   model: string;
 }
 
@@ -115,14 +122,27 @@ export async function chatCompletion(options: ChatOptions): Promise<ChatResult> 
     );
   }
   log.debug(`chat completion finished in ${Date.now() - started} ms (finish_reason=${String(choice?.finish_reason ?? "?")})`);
+  const promptRaw = body.usage?.prompt_tokens;
+  const completionRaw = body.usage?.completion_tokens;
+  const countable = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0;
   return {
     content,
     finishReason: typeof choice?.finish_reason === "string" ? choice.finish_reason : null,
     usage: {
-      prompt_tokens: typeof body.usage?.prompt_tokens === "number" ? body.usage.prompt_tokens : 0,
-      completion_tokens:
-        typeof body.usage?.completion_tokens === "number" ? body.usage.completion_tokens : 0,
+      prompt_tokens: countable(promptRaw) ? promptRaw : 0,
+      completion_tokens: countable(completionRaw) ? completionRaw : 0,
     },
+    /**
+     * Whether the server actually reported usable token counts. The zeroes above
+     * are a summing convenience and must not be read as a measurement: a server
+     * that omits `usage` — an older build, a proxy, a version skew — would
+     * otherwise make every request look like it cost nothing, and
+     * `contextExhausted(0, 0, window)` answers "fits" when the truth is "cannot
+     * tell". B16 fails open on unknown, so the distinction has to survive
+     * this far.
+     */
+    usageKnown: countable(promptRaw) && countable(completionRaw),
     model: typeof body.model === "string" ? body.model : options.model,
   };
 }

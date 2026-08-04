@@ -243,9 +243,22 @@ describe("contextExhausted", () => {
     }
   });
 
-  it("returns null when a usage figure is missing rather than counting it as zero", () => {
+  /**
+   * The case that actually happens. `chatCompletion` zero-fills a response whose
+   * body carries no `usage` — an older server, a proxy, a version skew — so
+   * "unknown" would arrive here as 0 and read as `0 + 0 < window`, i.e. "fits".
+   * That is a false negative on every request at once, and it would let B16
+   * appear to hold on no token data at all. `null` has to survive this far.
+   */
+  it("returns null when a usage figure is unknown rather than counting it as zero", () => {
+    expect(contextExhausted(null, null, 16_384)).toBeNull();
+    expect(contextExhausted(null, 7_670, 16_384)).toBeNull();
+    expect(contextExhausted(8_756, undefined, 16_384)).toBeNull();
     expect(contextExhausted(NaN, 7_670, 16_384)).toBeNull();
-    expect(contextExhausted(8_756, NaN, 16_384)).toBeNull();
+    // A genuine zero is still a measurement, and it fits.
+    expect(contextExhausted(0, 0, 16_384)).toBe(false);
+    // Negative counts are not measurements at all.
+    expect(contextExhausted(-1, 7_670, 16_384)).toBeNull();
   });
 });
 

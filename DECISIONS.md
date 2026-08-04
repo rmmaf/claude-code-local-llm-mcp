@@ -1252,6 +1252,17 @@ so a missing field arrives as `undefined`, makes the budget `NaN`, every `<=`
 false, and a check meant to refuse one request refuses every one. Fifty tests
 went red on the `!== null` version.
 
+**The corrective retry is its own request and gets its own pre-flight.** This was
+missed on the first pass and it is the sharper half of the design: the check ran
+once, above the attempt loop, while attempt 2 appends the entire malformed
+response plus a corrective message and is therefore strictly larger. An
+unchecked, oversized retry is precisely the condition that produces a closed,
+well-formed, shorter file — the failure this whole section is about — and
+`repair` would have written it over the source. It is now measured from the
+accumulated messages rather than re-derived from the files, since the appended
+response is the whole reason the size moved, and a retry that will not fit is
+**not sent** rather than sent and hoped for.
+
 **`status` reports the window, including when it does not know it.**
 `context_window.source` is `config`, `lms` or `unknown`, and `unknown` is the
 case worth surfacing loudest: it means the check is switched off, silently. A
