@@ -24,10 +24,9 @@ and it unblocked a hidden dependency: B14 cannot observe truncation below
 
 ## Do not redo
 
-- **`/cost`'s "68% from local-coder" is not a saving.** It is last-24h
-  session attribution under "what is contributing to your limits usage", and the
-  panel says its lines are "not a breakdown". Measured share of tool output in
-  that session: **13.5%**.
+- **`/cost`'s "68% from local-coder" is not a saving** — it is last-24h session
+  attribution under "what is contributing to your limits usage", and the panel
+  calls its own lines "not a breakdown". Real share of tool output: **13.5%**.
 - **The gate only sees the configured checks.** Delegated work outside them —
   `tetris/*.js` — leaves `gate` green and `repair` no-opping on a broken tree.
 - **Read the per-request ceiling from the run, never from the environment**; the
