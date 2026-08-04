@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   atomicWriteFile,
   enforceContextCaps,
+  enforceOutputCap,
   readTextFileSafe,
   resolveSafePath,
   ToolError,
@@ -145,6 +146,77 @@ describe("file content safety", () => {
       expect(toolError.message).toContain("c.ts");
       expect(toolError.details.total_kb).toBe(600);
     }
+  });
+
+  it("enforceOutputCap names every editable file and reports the estimate", () => {
+    // 14,000 bytes at 10 bytes/token is 1,400 tokens against a 1,000 budget.
+    const files = [
+      { rel: "a.ts", bytes: 7_000 },
+      { rel: "b.ts", bytes: 7_000 },
+    ];
+    try {
+      enforceOutputCap(files, 1_000, 10, 1);
+      throw new Error("expected throw");
+    } catch (error) {
+      const toolError = error as ToolError;
+      expect(toolError.code).toBe("output_would_truncate");
+      expect(toolError.message).toContain("a.ts");
+      expect(toolError.message).toContain("b.ts");
+      expect(toolError.details.estimated_output_tokens).toBe(1_400);
+      expect(toolError.details.usable_output_tokens).toBe(1_000);
+    }
+  });
+
+  it("enforceOutputCap passes exactly at the bar and refuses one token over", () => {
+    // floor(1000 * 0.9) = 900 usable tokens = 9,000 bytes at 10 bytes/token.
+    // The boundary is where a cap is either honest or off by one, and this one
+    // decides whether a request runs at all.
+    expect(() => enforceOutputCap([{ rel: "a.ts", bytes: 9_000 }], 1_000, 10, 0.9)).not.toThrow();
+    expect(() => enforceOutputCap([{ rel: "a.ts", bytes: 9_010 }], 1_000, 10, 0.9)).toThrow();
+  });
+
+  it("refuses a whole-file answer that would not fit, before any model call", async () => {
+    // 40 KB of editable source is ~11,700 tokens at the defaults, over the
+    // ~7,372 usable of 8,192. Under the 256 KB input cap the whole time, so
+    // this is the output contract refusing and nothing else.
+    const root = makeTempRoot();
+    await writeFileTree(root, { "wide.ts": "x".repeat(40 * 1024) });
+    const { fetchImpl, calls } = queuedFetch([]);
+    const error = await expectToolError(
+      runImplement({ spec: "x", files: ["wide.ts"] }, testConfig(root), {
+        fetchImpl,
+        platform: "linux",
+      }),
+      "output_would_truncate"
+    );
+    expect(error.message).toContain("wide.ts");
+    expect(calls.length).toBe(0);
+  });
+
+  it("refuses the exact request that truncated in run 2026-08-03-mac-05", async () => {
+    // The calibration this constant rests on, pinned so it cannot drift away
+    // from the observation that justified it. src/selection.ts (15,454 B) plus
+    // tests/selection.test.ts (15,632 B) is 31,086 B, ~8,882 tokens at 3.5 —
+    // over the raw 8,192 cap before any headroom, which is why that session
+    // truncated repeatedly. A divisor that stopped refusing this request would
+    // have stopped agreeing with the only truncation ever observed.
+    const root = makeTempRoot();
+    await writeFileTree(root, {
+      "src/selection.ts": "x".repeat(15_454),
+      "tests/selection.test.ts": "y".repeat(15_632),
+    });
+    const { fetchImpl, calls } = queuedFetch([]);
+    const error = await expectToolError(
+      runImplement(
+        { spec: "x", files: ["src/selection.ts", "tests/selection.test.ts"] },
+        testConfig(root),
+        { fetchImpl, platform: "linux" }
+      ),
+      "output_would_truncate"
+    );
+    expect(error.message).toContain("src/selection.ts");
+    expect(error.message).toContain("tests/selection.test.ts");
+    expect(calls.length).toBe(0);
   });
 
   it("oversized context is refused at the tool level before any model call", async () => {

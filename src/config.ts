@@ -19,6 +19,14 @@ export interface Config {
   timeoutMs: number;
   maxFileKb: number;
   maxContextKb: number;
+  /**
+   * Bytes of source per output token, for the pre-flight that refuses a request
+   * whose whole-file answer would not fit in `maxOutputTokens`. An estimate, and
+   * labelled as one — see `enforceOutputCap`.
+   */
+  outputBytesPerToken: number;
+  /** Fraction of `maxOutputTokens` the estimate is allowed to fill (0, 1]. */
+  outputUsableFraction: number;
 }
 
 export const DEFAULTS = {
@@ -29,6 +37,22 @@ export const DEFAULTS = {
   timeoutMs: 300_000,
   maxFileKb: 256,
   maxContextKb: 512,
+  /**
+   * 3.5 is not a guess: it is the divisor at which the estimate reproduces the
+   * only truncation this project has actually observed. `src/selection.ts` plus
+   * `tests/selection.test.ts` — the request of `run 2026-08-03-mac-05` — comes
+   * to 8882 tokens against a 8192 cap, so the pre-flight would have refused it.
+   * B14 is what re-derives this from the corpus rather than leaving it here.
+   */
+  outputBytesPerToken: 3.5,
+  /**
+   * Headroom for the `<file>` wrapper and for the estimator's own error. It
+   * costs coverage on purpose: at 0.9 the bar is 7372 tokens, which also refuses
+   * `src/tools/gate.ts` + its test (8075). Letting a truncation through is the
+   * more expensive mistake — it is the one that makes `model_failed` ambiguous
+   * and B6 unmeasurable, which is the whole reason this cap exists.
+   */
+  outputUsableFraction: 0.9,
 } as const;
 
 function numberFromEnv(
@@ -86,5 +110,15 @@ export function loadConfig(
     timeoutMs: numberFromEnv(env, "LOCAL_CODER_TIMEOUT_MS", DEFAULTS.timeoutMs),
     maxFileKb: numberFromEnv(env, "LOCAL_CODER_MAX_FILE_KB", DEFAULTS.maxFileKb),
     maxContextKb: numberFromEnv(env, "LOCAL_CODER_MAX_CONTEXT_KB", DEFAULTS.maxContextKb),
+    outputBytesPerToken: numberFromEnv(
+      env,
+      "LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN",
+      DEFAULTS.outputBytesPerToken
+    ),
+    outputUsableFraction: fractionFromEnv(
+      env,
+      "LOCAL_CODER_OUTPUT_USABLE_FRACTION",
+      DEFAULTS.outputUsableFraction
+    ),
   };
 }

@@ -27,6 +27,13 @@ export function testConfig(root: string, overrides: Partial<Config> = {}): Confi
     timeoutMs: 30_000,
     maxFileKb: 256,
     maxContextKb: 512,
+    // Must be spelled out even though they match DEFAULTS: tsconfig includes
+    // src/**/*.ts only, so nothing type-checks this literal against Config. A
+    // missing numeric field does not fail here — it reaches the output cap as
+    // undefined, makes the budget NaN, and every comparison against NaN is
+    // false, so the pre-flight would refuse every generation in the suite.
+    outputBytesPerToken: 3.5,
+    outputUsableFraction: 0.9,
     ...overrides,
   };
 }

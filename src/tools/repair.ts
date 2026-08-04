@@ -7,7 +7,13 @@ import type { Failure } from "../checks/parsers.js";
 import type { Config } from "../config.js";
 import { diffStats, unifiedFileDiff } from "../diff.js";
 import { defaultProcessRunner, type ProcessRunner } from "../exec.js";
-import { atomicWriteFile, enforceContextCaps, readTextFileSafe, ToolError } from "../fs-safety.js";
+import {
+  atomicWriteFile,
+  enforceContextCaps,
+  enforceOutputCap,
+  readTextFileSafe,
+  ToolError,
+} from "../fs-safety.js";
 import { log } from "../logger.js";
 import { createTelemetryWriter, type TelemetryWriter } from "../telemetry.js";
 import { runGate, type CheckReport, type GateResult } from "./gate.js";
@@ -347,10 +353,24 @@ export async function runRepair(
   // Enforce the size caps BEFORE anything is read. runGeneration enforces them
   // too, but only after snapshot() has already pulled every editable file into
   // memory — which is exactly what the caps exist to prevent.
-  enforceContextCaps(
-    await statAll(config.root, [...files, ...contextPaths.filter((p) => !files.includes(p))]),
-    config.maxFileKb,
-    config.maxContextKb
+  const statted = await statAll(
+    config.root,
+    [...files, ...contextPaths.filter((p) => !files.includes(p))]
+  );
+  enforceContextCaps(statted, config.maxFileKb, config.maxContextKb);
+  // The output cap belongs here for a second reason, on top of the one above.
+  // Inside the loop a truncated response throws after the corrective retry and
+  // is filed as `model_failed` — indistinguishable from the model simply
+  // failing, which is the ambiguity that makes B6 unmeasurable. Refusing here
+  // takes truncation out of the round entirely: the caller gets a typed error,
+  // no round is spent, and no telemetry row claims a failure that never
+  // happened. Editable files only; `context_files` are never echoed back.
+  const editableSet = new Set(files);
+  enforceOutputCap(
+    statted.filter((f) => editableSet.has(normalizeRel(f.rel))),
+    config.maxOutputTokens,
+    config.outputBytesPerToken,
+    config.outputUsableFraction
   );
 
   const snapshots = await snapshot(config.root, files, config.maxFileKb);

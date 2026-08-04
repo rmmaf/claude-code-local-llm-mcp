@@ -5,6 +5,7 @@ import { diffStats, unifiedFileDiff } from "../diff.js";
 import {
   atomicWriteFile,
   enforceContextCaps,
+  enforceOutputCap,
   readTextFileSafe,
   resolveSafePath,
   ToolError,
@@ -247,6 +248,18 @@ export async function runGeneration(
   // Size caps across the whole assembled context, all offenders named at once.
   const statted = await statAll(config.root, [...editablePaths, ...contextPaths]);
   enforceContextCaps(statted, config.maxFileKb, config.maxContextKb);
+  // And the same for what comes BACK, which the input caps say nothing about.
+  // Selected by membership rather than by position: statAll returns rel as
+  // resolveSafePath spells it, so trusting the input order to survive the round
+  // trip would put a context file in the output budget the first time the two
+  // spellings differ.
+  const editableSet = new Set(editablePaths);
+  enforceOutputCap(
+    statted.filter((f) => editableSet.has(normalizeRel(f.rel))),
+    config.maxOutputTokens,
+    config.outputBytesPerToken,
+    config.outputUsableFraction
+  );
 
   const editable = await loadFiles(config.root, editablePaths, config.maxFileKb);
   const context = await loadFiles(config.root, contextPaths, config.maxFileKb);

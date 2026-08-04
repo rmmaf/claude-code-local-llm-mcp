@@ -204,6 +204,54 @@ export function enforceContextCaps(
 }
 
 /**
+ * Refuse a request whose whole-file answer would not fit in one response.
+ *
+ * The output contract (`shared.ts`) asks the model for the COMPLETE content of
+ * every editable file, so the answer is the SUM of those files — regenerated on
+ * every attempt and every `repair` round — against `maxOutputTokens`. Over the
+ * cap the response comes back truncated, and `repair` files that under
+ * `stopped_because: "model_failed"`: the same label a genuine loop failure gets.
+ * That shared label is why B6 cannot be measured (`PREMISES.md`), and refusing
+ * up front is what un-shares it. A refusal is a fact about the request; a
+ * truncation is a fact about nothing.
+ *
+ * EDITABLE FILES ONLY, which is the one way this differs from
+ * `enforceContextCaps` next door: context files go INTO the prompt and are never
+ * echoed back, so they cost input budget and no output budget at all.
+ *
+ * The token figure is an ESTIMATE and is reported as one. It cannot be exact
+ * without the model's tokenizer, and it would still be wrong for a model that
+ * spends part of the same budget on reasoning tokens. B14 measures how often it
+ * is wrong in the direction that matters.
+ */
+export function enforceOutputCap(
+  editable: ReadonlyArray<{ rel: string; bytes: number }>,
+  maxOutputTokens: number,
+  bytesPerToken: number,
+  usableFraction: number
+): void {
+  const budget = Math.floor(maxOutputTokens * usableFraction);
+  const totalBytes = editable.reduce((sum, f) => sum + f.bytes, 0);
+  const estimate = Math.round(totalBytes / bytesPerToken);
+  if (estimate <= budget) return;
+  throw new ToolError(
+    `The whole-file answer for these files is estimated at ~${estimate} output tokens, ` +
+      `over the ~${budget} usable of ${maxOutputTokens}. Editable files: ` +
+      editable.map((f) => `${f.rel} (${formatKb(f.bytes)})`).join(", ") +
+      `. The response would be truncated mid-file, so nothing is sent. ` +
+      `Send fewer files, split the change, or raise LOCAL_CODER_MAX_OUTPUT_TOKENS.`,
+    "output_would_truncate",
+    {
+      estimated_output_tokens: estimate,
+      usable_output_tokens: budget,
+      max_output_tokens: maxOutputTokens,
+      bytes_per_token: bytesPerToken,
+      files: editable.map((f) => ({ path: f.rel, kb: kb(f.bytes) })),
+    }
+  );
+}
+
+/**
  * Atomic write: temp file in the same directory, fsync, then rename over the
  * target. Creates parent directories when needed (scaffold).
  */

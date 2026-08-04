@@ -903,6 +903,62 @@ describe("repair loop", () => {
     expect(result.stopped_because).toBe("model_failed");
   });
 
+  it("refuses a request whose answer would truncate, spending no round", async () => {
+    // The point of putting the output cap in repair and not only in
+    // runGeneration. Inside the loop a truncated response throws after the
+    // corrective retry and is filed as `model_failed` — the same label a
+    // genuine loop failure gets, which is the ambiguity that makes B6
+    // unmeasurable (run 2026-08-03-mac-05). Refused here it is a typed error:
+    // no gate run, no round, no telemetry row claiming a failure.
+    const root = tempRoot();
+    await setup(root);
+    await writeFileTree(root, { "src/wide.ts": "x".repeat(40 * 1024) });
+    const { fetchImpl, calls } = queuedFetch([]);
+
+    let code = "";
+    try {
+      await runRepair({ ...baseArgs, files: ["src/wide.ts"] }, testConfig(root), {
+        processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
+        fetchImpl,
+        runner: noLmsRunner(),
+      });
+      throw new Error("expected a ToolError");
+    } catch (error) {
+      code = (error as ToolError).code;
+    }
+
+    expect(code).toBe("output_would_truncate");
+    expect(calls.length).toBe(0);
+    // Nothing ran, so nothing may be recorded as having run.
+    expect(await readTelemetry(root)).toHaveLength(0);
+  });
+
+  it("does not charge context files to the output budget", async () => {
+    // context_files go INTO the prompt and are never echoed back, so they cost
+    // input budget and no output budget at all. Charging them would refuse
+    // exactly the calls the tool is best at: one small file to edit, with real
+    // reference material alongside it.
+    const root = tempRoot();
+    await setup(root);
+    await writeFileTree(root, { "src/reference.ts": "x".repeat(60 * 1024) });
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    const result = await runRepair(
+      { ...baseArgs, context_files: ["src/reference.ts"], max_rounds: 1 },
+      testConfig(root),
+      {
+        processRunner: sequencedProcess([
+          { stdout: tscErrors(2), code: 2 },
+          { stdout: "", code: 0 },
+        ]),
+        fetchImpl,
+        runner: noLmsRunner(),
+      }
+    );
+
+    expect(result.stopped_because).toBe("passed");
+  });
+
   it("rejects an oversized file before reading it into memory", async () => {
     const root = tempRoot();
     await setup(root);
