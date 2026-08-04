@@ -5,33 +5,33 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**Both instrument defects found in `run 2026-08-03-mac-06` are fixed and
-tested.** `stopped_because` no longer blames the model for the budget: it reads
-the `remaining` that went into `min(config.timeoutMs, remaining)`, captured at
-issue, since no downstream signal recovers it. Four tests pin both sides of that
-boundary. The per-round trace now reaches telemetry — without it B7 was never
-measurable from the log, on any past run. `scripts/verify-stop-cause.sh`
-prepares, scores and cleans up the Mac run that confirms this against a real
-model; `check` returns 0 verified, 1 contradicted, 2 incomplete.
+**The stop-cause fix is verified against a real model**, `run 2026-08-04-mac-07`
+on `qwen3-coder-30b-a3b-instruct-dwq-v2`: applied 14061 ms reported `budget` and
+applied 20000 ms reported `model_failed` twice — the label flipping with the
+ceiling and nothing else, no counterexample. **B7 has its first real figure,
+median 2.15 s over 3 rounds**, from one task on a 6-line fixture. Scoring it
+exposed one more field the caller saw and the log did not, the model of a failed
+round: now announced before the first request and written to telemetry.
 
 ## Next action
 
-**Run the verifier on the Mac.** `setup`, paste the three prompts it prints,
-then `check`. It is the only source of a real `model_ms`, and B7 has none.
-**B0 is a separate, standing block:** while `shared.ts:78` demands every editable
-file whole against an 8192-token cap, a truncated response is logged
+**A corpus, not another fix.** B6 and B7 both ask for 20 real mechanical
+failures and every run so far has supplied about one. The corpus must record the
+cold/warm round split, not just the median — a cold round costs ~6x a warm one.
+**B0 stays the block underneath it:** while `shared.ts:78` demands every editable
+file whole against an 8192-token cap, a truncated response lands as
 `model_failed` and no B6 number reads clean.
 
 ## Waiting on
 
-- **The Mac's uncommitted `selectModelsBestFit`** — no push credentials there.
+- **The Mac's `selectModelsBestFit`** — now committed as `2fabd32` on branch
+  `wip/select-models-best-fit`, still unpushed; that machine has no credentials.
 - **B5 needs a different repository** — this one configures 2 checks.
 
 ## Do not redo
 
+- **Read the per-request ceiling from the run, never from the environment.** The
+  setup shell exported 60000 while the server used 20000, from the MCP server's
+  `env` in `~/.claude.json` — a shell export cannot reach it.
 - **Never derive a cause from a signal that went through a lossy transform.**
-  Three passes at one branch: the error code alone, then a clock read after the
-  abort, then the output of the `min()` that discarded the distinction.
-- **A field absent from the log is not absent from the code** — B6 ran on a
-  narrative because a grep missed `rounds_used` under another name.
 - **Verify with `npm test`, not `npx vitest run`** — the latter skips the build.

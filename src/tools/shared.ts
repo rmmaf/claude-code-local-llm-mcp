@@ -48,6 +48,16 @@ export interface ToolDeps {
    * timeout computed for the first is how a hard deadline gets doubled.
    */
   remainingMs?: () => number;
+  /**
+   * The model this generation resolved to, reported the moment it is known and
+   * BEFORE the first request goes out. The returned `GenerationResult` also
+   * carries it, and for a caller that lets the throw propagate that is enough —
+   * but `repair` catches it and keeps going, so on every failed round the name
+   * was resolved, used to make the request, and then thrown away with the stack.
+   * Measured: 3 of 4 rows in `run 2026-08-04-mac-07` carried `model: null`, and
+   * they were precisely the failures — which is what B6 counts and what B7 times.
+   */
+  onModelResolved?: (model: string) => void;
 }
 
 export interface GenerationArgs {
@@ -242,6 +252,10 @@ export async function runGeneration(
   const context = await loadFiles(config.root, contextPaths, config.maxFileKb);
 
   const { model, reason } = await resolveModel(args.model, config, deps);
+  // Announced here rather than returned, because everything below this line can
+  // throw and a caller that survives the throw would otherwise have nothing to
+  // attribute the attempt to.
+  deps.onModelResolved?.(model);
 
   const declared = new Map(editable.map((f) => [normalizeRel(f.rel), f]));
   const messages: ChatMessage[] = [

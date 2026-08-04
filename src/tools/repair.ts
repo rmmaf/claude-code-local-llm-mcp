@@ -480,11 +480,22 @@ async function repairLoop(
   // Every byte this loop puts on disk is recorded here as it is written, which
   // is the only way to tell our writes from a concurrent one at rollback time.
   const byRel = new Map(snapshots.map((s) => [s.rel, s]));
+  /**
+   * Declared up here, ahead of its siblings below, because the callback in
+   * `generationDeps` closes over it. Set from `onModelResolved` and NOT from
+   * `generation.model`: the assignment after a successful return is exactly the
+   * line a thrown round jumps over, so every failed round used to report
+   * `model: null` about a request that had a model all along.
+   */
+  let model: string | null = null;
   const generationDeps: RepairDeps = {
     ...deps,
     onFileWritten: (rel, content) => {
       const file = byRel.get(normalizeRel(rel));
       if (file !== undefined) file.lastWritten = content;
+    },
+    onModelResolved: (resolved) => {
+      model = resolved;
     },
   };
 
@@ -505,7 +516,6 @@ async function repairLoop(
   rawBytes += gate.bytes_raw;
 
   const rounds: RoundTrace[] = [];
-  let model: string | null = null;
   let stoppedBecause: RepairResult["stopped_because"] = "max_rounds";
 
   // The best state the loop ever produced, kept in memory. Nothing below writes
@@ -573,7 +583,9 @@ async function repairLoop(
             remainingMs: trackedRemaining,
           }
         );
-        model = generation.model;
+        // `model` is not read back from the result: `onModelResolved` already
+        // set it, from the same resolution, on the success and failure paths
+        // alike. One source, so the two cannot drift.
         touched = generation.files_changed;
       } catch (error) {
         roundError = error instanceof Error ? error.message : String(error);
@@ -732,6 +744,11 @@ async function repairLoop(
     detail: {
       passed: result.passed,
       stopped_because: stoppedBecause,
+      // Which model produced the timings in `rounds` below. It went only to the
+      // caller before (`repair.ts` result payload), so a latency read from the
+      // log had no subject — and B7 is a latency premise. `null` now means the
+      // call ended before any generation started, not that the name was lost.
+      model,
       files: changed,
       stats: diff === "" ? null : diffStats(diff),
       checks: summarizeGate(gate).map((c) => ({ name: c.name, passed: c.passed })),

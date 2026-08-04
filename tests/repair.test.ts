@@ -259,6 +259,73 @@ describe("repair loop", () => {
     expect(detail.rounds?.[0]).not.toHaveProperty("error");
   });
 
+  it("writes the model to telemetry, so a latency read from the log has a subject", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as { model?: unknown };
+    expect(detail.model).toBe("test-solo-model");
+  });
+
+  it("records the model of a round that threw, which the result payload lost", async () => {
+    // The defect this pins, from run 2026-08-04-mac-07: `model` used to be
+    // assigned from the generation's RETURN value, so a round that threw jumped
+    // over the assignment and reported `model: null` about a request that had
+    // been made with a model all along. 3 of that run's 4 rows were null, and
+    // they were exactly the failures — which is what B6 counts and B7 times.
+    const root = tempRoot();
+    await setup(root);
+    const fetchImpl = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("The operation was aborted."));
+        });
+      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+
+    const result = await runRepair(
+      { ...baseArgs, budget_seconds: 300, max_rounds: 1 },
+      testConfig(root, { timeoutMs: 50 }),
+      {
+        processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
+        fetchImpl,
+        runner: noLmsRunner(),
+      }
+    );
+
+    expect(result.stopped_because).toBe("model_failed");
+    expect(result.model).toBe("test-solo-model");
+    const detail = (await readTelemetry(root))[0]?.detail as { model?: unknown };
+    expect(detail.model).toBe("test-solo-model");
+  });
+
+  it("reports a null model when the call ended before any generation started", async () => {
+    // The remaining null has to keep meaning something specific: nothing was
+    // ever resolved. A green gate returns before the loop, so no request is
+    // made and there is no model to name — distinct from losing one that was.
+    const root = tempRoot();
+    await setup(root);
+
+    const result = await runRepair(baseArgs, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
+      runner: noLmsRunner(),
+    });
+
+    expect(result.stopped_because).toBe("passed");
+    expect(result.model).toBeNull();
+    const detail = (await readTelemetry(root))[0]?.detail as { model?: unknown };
+    expect(detail.model).toBeNull();
+  });
+
   it("calls a generation the deadline cut off `budget`, not the model's fault", async () => {
     const root = tempRoot();
     await setup(root);

@@ -319,8 +319,10 @@ pre-registered as its own premise before anything is measured against it.
     already produced inside it, and `model` never reaches telemetry at all — it
     lives only in the returned payload (`repair.ts:717`). Failed rows therefore
     cannot be attributed to a model, and failed rows are exactly what B6 counts.
-    **This has to be fixed before the 20-failure corpus is run**, or that corpus
-    will have the same hole in the same place.
+    **Fixed in this commit:** `runGeneration` announces the model through
+    `onModelResolved` the moment it resolves and *before* the first request, so a
+    round that throws still names it, and the telemetry detail now carries it. A
+    `null` there means no generation ever started — which is a fact, not a loss.
 - **Falls if:** median > 150 s.
 - **If it falls:** three rounds cost more wall-clock than the user will accept.
   Lower `max_rounds` to 2, or pick a smaller model, and re-measure B6 after.
