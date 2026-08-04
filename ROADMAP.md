@@ -84,7 +84,8 @@ What may be built next, and the number that decides it.
 - **`D4` is MEASURED: 78.9 tok/s** (`run 2026-08-04-mac-10`, six `scaffold`
   calls on `qwen3-coder-30b-a3b-instruct-dwq-v2`, 16,484 tokens over 208.3 s).
   It turned out to matter for something nobody had connected to it: at a
-  16384-token cap a response cannot truncate before **~208 s**, so **B14 is not
+  16384-token cap a response cannot truncate before **~208 s**, so **B14 (now
+  B16) is not
   executable at all below that `timeoutMs`** and reports zero truncations by
   arithmetic rather than by merit.
 - **`D8` is MEASURED, and it did not stay a diagnostic**
@@ -104,7 +105,8 @@ What may be built next, and the number that decides it.
   `finish_reason: "stop"`, **missing 90 lines**. That shipped a context
   pre-flight (`context_would_overflow`, `LOCAL_CODER_CONTEXT_TOKENS`,
   `pickLoadedContextTokens`, `status.context_window`) which was on no roadmap.
-  The numbers and the unresolved threshold question are in **B14**.
+  The numbers are in **B16**, which replaced B14 once it turned out that B14's
+  detector — `finish_reason: "length"` — cannot see this failure at all.
 - **A `D3`/`D10` by-product, unlooked-for:** four LM Studio runtime crashes under
   memory pressure, all on the single largest case — a 16 GB model plus the KV
   cache for a ~7,700-token answer on a 36 GB machine. Refusing that request up
@@ -144,6 +146,7 @@ What may be built next, and the number that decides it.
 - **Closes as dead if:** B13 < 5 pp, **or** the injection pushes the median
   `repair` round past B7's 150 s fall threshold — the lever fills the context the
   project exists to empty, so a time regression kills it outright.
+
 ## G7 — search/replace output contract · `unevaluated`
 
 - **What it would be:** the model returns anchored `search → replace` blocks
@@ -181,9 +184,9 @@ What may be built next, and the number that decides it.
   which assume whole content today. It also needs **its own premise**: the rate
   at which a small local model emits a usable search/replace block is exactly
   the kind of number this project does not accept by assumption.
-- **Blocked on B14 too, in one direction only:** if the pre-flight turns out to
-  be too strict, its refusal count is inflated and would open this gate on an
-  artefact. Read B14's result before reading this one.
+- **Blocked on B16 too** (B14 until it went `moot`)**, in one direction only:**
+  if the pre-flight turns out to be too strict, its refusal count is inflated and
+  would open this gate on an artefact. Read B16's result before reading this one.
 - **A number now exists, and this gate does NOT move on it.**
   `run 2026-08-04-mac-17-preflight` ran the full `D8` corpus with both pre-flights
   enforcing: **`output_would_truncate` refused 0 of 13**;
@@ -201,11 +204,46 @@ What may be built next, and the number that decides it.
   threshold by its answer. Whoever resolves it should write the resolution here
   *before* the captured corpus runs, and say which of the two readings was
   intended.
-- **B14 is now a second thing to read first, alongside the pre-existing note.**
+- **B16 is now a second thing to read first, alongside the pre-existing note.**
   If the estimator is too strict, refusals are inflated and this gate opens on an
   artefact — that was already written down. `run 2026-08-04-mac-16-preflight`
   observed exactly that over-refusal on a real request. Both directions are now
   live, not just one.
+- **PROTOCOL, PRE-REGISTERED HERE AND NOW — after seeing the `D8` numbers above,
+  and BEFORE the captured corpus runs.** The timing is stated because it is the
+  only thing that makes this legitimate, the same claim the amendment above
+  rests on. Five rules, and none of them moves this gate today:
+  1. **`output_would_truncate` remains the sole opening and killing outcome**, at
+     ≥ 40% / < 20%, unchanged. Nothing about it is reinterpreted.
+  2. **`context_would_overflow` is EXPLORATORY.** It cannot open this gate and it
+     cannot kill it. Look at the shape of what is on the table: the
+     pre-specified outcome measured 0% and kills G7, the un-specified one
+     measured 15.4% and keeps it alive. Reading the threshold as "either code"
+     would be choosing, after seeing both, the number that saves the gate. That
+     has a name — outcome switching — and the accepted remedy is not to forbid
+     the second number but to **label it exploratory and report when the
+     deviation happened**, which is what this bullet is.
+  3. **Refusals measured at a sub-maximal context window count for NOTHING.**
+     The reason is mechanical rather than fitted: the cheap arm is
+     `lms load --context-length`, this file already rules that the cheapest arm
+     is the baseline (see G3), and the model in question supports 262,144 against
+     the 16,384 it ran at. Only a refusal that survives a reload says anything
+     about the *output contract*. This retires the contaminated 15.4% without
+     anyone having to pick a number against it.
+  4. **Promotion to a gate condition requires two things written here first:**
+     the threshold, *and* a recomputed base rate — the fraction of realistic
+     request bundles that exceed a shared window at the loaded context. The
+     existing 40/20 was justified against a 15% base rate for the *output cap*;
+     that justification does not transfer to a constraint that counts the prompt
+     too, and inheriting the numbers without recomputing it would be a threshold
+     with no argument behind it.
+  5. **The codes must not be merged, and the reason is not pedantry — they imply
+     different fixes.** `output_would_truncate` says the answer is too big, which
+     is what search/replace blocks are for. `context_would_overflow` says prompt
+     and answer do not fit together, which search/replace also helps — but so
+     does a free reload. Merging them would let this gate open, and buy a parser
+     and a new apply path, on evidence that a configuration change had already
+     removed.
 - **Active-gate count:** **six active** (G3, G4, G5, G6, G7, G-stop) since G2
   closed. **G7 takes the last slot under the ceiling of 6** — a seventh needs
   one of these to close or become moot first.

@@ -118,9 +118,9 @@ stdout purity.
   - **The estimate is an estimate**, and both constants are env-tunable
     (`LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN`, `LOCAL_CODER_OUTPUT_USABLE_FRACTION`).
     3.5 is not taste: it is the divisor at which the estimate reproduces the one
-    truncation ever observed (`run 2026-08-03-mac-05`). **B14** is what replaces
-    the calibration with a measurement; a test pins the constant to that
-    observation so it cannot drift away from it quietly.
+    truncation ever observed (`run 2026-08-03-mac-05`). **B16** is what replaces
+    the calibration with a measurement (B14 until it went `moot`); a test pins
+    the constant to that observation so it cannot drift away from it quietly.
   - **`scaffold` is not covered**, and this is the record of that rather than an
     oversight. It has its own generation loop, does not go through
     `runGeneration`, and creates files that do not exist yet — so there is no
@@ -516,7 +516,7 @@ workspace link can resolve outside a package-level root. The injection is
 therefore available on the common layout and simply absent on others; a B13 run
 must record which layout it ran on or the number does not transfer.
 
-**(open point) Deprecated-but-compiles: premise B14, or prose? Not my call.**
+**(open point) Deprecated-but-compiles: a premise, or prose? Not my call.**
 Both sides, because the file's own rule cuts against my instinct here.
 *For a premise:* it is the highest-consequence failure in the design and the only
 silent one, and there is a cheap candidate mitigation that would make it gateable
@@ -532,7 +532,10 @@ decision: if the local model emits deprecated-but-compiling code 10% of the time
 nothing in `ROADMAP.md` moves. A premise whose fall triggers no action is
 decoration. It is also not local-model-specific — any model with a cutoff does
 this, and the standard mitigation is review. *My recommendation:* leave it here as
-prose. It becomes writable as B14 the moment the lint mitigation is adopted, and
+prose. (This said "as B14" when written, reserving the next free number. B14 went
+to the output pre-flight instead and has since gone `moot`, so the reservation is
+dropped rather than renumbered — a premise that does not exist should not be
+holding a label.) It becomes writable the moment the lint mitigation is adopted, and
 the premise then has an obvious shape — "enabling the deprecation rule catches
 drift the type-checker misses, at an acceptable false-positive rate" — with a
 threshold that actually decides whether the rule stays on.
@@ -1249,6 +1252,30 @@ so a missing field arrives as `undefined`, makes the budget `NaN`, every `<=`
 false, and a check meant to refuse one request refuses every one. Fifty tests
 went red on the `!== null` version.
 
+**The corrective retry is its own request and gets its own pre-flight.** This was
+missed on the first pass and it is the sharper half of the design: the check ran
+once, above the attempt loop, while attempt 2 appends the entire malformed
+response plus a corrective message and is therefore strictly larger. An
+unchecked, oversized retry is precisely the condition that produces a closed,
+well-formed, shorter file — the failure this whole section is about — and
+`repair` would have written it over the source. It is now measured from the
+accumulated messages rather than re-derived from the files, since the appended
+response is the whole reason the size moved, and a retry that will not fit is
+**not sent** rather than sent and hoped for.
+
+**The window belongs to the model, and the model is resolved first.** This was
+backwards for three commits: `resolveContextTokens` ran on `args.model`, which is
+undefined whenever nothing is named, and `resolveModel` picked the actual model
+afterwards. The probe then answered with whatever single model happened to be
+loaded — a number about a model the request would never touch.
+`pickLoadedContextTokens` made it worse by returning that sole loaded model's
+window even when a *different* model had been named explicitly. Both spellings
+are the same mistake: 32k loaded and 16k used admits a request that overflows,
+16k loaded and 32k used refuses work that fits. A named model that is not loaded
+now returns null, and `repair` no longer pins one window for the whole loop —
+that pin was justified by "a value that cannot change mid-loop", which is untrue
+the moment no model is named and each round re-selects.
+
 **`status` reports the window, including when it does not know it.**
 `context_window.source` is `config`, `lms` or `unknown`, and `unknown` is the
 case worth surfacing loudest: it means the check is switched off, silently. A
@@ -1258,3 +1285,54 @@ What this does **not** claim: that ~25 KB is a property of the contract. It is a
 property of a 30B coder loaded at 16,384 tokens. The model supports 262,144, and
 the honest remedy for both refused cases is `lms load --context-length` plus
 `LOCAL_CODER_CONTEXT_TOKENS` to match — not a looser estimate.
+
+### **(open point)** which context-overflow policy was in force
+
+The section above says the model "stopped when the window filled". That is the
+obvious reading and it may be wrong, and one detail in it never fit: the response
+came back with a **properly closed** `</file>` tag. A model that runs out of room
+does not get to close its block.
+
+LM Studio has a `contextOverflowPolicy` with three settings, and only the first
+matches the story told above:
+
+| Setting | What happens when the window fills |
+|---|---|
+| `stopAtLimit` | generation **stops**, native reason `contextLengthReached` |
+| `truncateMiddle` | **keeps generating**, removes the middle of the context |
+| `rollingWindow` | **keeps generating**, prunes the oldest context |
+
+Under either of the last two the mechanism is different in a way that matters:
+LM Studio prunes the **prompt** while the model is still writing, the model loses
+sight of the middle of the file it is copying, carries on, and closes the block
+normally. That produces `finish_reason: "stop"`, a well-formed block, and 90
+missing lines — every observed symptom, including the closing tag the first story
+cannot explain.
+
+Two things follow. **The project cannot set this**: an open LM Studio issue
+reports the policy is rejected through the `/api/v0` endpoint, with no maintainer
+response, so whatever the GUI holds is what ran — and no artifact records it.
+**And if it is `rollingWindow`, the pre-flight is only half the fix**; the other
+half is switching to `stopAtLimit` so the failure becomes loud instead of silent.
+
+It is one look at a settings panel. Until someone takes it, the causal claim
+above is a hypothesis and is labelled as one. B16 is unaffected either way — it
+counts the harm, not the mechanism, which is exactly why it was written that way.
+
+**Searched, and it is not reachable from the CLI or from disk.** `lms ps --json`
+reports `contextLength` and `maxContextLength` and nothing about the policy, and
+a recursive text search of `~/.lmstudio` turns up only the app's own bundled
+JavaScript and the `@lmstudio/sdk` type declarations — no user configuration file
+carries it. Combined with the open issue that the OpenAI-compatible endpoint
+rejects it, that means **the policy is app state that this project can neither
+read nor set**. The GUI is the only place it exists, so this point cannot be
+closed by anything automatable, and any run whose conclusion depends on the
+mechanism has to record the setting by hand.
+
+**What the search DID settle is the neighbouring question.** `run
+2026-08-04-mac-19-32k` declared a 32,768-token window while `lms ps` reported the
+model loaded at **16,384**, and the pre-flight then admitted everything and let
+one response come back short. So whatever the overflow policy is, the practical
+rule is already decided: **the declared window must be verified against `lms ps`
+before it is trusted**, and a run that skips that verification is measuring its
+own configuration rather than the model. B16 carries that as a VOID condition.

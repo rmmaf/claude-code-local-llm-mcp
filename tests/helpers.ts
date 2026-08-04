@@ -78,6 +78,12 @@ export interface ChatBodyOptions {
   promptTokens?: number;
   completionTokens?: number;
   model?: string;
+  /**
+   * Drop the `usage` block entirely — an older server, a proxy, a version skew.
+   * The distinction matters because zero tokens and no measurement are different
+   * facts, and only one of them may be scored against a context window.
+   */
+  omitUsage?: boolean;
 }
 
 /** OpenAI-compatible chat completion response body. */
@@ -93,11 +99,15 @@ export function chatBody(content: string, options: ChatBodyOptions = {}): object
         finish_reason: options.finishReason ?? "stop",
       },
     ],
-    usage: {
-      prompt_tokens: options.promptTokens ?? 100,
-      completion_tokens: options.completionTokens ?? 50,
-      total_tokens: (options.promptTokens ?? 100) + (options.completionTokens ?? 50),
-    },
+    ...(options.omitUsage === true
+      ? {}
+      : {
+          usage: {
+            prompt_tokens: options.promptTokens ?? 100,
+            completion_tokens: options.completionTokens ?? 50,
+            total_tokens: (options.promptTokens ?? 100) + (options.completionTokens ?? 50),
+          },
+        }),
   };
 }
 

@@ -689,17 +689,30 @@ pre-registered as its own premise before anything is measured against it.
   for the whole question. **`run 2026-08-04-mac-16-preflight` is that failure,
   observed** — see the bullet above. It still has no threshold, and giving it one
   now, after seeing it, is exactly what this file forbids.
-- **Status:** open — and it cannot be moved by the runs above, in either
-  direction, because **the threshold measures a quantity that did not occur**.
-  0 of 5 real failures carried `finish_reason: "length"`, so by the letter this
-  reads as a clean pass while a request was quietly losing 90 lines. Reading that
-  as `holding` would be the failure this registry exists to prevent. **The
-  disposition is the operator's, and the options are not equivalent:** amend
-  B14's fall condition to name the observed failure modes (an edit to a threshold
-  *after* data, legitimate only if recorded as such); open a successor premise
-  with its own pre-registered thresholds and mark B14 `moot`; or leave both and
-  accept that the pre-flight ships unmeasured. **Nothing here has been amended in
-  the meantime** — the numbers are recorded and the threshold is untouched.
+- **Status:** **moot — superseded by B16**, and superseded rather than amended
+  on purpose. The threshold measures a quantity that cannot occur here, so
+  measuring it cannot inform any decision, which is exactly what `moot` means in
+  the legend above. **Nothing before this line has been edited.** Amending the
+  fall condition after seeing the data was the available alternative and it was
+  refused: a threshold rewritten to fit the failure it missed is indistinguishable
+  from one chosen by its answer, and B16 instead inherits this number *verbatim*
+  and changes only what is being counted.
+- **Why it is not `holding`, though it reads as a pass.** 0 of 5 real failures
+  carried `finish_reason: "length"`, and by the letter that clears the > 10% bar
+  while a request quietly lost 90 lines. A premise that returns a pass because
+  its detector is blind has not been confirmed; it has been unable to look.
+- **Root cause, and it is not this project's arithmetic.** In the OpenAI
+  specification `length` means *`max_tokens` was reached*; running out of context
+  is a different event, and LM Studio carries a separate native stop reason for
+  it (`contextLengthReached`) that the OpenAI-compatible layer does not map to
+  `length`. On top of that, `length` could only ever fire here if
+  `enforceOutputCap` had already failed to refuse an over-cap request — a knob
+  the project itself sets. The detector was written against another API's
+  semantics, and against a quantity the code controls.
+- **Revives unchanged if:** this project is ever pointed at a server whose
+  `finish_reason` follows the OpenAI semantics literally — then `length` means
+  what B14 assumed and every word above applies again. Same shape as B4's
+  dormancy under G2.
 
 ## B15 — with the routing policy installed, `gate` wins ≥ 50% of the verification calls it is eligible for
 
@@ -781,6 +794,183 @@ pre-registered as its own premise before anything is measured against it.
   stays frozen while G1 is reopened.
 - **Status:** open
 
+## B16 — no request the context pre-flight admits comes back with content missing
+
+- **Assumed:** none do — (assumed)
+- **Replaces B14, and states the outcome as the HARM rather than the SIGNAL.**
+  That is the whole correction. B14 named `finish_reason: "length"` in its fall
+  condition, so when the string turned out to be blind, the *premise* returned a
+  pass. Here the outcome is "a file came back short"; the detector is named
+  separately, under **Method**, so a detector found blind falsifies the method
+  and leaves this premise standing to be re-measured with a better one.
+- **Method, not threshold:** `contextExhausted` in `src/contract-probe.ts` —
+  `prompt_tokens + completion_tokens >= contextTokens`, and **null when the
+  window is unknown**, the same fail-open rule `pickLoadedContextTokens` follows.
+  **Per REQUEST, never summed**: a generation makes up to two requests and
+  `GenerationResult.usage` is their total, while a context window is a
+  per-request ceiling. The retry's prompt carries the whole bad response plus the
+  correction, so a summed comparison reports exhaustion for rounds where neither
+  request came near the window.
+- **The outcome has two halves and only one is measurable outside the
+  diagnostic.** *Envelope* — did every declared block arrive and close — is
+  unambiguous anywhere, and it is what `repair` rows contribute. *Elision* —
+  content dropped from a block that IS present — is **not derivable from a
+  `repair` round at all**, because `contract-probe` reads a run of deleted lines
+  as dropped content and deleting lines is exactly what `repair` was asked to do.
+  Only the diagnostic's probe spec, whose task is a pure append, separates them.
+  **`repair` telemetry therefore contributes to the envelope count only**, and a
+  score that pooled the two would be counting legitimate fixes as failures.
+- **The outcome is recorded independently of the detector, and that is
+  structural.** `envelope` comes from `parseFileBlocks`, not from
+  `contextExhausted`. If the two were derived from the same signal this premise
+  would be scoring its own detector, and could never distinguish "the pre-flight
+  works" from "the detector is blind".
+- **The detector is not marginal.** Over `evidence/2026-08-04-mac-11` …
+  `-mac-17` it separates **70 complete responses (max 11,918 tokens)** from **10
+  failures (min 16,426)** against a 16,384-token window — a **4,508-token gap**.
+  There is deliberately **no margin constant**: there is no noise in that gap to
+  tune against, and a fudge factor would be a knob nobody could later justify.
+  `tests/contract-probe.test.ts` replays all six artifacts through the shipped
+  rule so this claim cannot rot.
+- **THOSE RUNS ARE IN-SAMPLE AND DO NOT SCORE THIS PREMISE.** They are the
+  motivating observation, exactly as `run 2026-08-04-mac-09` was for B14. The
+  data that produced a detector cannot also confirm it.
+- **The pre-flight has a negative control, and it arrived by accident.**
+  `run 2026-08-04-mac-19-32k` re-ran the same corpus on the same model at the
+  same **real** 16,384-token window, differing only in the window it *declared*:
+  **32,768**. Told the truth (`mac-16`/`mac-17`) the check refused 2 requests and
+  **0** responses lost content. Told double, it refused **0** and **1** came back
+  elided. That is the first causal evidence that this check does the job it was
+  built for — and it is why the run is VOID rather than a 4% pass.
+- **Both refusals are now measured rather than argued, and they split 1-1.** Of
+  the two the honest pre-flight refused: `G3` (26,889 B) returned **complete 2 of
+  2** — B14's symmetrical clause confirmed by a successful run instead of by
+  arithmetic — while `L10` (43,594 B) **elided**. The two outcomes are not
+  symmetric in cost: a wrong refusal spends a round trip, a missed one returns a
+  diff that deletes 90 lines and that every automated check accepts.
+- **Experiment:** a fresh `scripts/contract-stability.ts` run at the loaded
+  window — the only source that scores **both** halves — plus `repair` telemetry
+  from ordinary work for the envelope half. `detail.rounds[].attempts[]` carries
+  `prompt_tokens`, `completion_tokens`, `context_tokens`, `finish_reason` and
+  `envelope` **per attempt**, at two levels of separation. Per round, because
+  `repair` prepends each round's gate failures so the prompt grows and the round
+  likeliest to fill the window is the last one, whose output is the one that gets
+  applied. Per attempt inside it, for the summing reason above.
+  **Including the rounds that threw:** `model_output_malformed` is raised after
+  up to two responses were received and measured, so it is this premise's
+  likeliest positive — recording only the success path would drop the positives
+  and keep every negative, biasing the rate in one direction. A round that never
+  got a response carries no attempts at all, which is different from zero.
+  Denominator: requests the pre-flight **admitted** — now true of the corrective
+  retry as well, which is checked against the accumulated messages and **skipped
+  rather than sent** when it will not fit. A refusal is a fact about the request,
+  not a verdict on it.
+- **Unknown token usage is excluded, never counted as zero.** `chatCompletion`
+  zero-fills a response body that carries no `usage`; `ChatResult.usageKnown`
+  keeps the distinction and the attempt row stores `null`, so `contextExhausted`
+  answers "cannot tell" instead of "fits". Otherwise a single dependency skew
+  would make every request look like it cost nothing and this premise could hold
+  on no data.
+- **VOID unless the corpus reaches the bar.** A run in which **no** admitted
+  request exceeds **70% of `contextBudget`** is VOID, not a pass. This is
+  corpus #1's lesson made a rule: a ladder that cannot reach the bar returns 0
+  by construction, and B14's own `0 of 20` was exactly that. The condition is
+  demanding on the *experiment* rather than permissive on the *result*, which is
+  the only direction a construction rule may be chosen in after the fact.
+- **VOID unless the declared window IS the loaded window.** Added after
+  `run 2026-08-04-mac-19-32k` and said to be, which is the only thing that makes
+  it legitimate. That run declared `LOCAL_CODER_CONTEXT_TOKENS=32768` while the
+  model was JIT-loaded at **16,384** — a factor of two — so the pre-flight
+  admitted every request and `contextExhausted` scored the one response that DID
+  lose content as fitting. **The detector is only as honest as the number it is
+  handed**, which turns a configuration mismatch into a silent scoring error.
+  Any run scoring this premise must record `lms ps`'s `contextLength` for the
+  model that served it and show it equal to the declared value. Like the rule
+  above, this makes the premise harder to satisfy — the alternative was reading
+  1 of 25 as a 4% pass on a run where the pre-flight was actively misinformed.
+- **Falls if:** > 10% of the admitted requests come back with content missing.
+  **This number is inherited verbatim from B14** and that is the point — it
+  predates the data, so it cannot have been chosen by its answer. Only the
+  outcome definition changed.
+- **Holds if:** 0 over ≥ 20 admitted requests across ≥ 2 non-void runs. Twenty
+  is B14's denominator, inherited for the same reason.
+- **If it falls:** the pre-flight's arithmetic is wrong in the unsafe direction —
+  re-derive `LOCAL_CODER_INPUT_BYTES_PER_TOKEN` and `PROMPT_OVERHEAD_TOKENS`
+  against that run's measured prompts, which is what makes them measurements
+  rather than fits. Do **not** widen what counts as `complete`.
+- **Carried forward from B14, still live:** reasoning tokens share the same
+  budget and no fixed divisor covers a variable amount of thinking; the estimate
+  is line-ending dependent by ~1.1%; and the `D4` timeout dependency, now
+  **satisfied** — `timeoutMs` 600,000 against the ~208 s threshold.
+- **Carried forward WITHOUT a threshold, deliberately:** the estimator can also
+  be too strict, refusing requests that would have fit.
+  `run 2026-08-04-mac-16-preflight` is that failure observed — a 26,345 B pair
+  measuring 11,237 actual tokens, refused. Giving it a threshold now, after
+  seeing it, is the identical error this premise exists to correct.
+- **The re-derivation stands unapplied:** 3.978 measured B per output token
+  against 3.5 configured. See B14 for why it is not changed here.
+- **THE MECHANISM IS NOT ESTABLISHED.** LM Studio's `contextOverflowPolicy` has
+  three settings and two of them (`truncateMiddle`, `rollingWindow`) keep
+  generating while pruning the *prompt* — which would explain a block that came
+  back **properly closed** and 90 lines short better than "the model stopped".
+  It cannot be set through the OpenAI-compatible endpoint, so whatever the GUI
+  holds is what ran, and no artifact records it. This premise counts the harm
+  either way; the causal story in `DECISIONS.md` is what depends on the answer.
+- **Known gaps in the denominator, both recorded rather than closed.**
+  `implement`, `fix` and `scaffold` write **no telemetry at all**, so only
+  `repair` and the diagnostic contribute — not arbitrary, since B14's denominator
+  was the B6/B7 corpus and B6/B7 are `repair` premises, but a gap. And `repair`
+  contributes the envelope half only, per the split above. **A run scored on
+  `repair` rows alone bounds this premise from one side and must say so**; only a
+  diagnostic run scores it whole.
+- **The instrument was wrong eight ways before it measured anything, and three
+  rounds of adversarial review found all eight.** Recorded rather than quietly
+  fixed, because the numbers this premise will eventually carry are worth exactly
+  as much as the row that produced them — and because most of the eight biased
+  the rate rather than breaking it, which is the kind of defect that ships. **Two
+  were live data-loss bugs**, not measurement errors: the pre-flight is what
+  stands between an overflowing request and a silently shortened file, and both
+  let one through.
+  - **Summed usage against a per-request window.** `GenerationResult.usage`
+    totals both requests; the retry carries the whole bad response plus the
+    correction, so any round that retried read as exhausted. False positives.
+  - **The `model_output_malformed` path recorded nothing**, and it is raised
+    after up to two measured responses — this premise's likeliest positives.
+  - **Apply-stage throws discarded measured responses.** Recording happened on
+    the return, so a `concurrent_modification` or a failed write silently
+    removed a response that had already arrived. Now handed over through
+    `onAttempt` the moment it is parsed.
+  - **The corrective retry never faced the pre-flight.** The check ran once
+    above the attempt loop; attempt 2 was strictly larger and unchecked. So the
+    denominator's own words — "requests the pre-flight admitted" — were false,
+    and worse, this was the live path on which an oversized request comes back
+    closed and short. The retry is now checked against the accumulated messages
+    and skipped rather than sent.
+  - **`finish_reason` was folded back into the outcome.** A response that closed
+    every block after hitting `max_tokens` was labelled by its stop reason
+    instead of its envelope — B14's exact error, committed inside the fix for
+    B14's exact error.
+  - **Absent `usage` became zero rather than unknown**, so a server that reports
+    no tokens would have made every request read as fitting, and this premise
+    could have "held" on no data at all.
+  - **The window was resolved before the model, and could belong to a different
+    one.** With nothing named, the probe answered with whatever single model
+    happened to be loaded while auto-selection sent the work elsewhere — and
+    `pickLoadedContextTokens` compounded it by returning the sole loaded model's
+    window even when a DIFFERENT model was named. A 32k model loaded and a 16k
+    model used admits a request that overflows; the inverse refuses work that
+    fits. The second live bug. The model is now resolved first and the window
+    asked only about it, a named-and-not-loaded model returns null, and `repair`
+    no longer pins one window across rounds — the reasoning that justified the
+    pin ("a value that cannot change mid-loop") was false, because with no model
+    named each round re-selects.
+  - **Attempts were lost when the whole repair aborted.** They lived in the
+    loop, and the outer catch rolls back and rethrows without writing telemetry
+    — so a response that arrived and was measured vanished whenever a
+    post-generation failure fired. `runRepair` now owns the buffer and writes an
+    `aborted` row from the catch, guarded so the two paths cannot both write.
+- **Status:** open
+
 ---
 
 ## Measured facts (not premises)
@@ -810,17 +1000,28 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 320 passing** (324 total,
-`run 2026-08-04-win-01`). The same four, and the same causes, as when this was
+`npm test` reports **4 failures / 335 passing** (339 total,
+`run 2026-08-04-win-02`). The same four, and the same causes, as when this was
 first recorded at 4/202 in `run 2026-08-02-win-03` — re-confirmed by a fresh
-`git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, and again
-after importing the Mac's `D8` work, which added **38 tests and no new failure**.
+`git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, again
+after importing the Mac's `D8` work (**+38 tests, no new failure**), and again
+adding B16 and the fixes its three adversarial reviews forced (**+15**). The four,
+by name, so the count is checkable rather than trusted:
+`tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
+`tests/regression.test.ts:117`.
 
-**One unexplained discrepancy, recorded rather than smoothed over:** that Mac
-session reported **323** tests where Windows counts **324**. Nothing in this
-repository is platform-gated on purpose, so the delta is not attributed to one —
-it is simply not yet explained, and anyone quoting a total should quote its
-machine with it.
+**RETRACTED — the discrepancy below is explained, and the explanation is that it
+was a miscount.** At 339 tests the two machines agree exactly: the Mac passes
+339 of 339 (`run 2026-08-04-mac-19-32k`), Windows runs the same 339 with the
+four failures named above. The earlier delta came from prose in a rendered
+conversation, not from either machine. Kept visible because "unexplained" is
+itself a claim, and it was wrong.
+
+*Superseded, kept for the record:* "One unexplained discrepancy, recorded rather
+than smoothed over: that Mac session reported **323** tests where Windows counts
+**324**. Nothing in this repository is platform-gated on purpose, so the delta is
+not attributed to one — it is simply not yet explained, and anyone quoting a
+total should quote its machine with it."
 
 - **All 4 are pre-existing**, confirmed by a `git stash -u` baseline:
   `core.autocrlf=true` on Windows rewrites line endings, so three tests comparing

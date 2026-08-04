@@ -74,7 +74,11 @@ export const DEFAULTS = {
    * only truncation this project has actually observed. `src/selection.ts` plus
    * `tests/selection.test.ts` — the request of `run 2026-08-03-mac-05` — comes
    * to 8882 tokens against a 8192 cap, so the pre-flight would have refused it.
-   * B14 is what re-derives this from the corpus rather than leaving it here.
+   * B16 is what re-derives this from the corpus rather than leaving it here.
+   * The re-derivation now HAS a number — 3.978 measured B per output token over
+   * the 36 complete responses of `run 2026-08-04-mac-12-variance` — and 3.5
+   * stays anyway: re-fitting a constant on the corpus that measured it is what
+   * corpus #1 was already caught doing.
    */
   outputBytesPerToken: 3.5,
   /**

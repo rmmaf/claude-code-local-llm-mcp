@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { contextExhausted } from "../src/contract-probe.js";
 import type { ProcessResult, ProcessRunner } from "../src/exec.js";
 import type { ToolError } from "../src/fs-safety.js";
 import { readTelemetry } from "../src/telemetry.js";
@@ -257,6 +258,310 @@ describe("repair loop", () => {
     // No error on a round that produced usable output — the field is what tells
     // a truncated response (B0) apart from a round that simply did not fix it.
     expect(detail.rounds?.[0]).not.toHaveProperty("error");
+  });
+
+  /**
+   * B16 asks whether a request the context pre-flight ADMITTED came back with
+   * content missing, and `finish_reason` cannot answer it: `length` means the
+   * output cap was hit, while a request that fills the window reports `stop` and
+   * returns a well-formed short answer. Only prompt + completion against the
+   * window sees that, so the row has to carry all three.
+   *
+   * PER ROUND, because each round prepends that round's gate failures and the
+   * prompt grows — the round most likely to fill the window is the last one,
+   * whose output is the one that gets applied.
+   */
+  it("writes each round's token counts and the window they were judged against", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody(fileBlock("src/math.ts", WORSE), { promptTokens: 4_000, completionTokens: 1_000 }),
+      chatBody(fileBlock("src/math.ts", FIXED), { promptTokens: 7_100, completionTokens: 1_000 }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 2 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(4), code: 2 },
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
+    };
+    expect(detail.rounds?.[0]?.attempts).toHaveLength(1);
+    expect(detail.rounds?.[0]?.attempts?.[0]).toMatchObject({
+      attempt: 1,
+      prompt_tokens: 4_000,
+      completion_tokens: 1_000,
+      context_tokens: 8_192,
+      envelope: "complete",
+    });
+    // Round 2's prompt grew, which is the point: 7,100 + 1,000 reaches the
+    // 8,192 window while round 1's 5,000 did not. The row records the raw
+    // numbers and leaves the verdict to `contextExhausted`, so the rule can be
+    // corrected later without invalidating rows already written.
+    expect(detail.rounds?.[1]?.attempts?.[0]).toMatchObject({
+      attempt: 1,
+      prompt_tokens: 7_100,
+      completion_tokens: 1_000,
+      context_tokens: 8_192,
+    });
+  });
+
+  /**
+   * THE FALSE POSITIVE. `GenerationResult.usage` is the SUM of both requests,
+   * and a context window is a per-request ceiling — so a corrective retry, whose
+   * prompt carries the whole bad response plus the correction, pushes the total
+   * past a window neither request came near. Summed here: 4,000 + 7,000 prompt
+   * and 1,000 + 1,000 completion = 13,000 against 8,192. Per attempt: 5,000 and
+   * 8,000, and only the second one genuinely reaches it.
+   */
+  it("keeps each attempt separate, so a retry cannot fake context exhaustion", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      // Attempt 1: no <file> block at all, so the corrective retry fires.
+      chatBody("I cannot do that.", { promptTokens: 4_000, completionTokens: 1_000 }),
+      chatBody(fileBlock("src/math.ts", FIXED), { promptTokens: 7_000, completionTokens: 1_000 }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const attempts = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0]?.attempts;
+
+    expect(attempts).toHaveLength(2);
+    expect(attempts?.[0]).toMatchObject({
+      attempt: 1,
+      prompt_tokens: 4_000,
+      completion_tokens: 1_000,
+      envelope: "no_blocks",
+    });
+    expect(attempts?.[1]).toMatchObject({ attempt: 2, prompt_tokens: 7_000, envelope: "complete" });
+    // Neither attempt is the sum, which is the whole point of recording them
+    // apart: 13,000 against a 8,192 window would have read as exhausted.
+    for (const a of attempts ?? []) {
+      expect(a.prompt_tokens).not.toBe(11_000);
+    }
+  });
+
+  /**
+   * THE FALSE NEGATIVE, and the more damaging one. `model_output_malformed` is
+   * thrown after TWO responses were received and measured — the case most likely
+   * to be context exhaustion. Recording only on the success path would drop
+   * B16's positives while keeping every negative.
+   */
+  it("records the responses a malformed-output throw discards", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody("nothing usable", { promptTokens: 4_000, completionTokens: 4_000 }),
+      chatBody("still nothing", { promptTokens: 6_000, completionTokens: 2_200 }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const round = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ error?: string; attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0];
+
+    expect(round?.error).toContain("corrective retry");
+    expect(round?.attempts).toHaveLength(2);
+    expect(round?.attempts?.[0]).toMatchObject({
+      attempt: 1,
+      prompt_tokens: 4_000,
+      completion_tokens: 4_000,
+      context_tokens: 8_192,
+      envelope: "no_blocks",
+    });
+    // 6,000 + 2,200 = 8,200 against 8,192: the second attempt did fill the
+    // window, and before this the round reported no tokens at all.
+    expect(round?.attempts?.[1]).toMatchObject({ attempt: 2, prompt_tokens: 6_000 });
+  });
+
+  /**
+   * THE CORRECTIVE RETRY IS ITS OWN REQUEST AND MUST CLEAR ITS OWN PRE-FLIGHT.
+   * The check above the attempt loop cleared attempt 1; attempt 2 carries that
+   * whole response plus the correction, so it is strictly larger and used to go
+   * out unchecked — which is not only a hole in B16's denominator but the live
+   * failure the pre-flight exists to stop, since an overflowing request comes
+   * back as a closed, well-formed, SHORTER file that `repair` then writes.
+   */
+  it("does not send a corrective retry that would overflow the window", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // ~30 KB of unusable output: no <file> block, so a retry would normally
+    // fire, and big enough that appending it blows the 8,192-token window.
+    const { fetchImpl, calls } = queuedFetch([chatBody("x".repeat(30 * 1024))]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    // One model call, not two. The queue would have thrown on a second.
+    expect(calls).toHaveLength(1);
+    const round = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ error?: string; attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0];
+    expect(round?.attempts).toHaveLength(1);
+    expect(round?.error).toContain("corrective retry was NOT sent");
+  });
+
+  /**
+   * `envelope` says whether every declared block arrived and closed, and it is
+   * derived from the parsed blocks and NOTHING else. A response can reach
+   * `max_tokens` right after closing its last block: the envelope is complete
+   * even though the stop reason says `length`. Folding the signal into the
+   * outcome is the exact error B16 was written to correct, and over a
+   * 20-request denominator at a 10% bar a few such rows would fail it on an
+   * artefact of the label.
+   *
+   * The pipeline still retries — being conservative about applying a
+   * length-capped response is a separate, deliberate choice from how the
+   * response is MEASURED.
+   */
+  it("calls a length-capped response complete when every block did close", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody(fileBlock("src/math.ts", WORSE), { finishReason: "length" }),
+      chatBody(fileBlock("src/math.ts", FIXED)),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 32_768,
+    });
+
+    const attempts = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0]?.attempts;
+    expect(attempts?.[0]).toMatchObject({ finish_reason: "length", envelope: "complete" });
+    expect(attempts?.[0]).not.toHaveProperty("missing_files");
+  });
+
+  /**
+   * A server that omits `usage` — an older build, a proxy, a version skew —
+   * must produce null, not zero. Zeroes would make `contextExhausted` answer
+   * "fits" for every request and let B16 appear to hold on no token data at all.
+   * End to end, because the zero-filling lives in `chatCompletion`, three layers
+   * below the assertion.
+   */
+  it("records unknown token usage as null rather than zero", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody(fileBlock("src/math.ts", FIXED), { omitUsage: true }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const attempt = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0]?.attempts?.[0];
+    expect(attempt).toMatchObject({ prompt_tokens: null, completion_tokens: null });
+    expect(contextExhausted(attempt?.prompt_tokens as null, attempt?.completion_tokens as null, 8_192)).toBeNull();
+  });
+
+  /**
+   * THE ABORT PATH. A response that arrived and was measured must not vanish
+   * because something AFTER it threw — the post-generation gate, a locked file,
+   * a check config the repair itself invalidated. `runRepair`'s outer catch
+   * rolls back and rethrows, so a buffer living inside the loop went with it,
+   * and those are exactly the partial-failure paths where an admitted response
+   * did arrive. Dropping them biases B16 away from what it exists to expose.
+   */
+  it("keeps the attempts when the whole repair aborts", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // The exact scenario the outer catch names: a check config the repair
+    // itself invalidated. The model rewrites `checks.json` to declare nothing,
+    // so the gate AFTER the generation throws instead of returning failures.
+    const { fetchImpl } = queuedFetch([
+      chatBody(
+        fileBlock("src/math.ts", FIXED) +
+          "\n" +
+          fileBlock(".local-coder/checks.json", `{"checks":[]}\n`),
+        { promptTokens: 4_100, completionTokens: 4_100 }
+      ),
+    ]);
+
+    await expect(
+      runRepair(
+        { ...baseArgs, files: ["src/math.ts", ".local-coder/checks.json"], max_rounds: 1 },
+        testConfig(root),
+        {
+          processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+          fetchImpl,
+          runner: noLmsRunner(),
+          contextTokens: 8_192,
+        }
+      )
+    ).rejects.toThrow();
+
+    const rows = await readTelemetry(root);
+    expect(rows).toHaveLength(1);
+    const detail = rows[0]?.detail as { aborted?: boolean; attempts?: Array<Record<string, unknown>> };
+    expect(detail.aborted).toBe(true);
+    // 4,100 + 4,100 = 8,200 against 8,192: a response that DID fill the window,
+    // on the very path where it used to be discarded.
+    expect(detail.attempts).toHaveLength(1);
+    expect(detail.attempts?.[0]).toMatchObject({
+      round: 1,
+      prompt_tokens: 4_100,
+      completion_tokens: 4_100,
+      context_tokens: 8_192,
+    });
+  });
+
+  /**
+   * A round that never got a response contributes nothing. Writing zeroes would
+   * read as a request that cost nothing rather than one that never returned, and
+   * B16 counts requests the pre-flight ADMITTED and that came back.
+   */
+  it("omits attempts for a round whose request never returned", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([{ status: 500, body: "boom" }]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const round = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<Record<string, unknown>>;
+    }).rounds?.[0];
+    expect(round).toHaveProperty("error");
+    expect(round).not.toHaveProperty("attempts");
   });
 
   it("writes the model to telemetry, so a latency read from the log has a subject", async () => {

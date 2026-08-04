@@ -5,31 +5,29 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**`D8` ran on the Mac and stopped being a diagnostic.** Six artifacts
-(`evidence/2026-08-04-mac-11` … `-mac-17`) say the whole-file contract is 94.7%
-complete and **size-determined, not random** — 13/13 cases unanimous over three
-repeats. Its one failure exposed what nothing checked: prompt and answer share
-one window, so a request cleared the output cap and came back properly closed,
-`finish_reason: "stop"`, **90 lines missing**. A context pre-flight now refuses
-those. Re-verified on Windows: **4 failures / 320 passing**, +38 tests, 0 new.
+**B14 is `moot`; B16 replaces it, and the pre-flight now has a negative
+control.** `run 2026-08-04-mac-19-32k` declared a 32,768 window while the model
+ran at **16,384**. Same corpus, same model, same real window as `mac-16`/`-17`;
+only the declaration differed. **Told the truth: 2 refused, 0 elided. Told
+double: 0 refused, 1 elided.** First causal evidence the check works. The run is
+VOID for B16 — a misinformed pre-flight is a misconfiguration under test — and
+that VOID condition was added after seeing it, and says so. Of the two honest
+refusals, G3 would have succeeded and L10 would have lost content: 1-1.
 
 ## Next action
 
-**Two decisions are yours, and both are blocked on nothing but a choice.**
-(1) **B14's threshold measures a quantity that did not occur** — 0 of 5 real
-failures carried `finish_reason: "length"`. Amend it, supersede it, or ship the
-pre-flight unmeasured. (2) **G7 names `output_would_truncate`, which refused 0
-of 13**, while `context_would_overflow` refused 2 — and that code did not exist
-when the threshold was written. Then score **B15**: the `D8` session is the first
-non-void candidate, and only the denominator is missing.
+**Reload at 32,768 with the key `qwen3-coder-30b-a3b-instruct-dwq-v2`** (no
+`mlx-community/` prefix — that key does not exist locally), verify `lms ps` says
+32768, then run `contract-stability` for a valid B16 score. `contextOverflowPolicy`
+is app state: not in `lms ps`, not in any file under `~/.lmstudio`, and rejected
+by the OpenAI endpoint. GUI only, recorded by hand.
 
 ## Do not redo
 
-- **`outputBytesPerToken` stays 3.5** though 3.978 is now measured. Re-fitting it
-  on the corpus that measured it is corpus #1's mistake again.
-- **The input divisor is 3.9 and separate on purpose** — one divisor over a
-  shared window applies its pessimism twice and refused a request that fits.
-- **An unknown context window must fail OPEN.** `!== null` made the budget NaN
-  and turned one refusal into every refusal; 50 tests caught it.
-- **B15 needs `scripts/classify-verification.mjs`**, standalone and read-only.
-  `src/cost/` stays frozen while G1 is reopened.
+- **B16's `> 10%` and 20-request denominator are INHERITED from B14.**
+  Re-deriving either destroys their only defence. The six runs are in-sample.
+- **Resolve the MODEL first, then its window**; never borrow the window of a
+  model nobody asked for; never pin one window across `repair` rounds.
+- **The corrective retry needs its OWN pre-flight** — skipped, not sent.
+- **Never sum `usage` against a window, fold `finish_reason` into `envelope`, or
+  read absent `usage` as zero.** `repair` rows score the ENVELOPE half only.
