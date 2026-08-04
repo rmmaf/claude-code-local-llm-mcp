@@ -888,6 +888,11 @@ pre-registered as its own premise before anything is measured against it.
   model that served it and show it equal to the declared value. Like the rule
   above, this makes the premise harder to satisfy — the alternative was reading
   1 of 25 as a 4% pass on a run where the pre-flight was actively misinformed.
+  **The numbers are now measured, not inferred:** that response was
+  10,549 prompt + 5,960 completion = **16,509 against a real 16,384** — over by
+  **125 tokens**. `contextExhausted` catches it against the real window and calls
+  it a fit against the declared one. The margin is the point: the failure needs
+  no dramatic overshoot, so a declared window is worth nothing unverified.
 - **Falls if:** > 10% of the admitted requests come back with content missing.
   **This number is inherited verbatim from B14** and that is the point — it
   predates the data, so it cannot have been chosen by its answer. Only the

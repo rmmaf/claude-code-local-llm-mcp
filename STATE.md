@@ -16,11 +16,13 @@ refusals, G3 would have succeeded and L10 would have lost content: 1-1.
 
 ## Next action
 
-**Reload at 32,768 with the key `qwen3-coder-30b-a3b-instruct-dwq-v2`** (no
-`mlx-community/` prefix — that key does not exist locally), verify `lms ps` says
-32768, then run `contract-stability` for a valid B16 score. `contextOverflowPolicy`
-is app state: not in `lms ps`, not in any file under `~/.lmstudio`, and rejected
-by the OpenAI endpoint. GUI only, recorded by hand.
+**Run `contract-stability` at a VERIFIED 32,768** for the first valid B16 score
+— the Mac is already loaded there. The interesting case is L10 (43,594 B),
+which at 32k is admitted honestly instead of by mistake.
+`contextOverflowPolicy` is app state — not in `lms ps`, not in any file under
+`~/.lmstudio`, rejected by the OpenAI endpoint — but the token accounting now
+points at **pruning**: the retry reported an identical prompt count after ~6,000
+tokens were appended, and still generated ~5,900. Read the GUI to settle it.
 
 ## Do not redo
 

@@ -1329,6 +1329,27 @@ read nor set**. The GUI is the only place it exists, so this point cannot be
 closed by anything automatable, and any run whose conclusion depends on the
 mechanism has to record the setting by hand.
 
+**The token accounting discriminates between the policies, and it points at
+pruning.** `run 2026-08-04-mac-19-32k`, case L10, both attempts of one case:
+
+| | prompt | completion | sum | window |
+|---|---|---|---|---|
+| attempt 1 | 10,549 | 5,960 | 16,509 | 16,384 |
+| attempt 2 | **10,549** | 5,947 | 16,496 | 16,384 |
+
+The diagnostic appends the whole 5,960-token bad response *plus* a corrective
+message before attempt 2, so its message list is roughly 6,000 tokens larger —
+and the server reported **the same prompt count**, then generated another ~5,900
+tokens on top. Under `stopAtLimit` a prompt that alone exceeds the window cannot
+produce a six-thousand-token answer. Under `truncateMiddle` or `rollingWindow`
+LM Studio prunes the prompt and keeps going, which fits both numbers.
+
+This is not proof — the server could be reporting a cached-prefix figure rather
+than what it actually processed — and it is recorded as an observation, not a
+conclusion. But it is the first evidence that discriminates between the policies
+at all, and it points the same way as the symptom that opened this question: a
+block that came back properly closed and 90 lines short.
+
 **What the search DID settle is the neighbouring question.** `run
 2026-08-04-mac-19-32k` declared a 32,768-token window while `lms ps` reported the
 model loaded at **16,384**, and the pre-flight then admitted everything and let
