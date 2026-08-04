@@ -7,6 +7,7 @@ import { z } from "zod";
 import { loadChecks, type CheckCategory, type CheckSpec } from "../checks/config.js";
 import { dedupe, parseFailures, type Failure } from "../checks/parsers.js";
 import type { Config } from "../config.js";
+import { createCorpusWriter, type CorpusWriter } from "../corpus.js";
 import { defaultProcessRunner, type ProcessRunner } from "../exec.js";
 import { ToolError } from "../fs-safety.js";
 import { log } from "../logger.js";
@@ -50,6 +51,13 @@ export interface GateDeps {
    * remains, so a per-check timeout can no longer outlive the caller's deadline.
    */
   budgetMs?: number;
+  /**
+   * Where a red run's parsed failures are archived. Injected so tests can watch
+   * it; `repair` passes a no-op, for the same reason it silences the inner
+   * telemetry — its rounds run the gate repeatedly over one failure, and
+   * capturing each pass would fill the corpus with duplicates of a single task.
+   */
+  corpus?: CorpusWriter;
 }
 
 export interface CheckReport {
@@ -206,6 +214,7 @@ export async function runGate(
   const runner = deps.processRunner ?? defaultProcessRunner;
   const now = deps.now ?? (() => Date.now());
   const telemetry = deps.telemetry ?? createTelemetryWriter(config.root);
+  const corpus = deps.corpus ?? createCorpusWriter(config.root, { runner });
   const started = now();
 
   const category = args.checks ?? "all";
@@ -291,6 +300,23 @@ export async function runGate(
     latency_ms: now() - started,
     detail: { checks: selected.map((s) => s.name), passed: result.passed },
   });
+
+  // Archive what a red run actually found. Gated on parsed failures rather than
+  // on `passed`: a gate can be red because a check could not RUN — a missing
+  // binary, an exhausted budget — and a run with nothing parsed has nothing a
+  // corpus could use. `capture` swallows its own errors, so nothing below this
+  // line can turn a gate run that worked into a failed tool call.
+  if (!result.passed) {
+    await corpus.capture({
+      invocationId,
+      checks: reports.map((r) => ({
+        name: r.name,
+        category: r.category,
+        failure_count: r.failure_count,
+        failures: r.failures,
+      })),
+    });
+  }
 
   return result;
 }

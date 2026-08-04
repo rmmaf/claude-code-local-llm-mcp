@@ -44,6 +44,23 @@ async function withChecks(root: string, checks: unknown): Promise<void> {
   await fs.writeFile(path.join(root, ".local-coder", "checks.json"), JSON.stringify({ checks }), "utf8");
 }
 
+/** [] when the directory was never created, which is itself an assertion. */
+async function corpusFiles(root: string): Promise<string[]> {
+  try {
+    return await fs.readdir(path.join(root, ".local-coder", "corpus"));
+  } catch {
+    return [];
+  }
+}
+
+async function readCorpus(root: string, name: string): Promise<Record<string, never>> {
+  return JSON.parse(await fs.readFile(path.join(root, ".local-coder", "corpus", name), "utf8"));
+}
+
+const TSC_CHECK = [
+  { name: "tsc", category: "types", kind: "tsc", command: "npx", args: ["tsc", "--noEmit"] },
+];
+
 describe("failure parsers", () => {
   it("parses tsc diagnostics into path/line/column/code", () => {
     const out = parseFailures(
@@ -437,5 +454,126 @@ describe("gate tool", () => {
       processRunner: fakeProcess({ make: { stdout: mixed, code: 1 } }),
     });
     expect(result.checks[0]?.failures[0]?.path).toBe("src/real.ts");
+  });
+});
+
+describe("corpus capture", () => {
+  const RED = "src/a.ts(3,10): error TS2345: wrong operand.\nsrc/b.ts(9,2): error TS2304: Cannot find name 'x'.";
+
+  it("archives the failures a red gate parsed, joinable to its telemetry row", async () => {
+    // B6 and B7 both ask for 20 real mechanical failures. gate parses a typed
+    // Failure[] on every red run and its telemetry row kept only
+    // {checks, passed}, so the failures were computed and dropped — an
+    // instrument gap, not a shortage of failures.
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+
+    const result = await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({ tsc: { stdout: RED, code: 2 } }),
+    });
+    expect(result.passed).toBe(false);
+
+    const files = await corpusFiles(root);
+    expect(files).toHaveLength(1);
+    const entry = await readCorpus(root, files[0] as string) as unknown as {
+      invocation_id: string;
+      checks: Array<{ name: string; failure_count: number; failures: Array<{ code: string }> }>;
+    };
+
+    expect(entry.checks[0]?.name).toBe("tsc");
+    expect(entry.checks[0]?.failures.map((f) => f.code)).toEqual(["TS2345", "TS2304"]);
+    // The join is the point: without it the archive is a pile of failures that
+    // cannot be tied back to the run, its timings, or its cost.
+    expect(entry.invocation_id).toBe(result.invocation_id);
+    expect((await readTelemetry(root))[0]?.invocation_id).toBe(entry.invocation_id);
+  });
+
+  it("archives nothing when the gate is green", async () => {
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+    const result = await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({ tsc: { stdout: "", code: 0 } }),
+    });
+    expect(result.passed).toBe(true);
+    expect(await corpusFiles(root)).toHaveLength(0);
+  });
+
+  it("archives nothing when a red gate parsed no failures", async () => {
+    // Red because the check could never be LAUNCHED — runOne's catch branch,
+    // where `executed` is false and there is nothing parsed. Keying the capture
+    // on `passed` alone would file this as a failure to repair, and a corpus
+    // counting it would be counting its own broken setup.
+    //
+    // Note where the line actually falls: a check that DID run and exited
+    // non-zero with unparseable output gets a synthetic `exit-N` failure
+    // (gate.ts), and that one IS archived. It should be — deciding whether a
+    // captured failure is mechanical is the labeller's job, not the hook's.
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+    const result = await runGate({}, testConfig(root), {
+      // Nothing matches, so the runner throws before the process ever starts.
+      processRunner: fakeProcess({}),
+    });
+    expect(result.passed).toBe(false);
+    expect(result.checks[0]?.executed).toBe(false);
+    expect(result.checks[0]?.failure_count).toBe(0);
+    expect(await corpusFiles(root)).toHaveLength(0);
+  });
+
+  it("drops an oversized patch instead of truncating it, and lists untracked files", async () => {
+    // A truncated patch applies cleanly for a while and then stops mid-hunk, so
+    // it reads as a reproducible capture right up until someone depends on it.
+    // Untracked paths are listed rather than captured because the only way to
+    // diff them is `git add -N`, and a capture hook that writes to the index of
+    // the repository it observes is not a capture hook.
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+
+    await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({
+        tsc: { stdout: RED, code: 2 },
+        "rev-parse": { stdout: "abc1234\n" },
+        diff: { stdout: "x".repeat(300 * 1024) },
+        "ls-files": { stdout: "src/new.ts\nsrc/other.ts\n" },
+      }),
+    });
+
+    const files = await corpusFiles(root);
+    const entry = await readCorpus(root, files[0] as string) as unknown as {
+      tree: {
+        head: string | null;
+        patch: string | null;
+        patch_bytes: number;
+        patch_omitted: boolean;
+        untracked: string[];
+      };
+    };
+
+    expect(entry.tree.head).toBe("abc1234");
+    expect(entry.tree.patch).toBeNull();
+    expect(entry.tree.patch_omitted).toBe(true);
+    expect(entry.tree.patch_bytes).toBeGreaterThan(256 * 1024);
+    expect(entry.tree.untracked).toEqual(["src/new.ts", "src/other.ts"]);
+  });
+
+  it("still archives the failures when git is unavailable", async () => {
+    // The tree state is a convenience; the failures are the point. A capture
+    // that gave up because `git` was missing would lose the only part of the
+    // record that B6 actually counts.
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+    await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({ tsc: { stdout: RED, code: 2 } }),
+    });
+
+    const files = await corpusFiles(root);
+    expect(files).toHaveLength(1);
+    const entry = await readCorpus(root, files[0] as string) as unknown as {
+      checks: Array<{ failure_count: number }>;
+      tree: { head: string | null; patch: string | null };
+    };
+    expect(entry.checks[0]?.failure_count).toBe(2);
+    expect(entry.tree.head).toBeNull();
+    expect(entry.tree.patch).toBeNull();
   });
 });

@@ -19,6 +19,7 @@ coverage/
 # Measurement artifacts — rates.json IS versioned, these are per-machine
 .local-coder/telemetry.jsonl
 .local-coder/spill/
+.local-coder/corpus/
 
 # mac-check.sh probe, removed on exit; listed so an interrupted run cannot dirty the tree
 .mac-check-status.*.mts

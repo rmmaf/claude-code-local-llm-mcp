@@ -492,6 +492,12 @@ async function repairLoop(
     // The inner gate runs must not each write a telemetry row; the repair call
     // is the unit of work, and double-counting would inflate the saving.
     telemetry: { record: async () => {} },
+    // Nor may they each archive a corpus entry. This loop runs the gate once per
+    // round over what is substantially ONE failure, so capturing every pass
+    // would fill the corpus with near-duplicates of a single task and quietly
+    // weight it toward whatever `repair` was slowest to fix. The capture point
+    // is the caller's own gate run, which is where a distinct failure appears.
+    corpus: { capture: async () => null },
     now,
   };
   const runGateNow = (): Promise<GateResult> =>
