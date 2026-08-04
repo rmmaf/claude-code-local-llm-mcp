@@ -570,6 +570,29 @@ async function repairLoop(
   rawBytes += gate.bytes_raw;
 
   const rounds: RoundTrace[] = [];
+  /**
+   * Token counts per round, parallel to `rounds` and deliberately NOT part of
+   * `RoundTrace`.
+   *
+   * Not in `RoundTrace` because that type is returned to Claude, and this
+   * project's whole thesis is that returned bytes are the expensive kind.
+   * Telemetry goes to disk and costs no context, so the numbers live only there.
+   *
+   * PER ROUND, never summed. Each round prepends that round's gate failures to
+   * the prompt, so the prompt GROWS and the round most likely to fill the window
+   * is the LAST one — the round whose output is the one that gets applied. A
+   * per-call total would average that away and hide exactly what B16 counts.
+   *
+   * A round whose generation threw contributes nothing: no response means no
+   * token counts, and inventing zeroes would read as a request that cost
+   * nothing rather than one that never returned.
+   */
+  const roundTokens: Array<{
+    round: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    context_tokens: number | null;
+  }> = [];
   let stoppedBecause: RepairResult["stopped_because"] = "max_rounds";
 
   // The best state the loop ever produced, kept in memory. Nothing below writes
@@ -641,6 +664,15 @@ async function repairLoop(
         // set it, from the same resolution, on the success and failure paths
         // alike. One source, so the two cannot drift.
         touched = generation.files_changed;
+        // The three raw numbers, never a derived verdict: `contextExhausted` in
+        // `src/contract-probe.ts` owns the rule, so it can be corrected later
+        // without invalidating every row already written under the old one.
+        roundTokens.push({
+          round,
+          prompt_tokens: generation.usage.prompt_tokens,
+          completion_tokens: generation.usage.completion_tokens,
+          context_tokens: generation.context_tokens,
+        });
       } catch (error) {
         roundError = error instanceof Error ? error.message : String(error);
         concurrentEdit = error instanceof ToolError && error.code === "concurrent_modification";
@@ -816,14 +848,32 @@ async function repairLoop(
       // `stopped_because` cannot separate a truncated response — B0 — from
       // output that was merely wrong, and the distinction decides whether a
       // failed round counts against `repair` or against the output contract.
-      rounds: rounds.map((r) => ({
-        round: r.round,
-        model_ms: r.model_latency_ms,
-        gate_ms: r.gate_ms,
-        failures_before: r.failures_before,
-        failures_after: r.failures_after,
-        ...(r.error === undefined ? {} : { error: r.error }),
-      })),
+      //
+      // The token counts ride along for B16, which asks whether a request the
+      // context pre-flight ADMITTED came back with content missing. That cannot
+      // be read from `finish_reason`: `length` means the output cap was hit,
+      // while a request that fills the window reports `stop` and returns a
+      // well-formed, short answer. `prompt_tokens + completion_tokens` against
+      // `context_tokens` is what sees it — and a round with no counts is a round
+      // that never got a response, not one that used none.
+      rounds: rounds.map((r) => {
+        const tokens = roundTokens.find((t) => t.round === r.round);
+        return {
+          round: r.round,
+          model_ms: r.model_latency_ms,
+          gate_ms: r.gate_ms,
+          failures_before: r.failures_before,
+          failures_after: r.failures_after,
+          ...(r.error === undefined ? {} : { error: r.error }),
+          ...(tokens === undefined
+            ? {}
+            : {
+                prompt_tokens: tokens.prompt_tokens,
+                completion_tokens: tokens.completion_tokens,
+                context_tokens: tokens.context_tokens,
+              }),
+        };
+      }),
     },
   });
 

@@ -124,6 +124,41 @@ export function longestDeletedRun(diffText: string): number {
  */
 export const SILENT_ELISION_MIN_RUN = 3;
 
+/**
+ * Did this request fill the model's context window? Null means the window is
+ * unknown and the question cannot be answered — the same fail-open discipline
+ * `pickLoadedContextTokens` applies, and for the same reason: a guess here would
+ * label a healthy response a failure.
+ *
+ * WHY THIS AND NOT `finish_reason`. B14 asked for `finish_reason: "length"` and
+ * got **0 across 5 real failures**. That is not one server behaving oddly. In
+ * the OpenAI specification `length` means *`max_tokens` was reached*; running
+ * out of context is a different event, and LM Studio has a separate native stop
+ * reason for it (`contextLengthReached`) that the OpenAI-compatible layer does
+ * not map to `length`. The string cannot see this failure. The arithmetic can.
+ *
+ * It is not a marginal test. Across `evidence/2026-08-04-mac-11` … `-mac-17`
+ * this separates **70 complete responses (max 11,918 tokens)** from **10
+ * failures (min 16,426)** against a 16,384-token window. There is no margin
+ * constant on purpose: a 4,508-token gap holds no noise to tune against, and a
+ * fudge factor would be a knob nobody could later justify.
+ *
+ * B16 states its outcome as the harm — content missing — and names this only as
+ * the method, so if it is ever found blind the premise survives and this does
+ * not. That separation is the whole lesson of B14.
+ */
+export function contextExhausted(
+  promptTokens: number,
+  completionTokens: number,
+  contextTokens: number | null | undefined
+): boolean | null {
+  if (typeof contextTokens !== "number" || !Number.isFinite(contextTokens) || contextTokens <= 0) {
+    return null;
+  }
+  if (!Number.isFinite(promptTokens) || !Number.isFinite(completionTokens)) return null;
+  return promptTokens + completionTokens >= contextTokens;
+}
+
 export type Category = "complete" | "elided" | "truncated";
 
 export interface FileVerdict {

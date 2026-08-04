@@ -259,6 +259,80 @@ describe("repair loop", () => {
     expect(detail.rounds?.[0]).not.toHaveProperty("error");
   });
 
+  /**
+   * B16 asks whether a request the context pre-flight ADMITTED came back with
+   * content missing, and `finish_reason` cannot answer it: `length` means the
+   * output cap was hit, while a request that fills the window reports `stop` and
+   * returns a well-formed short answer. Only prompt + completion against the
+   * window sees that, so the row has to carry all three.
+   *
+   * PER ROUND, because each round prepends that round's gate failures and the
+   * prompt grows — the round most likely to fill the window is the last one,
+   * whose output is the one that gets applied.
+   */
+  it("writes each round's token counts and the window they were judged against", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody(fileBlock("src/math.ts", WORSE), { promptTokens: 4_000, completionTokens: 1_000 }),
+      chatBody(fileBlock("src/math.ts", FIXED), { promptTokens: 7_100, completionTokens: 1_000 }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 2 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(4), code: 2 },
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<Record<string, unknown>>;
+    };
+    expect(detail.rounds?.[0]).toMatchObject({
+      prompt_tokens: 4_000,
+      completion_tokens: 1_000,
+      context_tokens: 8_192,
+    });
+    // Round 2's prompt grew, which is the point: 7,100 + 1,000 reaches the
+    // 8,192 window while round 1's 5,000 did not. The row records the raw
+    // numbers and leaves the verdict to `contextExhausted`, so the rule can be
+    // corrected later without invalidating rows already written.
+    expect(detail.rounds?.[1]).toMatchObject({
+      prompt_tokens: 7_100,
+      completion_tokens: 1_000,
+      context_tokens: 8_192,
+    });
+  });
+
+  /**
+   * A round whose generation threw never got a response, so it has no token
+   * counts. Writing zeroes would read as a request that cost nothing rather
+   * than one that never returned — and B16 counts admitted requests.
+   */
+  it("omits token counts for a round that never got a response", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([{ status: 500, body: "boom" }]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<Record<string, unknown>>;
+    };
+    expect(detail.rounds?.[0]).toHaveProperty("error");
+    expect(detail.rounds?.[0]).not.toHaveProperty("prompt_tokens");
+    expect(detail.rounds?.[0]).not.toHaveProperty("context_tokens");
+  });
+
   it("writes the model to telemetry, so a latency read from the log has a subject", async () => {
     const root = tempRoot();
     await setup(root);

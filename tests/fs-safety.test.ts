@@ -239,7 +239,7 @@ describe("file content safety", () => {
    * have since grown and the live pair now sits ~55 tokens over the bar — that
    * residual is the OUTPUT divisor's deliberate 12% pessimism (3.5 against a
    * measured ~3.95), which `outputBytesPerToken` documents as bought coverage
-   * and B14 is what re-derives. This test isolates the input-side effect only.
+   * and B16 is what re-derives. This test isolates the input-side effect only.
    */
   it("does not refuse a request that measurement says fits", () => {
     const editable = [

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifyResponse,
+  contextExhausted,
   findElisionMarkers,
   longestDeletedRun,
   PROBE_MARKER,
@@ -213,6 +214,90 @@ describe("elision-marker false positives", () => {
     const markers = findElisionMarkers("const a = 1;\n", "const a = 1;\n...\n");
     expect(markers).toHaveLength(1);
     expect(markers[0]?.tier).toBe("ellipsis");
+  });
+});
+
+describe("contextExhausted", () => {
+  it("fires when prompt and completion together reach the window", () => {
+    // The measured case: src/tools/repair.ts, 8,756 prompt + 7,670 completion
+    // against a model loaded at 16,384. It came back properly closed, with
+    // finish_reason "stop", missing 90 lines.
+    expect(contextExhausted(8_756, 7_670, 16_384)).toBe(true);
+    // The largest request that DID return every block complete, three times.
+    expect(contextExhausted(6_073, 5_845, 16_384)).toBe(false);
+  });
+
+  it("treats exactly filling the window as exhausted", () => {
+    expect(contextExhausted(8_192, 8_192, 16_384)).toBe(true);
+    expect(contextExhausted(8_192, 8_191, 16_384)).toBe(false);
+  });
+
+  /**
+   * An unknown window must answer "cannot tell", not "fine" and not "broken" —
+   * the same rule `pickLoadedContextTokens` follows. A guess here would label a
+   * healthy response a failure, which is the direction that corrupts the count.
+   */
+  it("returns null whenever the window is not knowable", () => {
+    for (const window of [null, undefined, 0, -1, NaN, Infinity] as unknown[]) {
+      expect(contextExhausted(8_756, 7_670, window as number | null)).toBeNull();
+    }
+  });
+
+  it("returns null when a usage figure is missing rather than counting it as zero", () => {
+    expect(contextExhausted(NaN, 7_670, 16_384)).toBeNull();
+    expect(contextExhausted(8_756, NaN, 16_384)).toBeNull();
+  });
+});
+
+/**
+ * The evidentiary basis for B16, replayed through the SHIPPED rule rather than
+ * through the throwaway script that first computed it. If this ever stops
+ * separating cleanly, B16's method is what failed — and the premise says so
+ * explicitly, which is the whole reason the outcome is stated as the harm and
+ * the detector only as the method.
+ *
+ * The six files are named rather than globbed on purpose: a new artifact is a
+ * new run that should be SCORED, not silently absorbed into a regression test.
+ */
+describe("contextExhausted over the recorded runs", () => {
+  const RUNS = [
+    "2026-08-04-mac-11",
+    "2026-08-04-mac-12-variance",
+    "2026-08-04-mac-13-repair-diff",
+    "2026-08-04-mac-14-repair-diff",
+    "2026-08-04-mac-16-preflight",
+    "2026-08-04-mac-17-preflight",
+  ];
+
+  it("flags every failure and no success, with a wide margin", () => {
+    const complete: number[] = [];
+    const failed: number[] = [];
+    for (const run of RUNS) {
+      const artifact = JSON.parse(
+        readFileSync(path.resolve(__dirname, "../evidence", `${run}.contract-stability.json`), "utf8")
+      ) as {
+        rows: Array<{
+          first: { category: string; prompt_tokens: number; completion_tokens: number } | null;
+          retry: { category: string; prompt_tokens: number; completion_tokens: number } | null;
+        }>;
+      };
+      for (const row of artifact.rows) {
+        for (const attempt of [row.first, row.retry]) {
+          if (attempt === null) continue;
+          const total = attempt.prompt_tokens + attempt.completion_tokens;
+          (attempt.category === "complete" ? complete : failed).push(total);
+          // 16,384 is the window every one of these runs recorded.
+          expect(contextExhausted(attempt.prompt_tokens, attempt.completion_tokens, 16_384)).toBe(
+            attempt.category !== "complete"
+          );
+        }
+      }
+    }
+    expect(complete).toHaveLength(70);
+    expect(failed).toHaveLength(10);
+    // The separation is why no margin constant exists: there is no noise here
+    // to tune against, and a fudge factor would be a knob nobody could justify.
+    expect(Math.min(...failed) - Math.max(...complete)).toBeGreaterThan(4_000);
   });
 });
 

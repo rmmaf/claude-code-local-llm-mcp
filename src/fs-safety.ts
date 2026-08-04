@@ -257,8 +257,9 @@ const PROMPT_OVERHEAD_TOKENS = 200;
  *
  * The token figure is an ESTIMATE and is reported as one. It cannot be exact
  * without the model's tokenizer, and it would still be wrong for a model that
- * spends part of the same budget on reasoning tokens. B14 measures how often it
- * is wrong in the direction that matters.
+ * spends part of the same budget on reasoning tokens. B16 measures how often it
+ * is wrong in the direction that matters (B14 until its detector —
+ * `finish_reason: "length"` — turned out to be blind to this failure).
  *
  * SECOND CHECK — THE CONTEXT WINDOW, when `window` is supplied. The output cap
  * above is necessary and NOT sufficient, because input and output share one

@@ -129,6 +129,15 @@ export interface GenerationResult {
   selection_reason: string;
   latency_ms: number;
   usage: Usage;
+  /**
+   * The window this request was judged against, or null when it could not be
+   * determined. Returned alongside `usage` because the two are only meaningful
+   * together: `prompt_tokens + completion_tokens` against THIS number is what
+   * `contextExhausted` reads, and it is the only signal that catches a response
+   * which came back well-formed and short. B16's method depends on a caller
+   * being able to record all three.
+   */
+  context_tokens: number | null;
 }
 
 /**
@@ -310,13 +319,18 @@ export async function runGeneration(
   // trip would put a context file in the output budget the first time the two
   // spellings differ.
   const editableSet = new Set(editablePaths);
+  // Resolved once and kept: the pre-flight judges against this number, and the
+  // returned result reports it, so a caller can tell a response that fit from
+  // one that filled the window. Re-resolving for the report could disagree with
+  // what was actually enforced.
+  const contextTokens = await resolveContextTokens(config, args.model, deps);
   enforceOutputCap(
     statted.filter((f) => editableSet.has(normalizeRel(f.rel))),
     config.maxOutputTokens,
     config.outputBytesPerToken,
     config.outputUsableFraction,
     {
-      contextTokens: await resolveContextTokens(config, args.model, deps),
+      contextTokens,
       // Every file sent, editable AND context, plus the spec — all of it shares
       // the window with the answer.
       inputBytes: promptInputBytes(statted, args.spec, args.error_output),
@@ -477,5 +491,6 @@ export async function runGeneration(
     selection_reason: reason,
     latency_ms: Date.now() - started,
     usage,
+    context_tokens: contextTokens,
   };
 }
