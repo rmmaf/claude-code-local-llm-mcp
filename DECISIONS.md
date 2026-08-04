@@ -1318,3 +1318,21 @@ half is switching to `stopAtLimit` so the failure becomes loud instead of silent
 It is one look at a settings panel. Until someone takes it, the causal claim
 above is a hypothesis and is labelled as one. B16 is unaffected either way — it
 counts the harm, not the mechanism, which is exactly why it was written that way.
+
+**Searched, and it is not reachable from the CLI or from disk.** `lms ps --json`
+reports `contextLength` and `maxContextLength` and nothing about the policy, and
+a recursive text search of `~/.lmstudio` turns up only the app's own bundled
+JavaScript and the `@lmstudio/sdk` type declarations — no user configuration file
+carries it. Combined with the open issue that the OpenAI-compatible endpoint
+rejects it, that means **the policy is app state that this project can neither
+read nor set**. The GUI is the only place it exists, so this point cannot be
+closed by anything automatable, and any run whose conclusion depends on the
+mechanism has to record the setting by hand.
+
+**What the search DID settle is the neighbouring question.** `run
+2026-08-04-mac-19-32k` declared a 32,768-token window while `lms ps` reported the
+model loaded at **16,384**, and the pre-flight then admitted everything and let
+one response come back short. So whatever the overflow policy is, the practical
+rule is already decided: **the declared window must be verified against `lms ps`
+before it is trusted**, and a run that skips that verification is measuring its
+own configuration rather than the model. B16 carries that as a VOID condition.

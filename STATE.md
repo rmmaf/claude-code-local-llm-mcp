@@ -5,22 +5,22 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B14 is `moot`; B16 replaces it.** `finish_reason: "length"` means *`max_tokens`
-was reached*, and LM Studio reports context exhaustion as a separate reason the
-OpenAI layer flattens to `stop` — so B14 counted a string that cannot fire here:
-0 across 5 real failures, reading as a pass while a request lost 90 lines. B16
-states the outcome as the **harm**, the detector only as **method**:
-`prompt + completion >= contextTokens` splits 70 successes (max 11,918) from 10
-failures (min 16,426). Three reviews found **eight** instrument defects, two of
-them live data-loss bugs. G7 held; its second refusal code is exploratory.
+**B14 is `moot`; B16 replaces it, and the pre-flight now has a negative
+control.** `run 2026-08-04-mac-19-32k` declared a 32,768 window while the model
+ran at **16,384**. Same corpus, same model, same real window as `mac-16`/`-17`;
+only the declaration differed. **Told the truth: 2 refused, 0 elided. Told
+double: 0 refused, 1 elided.** First causal evidence the check works. The run is
+VOID for B16 — a misinformed pre-flight is a misconfiguration under test — and
+that VOID condition was added after seeing it, and says so. Of the two honest
+refusals, G3 would have succeeded and L10 would have lost content: 1-1.
 
 ## Next action
 
-**Open LM Studio and read `contextOverflowPolicy`.** `truncateMiddle` and
-`rollingWindow` keep generating while pruning the *prompt*, which explains a
-block that came back **properly closed** and 90 lines short better than "the
-model stopped" — and it cannot be set through the API. Then reload at 32,768,
-set `LOCAL_CODER_CONTEXT_TOKENS`, and run `contract-stability` to score B16.
+**Reload at 32,768 with the key `qwen3-coder-30b-a3b-instruct-dwq-v2`** (no
+`mlx-community/` prefix — that key does not exist locally), verify `lms ps` says
+32768, then run `contract-stability` for a valid B16 score. `contextOverflowPolicy`
+is app state: not in `lms ps`, not in any file under `~/.lmstudio`, and rejected
+by the OpenAI endpoint. GUI only, recorded by hand.
 
 ## Do not redo
 

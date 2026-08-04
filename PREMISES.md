@@ -835,6 +835,19 @@ pre-registered as its own premise before anything is measured against it.
 - **THOSE RUNS ARE IN-SAMPLE AND DO NOT SCORE THIS PREMISE.** They are the
   motivating observation, exactly as `run 2026-08-04-mac-09` was for B14. The
   data that produced a detector cannot also confirm it.
+- **The pre-flight has a negative control, and it arrived by accident.**
+  `run 2026-08-04-mac-19-32k` re-ran the same corpus on the same model at the
+  same **real** 16,384-token window, differing only in the window it *declared*:
+  **32,768**. Told the truth (`mac-16`/`mac-17`) the check refused 2 requests and
+  **0** responses lost content. Told double, it refused **0** and **1** came back
+  elided. That is the first causal evidence that this check does the job it was
+  built for — and it is why the run is VOID rather than a 4% pass.
+- **Both refusals are now measured rather than argued, and they split 1-1.** Of
+  the two the honest pre-flight refused: `G3` (26,889 B) returned **complete 2 of
+  2** — B14's symmetrical clause confirmed by a successful run instead of by
+  arithmetic — while `L10` (43,594 B) **elided**. The two outcomes are not
+  symmetric in cost: a wrong refusal spends a round trip, a missed one returns a
+  diff that deletes 90 lines and that every automated check accepts.
 - **Experiment:** a fresh `scripts/contract-stability.ts` run at the loaded
   window — the only source that scores **both** halves — plus `repair` telemetry
   from ordinary work for the envelope half. `detail.rounds[].attempts[]` carries
@@ -864,6 +877,17 @@ pre-registered as its own premise before anything is measured against it.
   by construction, and B14's own `0 of 20` was exactly that. The condition is
   demanding on the *experiment* rather than permissive on the *result*, which is
   the only direction a construction rule may be chosen in after the fact.
+- **VOID unless the declared window IS the loaded window.** Added after
+  `run 2026-08-04-mac-19-32k` and said to be, which is the only thing that makes
+  it legitimate. That run declared `LOCAL_CODER_CONTEXT_TOKENS=32768` while the
+  model was JIT-loaded at **16,384** — a factor of two — so the pre-flight
+  admitted every request and `contextExhausted` scored the one response that DID
+  lose content as fitting. **The detector is only as honest as the number it is
+  handed**, which turns a configuration mismatch into a silent scoring error.
+  Any run scoring this premise must record `lms ps`'s `contextLength` for the
+  model that served it and show it equal to the declared value. Like the rule
+  above, this makes the premise harder to satisfy — the alternative was reading
+  1 of 25 as a 4% pass on a run where the pre-flight was actively misinformed.
 - **Falls if:** > 10% of the admitted requests come back with content missing.
   **This number is inherited verbatim from B14** and that is the point — it
   predates the data, so it cannot have been chosen by its answer. Only the
@@ -986,11 +1010,18 @@ by name, so the count is checkable rather than trusted:
 `tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
 `tests/regression.test.ts:117`.
 
-**One unexplained discrepancy, recorded rather than smoothed over:** that Mac
-session reported **323** tests where Windows counts **324**. Nothing in this
-repository is platform-gated on purpose, so the delta is not attributed to one —
-it is simply not yet explained, and anyone quoting a total should quote its
-machine with it.
+**RETRACTED — the discrepancy below is explained, and the explanation is that it
+was a miscount.** At 339 tests the two machines agree exactly: the Mac passes
+339 of 339 (`run 2026-08-04-mac-19-32k`), Windows runs the same 339 with the
+four failures named above. The earlier delta came from prose in a rendered
+conversation, not from either machine. Kept visible because "unexplained" is
+itself a claim, and it was wrong.
+
+*Superseded, kept for the record:* "One unexplained discrepancy, recorded rather
+than smoothed over: that Mac session reported **323** tests where Windows counts
+**324**. Nothing in this repository is platform-gated on purpose, so the delta is
+not attributed to one — it is simply not yet explained, and anyone quoting a
+total should quote its machine with it."
 
 - **All 4 are pre-existing**, confirmed by a `git stash -u` baseline:
   `core.autocrlf=true` on Windows rewrites line endings, so three tests comparing
