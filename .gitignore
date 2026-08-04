@@ -15,3 +15,14 @@ dist/
 # Test / coverage
 coverage/
 .vitest/
+
+# Measurement artifacts — rates.json IS versioned, these are per-machine
+.local-coder/telemetry.jsonl
+.local-coder/spill/
+.local-coder/corpus/
+# Raw model responses from contract-stability.ts. The scored summary in
+# evidence/ IS versioned; these are the bulk it was scored from.
+.local-coder/contract-spill/
+
+# mac-check.sh probe, removed on exit; listed so an interrupted run cannot dirty the tree
+.mac-check-status.*.mts

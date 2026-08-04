@@ -1,0 +1,2435 @@
+{
+  "diagnostic": "contract-stability",
+  "contract": "IMPLEMENT_SYSTEM_PROMPT: return the COMPLETE final content of EVERY editable file listed in the request",
+  "run_id": "2026-08-04-mac-12-variance",
+  "ts": "2026-08-04T17:07:07.730Z",
+  "repo": {
+    "head": "940d2b6dc85ec224231d6702597b41dccd169100",
+    "dirty": true
+  },
+  "model": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+  "model_selection_reason": "largest catalog model fitting usable free RAM (16 GB): mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2 (served as qwen3-coder-30b-a3b-instruct-dwq-v2)",
+  "config": {
+    "base_url": "http://localhost:1234/v1",
+    "temperature": 0.1,
+    "max_output_tokens": 16384,
+    "output_usable_fraction": 0.9,
+    "output_bytes_per_token": 3.5,
+    "usable_output_tokens": 14745,
+    "timeout_ms": 600000
+  },
+  "method": {
+    "spec": "Append the following comment as the last line of every editable file, exactly as written:\n\n// contract-probe: do-not-commit\n\nChange nothing else: no reformatting, no renaming, no reordering, no other edits of any kind. Every other line of every file must come back byte-for-byte identical to the input.",
+    "probe_marker": "// contract-probe: do-not-commit",
+    "silent_elision_min_run": 3,
+    "repeats": 3,
+    "arms": "both",
+    "categories": "truncated (finish_reason=length | unclosed block | missing block) > elided (a novel ellipsis / 'rest unchanged' comment, or >= silent_elision_min_run consecutive original lines gone with no marker) > complete. First matching rule wins.",
+    "caveat": "One response per case measures size- and block-count-dependence, not run-to-run variance at fixed size. Re-run with --repeats>1 for the latter."
+  },
+  "summary": {
+    "responses_requested": 39,
+    "responses_scored": 38,
+    "skipped_over_output_cap": 0,
+    "errored": 1,
+    "first_response": {
+      "complete": 36,
+      "elided": 2,
+      "truncated": 0,
+      "complete_rate": 0.947
+    },
+    "corrective_retry": {
+      "eligible": 2,
+      "complete": 0,
+      "elided": 0,
+      "truncated": 2,
+      "rescued": 0
+    },
+    "responses_with_a_verbatim_echo": 0,
+    "responses_with_probe_in_every_file": 36,
+    "by_arm": [
+      {
+        "arm": "single",
+        "n": 29,
+        "complete": 27,
+        "elided": 2,
+        "truncated": 0
+      },
+      {
+        "arm": "multi",
+        "n": 9,
+        "complete": 9,
+        "elided": 0,
+        "truncated": 0
+      }
+    ],
+    "variance": {
+      "cases": 13,
+      "cases_with_multiple_responses": 13,
+      "unanimous_cases": 13,
+      "divergent_cases": [],
+      "byte_identical_cases": 12,
+      "detail": [
+        {
+          "base_case_id": "L01",
+          "arm": "single",
+          "paths": [
+            "src/logger.ts"
+          ],
+          "total_bytes": 665,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            190,
+            190,
+            190
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L02",
+          "arm": "single",
+          "paths": [
+            "src/diff.ts"
+          ],
+          "total_bytes": 1688,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            460,
+            460,
+            460
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L03",
+          "arm": "single",
+          "paths": [
+            "src/telemetry.ts"
+          ],
+          "total_bytes": 3381,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            825,
+            825,
+            825
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L04",
+          "arm": "single",
+          "paths": [
+            "src/parse.ts"
+          ],
+          "total_bytes": 4822,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 2,
+          "completion_tokens": [
+            1218,
+            1219,
+            1218
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L05",
+          "arm": "single",
+          "paths": [
+            "src/server.ts"
+          ],
+          "total_bytes": 6578,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            1569,
+            1569,
+            1569
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L06",
+          "arm": "single",
+          "paths": [
+            "src/fs-safety.ts"
+          ],
+          "total_bytes": 9613,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            2457,
+            2457,
+            2457
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L07",
+          "arm": "single",
+          "paths": [
+            "src/cost/transcript.ts"
+          ],
+          "total_bytes": 12129,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            3053,
+            3053,
+            3053
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L08",
+          "arm": "single",
+          "paths": [
+            "src/tools/gate.ts"
+          ],
+          "total_bytes": 15891,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            3953,
+            3953,
+            3953
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L09",
+          "arm": "single",
+          "paths": [
+            "src/cost/report.ts"
+          ],
+          "total_bytes": 23063,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            5845,
+            5845,
+            5845
+          ],
+          "probe_applied": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "base_case_id": "L10",
+          "arm": "single",
+          "paths": [
+            "src/tools/repair.ts"
+          ],
+          "total_bytes": 35656,
+          "responses": 2,
+          "categories": [
+            "elided",
+            "elided"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            7670,
+            7670
+          ],
+          "probe_applied": [
+            0,
+            0
+          ]
+        },
+        {
+          "base_case_id": "G1",
+          "arm": "multi",
+          "paths": [
+            "src/logger.ts",
+            "src/diff.ts"
+          ],
+          "total_bytes": 2353,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            649,
+            649,
+            649
+          ],
+          "probe_applied": [
+            2,
+            2,
+            2
+          ]
+        },
+        {
+          "base_case_id": "G2",
+          "arm": "multi",
+          "paths": [
+            "src/telemetry.ts",
+            "src/parse.ts",
+            "src/server.ts"
+          ],
+          "total_bytes": 14781,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            3611,
+            3611,
+            3611
+          ],
+          "probe_applied": [
+            3,
+            3,
+            3
+          ]
+        },
+        {
+          "base_case_id": "G3",
+          "arm": "multi",
+          "paths": [
+            "src/fs-safety.ts",
+            "src/cost/transcript.ts"
+          ],
+          "total_bytes": 21742,
+          "responses": 3,
+          "categories": [
+            "complete",
+            "complete",
+            "complete"
+          ],
+          "unanimous": true,
+          "distinct_outputs": 1,
+          "completion_tokens": [
+            5509,
+            5509,
+            5509
+          ],
+          "probe_applied": [
+            2,
+            2,
+            2
+          ]
+        }
+      ]
+    }
+  },
+  "rows": [
+    {
+      "case_id": "L01r1",
+      "base_case_id": "L01",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/logger.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 665,
+      "estimated_output_tokens": 190,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 2249,
+        "prompt_tokens": 418,
+        "completion_tokens": 190,
+        "raw_bytes": 734,
+        "raw_sha256_16": "ec87a482b1b73b32",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L02r1",
+      "base_case_id": "L02",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/diff.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 1688,
+      "estimated_output_tokens": 482,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 5255,
+        "prompt_tokens": 688,
+        "completion_tokens": 460,
+        "raw_bytes": 1755,
+        "raw_sha256_16": "2239b08e554ae419",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L03r1",
+      "base_case_id": "L03",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/telemetry.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 3381,
+      "estimated_output_tokens": 966,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 9053,
+        "prompt_tokens": 1053,
+        "completion_tokens": 825,
+        "raw_bytes": 3453,
+        "raw_sha256_16": "e17057ebc971ab75",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3415,
+            "original_lines": 92,
+            "returned_lines": 94,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L04r1",
+      "base_case_id": "L04",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/parse.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 4822,
+      "estimated_output_tokens": 1378,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 14607,
+        "prompt_tokens": 1447,
+        "completion_tokens": 1218,
+        "raw_bytes": 4910,
+        "raw_sha256_16": "ab529c4657278a59",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4876,
+            "original_lines": 122,
+            "returned_lines": 123,
+            "added_lines": 6,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L05r1",
+      "base_case_id": "L05",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/server.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 6578,
+      "estimated_output_tokens": 1879,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 19479,
+        "prompt_tokens": 1797,
+        "completion_tokens": 1569,
+        "raw_bytes": 6646,
+        "raw_sha256_16": "4976cfa86960c51d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L06r1",
+      "base_case_id": "L06",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/fs-safety.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 9613,
+      "estimated_output_tokens": 2747,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 30418,
+        "prompt_tokens": 2685,
+        "completion_tokens": 2457,
+        "raw_bytes": 9685,
+        "raw_sha256_16": "a5c02b94880ba140",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/fs-safety.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 9613,
+            "returned_bytes": 9647,
+            "original_lines": 280,
+            "returned_lines": 282,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L07r1",
+      "base_case_id": "L07",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 12129,
+      "estimated_output_tokens": 3465,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 42268,
+        "prompt_tokens": 3281,
+        "completion_tokens": 3053,
+        "raw_bytes": 12206,
+        "raw_sha256_16": "46123becd150a696",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/cost/transcript.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 12129,
+            "returned_bytes": 12162,
+            "original_lines": 332,
+            "returned_lines": 333,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L08r1",
+      "base_case_id": "L08",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/tools/gate.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 15891,
+      "estimated_output_tokens": 4540,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 56962,
+        "prompt_tokens": 4181,
+        "completion_tokens": 3953,
+        "raw_bytes": 15964,
+        "raw_sha256_16": "2574b40625b74c30",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/gate.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 15891,
+            "returned_bytes": 15925,
+            "original_lines": 411,
+            "returned_lines": 413,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L09r1",
+      "base_case_id": "L09",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/cost/report.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 23063,
+      "estimated_output_tokens": 6589,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 92947,
+        "prompt_tokens": 6073,
+        "completion_tokens": 5845,
+        "raw_bytes": 23136,
+        "raw_sha256_16": "e904ca182d647dfd",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/cost/report.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 23063,
+            "returned_bytes": 23096,
+            "original_lines": 555,
+            "returned_lines": 556,
+            "added_lines": 3,
+            "removed_lines": 2,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L10r1",
+      "base_case_id": "L10",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/tools/repair.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 35656,
+      "estimated_output_tokens": 10187,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "elided",
+        "reason": "src/tools/repair.ts: no marker, but 81 consecutive original lines are gone (90 removed / 2 added)",
+        "finish_reason": "stop",
+        "latency_ms": 803104,
+        "prompt_tokens": 8756,
+        "completion_tokens": 7670,
+        "raw_bytes": 32163,
+        "raw_sha256_16": "24f66448b76b60a3",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/repair.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 35656,
+            "returned_bytes": 32122,
+            "original_lines": 816,
+            "returned_lines": 728,
+            "added_lines": 2,
+            "removed_lines": 90,
+            "longest_deleted_run": 81,
+            "elision_markers": [],
+            "probe_applied": false,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": {
+        "attempt": 2,
+        "category": "truncated",
+        "reason": "unclosed <file> block(s) for src/tools/repair.ts — output stopped mid-file without finish_reason=length",
+        "finish_reason": "stop",
+        "latency_ms": 148959,
+        "prompt_tokens": 8756,
+        "completion_tokens": 7673,
+        "raw_bytes": 32184,
+        "raw_sha256_16": "f7d8ec30edc19d1c",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/repair.ts",
+            "returned": false,
+            "absence": "unclosed_block",
+            "original_bytes": 35656,
+            "returned_bytes": null,
+            "original_lines": 816,
+            "returned_lines": null,
+            "added_lines": null,
+            "removed_lines": null,
+            "longest_deleted_run": null,
+            "elision_markers": [],
+            "probe_applied": null,
+            "verbatim_echo": null
+          }
+        ]
+      },
+      "infra_retries": 2,
+      "error": null
+    },
+    {
+      "case_id": "G1r1",
+      "base_case_id": "G1",
+      "arm": "multi",
+      "repeat": 1,
+      "paths": [
+        "src/logger.ts",
+        "src/diff.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 2353,
+      "estimated_output_tokens": 672,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 2 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 7955,
+        "prompt_tokens": 868,
+        "completion_tokens": 649,
+        "raw_bytes": 2490,
+        "raw_sha256_16": "f2aa9d1174009e7d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G2r1",
+      "base_case_id": "G2",
+      "arm": "multi",
+      "repeat": 1,
+      "paths": [
+        "src/telemetry.ts",
+        "src/parse.ts",
+        "src/server.ts"
+      ],
+      "block_count": 3,
+      "total_bytes": 14781,
+      "estimated_output_tokens": 4223,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 3 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 52311,
+        "prompt_tokens": 3821,
+        "completion_tokens": 3611,
+        "raw_bytes": 15014,
+        "raw_sha256_16": "c2eee8bc7eaf93e1",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3414,
+            "original_lines": 92,
+            "returned_lines": 93,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4878,
+            "original_lines": 122,
+            "returned_lines": 123,
+            "added_lines": 6,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G3r1",
+      "base_case_id": "G3",
+      "arm": "multi",
+      "repeat": 1,
+      "paths": [
+        "src/fs-safety.ts",
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 21742,
+      "estimated_output_tokens": 6212,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 2 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 89132,
+        "prompt_tokens": 5728,
+        "completion_tokens": 5509,
+        "raw_bytes": 21891,
+        "raw_sha256_16": "d4d17d3d4ad5016c",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/fs-safety.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 9613,
+            "returned_bytes": 9646,
+            "original_lines": 280,
+            "returned_lines": 281,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/cost/transcript.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 12129,
+            "returned_bytes": 12162,
+            "original_lines": 332,
+            "returned_lines": 333,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L01r2",
+      "base_case_id": "L01",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/logger.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 665,
+      "estimated_output_tokens": 190,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 2004,
+        "prompt_tokens": 418,
+        "completion_tokens": 190,
+        "raw_bytes": 734,
+        "raw_sha256_16": "ec87a482b1b73b32",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L02r2",
+      "base_case_id": "L02",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/diff.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 1688,
+      "estimated_output_tokens": 482,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 5188,
+        "prompt_tokens": 688,
+        "completion_tokens": 460,
+        "raw_bytes": 1755,
+        "raw_sha256_16": "2239b08e554ae419",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L03r2",
+      "base_case_id": "L03",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/telemetry.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 3381,
+      "estimated_output_tokens": 966,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 9090,
+        "prompt_tokens": 1053,
+        "completion_tokens": 825,
+        "raw_bytes": 3453,
+        "raw_sha256_16": "e17057ebc971ab75",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3415,
+            "original_lines": 92,
+            "returned_lines": 94,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L04r2",
+      "base_case_id": "L04",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/parse.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 4822,
+      "estimated_output_tokens": 1378,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 14801,
+        "prompt_tokens": 1447,
+        "completion_tokens": 1219,
+        "raw_bytes": 4911,
+        "raw_sha256_16": "8b642debfb76a5d7",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4877,
+            "original_lines": 122,
+            "returned_lines": 124,
+            "added_lines": 7,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L05r2",
+      "base_case_id": "L05",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/server.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 6578,
+      "estimated_output_tokens": 1879,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 19644,
+        "prompt_tokens": 1797,
+        "completion_tokens": 1569,
+        "raw_bytes": 6646,
+        "raw_sha256_16": "4976cfa86960c51d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L06r2",
+      "base_case_id": "L06",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/fs-safety.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 9613,
+      "estimated_output_tokens": 2747,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 30675,
+        "prompt_tokens": 2685,
+        "completion_tokens": 2457,
+        "raw_bytes": 9685,
+        "raw_sha256_16": "a5c02b94880ba140",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/fs-safety.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 9613,
+            "returned_bytes": 9647,
+            "original_lines": 280,
+            "returned_lines": 282,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L07r2",
+      "base_case_id": "L07",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 12129,
+      "estimated_output_tokens": 3465,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 43056,
+        "prompt_tokens": 3281,
+        "completion_tokens": 3053,
+        "raw_bytes": 12206,
+        "raw_sha256_16": "46123becd150a696",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/cost/transcript.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 12129,
+            "returned_bytes": 12162,
+            "original_lines": 332,
+            "returned_lines": 333,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L08r2",
+      "base_case_id": "L08",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/tools/gate.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 15891,
+      "estimated_output_tokens": 4540,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 59634,
+        "prompt_tokens": 4181,
+        "completion_tokens": 3953,
+        "raw_bytes": 15964,
+        "raw_sha256_16": "2574b40625b74c30",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/gate.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 15891,
+            "returned_bytes": 15925,
+            "original_lines": 411,
+            "returned_lines": 413,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L09r2",
+      "base_case_id": "L09",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/cost/report.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 23063,
+      "estimated_output_tokens": 6589,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 99150,
+        "prompt_tokens": 6073,
+        "completion_tokens": 5845,
+        "raw_bytes": 23136,
+        "raw_sha256_16": "e904ca182d647dfd",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/cost/report.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 23063,
+            "returned_bytes": 23096,
+            "original_lines": 555,
+            "returned_lines": 556,
+            "added_lines": 3,
+            "removed_lines": 2,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L10r2",
+      "base_case_id": "L10",
+      "arm": "single",
+      "repeat": 2,
+      "paths": [
+        "src/tools/repair.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 35656,
+      "estimated_output_tokens": 10187,
+      "usable_output_tokens": 14745,
+      "first": null,
+      "retry": null,
+      "infra_retries": 2,
+      "error": {
+        "code": "llm_unreachable",
+        "message": "Could not reach LM Studio at http://localhost:1234/v1/chat/completions: fetch failed. Start LM Studio's server with `lms server start`."
+      }
+    },
+    {
+      "case_id": "G1r2",
+      "base_case_id": "G1",
+      "arm": "multi",
+      "repeat": 2,
+      "paths": [
+        "src/logger.ts",
+        "src/diff.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 2353,
+      "estimated_output_tokens": 672,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 2 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 7987,
+        "prompt_tokens": 868,
+        "completion_tokens": 649,
+        "raw_bytes": 2490,
+        "raw_sha256_16": "f2aa9d1174009e7d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G2r2",
+      "base_case_id": "G2",
+      "arm": "multi",
+      "repeat": 2,
+      "paths": [
+        "src/telemetry.ts",
+        "src/parse.ts",
+        "src/server.ts"
+      ],
+      "block_count": 3,
+      "total_bytes": 14781,
+      "estimated_output_tokens": 4223,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 3 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 52783,
+        "prompt_tokens": 3821,
+        "completion_tokens": 3611,
+        "raw_bytes": 15014,
+        "raw_sha256_16": "c2eee8bc7eaf93e1",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3414,
+            "original_lines": 92,
+            "returned_lines": 93,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4878,
+            "original_lines": 122,
+            "returned_lines": 123,
+            "added_lines": 6,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G3r2",
+      "base_case_id": "G3",
+      "arm": "multi",
+      "repeat": 2,
+      "paths": [
+        "src/fs-safety.ts",
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 21742,
+      "estimated_output_tokens": 6212,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 2 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 89201,
+        "prompt_tokens": 5728,
+        "completion_tokens": 5509,
+        "raw_bytes": 21891,
+        "raw_sha256_16": "d4d17d3d4ad5016c",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/fs-safety.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 9613,
+            "returned_bytes": 9646,
+            "original_lines": 280,
+            "returned_lines": 281,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/cost/transcript.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 12129,
+            "returned_bytes": 12162,
+            "original_lines": 332,
+            "returned_lines": 333,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L01r3",
+      "base_case_id": "L01",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/logger.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 665,
+      "estimated_output_tokens": 190,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 1995,
+        "prompt_tokens": 418,
+        "completion_tokens": 190,
+        "raw_bytes": 734,
+        "raw_sha256_16": "ec87a482b1b73b32",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L02r3",
+      "base_case_id": "L02",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/diff.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 1688,
+      "estimated_output_tokens": 482,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 5404,
+        "prompt_tokens": 688,
+        "completion_tokens": 460,
+        "raw_bytes": 1755,
+        "raw_sha256_16": "2239b08e554ae419",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L03r3",
+      "base_case_id": "L03",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/telemetry.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 3381,
+      "estimated_output_tokens": 966,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 9182,
+        "prompt_tokens": 1053,
+        "completion_tokens": 825,
+        "raw_bytes": 3453,
+        "raw_sha256_16": "e17057ebc971ab75",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3415,
+            "original_lines": 92,
+            "returned_lines": 94,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L04r3",
+      "base_case_id": "L04",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/parse.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 4822,
+      "estimated_output_tokens": 1378,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 14836,
+        "prompt_tokens": 1447,
+        "completion_tokens": 1218,
+        "raw_bytes": 4910,
+        "raw_sha256_16": "ab529c4657278a59",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4876,
+            "original_lines": 122,
+            "returned_lines": 123,
+            "added_lines": 6,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L05r3",
+      "base_case_id": "L05",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/server.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 6578,
+      "estimated_output_tokens": 1879,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 19677,
+        "prompt_tokens": 1797,
+        "completion_tokens": 1569,
+        "raw_bytes": 6646,
+        "raw_sha256_16": "4976cfa86960c51d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L06r3",
+      "base_case_id": "L06",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/fs-safety.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 9613,
+      "estimated_output_tokens": 2747,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 30654,
+        "prompt_tokens": 2685,
+        "completion_tokens": 2457,
+        "raw_bytes": 9685,
+        "raw_sha256_16": "a5c02b94880ba140",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/fs-safety.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 9613,
+            "returned_bytes": 9647,
+            "original_lines": 280,
+            "returned_lines": 282,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L07r3",
+      "base_case_id": "L07",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 12129,
+      "estimated_output_tokens": 3465,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 42719,
+        "prompt_tokens": 3281,
+        "completion_tokens": 3053,
+        "raw_bytes": 12206,
+        "raw_sha256_16": "46123becd150a696",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/cost/transcript.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 12129,
+            "returned_bytes": 12162,
+            "original_lines": 332,
+            "returned_lines": 333,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L08r3",
+      "base_case_id": "L08",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/tools/gate.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 15891,
+      "estimated_output_tokens": 4540,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 58921,
+        "prompt_tokens": 4181,
+        "completion_tokens": 3953,
+        "raw_bytes": 15964,
+        "raw_sha256_16": "2574b40625b74c30",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/gate.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 15891,
+            "returned_bytes": 15925,
+            "original_lines": 411,
+            "returned_lines": 413,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L09r3",
+      "base_case_id": "L09",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/cost/report.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 23063,
+      "estimated_output_tokens": 6589,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 99205,
+        "prompt_tokens": 6073,
+        "completion_tokens": 5845,
+        "raw_bytes": 23136,
+        "raw_sha256_16": "e904ca182d647dfd",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/cost/report.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 23063,
+            "returned_bytes": 23096,
+            "original_lines": 555,
+            "returned_lines": 556,
+            "added_lines": 3,
+            "removed_lines": 2,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L10r3",
+      "base_case_id": "L10",
+      "arm": "single",
+      "repeat": 3,
+      "paths": [
+        "src/tools/repair.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 35656,
+      "estimated_output_tokens": 10187,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "elided",
+        "reason": "src/tools/repair.ts: no marker, but 81 consecutive original lines are gone (90 removed / 2 added)",
+        "finish_reason": "stop",
+        "latency_ms": 148937,
+        "prompt_tokens": 8756,
+        "completion_tokens": 7670,
+        "raw_bytes": 32163,
+        "raw_sha256_16": "24f66448b76b60a3",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/repair.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 35656,
+            "returned_bytes": 32122,
+            "original_lines": 816,
+            "returned_lines": 728,
+            "added_lines": 2,
+            "removed_lines": 90,
+            "longest_deleted_run": 81,
+            "elision_markers": [],
+            "probe_applied": false,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": {
+        "attempt": 2,
+        "category": "truncated",
+        "reason": "unclosed <file> block(s) for src/tools/repair.ts — output stopped mid-file without finish_reason=length",
+        "finish_reason": "stop",
+        "latency_ms": 149339,
+        "prompt_tokens": 8756,
+        "completion_tokens": 7673,
+        "raw_bytes": 32184,
+        "raw_sha256_16": "f7d8ec30edc19d1c",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/repair.ts",
+            "returned": false,
+            "absence": "unclosed_block",
+            "original_bytes": 35656,
+            "returned_bytes": null,
+            "original_lines": 816,
+            "returned_lines": null,
+            "added_lines": null,
+            "removed_lines": null,
+            "longest_deleted_run": null,
+            "elision_markers": [],
+            "probe_applied": null,
+            "verbatim_echo": null
+          }
+        ]
+      },
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G1r3",
+      "base_case_id": "G1",
+      "arm": "multi",
+      "repeat": 3,
+      "paths": [
+        "src/logger.ts",
+        "src/diff.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 2353,
+      "estimated_output_tokens": 672,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 2 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 7942,
+        "prompt_tokens": 868,
+        "completion_tokens": 649,
+        "raw_bytes": 2490,
+        "raw_sha256_16": "f2aa9d1174009e7d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G2r3",
+      "base_case_id": "G2",
+      "arm": "multi",
+      "repeat": 3,
+      "paths": [
+        "src/telemetry.ts",
+        "src/parse.ts",
+        "src/server.ts"
+      ],
+      "block_count": 3,
+      "total_bytes": 14781,
+      "estimated_output_tokens": 4223,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 3 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 52576,
+        "prompt_tokens": 3821,
+        "completion_tokens": 3611,
+        "raw_bytes": 15014,
+        "raw_sha256_16": "c2eee8bc7eaf93e1",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3414,
+            "original_lines": 92,
+            "returned_lines": 93,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4878,
+            "original_lines": 122,
+            "returned_lines": 123,
+            "added_lines": 6,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G3r3",
+      "base_case_id": "G3",
+      "arm": "multi",
+      "repeat": 3,
+      "paths": [
+        "src/fs-safety.ts",
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 21742,
+      "estimated_output_tokens": 6212,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 2 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 89112,
+        "prompt_tokens": 5728,
+        "completion_tokens": 5509,
+        "raw_bytes": 21891,
+        "raw_sha256_16": "d4d17d3d4ad5016c",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/fs-safety.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 9613,
+            "returned_bytes": 9646,
+            "original_lines": 280,
+            "returned_lines": 281,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          },
+          {
+            "path": "src/cost/transcript.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 12129,
+            "returned_bytes": 12162,
+            "original_lines": 332,
+            "returned_lines": 333,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    }
+  ]
+}

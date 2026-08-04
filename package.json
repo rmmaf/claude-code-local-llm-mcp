@@ -10,7 +10,8 @@
   },
   "type": "module",
   "bin": {
-    "local-coder-mcp": "dist/server.js"
+    "local-coder-mcp": "dist/server.js",
+    "local-coder-cost-meter": "dist/cost/cli.js"
   },
   "files": [
     "dist",
@@ -25,7 +26,8 @@
     "prepare": "npm run build",
     "pretest": "npm run build",
     "test": "vitest run",
-    "smoke-test": "tsx scripts/smoke-test.ts"
+    "smoke-test": "tsx scripts/smoke-test.ts",
+    "cost-meter": "tsx src/cost/cli.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

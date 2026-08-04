@@ -5,7 +5,9 @@ import { runGeneration, type GenerationResult, type ToolDeps } from "./shared.js
 
 export const implementToolName = "implement";
 
-export const implementToolDescription = `Delegate a well-specified coding task to the local LLM (LM Studio) and get back a reviewable unified diff. You send a tight spec plus RELATIVE FILE PATHS; this server reads the files from disk itself, prompts the local model, and returns only a git-apply-compatible diff and a short summary — file contents never enter your context, which is the whole point.
+export const implementToolDescription = `SECONDARY — delegating the WRITING saves the smallest part of a session's cost (generated tokens are ~10% of the bill, and the diff still enters your context afterwards). The large savings come from \`gate\` and \`repair\`, which keep build output out of context and collapse the fix loop. Reach for \`implement\` when the task is genuinely bulk mechanical authoring, not as the default.
+
+Delegate a well-specified coding task to the local LLM (LM Studio) and get back a reviewable unified diff. You send a tight spec plus RELATIVE FILE PATHS; this server reads the files from disk itself, prompts the local model, and returns only a git-apply-compatible diff and a short summary — file contents never enter your context, which is the whole point.
 
 Use it for: multi-file implementations from a clear spec, boilerplate, test generation, mechanical refactors, docstrings — token-heavy work a strong local model handles well when the spec is precise.
 

@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import type { CommandRunner } from "./exec.js";
 import { getLmsModels, type LmsLoadedModel, type LmsModel } from "./lms.js";
+import { listModels, type FetchLike } from "./llm-client.js";
 import { log } from "./logger.js";
 import { bytesToGb, getMemoryInfo, type MemoryInfo } from "./memory.js";
 import { DEFAULT_MODEL_CATALOG, type ModelEntry } from "./models-csv.js";
@@ -14,7 +15,16 @@ export function normalizeId(s: string): string {
 
 // Quant/format/precision tokens that distinguish the same base model. Stripped
 // only for fuzzy matching, never to pick which quant actually runs.
-const QUANT_SUFFIX_RE = /(?:-(?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\d+(?:_k(?:_[ms])?)?)|-v\d+)+$/gi;
+//
+// LM Studio spells the separator both ways — "-" in qwen…-instruct-mlx and "@"
+// in qwen…-instruct-mlx@8bit or qwen…-instruct@q4_k_m — so either is accepted,
+// and the trailing `+` lets a mixed run ("-mlx@8bit") come off in one bite.
+// Two things keep this from loosening the match: the token list is closed, so a
+// parameter count ("-14b") is not strippable and 14b never collapses into 32b;
+// and it is anchored at `$`, so an "@" mid-id is not a trailing suffix and
+// survives. Not global — `$` admits one match, and the flag would only leave
+// `lastIndex` state for a future `.test()` to trip over.
+const QUANT_SUFFIX_RE = /(?:[-@](?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\d+(?:_k(?:_[ms])?)?|v\d+))+$/i;
 
 /** Candidate forms for fuzzy comparison: full, basename, and quant-stripped variants. */
 function fuzzyForms(id: string): Set<string> {
@@ -54,6 +64,16 @@ export function matchModel(
 export interface ModelReport {
   model: string;
   objective: string;
+  /**
+   * The id to actually SEND: the `/models` candidate this catalog entry matched,
+   * which is not the catalog id whenever the match was fuzzy. LM Studio spells
+   * quantisation in the id, so the catalog can say `…-14b-instruct` while the
+   * only thing served is `…-14b-instruct-mlx@8bit`. Reporting the entry as
+   * available on that match and then sending the catalog id asks for a model
+   * that does not exist. Falls back to the catalog id when `/models` was not
+   * consulted, which is the best that can be said then.
+   */
+  resolvedId: string;
   /** Present in `/models`? null when the endpoint was unreachable. */
   available: boolean | null;
   availableMatch: MatchQuality;
@@ -71,6 +91,8 @@ export interface ModelReport {
 export interface SerializedReport {
   model: string;
   objective: string;
+  /** The id that would actually be sent; differs from `model` on a fuzzy match. */
+  resolved_id: string;
   available: boolean | null;
   available_match: MatchQuality;
   size_gb: number | null;
@@ -84,6 +106,7 @@ export function serializeReport(r: ModelReport): SerializedReport {
   return {
     model: r.model,
     objective: r.objective,
+    resolved_id: r.resolvedId,
     available: r.available,
     available_match: r.availableMatch,
     size_gb: r.sizeGb,
@@ -118,8 +141,10 @@ export function buildCatalogReport(
   return catalog.map((entry) => {
     let available: boolean | null = null;
     let availableMatch: MatchQuality = "none";
+    let resolvedId = entry.model;
     if (apiModelIds !== null) {
       const m = matchModel(entry.model, apiModelIds);
+      if (m.value !== null) resolvedId = m.value;
       available = m.value !== null;
       availableMatch = m.quality;
     }
@@ -148,6 +173,7 @@ export function buildCatalogReport(
     return {
       model: entry.model,
       objective: entry.objective,
+      resolvedId,
       available,
       availableMatch,
       sizeBytes,
@@ -178,14 +204,27 @@ export function selectModelForMemory(report: ModelReport[], catalog: ModelEntry[
     for (const r of fitting) {
       if ((r.sizeBytes ?? 0) > (best.sizeBytes ?? 0)) best = r;
     }
-    return { model: best.model, reason: `largest catalog model fitting usable free RAM (${best.sizeGb} GB): ${best.model}` };
+    // Send what `/models` serves, not what the catalog calls it. Naming both
+    // when they differ, because a fuzzy match is the one case where the id in
+    // the request is not the id the user wrote down.
+    const via = best.resolvedId === best.model ? "" : ` (served as ${best.resolvedId})`;
+    return {
+      model: best.resolvedId,
+      reason: `largest catalog model fitting usable free RAM (${best.sizeGb} GB): ${best.model}${via}`,
+    };
   }
   const first = catalog[0] ?? DEFAULT_MODEL_CATALOG[0]!;
+  // Same rule on the fallback path: if `/models` matched this entry, that is
+  // the id being served, whatever the catalog calls it. Sizes being unknown
+  // says nothing about which spelling the endpoint answers to.
+  const firstRow = report.find((r) => r.model === first.model);
+  const sendable = firstRow?.resolvedId ?? first.model;
+  const via = sendable === first.model ? "" : ` (served as ${sendable})`;
   const anySize = report.some((r) => r.sizeBytes !== null);
   const reason = anySize
-    ? `no catalog model fit usable free RAM; falling back to the first configured model: ${first.model}`
-    : `no model sizes available (is \`lms\` installed and are the models downloaded?); falling back to the first configured model: ${first.model}`;
-  return { model: first.model, reason };
+    ? `no catalog model fit usable free RAM; falling back to the first configured model: ${first.model}${via}`
+    : `no model sizes available (is \`lms\` installed and are the models downloaded?); falling back to the first configured model: ${first.model}${via}`;
+  return { model: sendable, reason };
 }
 
 export interface MultiSelection {
@@ -225,7 +264,7 @@ export function selectModelsForMemory(
   if (usableFreeBytes === null) {
     const picked = ordered.slice(0, count);
     return {
-      models: picked.map((r) => r.model),
+      models: picked.map((r) => r.resolvedId),
       totalGb: bytesToGb(picked.reduce((s, r) => s + (r.sizeBytes ?? 0), 0)),
       fits: false,
       reason: `memory unknown; listing the ${picked.length} largest sized model(s) without a fit guarantee`,
@@ -243,7 +282,7 @@ export function selectModelsForMemory(
     }
   }
   return {
-    models: picked.map((r) => r.model),
+    models: picked.map((r) => r.resolvedId),
     totalGb: bytesToGb(sum),
     fits: picked.length === count,
     reason:
@@ -257,7 +296,26 @@ export function selectModelsForMemory(
 export interface SelectionDeps {
   runner?: CommandRunner;
   platform?: NodeJS.Platform;
+  /** Present only to detect that the caller controls fetch — never used to probe. */
+  fetchImpl?: FetchLike;
+  /**
+   * Milliseconds left on the caller's hard deadline. `repair` sets one and
+   * enforces it round by round; a probe that ignored it could spend seconds
+   * before generation even starts and push the whole call past the wall.
+   */
+  remainingMs?: () => number;
+  /**
+   * ONLY for the `/models` probe below — deliberately not the same field the
+   * chat client uses. Sharing one fetch made this probe consume a queued test
+   * response meant for the generation call, so every later request shifted by
+   * one. `DECISIONS.md`: an injection point belongs to one collaborator, and
+   * sharing it makes each caller a function of every other caller's call count.
+   */
+  modelsFetchImpl?: FetchLike;
 }
+
+/** Short on purpose: this runs before every auto-selected generation. */
+const RESOLVE_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Resolve which model a work tool (implement/fix/scaffold) should run. An
@@ -282,7 +340,40 @@ export async function resolveModel(
   const catalog = config.models.length > 0 ? config.models : DEFAULT_MODEL_CATALOG;
   const memory = await getMemoryInfo(deps.runner, deps.platform);
   const lms = await getLmsModels(deps.runner);
-  const report = buildCatalogReport(catalog, null, lms, null, usableFree(memory, config.memFitFraction));
+  // Ask what is actually served. Passing null here was the whole defect: the
+  // report then had nothing to resolve against, so an entry matched only by a
+  // quant spelling was requested under the catalog name and the generation
+  // failed on a model that does not exist. A probe failure degrades to null,
+  // which is the old behaviour and the honest answer — we did not find out.
+  // A caller that injected a chat fetch controls this process's network
+  // surface; reaching past it to the real endpoint would make the offline test
+  // suite depend on whatever happens to be listening on localhost — green on a
+  // machine running LM Studio, different elsewhere. Probe only with a fetch we
+  // were actually handed, or the real one when nothing was injected at all.
+  const probeFetch = deps.modelsFetchImpl ?? (deps.fetchImpl === undefined ? fetch : null);
+  // The probe spends wall-clock before generation starts, so it comes out of
+  // the caller's deadline like anything else. With nothing left it is skipped
+  // outright: sending the catalog id may fail, but blowing a hard budget on a
+  // lookup is the one outcome the deadline exists to prevent.
+  const remaining = deps.remainingMs?.() ?? Number.POSITIVE_INFINITY;
+  let apiModelIds: string[] | null = null;
+  if (probeFetch !== null && remaining > 0) {
+    try {
+      apiModelIds = await listModels(
+        config.baseUrl,
+        Math.min(config.timeoutMs, RESOLVE_PROBE_TIMEOUT_MS, remaining),
+        probeFetch
+      );
+    } catch (error) {
+      log.warn(
+        `selection: could not list served models (${error instanceof Error ? error.message : String(error)}); ` +
+          `sending the catalog id as written`
+      );
+    }
+  } else if (probeFetch !== null) {
+    log.warn("selection: no budget left to list served models; sending the catalog id as written");
+  }
+  const report = buildCatalogReport(catalog, apiModelIds, lms, null, usableFree(memory, config.memFitFraction));
   const selection = selectModelForMemory(report, catalog);
   log.info(`selection: auto-picked ${selection.model} (${selection.reason})`);
   return selection;

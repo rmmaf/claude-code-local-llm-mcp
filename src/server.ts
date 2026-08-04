@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
+import { ensureClaudeMd } from "./claude-md.js";
 import { loadConfig } from "./config.js";
 import { ToolError } from "./fs-safety.js";
 import { log } from "./logger.js";
@@ -23,6 +24,13 @@ import {
   runImplement,
 } from "./tools/implement.js";
 import { fixInputSchema, fixToolDescription, fixToolName, runFix } from "./tools/fix.js";
+import { gateInputSchema, gateToolDescription, gateToolName, runGate } from "./tools/gate.js";
+import {
+  repairInputSchema,
+  repairToolDescription,
+  repairToolName,
+  runRepair,
+} from "./tools/repair.js";
 import {
   modelsInputSchema,
   modelsToolDescription,
@@ -96,6 +104,14 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   config.models = await loadModelCatalog(config.modelsCsvPath);
+
+  // At startup rather than on the first tool call, and the distinction is the
+  // whole point: the behaviour this fixes IS "nobody calls the tools", so
+  // hanging the fix off a tool call would skip exactly the sessions that need
+  // it. Starting the server is the first contact that always happens. It never
+  // throws — `status` reports whatever it did.
+  const claudeMd = await ensureClaudeMd(config);
+
   const server = new McpServer({ name: "local-coder", version });
 
   server.registerTool(
@@ -128,6 +144,34 @@ async function main(): Promise<void> {
     async (args) => {
       try {
         return jsonResult(await runScaffold(args, config));
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    gateToolName,
+    { title: "Run project checks, return only failures", description: gateToolDescription, inputSchema: gateInputSchema },
+    async (args) => {
+      try {
+        return jsonResult(await runGate(args, config));
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    repairToolName,
+    {
+      title: "Fix failing checks locally in a loop",
+      description: repairToolDescription,
+      inputSchema: repairInputSchema,
+    },
+    async (args) => {
+      try {
+        return jsonResult(await runRepair(args, config));
       } catch (error) {
         return errorResult(error);
       }
@@ -170,7 +214,8 @@ async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
   log.info(
     `local-coder v${version} ready (root=${config.root}, endpoint=${config.baseUrl}, ` +
-      `models_csv=${config.modelsCsvPath ?? "(built-in defaults)"}, catalog=${config.models.length} model(s))`
+      `models_csv=${config.modelsCsvPath ?? "(built-in defaults)"}, catalog=${config.models.length} model(s), ` +
+      `claude_md=${claudeMd.state})`
   );
 }
 

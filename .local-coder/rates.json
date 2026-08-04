@@ -1,0 +1,51 @@
+{
+  "_comment": [
+    "Token pricing for scripts/cost-meter.ts.",
+    "",
+    "`multipliers` are structural — they follow from how prompt caching is billed,",
+    "not from any one model's price sheet — so they rarely need touching.",
+    "",
+    "`inputPerMTok` is USD per million INPUT tokens and starts null on purpose:",
+    "a stale hardcoded price silently corrupts every dollar figure, while a",
+    "missing one makes the report fall back to input-equivalent units, which are",
+    "exact. Filled in 2026-08-03 from Anthropic's published API pricing.",
+    "",
+    "The multipliers above were checked against that same source and match it",
+    "exactly: output is 5x input on every model listed, cache read is 0.1x, and",
+    "cache write is 1.25x (5m TTL) / 2.0x (1h TTL). No per-model override needed.",
+    "",
+    "DATED: claude-sonnet-5 is at introductory pricing of $2.00/MTok through",
+    "2026-08-31 and reverts to $3.00 on 2026-09-01. The value below is the",
+    "introductory one — after that date it reads ~33% low until changed.",
+    "",
+    "A key of the form `model@speed` prices Claude Code's fast mode, which bills",
+    "Opus at twice the standard rate while reporting the same model string. Any",
+    "speed with no entry here is UNPRICED, not standard-priced: the session's usd",
+    "comes back null rather than half the real figure. Fast mode exists on",
+    "claude-opus-5 and claude-opus-4-8 only — it was removed from opus-4-7.",
+    "",
+    "`charsPerToken` is used ONLY to turn suppressed byte counts into an estimated",
+    "token count. Nothing in the absolute accounting depends on it."
+  ],
+  "multipliers": {
+    "input": 1.0,
+    "cacheWrite1h": 2.0,
+    "cacheWrite5m": 1.25,
+    "cacheRead": 0.1,
+    "output": 5.0
+  },
+  "models": {
+    "claude-opus-5": { "inputPerMTok": 5.0 },
+    "claude-opus-5@fast": { "inputPerMTok": 10.0 },
+    "claude-opus-4-8": { "inputPerMTok": 5.0 },
+    "claude-opus-4-8@fast": { "inputPerMTok": 10.0 },
+    "claude-opus-4-7": { "inputPerMTok": 5.0 },
+    "claude-opus-4-6": { "inputPerMTok": 5.0 },
+    "claude-sonnet-5": { "inputPerMTok": 2.0 },
+    "claude-sonnet-4-6": { "inputPerMTok": 3.0 },
+    "claude-haiku-4-5": { "inputPerMTok": 1.0 },
+    "claude-haiku-4-5-20251001": { "inputPerMTok": 1.0 },
+    "claude-fable-5": { "inputPerMTok": 10.0 }
+  },
+  "charsPerToken": 3.7
+}

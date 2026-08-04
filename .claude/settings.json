@@ -1,0 +1,4 @@
+{
+  "_comment": "The PostToolUse hook that used to filter Bash output is UNREGISTERED. B2 fell (run 2026-08-02-win-03): the hook ran, filtered, and its replacement never reached the transcript — 30,000 characters of raw output landed instead. See ROADMAP.md G2 for the reopening condition. hooks/filter-tool-output.mjs is kept on disk so that retest stays cheap; it does nothing while it is not registered here.",
+  "hooks": {}
+}

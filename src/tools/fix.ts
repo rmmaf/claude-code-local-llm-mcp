@@ -6,7 +6,9 @@ import { runGeneration, type GenerationResult, type ToolDeps } from "./shared.js
 
 export const fixToolName = "fix";
 
-export const fixToolDescription = `The local repair loop: hand a concrete failure (test, compiler, or linter output) back to the local LLM for a MINIMAL targeted fix, returned as a reviewable unified diff. Same contract as implement — you send a spec, relative file paths, and the verbatim error output; the server reads files from disk and returns only a diff plus summary. File contents never enter your context.
+export const fixToolDescription = `SECONDARY — prefer \`repair\`, which runs this same engine in a loop against the project's own checks and returns one diff instead of costing you a turn per attempt. Use \`fix\` only when you have error output the gate cannot produce, or when you want exactly one attempt with no writes.
+
+Hand a concrete failure (test, compiler, or linter output) back to the local LLM for a MINIMAL targeted fix, returned as a reviewable unified diff. Same contract as implement — you send a spec, relative file paths, and the verbatim error output; the server reads files from disk and returns only a diff plus summary. File contents never enter your context.
 
 Use it when: tests, type-checking, or lint fail on code the local model produced (or on similarly mechanical breakage) and the error output points clearly at the problem.
 

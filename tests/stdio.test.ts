@@ -1,7 +1,7 @@
 /**
  * Integration test against the REAL built server over stdio. Proves:
  *  - the entrypoint responds to MCP initialize and tools/list
- *  - exactly the five tools are exposed, with schemas
+ *  - exactly the seven tools are exposed, with schemas
  *  - a real tools/call round-trip works (status, against a dead endpoint)
  *  - stdout purity: every byte on stdout is JSON-RPC — no stray logging
  */
@@ -91,14 +91,22 @@ describe("stdio server integration", () => {
     expect(init?.result?.serverInfo?.name).toBe("local-coder");
   });
 
-  it("exposes exactly the five tools with complete schemas", () => {
+  it("exposes exactly the seven tools with complete schemas", () => {
     const list = messages.find((m) => m.id === 2);
     const tools = list?.result?.tools as Array<{
       name: string;
       description?: string;
       inputSchema?: { properties?: Record<string, unknown>; required?: string[] };
     }>;
-    expect(tools.map((t) => t.name).sort()).toEqual(["fix", "implement", "models", "scaffold", "status"]);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "fix",
+      "gate",
+      "implement",
+      "models",
+      "repair",
+      "scaffold",
+      "status",
+    ]);
 
     const byName = new Map(tools.map((t) => [t.name, t]));
     for (const tool of tools) {
@@ -115,6 +123,20 @@ describe("stdio server integration", () => {
       ["model", "spec", "target_path"]
     );
     expect(Object.keys(byName.get("models")!.inputSchema!.properties!)).toContain("concurrent_models");
+    expect(Object.keys(byName.get("gate")!.inputSchema!.properties!).sort()).toEqual([
+      "checks",
+      "max_failures",
+    ]);
+    expect(Object.keys(byName.get("repair")!.inputSchema!.properties!).sort()).toEqual([
+      "budget_seconds",
+      "checks",
+      "context_files",
+      "files",
+      "max_rounds",
+      "model",
+      "spec",
+    ]);
+    expect(byName.get("repair")!.inputSchema!.required!.sort()).toEqual(["files", "spec"]);
   });
 
   it("serves a real tools/call round-trip (status against a dead endpoint)", () => {

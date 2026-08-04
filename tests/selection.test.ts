@@ -47,9 +47,87 @@ describe("matchModel", () => {
     ).toBe("fuzzy");
   });
 
+  it("strips quant suffixes spelled with LM Studio's \"@\" separator", () => {
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@8bit"]).quality).toBe("fuzzy");
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@4bit"]).quality).toBe("fuzzy");
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@q4_k_m"]).quality).toBe("fuzzy");
+    // A mixed "-" then "@" run, which is what `lms ls` actually prints.
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct-mlx@8bit"]).quality).toBe("fuzzy");
+    // Publisher prefix and "@" quant at once: basename split, then strip.
+    expect(
+      matchModel("qwen2.5-coder-14b-instruct", ["lmstudio-community/qwen2.5-coder-14b-instruct-mlx@8bit"]).quality
+    ).toBe("fuzzy");
+    // And the other direction: the catalog carries the quant, the candidate doesn't.
+    expect(matchModel("qwen2.5-coder-14b-instruct@8bit", ["qwen2.5-coder-14b-instruct"]).quality).toBe("fuzzy");
+  });
+
+  it("returns the candidate id verbatim, quant suffix included", () => {
+    // Stripping is for comparison only. The id that comes back is what gets
+    // sent to LM Studio, so dropping the quant here would silently load a
+    // different quantization than the one on disk.
+    const r = matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct-mlx@8bit"]);
+    expect(r.value).toBe("qwen2.5-coder-14b-instruct-mlx@8bit");
+  });
+
+  it("still prefers an exact match over a stripped one", () => {
+    const r = matchModel("qwen2.5-coder-14b-instruct@8bit", [
+      "qwen2.5-coder-14b-instruct",
+      "qwen2.5-coder-14b-instruct@8bit",
+    ]);
+    expect(r).toEqual({ value: "qwen2.5-coder-14b-instruct@8bit", quality: "exact" });
+  });
+
   it("does not collide different parameter sizes", () => {
     expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-32b-instruct"]).quality).toBe("none");
     expect(matchModel("qwen2.5-coder-14b", ["llama-3-8b"]).value).toBeNull();
+  });
+
+  it("sends the id LM Studio serves, not the one the catalog wrote down", () => {
+    // The whole point of matching a quant spelling: an entry reported available
+    // on a fuzzy match has to be REQUESTED under the id that matched. Sending
+    // the catalog id asks for a model the endpoint does not have, and the
+    // failure surfaces at generation time as a missing model rather than here.
+    const catalog = [{ model: "qwen2.5-coder-14b-instruct", objective: "x" }];
+    const served = ["qwen2.5-coder-14b-instruct-mlx@8bit"];
+    const lms = [
+      { id: served[0]!, ids: [served[0]!], sizeBytes: 15_000_000_000, quantization: null, path: null },
+    ];
+    const report = buildCatalogReport(catalog, served, lms, null, 30_000_000_000);
+    expect(report[0]!.available).toBe(true);
+    expect(report[0]!.model).toBe("qwen2.5-coder-14b-instruct");
+    expect(report[0]!.resolvedId).toBe(served[0]);
+    expect(selectModelForMemory(report, catalog).model).toBe(served[0]);
+  });
+
+  it("keeps the catalog id when /models was never consulted", () => {
+    const catalog = [{ model: "qwen2.5-coder-14b-instruct", objective: "x" }];
+    const report = buildCatalogReport(catalog, null, null, null, null);
+    expect(report[0]!.available).toBeNull();
+    expect(report[0]!.resolvedId).toBe("qwen2.5-coder-14b-instruct");
+  });
+
+  it("resolves the id on the no-sizes fallback path too", () => {
+    // Sizes unknown says nothing about which spelling the endpoint answers to.
+    const catalog = [{ model: "qwen2.5-coder-14b-instruct", objective: "x" }];
+    const served = ["qwen2.5-coder-14b-instruct-mlx@8bit"];
+    const report = buildCatalogReport(catalog, served, null, null, null);
+    const sel = selectModelForMemory(report, catalog);
+    expect(sel.model).toBe(served[0]);
+    expect(sel.reason).toContain("served as");
+  });
+
+  it("does not let \"@\" stripping blur models apart", () => {
+    // Quant distinguishes one base model; a different parameter count is a
+    // different model, on either side of the separator.
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-32b-instruct@8bit"]).quality).toBe("none");
+    expect(matchModel("qwen2.5-coder-14b-instruct@8bit", ["qwen2.5-coder-32b-instruct@q4_k_m"]).quality).toBe("none");
+    // Only a *known quant token* comes off, not whatever follows an "@" — the
+    // guard against this degrading into a plain split on "@".
+    expect(matchModel("qwen2.5-coder-14b-instruct", ["qwen2.5-coder-14b-instruct@turbo"]).quality).toBe("none");
+    // An "@" mid-id is not a trailing suffix and survives, even when a real
+    // quant suffix is stripped from the same id.
+    expect(matchModel("qwen2.5@8bit-coder-14b-instruct", ["qwen2.5-coder-14b-instruct"]).quality).toBe("none");
+    expect(matchModel("qwen2.5@8bit-coder-14b-instruct-mlx", ["qwen2.5-coder-14b-instruct"]).quality).toBe("none");
   });
 });
 
@@ -151,6 +229,92 @@ describe("resolveModel", () => {
     });
     const sel = await resolveModel(undefined, config, { platform: "darwin", runner });
     expect(sel.model).toBe("test-ide-model"); // 18 GB doesn't fit 13.6, 8 GB does
+  });
+
+  it("sends the served spelling on the generation path, not the catalog one", async () => {
+    // The path a work tool takes when `model` is omitted. It used to pass null
+    // for the served ids, so nothing could be resolved and the catalog name
+    // went out to an endpoint that does not answer to it.
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model-mlx@8bit", sizeBytes: 8 * GB }]),
+    });
+    const served = { data: [{ id: "test-ide-model-mlx@8bit" }] };
+    const modelsFetchImpl = async () =>
+      new Response(JSON.stringify(served), { status: 200, headers: { "content-type": "application/json" } });
+    const sel = await resolveModel(undefined, config, { platform: "darwin", runner, modelsFetchImpl });
+    expect(sel.model).toBe("test-ide-model-mlx@8bit");
+    expect(sel.reason).toContain("served as");
+  });
+
+  it("skips the probe when the caller has no budget left", async () => {
+    // repair enforces a hard wall-clock deadline round by round. A lookup that
+    // ignored it could spend seconds before generation even starts.
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model-mlx@8bit", sizeBytes: 8 * GB }]),
+    });
+    let probed = 0;
+    const modelsFetchImpl = async () => {
+      probed++;
+      return new Response(JSON.stringify({ data: [{ id: "test-ide-model-mlx@8bit" }] }), { status: 200 });
+    };
+    const sel = await resolveModel(undefined, config, {
+      platform: "darwin",
+      runner,
+      modelsFetchImpl,
+      remainingMs: () => 0,
+    });
+    expect(probed).toBe(0);
+    // Degrades to the catalog id, which is the honest answer when we could not look.
+    expect(sel.model).toBe("test-ide-model");
+  });
+
+  it("caps the probe timeout by the remaining budget", async () => {
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model-mlx@8bit", sizeBytes: 8 * GB }]),
+    });
+    // Never resolves: only a timeout shorter than the test's own patience ends it.
+    const modelsFetchImpl = (_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    const started = Date.now();
+    const sel = await resolveModel(undefined, config, {
+      platform: "darwin",
+      runner,
+      modelsFetchImpl: modelsFetchImpl as never,
+      remainingMs: () => 50,
+    });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(sel.model).toBe("test-ide-model");
+  });
+
+  it("does not reach the network when the caller injected a fetch", async () => {
+    // An injected chat fetch means the caller owns this process's network
+    // surface. Probing past it would make the offline suite depend on whatever
+    // is listening on localhost — green on a machine running LM Studio only.
+    const config = testConfig("/tmp");
+    const runner = fakeRunner({
+      sysctl: () => `${64 * GB}\n`,
+      memory_pressure: () => "System-wide memory free percentage: 90%\n",
+      lms: () => lmsListBody([{ id: "test-ide-model", sizeBytes: 8 * GB }]),
+    });
+    let called = 0;
+    const fetchImpl = async () => {
+      called++;
+      return new Response("{}", { status: 200 });
+    };
+    const sel = await resolveModel(undefined, config, { platform: "darwin", runner, fetchImpl });
+    expect(called).toBe(0);
+    expect(sel.model).toBe("test-ide-model");
   });
 
   it("auto-picks the largest fitting model when RAM is ample", async () => {
