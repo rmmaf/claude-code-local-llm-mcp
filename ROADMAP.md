@@ -163,6 +163,14 @@ What may be built next, and the number that decides it.
 - **Active-gate count:** **six active** (G3, G4, G5, G6, G7, G-stop) since G2
   closed. **G7 takes the last slot under the ceiling of 6** — a seventh needs
   one of these to close or become moot first.
+- **Correction: that count omits G1, which is `open (reopened)`.** By the state
+  list at the top of this file `open` is live, so the board is at **seven** and
+  has been since B1 fell — the ceiling was breached by a reopening, which is the
+  one way it can happen without anyone deciding to. Recorded rather than
+  silently renumbered, and **the practical rule is unchanged**: nothing new may
+  be opened. Which of "active" or "reopened counts differently" the ceiling
+  actually means is a real ambiguity in this file, and resolving it is a
+  decision, not a typo fix.
 
 ## G-stop — STOPPING CRITERION · `open`
 

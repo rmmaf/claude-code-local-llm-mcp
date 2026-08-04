@@ -1,3 +1,4 @@
+import { getClaudeMdState, type ClaudeMdResult } from "../claude-md.js";
 import type { Config } from "../config.js";
 import { getLmsModels, getLoadedLmsModels } from "../lms.js";
 import { listModels } from "../llm-client.js";
@@ -36,6 +37,12 @@ export interface StatusResult {
     fit_fraction: number;
   } | null;
   auto_selection: { model: string; reason: string };
+  /**
+   * What the startup install of the delegation policy did, or null when it has
+   * not run in this process. Read-only: `status` reports the outcome, it never
+   * writes. See `src/claude-md.ts`.
+   */
+  claude_md: ClaudeMdResult | null;
   config: {
     base_url: string;
     models_csv_path: string | null;
@@ -98,6 +105,7 @@ export async function runStatus(config: Config, deps: ToolDeps = {}): Promise<St
         }
       : null,
     auto_selection: autoSelection,
+    claude_md: getClaudeMdState(),
     config: {
       base_url: config.baseUrl,
       models_csv_path: config.modelsCsvPath,

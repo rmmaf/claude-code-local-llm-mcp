@@ -457,6 +457,171 @@ describe("gate tool", () => {
   });
 });
 
+/**
+ * `run 2026-08-04-mac-10` returned green on a program that did not run, because
+ * the delegated work sat outside every configured check and no field said so.
+ * These pin the field that makes that visible — and pin what it refuses to
+ * claim, which is the half that keeps it honest.
+ */
+describe("coverage", () => {
+  it("reports the exact command line of every check that ran", async () => {
+    const root = tempRoot();
+    await withChecks(root, [
+      { name: "tsc", category: "types", kind: "tsc", command: "npx", args: ["tsc", "--noEmit"] },
+      { name: "vitest", category: "test", kind: "vitest", command: "npm", args: ["test", "--silent"] },
+    ]);
+    const result = await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({ tsc: { code: 0 }, test: { code: 0 }, git: { stdout: "" } }),
+    });
+
+    expect(result.coverage.commands).toEqual(["npx tsc --noEmit", "npm test --silent"]);
+    expect(result.coverage.autodetected).toBe(false);
+  });
+
+  it("narrows commands to the selected category, so it never overstates the run", async () => {
+    const root = tempRoot();
+    await withChecks(root, [
+      { name: "tsc", category: "types", kind: "tsc", command: "npx", args: ["tsc"] },
+      { name: "vitest", category: "test", kind: "vitest", command: "npx", args: ["vitest"] },
+    ]);
+    const result = await runGate({ checks: "types" }, testConfig(root), {
+      processRunner: fakeProcess({ tsc: { code: 0 }, git: { stdout: "" } }),
+    });
+
+    // The test check never ran, so it must not appear as something examined.
+    expect(result.coverage.commands).toEqual(["npx tsc"]);
+  });
+
+  it("lists changed files, tracked and untracked, resolving renames to the new name", async () => {
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+    const result = await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({
+        tsc: { code: 0 },
+        git: {
+          stdout: " M src/a.ts\n?? tetris/game.js\nR  src/old.ts -> src/new.ts\nA  src/b.ts\n",
+        },
+      }),
+    });
+
+    // The untracked entry is the point: `git diff HEAD` cannot see a freshly
+    // scaffolded directory, which is exactly the shape mac-10 failed on.
+    expect(result.coverage.changed_files).toEqual([
+      "src/a.ts",
+      "tetris/game.js",
+      "src/new.ts",
+      "src/b.ts",
+    ]);
+  });
+
+  it("degrades to null when git cannot answer, rather than failing the run", async () => {
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+    // No `git` handler: this runner THROWS on it, standing in for no git, no
+    // repository, or a git too old. Reporting coverage may never turn a gate
+    // run that worked into a failed tool call.
+    const result = await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({ tsc: { code: 0 } }),
+    });
+
+    expect(result.coverage.changed_files).toBeNull();
+    expect(result.passed).toBe(true);
+    expect(result.coverage.commands).toEqual(["npx tsc --noEmit"]);
+  });
+
+  it("says so when the checks were guessed from disk rather than configured", async () => {
+    const root = tempRoot();
+    // No .local-coder/checks.json — detectChecks infers from package.json.
+    await writeFileTree(root, { "package.json": JSON.stringify({ scripts: { test: "vitest run" } }) });
+    const result = await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({ test: { code: 0 }, git: { stdout: "" } }),
+    });
+
+    expect(result.coverage.autodetected).toBe(true);
+    expect(result.checks_autodetected).toBe(true);
+  });
+
+  /**
+   * The probe is bookkeeping and must never outlive the deadline its caller
+   * set. `repair` hands `gate` what is left of its own budget precisely so that
+   * nothing inside can overrun it; a fixed-timeout git call would have been a
+   * hole in that contract on every round.
+   */
+  it("skips the probe rather than overrunning an exhausted budget", async () => {
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+
+    const timeouts: number[] = [];
+    let clock = 0;
+    const processRunner: ProcessRunner = async (_command, _args, options) => {
+      timeouts.push(options.timeoutMs);
+      clock += 5_000;
+      return { stdout: "", stderr: "", code: 0, timedOut: false };
+    };
+
+    const result = await runGate({}, testConfig(root), {
+      processRunner,
+      now: () => clock,
+      budgetMs: 1_000,
+    });
+
+    // One entry: the check. The probe saw no time left and did not run.
+    expect(timeouts).toEqual([1_000]);
+    expect(result.coverage.changed_files).toBeNull();
+  });
+
+  it("caps the probe by what is left of the budget when there is some", async () => {
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+
+    const timeouts: number[] = [];
+    const processRunner: ProcessRunner = async (_command, _args, options) => {
+      timeouts.push(options.timeoutMs);
+      return { stdout: "", stderr: "", code: 0, timedOut: false };
+    };
+
+    await runGate({}, testConfig(root), { processRunner, now: () => 0, budgetMs: 2_000 });
+
+    // The check took its 2 s cap, and the probe was held to the same remainder
+    // rather than to git's own 15 s ceiling.
+    expect(timeouts).toEqual([2_000, 2_000]);
+  });
+
+  it("does not probe at all for repair's inner runs", async () => {
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+
+    const commands: string[] = [];
+    const processRunner: ProcessRunner = async (command) => {
+      commands.push(command);
+      return { stdout: "", stderr: "", code: 0, timedOut: false };
+    };
+
+    const result = await runGate({}, testConfig(root), {
+      processRunner,
+      probeChangedFiles: false,
+    });
+
+    expect(commands).not.toContain("git");
+    expect(result.coverage.changed_files).toBeNull();
+    // Commands stay populated: they cost nothing and are what the caller needs.
+    expect(result.coverage.commands).toEqual(["npx tsc --noEmit"]);
+  });
+
+  it("counts itself: the coverage field is inside the bytes the call reports", async () => {
+    const root = tempRoot();
+    await withChecks(root, TSC_CHECK);
+    const result = await runGate({}, testConfig(root), {
+      processRunner: fakeProcess({ tsc: { code: 0 }, git: { stdout: " M src/a.ts\n" } }),
+    });
+
+    // bytes_returned is measured with the field populated, so a caller reading
+    // it is not told a smaller number than the payload it actually received.
+    expect(result.bytes_returned).toBeGreaterThan(JSON.stringify(result.coverage).length);
+    expect(result.coverage.changed_files).toEqual(["src/a.ts"]);
+  });
+});
+
 describe("corpus capture", () => {
   const RED = "src/a.ts(3,10): error TS2345: wrong operand.\nsrc/b.ts(9,2): error TS2304: Cannot find name 'x'.";
 

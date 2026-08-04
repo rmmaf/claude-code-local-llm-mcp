@@ -8,20 +8,22 @@ import { loadChecks, type CheckCategory, type CheckSpec } from "../checks/config
 import { dedupe, parseFailures, type Failure } from "../checks/parsers.js";
 import type { Config } from "../config.js";
 import { createCorpusWriter, type CorpusWriter } from "../corpus.js";
-import { defaultProcessRunner, type ProcessRunner } from "../exec.js";
+import { defaultProcessRunner, runGit, type ProcessRunner } from "../exec.js";
 import { ToolError } from "../fs-safety.js";
 import { log } from "../logger.js";
 import { createTelemetryWriter, type TelemetryWriter } from "../telemetry.js";
 
 export const gateToolName = "gate";
 
-export const gateToolDescription = `Run this project's lint / type-check / test commands and return ONLY the structured failures.
+export const gateToolDescription = `Run this project's configured checks — whichever of lint, type-check and test it has — and return ONLY the structured failures.
 
 Prefer this over running the commands through Bash. It executes every configured check in one call and returns deduplicated failures with path, line and code — instead of thousands of lines of build and test output, all of which would stay in context and be re-read on every later turn.
 
-Full raw output is always preserved on disk and its path is returned, so nothing is lost: read the spill file when you need an exact line.
+Raw output goes to disk when there was any and the write succeeded; \`spill\` has the path, or null. Read it when you need an exact line.
 
-Returns { passed, checks: [{ name, category, passed, exit_code, duration_ms, failures: [{path,line,column,code,message,count}], failure_count, truncated, spill }] }.`;
+\`passed\` means every SELECTED check exited 0 — not that the tree is correct. \`coverage\` returns the commands that ran and the files changed since HEAD: a changed path no command examines is one this result is SILENT about, not one it verified.
+
+Returns { passed, invocation_id, checks_autodetected, bytes_raw, bytes_returned, coverage: {autodetected,commands,changed_files}, checks: [{ name, category, passed, exit_code, timed_out, duration_ms, failures: [{path,line,column,code,message,count}], failure_count, truncated, spill, executed, error }] }.`;
 
 export const gateInputSchema = {
   checks: z
@@ -51,6 +53,18 @@ export interface GateDeps {
    * remains, so a per-check timeout can no longer outlive the caller's deadline.
    */
   budgetMs?: number;
+  /**
+   * Whether to ask git which files changed, for `coverage.changed_files`.
+   * Defaults to true; `repair` turns it OFF, for the same reason it silences the
+   * inner telemetry and passes a no-op corpus. Its loop runs the gate once per
+   * round against a tree only it is editing, so the probe would spend a
+   * subprocess per round to re-answer a question the caller already has — and
+   * it spends it out of the caller's own time budget.
+   *
+   * Off means `changed_files: null`, which is the field's existing "git could
+   * not say" value. `commands` is unaffected: it costs nothing.
+   */
+  probeChangedFiles?: boolean;
   /**
    * Where a red run's parsed failures are archived. Injected so tests can watch
    * it; `repair` passes a no-op, for the same reason it silences the inner
@@ -87,6 +101,33 @@ export interface CheckReport {
   error?: string;
 }
 
+/**
+ * What this run can and cannot speak for.
+ *
+ * `run 2026-08-04-mac-10` is why this exists. Eight hours of delegated work
+ * landed in `tetris/*.js`, which is on the path of neither configured check, so
+ * `gate` returned GREEN on a program that did not run — and the caller had no
+ * field to notice with. `passed` answers "did the selected checks exit 0", and
+ * that had been silently read as "is the tree correct" because nothing in the
+ * payload distinguished them.
+ *
+ * Note what is deliberately absent: any CLAIM about which paths a check covers.
+ * `npx tsc -p tsconfig.json` is knowable; what `npm test` examines is not,
+ * cheaply, and a guess here would re-create the same overstatement one layer
+ * down. So this reports inputs — what ran, what changed — and stops.
+ */
+export interface GateCoverage {
+  /** True when no config file existed and the checks were inferred from disk. */
+  autodetected: boolean;
+  /** The exact command line each selected check ran. What was examined, verbatim. */
+  commands: string[];
+  /**
+   * Files changed since HEAD, or null when git could not answer. A path here
+   * that none of `commands` examines is a path this result is SILENT about.
+   */
+  changed_files: string[] | null;
+}
+
 export interface GateResult {
   passed: boolean;
   /** Unique id for this call, echoed in telemetry so the cost meter joins exactly. */
@@ -94,6 +135,8 @@ export interface GateResult {
   checks: CheckReport[];
   /** True when no config file existed and the checks were inferred from disk. */
   checks_autodetected: boolean;
+  /** The scope of the answer above. See `GateCoverage`. */
+  coverage: GateCoverage;
   bytes_raw: number;
   bytes_returned: number;
 }
@@ -200,6 +243,36 @@ async function runOne(
 }
 
 /**
+ * Files git reports as changed, tracked or not, or null when git could not say.
+ *
+ * `--porcelain` rather than `diff HEAD` because untracked files are exactly the
+ * case that matters here: a freshly scaffolded directory nobody checks is the
+ * shape of `run 2026-08-04-mac-10`, and `diff` cannot see it.
+ *
+ * Null is a real answer — no git, no repo, an injected runner that refuses the
+ * command — and never an error. `runGit` swallows; this only parses.
+ */
+async function changedFiles(
+  runner: ProcessRunner,
+  root: string,
+  timeoutMs: number
+): Promise<string[] | null> {
+  const out = await runGit(runner, root, ["status", "--porcelain"], timeoutMs);
+  if (out === null) return null;
+  return out
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    // "XY path", and for a rename "XY old -> new" — the new name is the one a
+    // check would look at, so the arrow is resolved rather than reported raw.
+    .map((line) => {
+      const entry = line.slice(3).trim();
+      const arrow = entry.lastIndexOf(" -> ");
+      return arrow === -1 ? entry : entry.slice(arrow + 4);
+    })
+    .filter((entry) => entry !== "");
+}
+
+/**
  * Run the project's checks and return structured failures.
  *
  * The saving is twofold and both halves are recorded to telemetry: the bytes
@@ -278,12 +351,27 @@ export async function runGate(
     );
   }
 
+  // The probe is bookkeeping, and bookkeeping yields to the work: with the
+  // budget spent it is skipped outright — the same rule the checks above follow
+  // — and otherwise it is capped by what is left, so nothing inside a `gate`
+  // call can outlive the deadline its caller set.
+  const coverageRemaining = deadline - now();
+  const changed =
+    deps.probeChangedFiles === false || coverageRemaining <= 0
+      ? null
+      : await changedFiles(runner, config.root, coverageRemaining);
+
   const invocationId = randomUUID();
   const result: GateResult = {
     passed: reports.every((r) => r.passed),
     invocation_id: invocationId,
     checks: reports,
     checks_autodetected: detected,
+    coverage: {
+      autodetected: detected,
+      commands: selected.map((s) => [s.command, ...s.args].join(" ")),
+      changed_files: changed,
+    },
     bytes_raw: rawBytes,
     bytes_returned: 0,
   };

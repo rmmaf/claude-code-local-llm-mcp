@@ -34,6 +34,11 @@ export function testConfig(root: string, overrides: Partial<Config> = {}): Confi
     // false, so the pre-flight would refuse every generation in the suite.
     outputBytesPerToken: 3.5,
     outputUsableFraction: 0.9,
+    // OFF here, unlike the shipped default. A test root is a scratch directory,
+    // and a suite that quietly wrote CLAUDE.md into one would be exercising a
+    // side effect nobody asked for. `tests/claude-md.test.ts` turns it on
+    // deliberately, which is the only place it belongs.
+    autoClaudeMd: false,
     ...overrides,
   };
 }

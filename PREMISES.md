@@ -218,6 +218,21 @@ pre-registered as its own premise before anything is measured against it.
 - **If it falls:** the problem is almost certainly the **tool description** losing
   to the instinct to reach for Bash, not the tool. Rewrite the description before
   concluding anything about the mechanism.
+- **Disposition of `run 2026-08-04-mac-10`: VOID for B5, not evidence against
+  it.** The threshold above is a median over turns saved, and a session with
+  zero `gate` calls produces no median — so that run could not have moved this
+  premise in either direction, whatever it showed. The threshold is left exactly
+  as written: editing a number after seeing a result is the move this registry
+  exists to prevent, and a session being unable to test a premise is a fact
+  about the session. **B15 is where that run's finding is actually scored**, and
+  it is a different quantity: whether the tool gets reached for at all.
+- **A second thing that run exposed, and it is not the description's fault:**
+  `README.md` has always told users to install a `CLAUDE.md` routing policy
+  whose first line is "Verify with mcp__local-coder__gate, never by running
+  lint/tsc/tests through Bash" — and no `CLAUDE.md` existed on that machine, in
+  this repository, or anywhere else. mac-10 measured an **unconfigured
+  install**. The server now writes that file itself (`src/claude-md.ts`), which
+  is Arm 0 of B15 and the cheaper arm by the rule `ROADMAP.md` already states.
 - **Status:** open
 
 ## B0 — the delegation tools can operate on this project's own files
@@ -616,6 +631,70 @@ pre-registered as its own premise before anything is measured against it.
   for the whole question.
 - **Status:** open
 
+## B15 — with the routing policy installed, `gate` wins ≥ 50% of the verification calls it is eligible for
+
+- **Assumed:** ≥ 50% capture — (assumed). Not fitted to data; there is no data
+  to fit to. It is the point at which `gate`'s own description — "Prefer this
+  over running the commands through Bash" — becomes a true statement about
+  observed behaviour rather than an aspiration.
+- **Why B5 cannot express this.** B5 falls on "< 2 turns saved on median". A
+  session with zero `gate` calls yields no median at all, so `run
+  2026-08-04-mac-10` could not falsify B5 and no future 0-call session can
+  either. The quantity that decides whether the tool is reached for needs its
+  own premise, and this is it.
+- **Eligible verification event:** a `Bash` call running a command `loadChecks()`
+  would have run (`tsc`, `vitest`, `npm test`, `eslint`, `pytest`, `ruff` —
+  heads listed in `src/checks/config.ts`), **or** any `gate` call.
+- **Metric:** `capture = gate_calls / (gate_calls + bash_verification_calls)`
+  over eligible events only.
+- **Excluded:** any `gate` call the operator asked for by name. Same rule, and
+  for the same reason, as B3's exclusion of its direct invocation above.
+- **Void, not zero:** a session with **< 5 eligible events** is recorded and
+  excluded. This is what stops mac-10's problem from recurring as an argument:
+  a session whose work sits outside every configured check offers the tool no
+  jurisdiction, and scoring that as 0% would be measuring the workload, not the
+  routing.
+- **The baseline is unknown, not zero.** `MEASUREMENTS.jsonl` records mac-10's
+  `Bash 36` with no command breakdown, so the prior is `0/unknown`. Recovering
+  it needs a standalone read-only pass over the raw transcript —
+  `src/cost/transcript.ts` keeps `{id, name}` and discards each call's `input`,
+  so the meter cannot answer this and **must not be edited to** while G1 is
+  reopened.
+- **Experiment:** ≥ 15 eligible events across ≥ 3 non-void sessions.
+- **Holds if:** capture ≥ 50%.
+- **Falls if:** capture < 25%. The dead band is deliberate and copies G7's
+  shape: a marginal result must not be readable either way.
+- **Second fall condition, on cost:** falls if
+  `sum(bytes_raw - bytes_returned)/3.7` over the induced `gate` calls is below
+  `114 x (segments x threads)`. **114 tokens is measured**, not assumed: the
+  description went from 688 to 1110 characters at 3.7 chars/token. Note the unit
+  — a tool description is paid per *thread and compaction segment*, not per
+  session, because context resets at each boundary and each subagent thread
+  carries its own copy. **Tokens only, never dollars:** G1 is reopened, so
+  nothing meter-derived may be reported as measured.
+- **Arm 0 is a bundle, and this is written before it runs:** the auto-installed
+  `CLAUDE.md`, the truth-fixed `gate` description, and the `coverage` field ship
+  together. **Attribution within the bundle is not available** and may not be
+  claimed later. What was deliberately held constant is the persuasion sentence
+  itself, byte-for-byte, so that Arm 1 — rewriting it — remains a clean
+  single-variable change against this baseline.
+- **Attempt cap: TWO description rewrites, total.** Copying G2's "one attempt"
+  discipline. A string is infinitely re-tunable, so without a cap "the wording
+  was wrong, not the idea" stays available forever. If the second misses, the
+  recorded conclusion is that description text is not the lever, and B5's
+  "if it falls" remedy is **exhausted**.
+- **Void conditions, fixed here rather than argued afterwards:** the operator
+  names gate/verify/check in the prompt; the session is the same one in which
+  `CLAUDE.md` was first written (Claude Code reads it at start, so run 1
+  installs and run 2 is the first eligible run); `gate`'s description or any
+  check-running path changed during the run; `dist/` was stale against `src/`
+  at session start.
+- **Recorded without a threshold:** a successful Arm 0 makes verification
+  *slower*. One `checks: "all"` run on this repo took ~20 s against a ~2 s
+  `npx tsc --noEmit` through Bash. B7 covers `repair` rounds only, so nothing
+  bounds this today. Noted so the headline number cannot hide it.
+- **Status:** open
+
 ---
 
 ## Measured facts (not premises)
@@ -645,7 +724,10 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 202 passing** (206 total), `run 2026-08-02-win-03`.
+`npm test` reports **4 failures / 282 passing** (286 total). The same four, and
+the same causes, as when this was first recorded at 4/202 in
+`run 2026-08-02-win-03` — re-confirmed by a fresh `git stash -u` baseline while
+adding `coverage` and `src/claude-md.ts`.
 
 - **All 4 are pre-existing**, confirmed by a `git stash -u` baseline:
   `core.autocrlf=true` on Windows rewrites line endings, so three tests comparing

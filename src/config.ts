@@ -27,6 +27,14 @@ export interface Config {
   outputBytesPerToken: number;
   /** Fraction of `maxOutputTokens` the estimate is allowed to fill (0, 1]. */
   outputUsableFraction: number;
+  /**
+   * Whether the server writes its delegation policy into the project's
+   * `CLAUDE.md` at startup. On by default: `README.md` has told every user to
+   * add that block by hand since the first release, and `run 2026-08-04-mac-10`
+   * is what happens when nobody does — 36 Bash verifications, 0 `gate` calls,
+   * against a routing rule that existed only in documentation.
+   */
+  autoClaudeMd: boolean;
 }
 
 export const DEFAULTS = {
@@ -53,6 +61,7 @@ export const DEFAULTS = {
    * and B6 unmeasurable, which is the whole reason this cap exists.
    */
   outputUsableFraction: 0.9,
+  autoClaudeMd: true,
 } as const;
 
 function numberFromEnv(
@@ -70,6 +79,22 @@ function numberFromEnv(
     return fallback;
   }
   return value;
+}
+
+/**
+ * A flag from the environment. Accepts the spellings people actually type —
+ * `0/1`, `false/true`, `no/yes`, `off/on`, any case — and warns rather than
+ * guessing on anything else, because a typo silently disabling a side effect
+ * is worse than a typo that is ignored loudly.
+ */
+function booleanFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = raw.trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(value)) return false;
+  if (["1", "true", "yes", "on"].includes(value)) return true;
+  log.warn(`ignoring invalid ${name}=${JSON.stringify(raw)}; using default ${fallback}`);
+  return fallback;
 }
 
 /** A fraction in (0, 1]: reuses numberFromEnv (finite, > 0) then clamps anything above 1 down to 1. */
@@ -120,5 +145,6 @@ export function loadConfig(
       "LOCAL_CODER_OUTPUT_USABLE_FRACTION",
       DEFAULTS.outputUsableFraction
     ),
+    autoClaudeMd: booleanFromEnv(env, "LOCAL_CODER_AUTO_CLAUDE_MD", DEFAULTS.autoClaudeMd),
   };
 }

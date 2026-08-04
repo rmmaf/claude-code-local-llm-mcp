@@ -20,13 +20,10 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import type { Failure } from "./checks/parsers.js";
-import { defaultProcessRunner, type ProcessRunner } from "./exec.js";
+import { defaultProcessRunner, runGit, type ProcessRunner } from "./exec.js";
 import { log } from "./logger.js";
 
 export const CORPUS_DIR = path.join(".local-coder", "corpus");
-
-/** Git calls here are read-only bookkeeping, not the work; keep them short. */
-const GIT_TIMEOUT_MS = 15_000;
 
 /**
  * Above this the patch is DROPPED, not cut.
@@ -62,22 +59,6 @@ export interface CorpusDeps {
   now?: () => Date;
 }
 
-async function git(
-  runner: ProcessRunner,
-  root: string,
-  args: string[]
-): Promise<string | null> {
-  try {
-    const result = await runner("git", args, { cwd: root, timeoutMs: GIT_TIMEOUT_MS });
-    if (result.code !== 0 || result.timedOut) return null;
-    return result.stdout;
-  } catch {
-    // No git, no repository, git too old — all the same answer here: the tree
-    // state could not be recorded. The failures still can be, and are.
-    return null;
-  }
-}
-
 /**
  * The working tree, as far as it can be recorded without touching anything.
  *
@@ -98,9 +79,9 @@ async function treeState(
   patch_omitted: boolean;
   untracked: string[];
 }> {
-  const head = (await git(runner, root, ["rev-parse", "HEAD"]))?.trim() ?? null;
-  const rawPatch = await git(runner, root, ["diff", "HEAD"]);
-  const untrackedOut = await git(runner, root, ["ls-files", "--others", "--exclude-standard"]);
+  const head = (await runGit(runner, root, ["rev-parse", "HEAD"]))?.trim() ?? null;
+  const rawPatch = await runGit(runner, root, ["diff", "HEAD"]);
+  const untrackedOut = await runGit(runner, root, ["ls-files", "--others", "--exclude-standard"]);
   const untracked =
     untrackedOut === null
       ? []

@@ -5,31 +5,30 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**First real workload, and it went badly in an informative way**
-(`run 2026-08-04-mac-10`, an 8-hour Tetris build). Six `scaffold` calls all
-returned `created`; the composed program did not run, and **51.2% of the 2,055
-generated lines were dead code** because three of six files ignored a constraint
-carried verbatim in every spec. `created` claims only that parseable output
-reached the requested path. Before this: corpus #1 closed 20 of 20
-(`mac-09`), which decided nothing — it was synthetic and single-fault.
+**The last next-action rested on a false premise.** It said to rewrite `gate`'s
+description — but that description **already** said "Prefer this over running
+the commands through Bash", and it lost 36–0 in `run 2026-08-04-mac-10`. Worse:
+`README.md` has always told users to install a `CLAUDE.md` carrying that same
+rule, and **no `CLAUDE.md` existed anywhere**. mac-10 measured an unconfigured
+install. The server now writes that file itself at startup
+(`src/claude-md.ts`) — the cheap arm the roadmap's own rule demands first.
 
 ## Next action
 
-**Rewrite `gate`'s tool description, and treat that as the experiment.** That
-session made **36 `Bash` calls and 0 `gate` calls**, with 0 `repair` — B5's own
-"if it falls" line predicted exactly this, so the mechanism is not what needs
-work. A tool nobody calls cannot be measured. **D4 is now known (78.9 tok/s)**
-and it unblocked a hidden dependency: B14 cannot observe truncation below
-~208 s of `timeoutMs`, so any B14 run must record its ceiling.
+**Run a real session on the Mac and score B15** — capture ≥ 50% holds, < 25%
+falls, and a session with < 5 eligible verification events is VOID, not zero.
+Two things must happen first: restart Claude Code twice (run 1 writes
+`CLAUDE.md`, run 2 is the first that reads it), and build the standalone
+transcript classifier — the cost meter discards each `Bash` call's `input`, so
+it cannot compute the denominator and **must not be edited while G1 is open**.
 
 ## Do not redo
 
-- **`/cost`'s "68% from local-coder" is not a saving** — it is last-24h session
-  attribution under "what is contributing to your limits usage", and the panel
-  calls its own lines "not a breakdown". Real share of tool output: **13.5%**.
-- **The gate only sees the configured checks.** Delegated work outside them —
-  `tetris/*.js` — leaves `gate` green and `repair` no-opping on a broken tree.
-- **Read the per-request ceiling from the run, never from the environment**; the
-  server's `env` lives in `~/.claude.json` (`scripts/set-server-env.mjs`).
-- **`tests/` is not type-checked**, so a missing `Config` field becomes NaN.
-- **Verify with `npm test`, not `npx vitest run`** — the latter skips the build.
+- **`gate`'s persuasion sentence is held byte-for-byte** as Arm 1's baseline.
+  The description grew +114 tokens on truth fixes only; that number is B15's
+  cost condition, so re-measure if it moves.
+- **`repair` must not probe git** — its loop runs `gate` per round, and
+  bookkeeping inside a budget is capped by what remains or skipped.
+- **4 test failures are pre-existing and Windows-only** (CRLF, path separators);
+  282 pass. Verify with `npm test`, never `npx vitest run`.
+- **The roadmap is at seven gates, not six** — the count omitted reopened G1.

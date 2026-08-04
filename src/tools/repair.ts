@@ -498,6 +498,11 @@ async function repairLoop(
     // weight it toward whatever `repair` was slowest to fix. The capture point
     // is the caller's own gate run, which is where a distinct failure appears.
     corpus: { capture: async () => null },
+    // And they must not each shell out to git for `coverage.changed_files`. The
+    // loop edits the tree it would be probing, once per round, out of the
+    // caller's time budget — to answer a question this call's own caller
+    // already had before it delegated.
+    probeChangedFiles: false,
     now,
   };
   const runGateNow = (): Promise<GateResult> =>

@@ -45,6 +45,39 @@ export type ProcessRunner = (
   options: ProcessOptions
 ) => Promise<ProcessResult>;
 
+const GIT_TIMEOUT_MS = 15_000;
+
+/**
+ * Run a read-only git command, returning its stdout or null.
+ *
+ * Null is the single answer to every way this can not work — no git on PATH,
+ * not a repository, git too old, a non-zero exit, a timeout, an injected runner
+ * that refuses the command. Callers use it where git is an ENRICHMENT: the
+ * corpus records tree state alongside failures, `gate` reports which files a
+ * result cannot speak for. Neither may fail because git is unavailable, so
+ * there is nothing here for a caller to catch.
+ *
+ * Read-only by contract, not by enforcement. Do not route a mutating command
+ * through it — `git add -N` is the specific temptation, and `src/corpus.ts`
+ * explains why it is refused.
+ */
+export async function runGit(
+  runner: ProcessRunner,
+  root: string,
+  args: string[],
+  /** Further ceiling, e.g. what is left of a caller's budget. Never raises the default. */
+  timeoutMs?: number
+): Promise<string | null> {
+  try {
+    const budget = Math.min(GIT_TIMEOUT_MS, timeoutMs ?? GIT_TIMEOUT_MS);
+    const result = await runner("git", args, { cwd: root, timeoutMs: budget });
+    if (result.code !== 0 || result.timedOut) return null;
+    return result.stdout;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Windows batch shims (`npx.cmd`, `npm.cmd`) cannot be spawned directly: since
  * the CVE-2024-27980 mitigation, Node fails them with `spawn EINVAL` unless a

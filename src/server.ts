@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
+import { ensureClaudeMd } from "./claude-md.js";
 import { loadConfig } from "./config.js";
 import { ToolError } from "./fs-safety.js";
 import { log } from "./logger.js";
@@ -103,6 +104,14 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   config.models = await loadModelCatalog(config.modelsCsvPath);
+
+  // At startup rather than on the first tool call, and the distinction is the
+  // whole point: the behaviour this fixes IS "nobody calls the tools", so
+  // hanging the fix off a tool call would skip exactly the sessions that need
+  // it. Starting the server is the first contact that always happens. It never
+  // throws — `status` reports whatever it did.
+  const claudeMd = await ensureClaudeMd(config);
+
   const server = new McpServer({ name: "local-coder", version });
 
   server.registerTool(
@@ -205,7 +214,8 @@ async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
   log.info(
     `local-coder v${version} ready (root=${config.root}, endpoint=${config.baseUrl}, ` +
-      `models_csv=${config.modelsCsvPath ?? "(built-in defaults)"}, catalog=${config.models.length} model(s))`
+      `models_csv=${config.modelsCsvPath ?? "(built-in defaults)"}, catalog=${config.models.length} model(s), ` +
+      `claude_md=${claudeMd.state})`
   );
 }
 

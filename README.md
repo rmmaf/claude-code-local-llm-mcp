@@ -129,7 +129,11 @@ Claude will write a tight spec, call `implement` with the two file paths (never 
 
 **New files:** "Use local-coder to scaffold a `useDebounce` hook under src/hooks" → `scaffold` writes new files directly (it refuses to touch anything that exists).
 
-**Make delegation automatic.** Add this to your project's `CLAUDE.md` so Claude routes work to the local model on its own:
+**Delegation routing is installed for you.** On startup the server writes the policy below into your project's `CLAUDE.md`, because a routing rule that lives only in a README is a rule nobody applies — `run 2026-08-04-mac-10` is a real session that made 36 Bash verifications and zero `gate` calls against exactly this text, on a machine that had never installed it.
+
+It is deliberately timid: it never overwrites, it appends rather than replacing if you already have a `CLAUDE.md`, it leaves the block alone once you have edited it, and it skips any directory without a `.git` or `package.json`. Set `LOCAL_CODER_AUTO_CLAUDE_MD=0` to turn it off, and check `status` for what it did. **Claude Code reads `CLAUDE.md` at session start, so the policy takes effect on your next session, not the one that installed it.**
+
+The block, if you would rather paste it yourself:
 
 ```markdown
 ## Local delegation policy
@@ -214,6 +218,7 @@ All environment variables are optional, with sane defaults:
 | `LOCAL_CODER_TIMEOUT_MS` | `300000` | per-request timeout (local models are slow on big generations) |
 | `LOCAL_CODER_MAX_FILE_KB` | `256` | per-file size cap |
 | `LOCAL_CODER_MAX_CONTEXT_KB` | `512` | total assembled-context cap |
+| `LOCAL_CODER_AUTO_CLAUDE_MD` | `1` | write the delegation policy into the project's `CLAUDE.md` at startup (see below); `0` to leave the file alone |
 
 ## Model selection
 
