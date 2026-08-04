@@ -25,8 +25,32 @@ export interface Config {
    * labelled as one — see `enforceOutputCap`.
    */
   outputBytesPerToken: number;
+  /**
+   * Bytes of prompt per INPUT token, for the context pre-flight. Separate from
+   * `outputBytesPerToken` on purpose, and the asymmetry is the point: that one
+   * predicts how many tokens the model will EMIT — a guess about behaviour, kept
+   * pessimistic because under-guessing means a truncation. This one counts tokens
+   * in text that already exists, which is arithmetic and measurable.
+   *
+   * Reusing 3.5 here cost real coverage: applied to both sides of a shared
+   * window its 20% pessimism compounds, and `run 2026-08-04-mac-16-preflight`
+   * refused `src/fs-safety.ts` + `src/cost/transcript.ts` (26,345 B) — a request
+   * measured at 11,237 actual tokens against ~14,745 usable, which had returned
+   * every block complete three times.
+   */
+  inputBytesPerToken: number;
   /** Fraction of `maxOutputTokens` the estimate is allowed to fill (0, 1]. */
   outputUsableFraction: number;
+  /**
+   * The loaded model's context length in tokens, shared between input and
+   * output — the constraint that actually bounds a whole-file answer. Null means
+   * "probe `lms ps`", and a probe that cannot answer skips the check rather than
+   * guessing, because this pre-flight REFUSES requests.
+   *
+   * Set it explicitly (`LOCAL_CODER_CONTEXT_TOKENS`) when `lms` is unavailable
+   * or when several models are loaded, which is the case the probe declines.
+   */
+  contextTokens: number | null;
   /**
    * Whether the server writes its delegation policy into the project's
    * `CLAUDE.md` at startup. On by default: `README.md` has told every user to
@@ -54,6 +78,18 @@ export const DEFAULTS = {
    */
   outputBytesPerToken: 3.5,
   /**
+   * 3.9, and the choice is measured rather than picked. Prompt density over the
+   * 13 requests recorded in `evidence/2026-08-04-mac-11`, `-mac-12-variance` and
+   * `-mac-13-repair-diff` climbs from 2.31 B/token at 1 KB to 4.11 at 36 KB —
+   * small prompts are dominated by the fixed system-prompt overhead, large ones
+   * approach the true density. Against `bytes / d + 200`, 3.9 is the LARGEST
+   * divisor that never under-predicts a single one of those 13 measurements
+   * (worst case −1.5%), while cutting the worst over-estimate from 20.5% at 3.5
+   * to 9.3%. Under-predicting input is the unsafe direction: it lets a request
+   * through that cannot fit, which is the failure this whole check exists for.
+   */
+  inputBytesPerToken: 3.9,
+  /**
    * Headroom for the `<file>` wrapper and for the estimator's own error. It
    * costs coverage on purpose: at 0.9 the bar is 7372 tokens, which also refuses
    * `src/tools/gate.ts` + its test (8075). Letting a truncation through is the
@@ -77,6 +113,23 @@ function numberFromEnv(
   if (!Number.isFinite(value) || value < min) {
     log.warn(`ignoring invalid ${name}=${JSON.stringify(raw)}; using default ${fallback}`);
     return fallback;
+  }
+  return value;
+}
+
+/**
+ * A number from the environment with no default: unset, blank or invalid all
+ * yield null. Distinct from `numberFromEnv` because null is MEANINGFUL for the
+ * context pre-flight — it selects "probe, and skip the check if the probe cannot
+ * answer" rather than any particular size.
+ */
+function optionalNumberFromEnv(env: NodeJS.ProcessEnv, name: string): number | null {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    log.warn(`ignoring invalid ${name}=${JSON.stringify(raw)}; falling back to probing lms`);
+    return null;
   }
   return value;
 }
@@ -140,11 +193,18 @@ export function loadConfig(
       "LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN",
       DEFAULTS.outputBytesPerToken
     ),
+    inputBytesPerToken: numberFromEnv(
+      env,
+      "LOCAL_CODER_INPUT_BYTES_PER_TOKEN",
+      DEFAULTS.inputBytesPerToken
+    ),
     outputUsableFraction: fractionFromEnv(
       env,
       "LOCAL_CODER_OUTPUT_USABLE_FRACTION",
       DEFAULTS.outputUsableFraction
     ),
+    // No default: null means "probe", and the probe is allowed to decline.
+    contextTokens: optionalNumberFromEnv(env, "LOCAL_CODER_CONTEXT_TOKENS"),
     autoClaudeMd: booleanFromEnv(env, "LOCAL_CODER_AUTO_CLAUDE_MD", DEFAULTS.autoClaudeMd),
   };
 }

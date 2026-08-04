@@ -214,6 +214,17 @@ pre-registered as its own premise before anything is measured against it.
   and `repair` had nothing to loop on. The failures became reachable only after a
   human hand-wrote a test to produce error output. Delegating into a directory
   the project does not already check leaves both tools blind.
+- **That limit is now visible in the tool's own return**
+  (`run 2026-08-04-mac-18-coverage`). The first real call carrying `coverage`
+  came back `passed: true` with `commands` = `tsc` + `npm test` and
+  `changed_files` = `["tetris.html", "tetris/"]` — neither command on the path of
+  either changed path. The reading given back, unprompted, was that the result is
+  **silent** about those paths rather than a verification of them. The silence
+  itself did not change; what changed is that it is now sayable from the payload
+  alone, without a reader who already knows the check configuration. **This does
+  not move B5's threshold** — B5 is a median over turns saved, and one
+  operator-requested call yields none. Its 127,347 → 726 bytes is likewise
+  **excluded from B3**, which counts calls from ordinary work.
 - **Falls if:** < 2 turns saved on median.
 - **If it falls:** the problem is almost certainly the **tool description** losing
   to the instinct to reach for Bash, not the tool. Rewrite the description before
@@ -618,6 +629,53 @@ pre-registered as its own premise before anything is measured against it.
   against a 7372-token bar, so 0 truncations is what the construction guarantees
   rather than what the estimator earned. B14 needs requests *near* the bar, which
   corpus #1 by design does not contain and corpus #2 will.
+- **THE TIMEOUT DEPENDENCY IS NOW SATISFIED, and the experiment finally ran on
+  requests that do stress the estimator.** `D8` (`ROADMAP.md` G5) built
+  `scripts/contract-stability.ts`, a 10-file size ladder of this repo from 665 B
+  to 35,656 B, and ran it at `timeoutMs` **600,000** — far above the ~208 s the
+  bullet above fixes as the threshold. Six runs, `2026-08-04-mac-11` through
+  `-mac-17`, artifacts in `evidence/`.
+- **Measured, and it does not fit either side of the threshold.** Over the 38
+  scored responses of `run 2026-08-04-mac-12-variance`: **36 complete, 2 elided,
+  0 truncated**, and the contract turns out to be a function of size rather than
+  a random variable — 13 of 13 cases unanimous across three repeats, 12 of them
+  byte-identical. Everything at or below **23,063 B** returned complete three
+  times over. One case fails, and it fails every time it runs.
+- **THE INSTRUMENT IS BLIND TO THE FAILURE THAT ACTUALLY HAPPENS.** This premise
+  says to count `finish_reason: "length"`. Across **five** observations of the
+  one failing request (`src/tools/repair.ts`, 35,656 B) in `mac-12-variance`,
+  `mac-13-repair-diff` and `mac-14-repair-diff` — 2 elided, 3 truncated — that
+  count is **0 of 5**. Every one carried `finish_reason: "stop"`. The binding
+  constraint was the **context window**, not the output cap: prompt 8,756 +
+  completion 7,670 = 16,426 against a model loaded at 16,384, and a model that
+  runs out of window says `stop`. The three truncations were caught as an
+  *unclosed* `<file>` block; the two elisions were caught as 81 consecutive
+  deleted lines with **no marker at all**. This is the same class of error as
+  B2 measuring the wrong hook channel, and it is a fact about the detector.
+- **The elision is the dangerous half, and it is worse than a truncation.** The
+  block was properly closed, `finish_reason: "stop"`, nothing missing, **90 lines
+  gone**. `parseFileBlocks` finds it, no corrective retry fires, and
+  `runGeneration` returns a diff that DELETES those 90 lines. Every automated
+  signal the pipeline reads says the response is fine; only a human reading the
+  diff stands between it and disk.
+- **The symmetrical clause below has its first observation, and it is real.**
+  `run 2026-08-04-mac-16-preflight` refused `src/fs-safety.ts` +
+  `src/cost/transcript.ts` (26,345 B) with `context_would_overflow` — a request
+  that measured **11,237 actual tokens** and had returned complete 3 of 3. The
+  cause was reusing the 3.5 *output* divisor on the input side, so its pessimism
+  applied twice over a shared window. Fixed by splitting them
+  (`LOCAL_CODER_INPUT_BYTES_PER_TOKEN` **3.9**, the largest divisor that
+  under-predicts none of the 13 measured prompts). It is **still refused by ~55
+  tokens** in `mac-17`, and that residual is the output divisor.
+- **The re-derivation this premise exists for, measured and deliberately NOT
+  applied.** Across the 36 complete responses: **350,118 bytes / 88,018
+  completion tokens = 3.978 B per output token**, against the **3.5** configured.
+  The estimator is ~14% pessimistic — which `outputBytesPerToken`'s own comment
+  already claims as bought coverage. It is left alone: 3.5 was calibrated against
+  the single truncation this project has observed (`run 2026-08-03-mac-05`),
+  `tests/fs-safety.test.ts` pins that calibration, and re-fitting a constant
+  against a corpus whose sizes its own author chose is the move corpus #1 was
+  already caught by. **Changing it is a decision, not a cleanup.**
 - **Falls if:** > 10% of the requests that pass still truncate.
 - **If it falls:** recalibrate `LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN` and
   `LOCAL_CODER_OUTPUT_USABLE_FRACTION` **against that run's data**, which is the
@@ -628,8 +686,20 @@ pre-registered as its own premise before anything is measured against it.
   coverage silently, and the same corpus can bound it — but only by running the
   refused requests with the cap raised, which is a second experiment and is not
   pre-registered here. Recorded so the one-sided threshold above is not mistaken
-  for the whole question.
-- **Status:** open
+  for the whole question. **`run 2026-08-04-mac-16-preflight` is that failure,
+  observed** — see the bullet above. It still has no threshold, and giving it one
+  now, after seeing it, is exactly what this file forbids.
+- **Status:** open — and it cannot be moved by the runs above, in either
+  direction, because **the threshold measures a quantity that did not occur**.
+  0 of 5 real failures carried `finish_reason: "length"`, so by the letter this
+  reads as a clean pass while a request was quietly losing 90 lines. Reading that
+  as `holding` would be the failure this registry exists to prevent. **The
+  disposition is the operator's, and the options are not equivalent:** amend
+  B14's fall condition to name the observed failure modes (an edit to a threshold
+  *after* data, legitimate only if recorded as such); open a successor premise
+  with its own pre-registered thresholds and mark B14 `moot`; or leave both and
+  accept that the pre-flight ships unmeasured. **Nothing here has been amended in
+  the meantime** — the numbers are recorded and the threshold is untouched.
 
 ## B15 — with the routing policy installed, `gate` wins ≥ 50% of the verification calls it is eligible for
 
@@ -693,6 +763,22 @@ pre-registered as its own premise before anything is measured against it.
   *slower*. One `checks: "all"` run on this repo took ~20 s against a ~2 s
   `npx tsc --noEmit` through Bash. B7 covers `repair` rounds only, so nothing
   bounds this today. Noted so the headline number cannot hide it.
+- **First candidate session run, and it CANNOT BE SCORED YET.** The Mac session
+  of 2026-08-04 that produced `D8` (`evidence/2026-08-04-mac-11` … `-mac-17`) is
+  the first real workload with `CLAUDE.md` already on disk. **None of the four
+  void conditions fired:** the prompt named no check, `CLAUDE.md` predated the
+  session, `gate`'s description and every path under `src/checks/` are untouched
+  in that session's diff, and `dist/` was rebuilt after the last `src/` edit.
+  What is missing is the **denominator**. The rendered conversation shows `gate`
+  reached for at least twice, unprompted ("gate is green", "gate green
+  throughout"), against mac-10's zero — but it renders Bash calls as "ran 1 shell
+  command" with the command elided, so `bash_verification_calls` is not
+  recoverable from it. **Two unprompted calls is a sign, not a capture rate**,
+  and it may not be reported as one.
+- **What unblocks it:** `scripts/classify-verification.mjs`, read-only over the
+  raw session JSONL, counting eligible events by the definition above. The
+  transcript is on the Mac. This is still **not** an edit to `src/cost/`, which
+  stays frozen while G1 is reopened.
 - **Status:** open
 
 ---
@@ -724,10 +810,17 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 282 passing** (286 total). The same four, and
-the same causes, as when this was first recorded at 4/202 in
-`run 2026-08-02-win-03` — re-confirmed by a fresh `git stash -u` baseline while
-adding `coverage` and `src/claude-md.ts`.
+`npm test` reports **4 failures / 320 passing** (324 total,
+`run 2026-08-04-win-01`). The same four, and the same causes, as when this was
+first recorded at 4/202 in `run 2026-08-02-win-03` — re-confirmed by a fresh
+`git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, and again
+after importing the Mac's `D8` work, which added **38 tests and no new failure**.
+
+**One unexplained discrepancy, recorded rather than smoothed over:** that Mac
+session reported **323** tests where Windows counts **324**. Nothing in this
+repository is platform-gated on purpose, so the delta is not attributed to one —
+it is simply not yet explained, and anyone quoting a total should quote its
+machine with it.
 
 - **All 4 are pre-existing**, confirmed by a `git stash -u` baseline:
   `core.autocrlf=true` on Windows rewrites line endings, so three tests comparing

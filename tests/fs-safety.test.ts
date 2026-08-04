@@ -12,7 +12,14 @@ import {
   ToolError,
 } from "../src/fs-safety.js";
 import { runImplement } from "../src/tools/implement.js";
-import { makeTempRoot, queuedFetch, testConfig, writeFileTree } from "./helpers.js";
+import {
+  chatBody,
+  fileBlock,
+  makeTempRoot,
+  queuedFetch,
+  testConfig,
+  writeFileTree,
+} from "./helpers.js";
 
 async function expectToolError(
   promise: Promise<unknown>,
@@ -175,6 +182,130 @@ describe("file content safety", () => {
     expect(() => enforceOutputCap([{ rel: "a.ts", bytes: 9_010 }], 1_000, 10, 0.9)).toThrow();
   });
 
+  /**
+   * The context pre-flight, reproducing the request that motivated it:
+   * `src/tools/repair.ts` (35,656 B) passed the output cap at 16384/0.9 and then
+   * came back missing 90 lines, because input and output share one 16384-token
+   * window. See `enforceOutputCap`'s doc comment and
+   * `evidence/2026-08-04-mac-12-variance`.
+   */
+  it("refuses the request that the output cap alone let through", () => {
+    const editable = [{ rel: "src/tools/repair.ts", bytes: 35_656 }];
+    // The output cap says yes: 35656/3.5 = 10,187 <= floor(16384*0.9) = 14,745.
+    expect(() => enforceOutputCap(editable, 16_384, 3.5, 0.9)).not.toThrow();
+
+    try {
+      enforceOutputCap(editable, 16_384, 3.5, 0.9, {
+        contextTokens: 16_384,
+        inputBytes: 35_656,
+        inputBytesPerToken: 3.9,
+      });
+      throw new Error("expected throw");
+    } catch (error) {
+      const toolError = error as ToolError;
+      expect(toolError.code).toBe("context_would_overflow");
+      // ~9,143 in (35,656/3.9) + 200 overhead, plus ~10,187 out (at 3.5) =
+      // ~19,530, over the 14,745 usable. Measured input for this file was 8,756
+      // tokens, so the estimate is 4% conservative — the safe direction.
+      expect(toolError.details.estimated_total_tokens).toBe(19_530);
+      expect(toolError.details.usable_context_tokens).toBe(14_745);
+      expect(toolError.details.input_bytes_per_token).toBe(3.9);
+      // Raising the output cap is the one remedy that cannot work here.
+      expect(toolError.message).toContain("SHARE that window");
+      expect(toolError.message).toContain("cannot help");
+    }
+  });
+
+  it("allows the largest request that DID fit the window", () => {
+    // src/cost/report.ts, 23,063 B: measured 6,073 in + 5,845 out = 11,918
+    // actual tokens, and it returned every block complete three times over.
+    expect(() =>
+      enforceOutputCap([{ rel: "src/cost/report.ts", bytes: 23_063 }], 16_384, 3.5, 0.9, {
+        contextTokens: 16_384,
+        inputBytes: 23_063,
+        inputBytesPerToken: 3.9,
+      })
+    ).not.toThrow();
+  });
+
+  /**
+   * The over-refusal that reusing ONE divisor for both sides caused, pinned so
+   * it cannot come back. `src/fs-safety.ts` + `src/cost/transcript.ts` at
+   * 26,345 B measured 11,237 actual tokens and had returned complete 3/3, yet
+   * `run 2026-08-04-mac-16-preflight` refused it: at 3.5 the pessimism applies
+   * twice over a shared window.
+   *
+   * The byte counts are FROZEN at that run's values, deliberately. Both files
+   * have since grown and the live pair now sits ~55 tokens over the bar — that
+   * residual is the OUTPUT divisor's deliberate 12% pessimism (3.5 against a
+   * measured ~3.95), which `outputBytesPerToken` documents as bought coverage
+   * and B14 is what re-derives. This test isolates the input-side effect only.
+   */
+  it("does not refuse a request that measurement says fits", () => {
+    const editable = [
+      { rel: "src/fs-safety.ts", bytes: 14_216 },
+      { rel: "src/cost/transcript.ts", bytes: 12_129 },
+    ];
+    const window = { contextTokens: 16_384, inputBytes: 26_345 + 400 };
+    // Reusing the output divisor on the input side refuses it...
+    expect(() => enforceOutputCap(editable, 16_384, 3.5, 0.9, window)).toThrow(
+      /SHARE that window/
+    );
+    // ...and the measured input divisor does not.
+    expect(() =>
+      enforceOutputCap(editable, 16_384, 3.5, 0.9, { ...window, inputBytesPerToken: 3.9 })
+    ).not.toThrow();
+  });
+
+  it("counts context files and the spec as input, since they share the window", () => {
+    const editable = [{ rel: "a.ts", bytes: 10_000 }];
+    const out = Math.round(10_000 / 3.5); // 2,857 output tokens either way
+    // Editable file alone: 2,857 in + 200 + 2,857 out = 5,914, well under 14,745.
+    expect(() =>
+      enforceOutputCap(editable, 16_384, 3.5, 0.9, { contextTokens: 16_384, inputBytes: 10_000 })
+    ).not.toThrow();
+    // Same one editable file, now with 35 KB of read-only context alongside it:
+    // 12,857 + 200 + 2,857 = 15,914 over 14,745. The output cap cannot see this
+    // at all, because context files are never echoed back.
+    expect(Math.round(45_000 / 3.5) + 200 + out).toBeGreaterThan(14_745);
+    expect(() =>
+      enforceOutputCap(editable, 16_384, 3.5, 0.9, { contextTokens: 16_384, inputBytes: 45_000 })
+    ).toThrow(/SHARE that window/);
+  });
+
+  /**
+   * An unknown window must FAIL OPEN. The asymmetry is the point: skipping the
+   * check risks one bad response, while a NaN budget makes every `<=` false and
+   * refuses every generation in the process. The undefined case is not
+   * hypothetical — Config literals are unchecked, `tsconfig` covering src/ only.
+   */
+  it("skips the check rather than refusing when the window is unknown", () => {
+    const editable = [{ rel: "a.ts", bytes: 35_656 }];
+    for (const contextTokens of [null, undefined, 0, -1, NaN] as unknown[]) {
+      expect(() =>
+        enforceOutputCap(editable, 16_384, 3.5, 0.9, {
+          contextTokens: contextTokens as number | null,
+          inputBytes: 35_656,
+        })
+      ).not.toThrow();
+    }
+    // And with no window argument at all — the pre-existing call shape.
+    expect(() => enforceOutputCap(editable, 16_384, 3.5, 0.9)).not.toThrow();
+  });
+
+  it("reports the output cap first when both ceilings are breached", () => {
+    // Output alone is over an 8192 cap, and the pair is over the window too.
+    try {
+      enforceOutputCap([{ rel: "a.ts", bytes: 40_000 }], 8_192, 3.5, 0.9, {
+        contextTokens: 16_384,
+        inputBytes: 40_000,
+      });
+      throw new Error("expected throw");
+    } catch (error) {
+      expect((error as ToolError).code).toBe("output_would_truncate");
+    }
+  });
+
   it("refuses a whole-file answer that would not fit, before any model call", async () => {
     // 40 KB of editable source is ~11,700 tokens at the defaults, over the
     // ~7,372 usable of 8,192. Under the 256 KB input cap the whole time, so
@@ -191,6 +322,45 @@ describe("file content safety", () => {
     );
     expect(error.message).toContain("wide.ts");
     expect(calls.length).toBe(0);
+  });
+
+  /**
+   * The wiring, not just the arithmetic: a request that clears the output cap
+   * must still be refused before any model call when it cannot fit the window.
+   * 20 KB at a 16,384 cap is ~5,850 output tokens against ~14,745 usable — the
+   * output cap says yes — but ~5,850 in + 200 + ~5,850 out = ~11,900 needs more
+   * than the 0.9 × 8,192 = 7,372 usable of an 8,192-token context.
+   */
+  it("refuses a request that clears the output cap but not the context window", async () => {
+    const root = makeTempRoot();
+    await writeFileTree(root, { "wide.ts": "x".repeat(20 * 1024) });
+    const { fetchImpl, calls } = queuedFetch([]);
+    const error = await expectToolError(
+      runImplement(
+        { spec: "x", files: ["wide.ts"] },
+        testConfig(root, { maxOutputTokens: 16_384 }),
+        { fetchImpl, platform: "linux", contextTokens: 8_192 }
+      ),
+      "context_would_overflow"
+    );
+    expect(error.message).toContain("wide.ts");
+    expect(error.message).toContain("SHARE that window");
+    expect(calls.length).toBe(0);
+  });
+
+  it("sends that same request when the window is large enough", async () => {
+    const root = makeTempRoot();
+    await writeFileTree(root, { "wide.ts": "x".repeat(20 * 1024) });
+    // One <file> block echoing the file back, so the generation completes.
+    const { fetchImpl, calls } = queuedFetch([
+      chatBody(fileBlock("wide.ts", `${"x".repeat(20 * 1024)}\n`)),
+    ]);
+    await runImplement(
+      { spec: "x", files: ["wide.ts"] },
+      testConfig(root, { maxOutputTokens: 16_384 }),
+      { fetchImpl, platform: "linux", contextTokens: 32_768 }
+    );
+    expect(calls.length).toBe(1);
   });
 
   it("refuses the exact request that truncated in run 2026-08-03-mac-05", async () => {

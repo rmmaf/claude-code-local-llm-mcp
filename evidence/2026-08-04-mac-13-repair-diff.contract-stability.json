@@ -1,0 +1,142 @@
+{
+  "diagnostic": "contract-stability",
+  "contract": "IMPLEMENT_SYSTEM_PROMPT: return the COMPLETE final content of EVERY editable file listed in the request",
+  "run_id": "2026-08-04-mac-13-repair-diff",
+  "ts": "2026-08-04T18:06:06.107Z",
+  "repo": {
+    "head": "940d2b6dc85ec224231d6702597b41dccd169100",
+    "dirty": true
+  },
+  "model": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+  "model_selection_reason": "largest catalog model fitting usable free RAM (16 GB): mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2 (served as qwen3-coder-30b-a3b-instruct-dwq-v2)",
+  "config": {
+    "base_url": "http://localhost:1234/v1",
+    "temperature": 0.1,
+    "max_output_tokens": 16384,
+    "output_usable_fraction": 0.9,
+    "output_bytes_per_token": 3.5,
+    "usable_output_tokens": 14745,
+    "timeout_ms": 600000,
+    "loaded_context_length": 16384,
+    "loaded_max_context_length": 262144
+  },
+  "method": {
+    "spec": "Append the following comment as the last line of every editable file, exactly as written:\n\n// contract-probe: do-not-commit\n\nChange nothing else: no reformatting, no renaming, no reordering, no other edits of any kind. Every other line of every file must come back byte-for-byte identical to the input.",
+    "probe_marker": "// contract-probe: do-not-commit",
+    "silent_elision_min_run": 3,
+    "repeats": 1,
+    "arms": "both",
+    "categories": "truncated (finish_reason=length | unclosed block | missing block) > elided (a novel ellipsis / 'rest unchanged' comment, or >= silent_elision_min_run consecutive original lines gone with no marker) > complete. First matching rule wins.",
+    "caveat": "One response per case measures size- and block-count-dependence, not run-to-run variance at fixed size. Re-run with --repeats>1 for the latter."
+  },
+  "summary": {
+    "responses_requested": 1,
+    "responses_scored": 1,
+    "skipped_over_output_cap": 0,
+    "errored": 0,
+    "first_response": {
+      "complete": 0,
+      "elided": 0,
+      "truncated": 1,
+      "complete_rate": 0
+    },
+    "corrective_retry": {
+      "eligible": 1,
+      "complete": 0,
+      "elided": 0,
+      "truncated": 1,
+      "rescued": 0
+    },
+    "responses_with_a_verbatim_echo": 0,
+    "responses_with_probe_in_every_file": 0,
+    "by_arm": [
+      {
+        "arm": "single",
+        "n": 1,
+        "complete": 0,
+        "elided": 0,
+        "truncated": 1
+      }
+    ],
+    "variance": null
+  },
+  "rows": [
+    {
+      "case_id": "AD",
+      "base_case_id": "AD",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/tools/repair.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 35656,
+      "estimated_output_tokens": 10187,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "truncated",
+        "reason": "unclosed <file> block(s) for src/tools/repair.ts — output stopped mid-file without finish_reason=length",
+        "finish_reason": "stop",
+        "latency_ms": 140313,
+        "prompt_tokens": 8756,
+        "completion_tokens": 7673,
+        "raw_bytes": 32184,
+        "raw_sha256_16": "f7d8ec30edc19d1c",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/repair.ts",
+            "returned": false,
+            "absence": "unclosed_block",
+            "original_bytes": 35656,
+            "returned_bytes": null,
+            "original_lines": 816,
+            "returned_lines": null,
+            "added_lines": null,
+            "removed_lines": null,
+            "longest_deleted_run": null,
+            "elision_markers": [],
+            "probe_applied": null,
+            "verbatim_echo": null,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": {
+        "attempt": 2,
+        "category": "truncated",
+        "reason": "unclosed <file> block(s) for src/tools/repair.ts — output stopped mid-file without finish_reason=length",
+        "finish_reason": "stop",
+        "latency_ms": 140374,
+        "prompt_tokens": 8756,
+        "completion_tokens": 7673,
+        "raw_bytes": 32184,
+        "raw_sha256_16": "f7d8ec30edc19d1c",
+        "outer_fence": false,
+        "extra_paths": [],
+        "files": [
+          {
+            "path": "src/tools/repair.ts",
+            "returned": false,
+            "absence": "unclosed_block",
+            "original_bytes": 35656,
+            "returned_bytes": null,
+            "original_lines": 816,
+            "returned_lines": null,
+            "added_lines": null,
+            "removed_lines": null,
+            "longest_deleted_run": null,
+            "elision_markers": [],
+            "probe_applied": null,
+            "verbatim_echo": null,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "infra_retries": 0,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,709 @@
+{
+  "diagnostic": "contract-stability",
+  "contract": "IMPLEMENT_SYSTEM_PROMPT: return the COMPLETE final content of EVERY editable file listed in the request",
+  "run_id": "2026-08-04-mac-17-preflight",
+  "ts": "2026-08-04T19:11:05.991Z",
+  "repo": {
+    "head": "940d2b6dc85ec224231d6702597b41dccd169100",
+    "dirty": true
+  },
+  "model": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+  "model_selection_reason": "largest catalog model fitting usable free RAM (16 GB): mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2 (served as qwen3-coder-30b-a3b-instruct-dwq-v2)",
+  "config": {
+    "base_url": "http://localhost:1234/v1",
+    "temperature": 0.1,
+    "max_output_tokens": 16384,
+    "output_usable_fraction": 0.9,
+    "output_bytes_per_token": 3.5,
+    "usable_output_tokens": 14745,
+    "timeout_ms": 600000,
+    "loaded_context_length": 16384,
+    "loaded_max_context_length": 262144
+  },
+  "method": {
+    "spec": "Append the following comment as the last line of every editable file, exactly as written:\n\n// contract-probe: do-not-commit\n\nChange nothing else: no reformatting, no renaming, no reordering, no other edits of any kind. Every other line of every file must come back byte-for-byte identical to the input.",
+    "probe_marker": "// contract-probe: do-not-commit",
+    "silent_elision_min_run": 3,
+    "repeats": 1,
+    "arms": "both",
+    "categories": "truncated (finish_reason=length | unclosed block | missing block) > elided (a novel ellipsis / 'rest unchanged' comment, or >= silent_elision_min_run consecutive original lines gone with no marker) > complete. First matching rule wins.",
+    "caveat": "One response per case measures size- and block-count-dependence, not run-to-run variance at fixed size. Re-run with --repeats>1 for the latter."
+  },
+  "summary": {
+    "responses_requested": 13,
+    "responses_scored": 11,
+    "refused_by_preflight": 2,
+    "refusals": [
+      {
+        "case_id": "L10",
+        "paths": [
+          "src/tools/repair.ts"
+        ],
+        "code": "context_would_overflow"
+      },
+      {
+        "case_id": "G3",
+        "paths": [
+          "src/fs-safety.ts",
+          "src/cost/transcript.ts"
+        ],
+        "code": "context_would_overflow"
+      }
+    ],
+    "errored": 0,
+    "first_response": {
+      "complete": 11,
+      "elided": 0,
+      "truncated": 0,
+      "complete_rate": 1
+    },
+    "corrective_retry": {
+      "eligible": 0,
+      "complete": 0,
+      "elided": 0,
+      "truncated": 0,
+      "rescued": 0
+    },
+    "responses_with_a_verbatim_echo": 0,
+    "responses_with_probe_in_every_file": 11,
+    "by_arm": [
+      {
+        "arm": "single",
+        "n": 9,
+        "complete": 9,
+        "elided": 0,
+        "truncated": 0
+      },
+      {
+        "arm": "multi",
+        "n": 2,
+        "complete": 2,
+        "elided": 0,
+        "truncated": 0
+      }
+    ],
+    "variance": null
+  },
+  "rows": [
+    {
+      "case_id": "L01",
+      "base_case_id": "L01",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/logger.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 665,
+      "estimated_output_tokens": 190,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 2144,
+        "prompt_tokens": 418,
+        "completion_tokens": 190,
+        "raw_bytes": 734,
+        "raw_sha256_16": "ec87a482b1b73b32",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L01.a1.txt",
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L02",
+      "base_case_id": "L02",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/diff.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 1688,
+      "estimated_output_tokens": 482,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 5180,
+        "prompt_tokens": 688,
+        "completion_tokens": 460,
+        "raw_bytes": 1755,
+        "raw_sha256_16": "2239b08e554ae419",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L02.a1.txt",
+        "files": [
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L03",
+      "base_case_id": "L03",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/telemetry.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 3381,
+      "estimated_output_tokens": 966,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 8974,
+        "prompt_tokens": 1053,
+        "completion_tokens": 825,
+        "raw_bytes": 3453,
+        "raw_sha256_16": "e17057ebc971ab75",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L03.a1.txt",
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3415,
+            "original_lines": 92,
+            "returned_lines": 94,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L04",
+      "base_case_id": "L04",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/parse.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 4822,
+      "estimated_output_tokens": 1378,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 14390,
+        "prompt_tokens": 1447,
+        "completion_tokens": 1218,
+        "raw_bytes": 4910,
+        "raw_sha256_16": "ab529c4657278a59",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L04.a1.txt",
+        "files": [
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4876,
+            "original_lines": 122,
+            "returned_lines": 123,
+            "added_lines": 6,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": "diff --git a/src/parse.ts b/src/parse.ts\n--- a/src/parse.ts\n+++ b/src/parse.ts\n@@ -3,8 +3,8 @@\n import { log } from \"./logger.js\";\n \n /**\n- * Strip <think>…</think> blocks (Qwen3 hybrid-thinking output). An unclosed\n- * <think> — a truncation artifact — strips to the end of the string.\n+ * Strip <tool_call>…<tool_call> blocks (Qwen3 hybrid-thinking output). An unclosed\n+ * <tool_call> — a truncation artifact — strips to the end of the string.\n  *\n  * Note: parseFileBlocks does NOT run this over the whole output (that would\n  * corrupt file content legitimately containing those literals); it ignores\n@@ -12,8 +12,8 @@\n  * This helper is exported for callers that need it on non-file text.\n  */\n export function stripThinkBlocks(text: string): string {\n-  let out = text.replace(/<think>[\\s\\S]*?<\\/think>/g, \"\");\n-  const unclosed = out.indexOf(\"<think>\");\n+  let out = text.replace(/<tool_call>[\\s\\S]*?<\\/think>/g, \"\");\n+  const unclosed = out.indexOf(\"<tool_call>\");\n   if (unclosed !== -1) out = out.slice(0, unclosed);\n   return out;\n }\n@@ -63,7 +63,7 @@\n  * Strategy: split the output at line-anchored opening tags; within each\n  * segment the content runs to the LAST line-anchored `</file>` (so embedded\n  * `</file>` literals inside content survive as long as the block is properly\n- * closed). Everything outside blocks — reasoning, `<think>` spans, prose — is\n+ * closed). Everything outside blocks — reasoning, <tool_call> spans, prose — is\n  * ignored. A segment with no closing tag (truncation, or a stray opening tag\n  * quoted inside reasoning) is dropped with a stderr warning, which routes\n  * declared files into the missing-file retry path.\n@@ -119,3 +119,4 @@\n export const FILE_BLOCK_FORMAT = `<file path=\"relative/path.ts\">\n ...entire final file content...\n </file>`;\n+// contract-probe: do-not-commit\n"
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L05",
+      "base_case_id": "L05",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/server.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 6578,
+      "estimated_output_tokens": 1879,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 19259,
+        "prompt_tokens": 1797,
+        "completion_tokens": 1569,
+        "raw_bytes": 6646,
+        "raw_sha256_16": "4976cfa86960c51d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L05.a1.txt",
+        "files": [
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L06",
+      "base_case_id": "L06",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/fs-safety.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 14659,
+      "estimated_output_tokens": 4188,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 53729,
+        "prompt_tokens": 3978,
+        "completion_tokens": 3750,
+        "raw_bytes": 14730,
+        "raw_sha256_16": "1087bf574a95e709",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L06.a1.txt",
+        "files": [
+          {
+            "path": "src/fs-safety.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 14659,
+            "returned_bytes": 14692,
+            "original_lines": 381,
+            "returned_lines": 382,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L07",
+      "base_case_id": "L07",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 12129,
+      "estimated_output_tokens": 3465,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 41868,
+        "prompt_tokens": 3281,
+        "completion_tokens": 3053,
+        "raw_bytes": 12206,
+        "raw_sha256_16": "46123becd150a696",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L07.a1.txt",
+        "files": [
+          {
+            "path": "src/cost/transcript.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 12129,
+            "returned_bytes": 12162,
+            "original_lines": 332,
+            "returned_lines": 333,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L08",
+      "base_case_id": "L08",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/tools/gate.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 15891,
+      "estimated_output_tokens": 4540,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 62558,
+        "prompt_tokens": 4181,
+        "completion_tokens": 3953,
+        "raw_bytes": 15964,
+        "raw_sha256_16": "2574b40625b74c30",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L08.a1.txt",
+        "files": [
+          {
+            "path": "src/tools/gate.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 15891,
+            "returned_bytes": 15925,
+            "original_lines": 411,
+            "returned_lines": 413,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L09",
+      "base_case_id": "L09",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/cost/report.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 23063,
+      "estimated_output_tokens": 6589,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 1 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 103522,
+        "prompt_tokens": 6073,
+        "completion_tokens": 5845,
+        "raw_bytes": 23136,
+        "raw_sha256_16": "e904ca182d647dfd",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.L09.a1.txt",
+        "files": [
+          {
+            "path": "src/cost/report.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 23063,
+            "returned_bytes": 23096,
+            "original_lines": 555,
+            "returned_lines": 556,
+            "added_lines": 3,
+            "removed_lines": 2,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": "diff --git a/src/cost/report.ts b/src/cost/report.ts\n--- a/src/cost/report.ts\n+++ b/src/cost/report.ts\n@@ -527,8 +527,8 @@\n   let unitsTotal = 0;\n   for (const saving of byTool.values()) {\n     saving.unitsTotal = saving.unitsFromSuppression + saving.unitsFromTurnCollapse;\n-    // One unpriced match makes the whole tool's dollar figure unknown; a partial\n-    // sum presented as a total is the same lie as a missing one.\n+    // One unpriced match makes the whole tool's dollar figure unknown; a\n+    // partial sum presented as a total is the same lie as a missing one.\n     if (unpriced.has(saving.tool)) saving.usd = null;\n     unitsTotal += saving.unitsTotal;\n   }\n@@ -552,3 +552,4 @@\n     provenanceUnavailable,\n   };\n }\n+// contract-probe: do-not-commit\n"
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "L10",
+      "base_case_id": "L10",
+      "arm": "single",
+      "repeat": 1,
+      "paths": [
+        "src/tools/repair.ts"
+      ],
+      "block_count": 1,
+      "total_bytes": 36732,
+      "estimated_output_tokens": 10495,
+      "usable_output_tokens": 14745,
+      "first": null,
+      "retry": null,
+      "infra_retries": 0,
+      "error": {
+        "code": "context_would_overflow",
+        "message": "This request needs ~20191 tokens (~9696 of prompt plus ~10495 for the whole-file answer) but the loaded model's context is 16384 tokens, ~14745 of it usable. Input and output SHARE that window, so raising LOCAL_CODER_MAX_OUTPUT_TOKENS cannot help. Editable files: src/tools/repair.ts (35.9 KB). Send fewer or smaller files, or reload the model with a larger context (`lms load --context-length`) and set LOCAL_CODER_CONTEXT_TOKENS to match."
+      }
+    },
+    {
+      "case_id": "G1",
+      "base_case_id": "G1",
+      "arm": "multi",
+      "repeat": 1,
+      "paths": [
+        "src/logger.ts",
+        "src/diff.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 2353,
+      "estimated_output_tokens": 672,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 2 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 7602,
+        "prompt_tokens": 868,
+        "completion_tokens": 649,
+        "raw_bytes": 2490,
+        "raw_sha256_16": "f2aa9d1174009e7d",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.G1.a1.txt",
+        "files": [
+          {
+            "path": "src/logger.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 665,
+            "returned_bytes": 699,
+            "original_lines": 19,
+            "returned_lines": 21,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          },
+          {
+            "path": "src/diff.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 1688,
+            "returned_bytes": 1722,
+            "original_lines": 54,
+            "returned_lines": 56,
+            "added_lines": 2,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G2",
+      "base_case_id": "G2",
+      "arm": "multi",
+      "repeat": 1,
+      "paths": [
+        "src/telemetry.ts",
+        "src/parse.ts",
+        "src/server.ts"
+      ],
+      "block_count": 3,
+      "total_bytes": 14781,
+      "estimated_output_tokens": 4223,
+      "usable_output_tokens": 14745,
+      "first": {
+        "attempt": 1,
+        "category": "complete",
+        "reason": "all 3 declared block(s) present and closed, no dropped content",
+        "finish_reason": "stop",
+        "latency_ms": 52125,
+        "prompt_tokens": 3821,
+        "completion_tokens": 3611,
+        "raw_bytes": 15014,
+        "raw_sha256_16": "c2eee8bc7eaf93e1",
+        "outer_fence": false,
+        "extra_paths": [],
+        "spill": ".local-coder/contract-spill/2026-08-04-mac-17-preflight.G2.a1.txt",
+        "files": [
+          {
+            "path": "src/telemetry.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 3381,
+            "returned_bytes": 3414,
+            "original_lines": 92,
+            "returned_lines": 93,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          },
+          {
+            "path": "src/parse.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 4822,
+            "returned_bytes": 4878,
+            "original_lines": 122,
+            "returned_lines": 123,
+            "added_lines": 6,
+            "removed_lines": 5,
+            "longest_deleted_run": 2,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": "diff --git a/src/parse.ts b/src/parse.ts\n--- a/src/parse.ts\n+++ b/src/parse.ts\n@@ -3,8 +3,8 @@\n import { log } from \"./logger.js\";\n \n /**\n- * Strip <think>…</think> blocks (Qwen3 hybrid-thinking output). An unclosed\n- * <think> — a truncation artifact — strips to the end of the string.\n+ * Strip <tool_call>…<tool_call> blocks (Qwen3 hybrid-thinking output). An unclosed\n+ * <tool_call> — a truncation artifact — strips to the end of the string.\n  *\n  * Note: parseFileBlocks does NOT run this over the whole output (that would\n  * corrupt file content legitimately containing those literals); it ignores\n@@ -12,8 +12,8 @@\n  * This helper is exported for callers that need it on non-file text.\n  */\n export function stripThinkBlocks(text: string): string {\n-  let out = text.replace(/<think>[\\s\\S]*?<\\/think>/g, \"\");\n-  const unclosed = out.indexOf(\"<think>\");\n+  let out = text.replace(/<tool_call>[\\s\\S]*?<\\/think>/g, \"\");\n+  const unclosed = out.indexOf(\"<tool_call>\");\n   if (unclosed !== -1) out = out.slice(0, unclosed);\n   return out;\n }\n@@ -63,7 +63,7 @@\n  * Strategy: split the output at line-anchored opening tags; within each\n  * segment the content runs to the LAST line-anchored `</file>` (so embedded\n  * `</file>` literals inside content survive as long as the block is properly\n- * closed). Everything outside blocks — reasoning, `<think>` spans, prose — is\n+ * closed). Everything outside blocks — reasoning, `<tool_call>` spans, prose — is\n  * ignored. A segment with no closing tag (truncation, or a stray opening tag\n  * quoted inside reasoning) is dropped with a stderr warning, which routes\n  * declared files into the missing-file retry path.\n@@ -119,3 +119,4 @@\n export const FILE_BLOCK_FORMAT = `<file path=\"relative/path.ts\">\n ...entire final file content...\n </file>`;\n+// contract-probe: do-not-commit\n"
+          },
+          {
+            "path": "src/server.ts",
+            "returned": true,
+            "absence": null,
+            "original_bytes": 6578,
+            "returned_bytes": 6611,
+            "original_lines": 226,
+            "returned_lines": 227,
+            "added_lines": 1,
+            "removed_lines": 0,
+            "longest_deleted_run": 0,
+            "elision_markers": [],
+            "probe_applied": true,
+            "verbatim_echo": false,
+            "replacement_diff": null
+          }
+        ]
+      },
+      "retry": null,
+      "infra_retries": 0,
+      "error": null
+    },
+    {
+      "case_id": "G3",
+      "base_case_id": "G3",
+      "arm": "multi",
+      "repeat": 1,
+      "paths": [
+        "src/fs-safety.ts",
+        "src/cost/transcript.ts"
+      ],
+      "block_count": 2,
+      "total_bytes": 26788,
+      "estimated_output_tokens": 7654,
+      "usable_output_tokens": 14745,
+      "first": null,
+      "retry": null,
+      "infra_retries": 0,
+      "error": {
+        "code": "context_would_overflow",
+        "message": "This request needs ~14800 tokens (~7146 of prompt plus ~7654 for the whole-file answer) but the loaded model's context is 16384 tokens, ~14745 of it usable. Input and output SHARE that window, so raising LOCAL_CODER_MAX_OUTPUT_TOKENS cannot help. Editable files: src/fs-safety.ts (14.3 KB), src/cost/transcript.ts (11.8 KB). Send fewer or smaller files, or reload the model with a larger context (`lms load --context-length`) and set LOCAL_CODER_CONTEXT_TOKENS to match."
+      }
+    }
+  ]
+}

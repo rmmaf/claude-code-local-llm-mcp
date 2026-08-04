@@ -33,7 +33,12 @@ export function testConfig(root: string, overrides: Partial<Config> = {}): Confi
     // undefined, makes the budget NaN, and every comparison against NaN is
     // false, so the pre-flight would refuse every generation in the suite.
     outputBytesPerToken: 3.5,
+    inputBytesPerToken: 3.9,
     outputUsableFraction: 0.9,
+    // null = "probe lms", and `resolveContextTokens` declines to probe when a
+    // fetch was injected and no runner was, so the suite stays offline. Spelled
+    // out for the reason above: omitted, it arrives as undefined.
+    contextTokens: null,
     // OFF here, unlike the shipped default. A test root is a scratch directory,
     // and a suite that quietly wrote CLAUDE.md into one would be exercising a
     // side effect nobody asked for. `tests/claude-md.test.ts` turns it on

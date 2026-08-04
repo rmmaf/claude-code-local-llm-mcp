@@ -12,11 +12,53 @@ import {
 } from "../fs-safety.js";
 import type { CommandRunner } from "../exec.js";
 import { chatCompletion, type ChatMessage, type FetchLike, type Usage } from "../llm-client.js";
+import { getLoadedLmsModels, pickLoadedContextTokens } from "../lms.js";
 import { log } from "../logger.js";
 import { FILE_BLOCK_FORMAT, normalizeRel, parseFileBlocks } from "../parse.js";
 import { resolveModel } from "../selection.js";
 
 export { normalizeRel };
+
+/**
+ * Resolve the context window the pre-flight will judge against: the explicit
+ * setting when there is one, otherwise whatever `lms ps` can tell us, otherwise
+ * null so the check is skipped.
+ *
+ * The explicit value short-circuits the probe entirely, which is what makes this
+ * free for anyone who sets `LOCAL_CODER_CONTEXT_TOKENS` — and the probe costs
+ * ~120 ms measured, against generations that run for seconds to minutes.
+ */
+export async function resolveContextTokens(
+  config: Config,
+  wanted: string | undefined,
+  deps: { runner?: CommandRunner; contextTokens?: number | null; fetchImpl?: FetchLike } = {}
+): Promise<number | null> {
+  if (deps.contextTokens !== undefined) return deps.contextTokens;
+  // `typeof`, not `!== null`: a Config literal built without the field (nothing
+  // type-checks those) arrives as undefined, and returning that would hand
+  // `enforceOutputCap` a NaN budget.
+  if (typeof config.contextTokens === "number") return config.contextTokens;
+  // Probe only with a runner we were actually handed, or the real one when the
+  // caller injected no fetch either. Same rule `selection.ts` applies to its
+  // `/models` probe and for the same reason: a suite that injected a fake fetch
+  // must not reach out to the real machine, or the offline tests turn green only
+  // where LM Studio happens to be running.
+  if (deps.runner === undefined && deps.fetchImpl !== undefined) return null;
+  return pickLoadedContextTokens(await getLoadedLmsModels(deps.runner), wanted);
+}
+
+/** Bytes of everything that enters the prompt — every file sent, plus the spec. */
+export function promptInputBytes(
+  statted: ReadonlyArray<{ bytes: number }>,
+  spec: string,
+  errorOutput?: string | undefined
+): number {
+  return (
+    statted.reduce((sum, f) => sum + f.bytes, 0) +
+    Buffer.byteLength(spec, "utf8") +
+    (errorOutput === undefined ? 0 : Buffer.byteLength(errorOutput, "utf8"))
+  );
+}
 
 /** Injection points for tests: mocked fetch, canned memory probes. */
 export interface ToolDeps {
@@ -59,6 +101,13 @@ export interface ToolDeps {
    * they were precisely the failures — which is what B6 counts and what B7 times.
    */
   onModelResolved?: (model: string) => void;
+  /**
+   * Context window to judge the request against, bypassing both the config
+   * setting and the `lms` probe. `repair` passes its own already-resolved value
+   * so the loop does not re-probe once per round, and tests use it to exercise
+   * the pre-flight without a fake runner. `null` explicitly disables the check.
+   */
+  contextTokens?: number | null;
 }
 
 export interface GenerationArgs {
@@ -82,7 +131,14 @@ export interface GenerationResult {
   usage: Usage;
 }
 
-const IMPLEMENT_SYSTEM_PROMPT = `You are a senior software engineer implementing a precise specification.
+/**
+ * Exported for `scripts/contract-stability.ts`, which measures how often the
+ * local model honours this contract. That diagnostic must send the SAME bytes
+ * this pipeline sends — a copy in the script would drift and quietly start
+ * measuring a prompt the server does not use. Same reason `buildUserMessage`,
+ * `correctiveMessage` and `LoadedFile` are exported below.
+ */
+export const IMPLEMENT_SYSTEM_PROMPT = `You are a senior software engineer implementing a precise specification.
 Rules:
 - Follow the specification exactly. Change only what the specification requires.
 - Preserve each file's existing code style, formatting, naming, and imports.
@@ -94,7 +150,7 @@ ${FILE_BLOCK_FORMAT}
 const FIX_SYSTEM_PROMPT = `${IMPLEMENT_SYSTEM_PROMPT}
 - You are fixing a concrete reported failure. Make the MINIMAL targeted change that resolves the error output. Do not refactor, rewrite, reformat, or "improve" anything the fix does not require.`;
 
-interface LoadedFile {
+export interface LoadedFile {
   rel: string;
   abs: string;
   content: string;
@@ -138,7 +194,7 @@ function embedContent(content: string): string {
   return `${content}\n`;
 }
 
-function buildUserMessage(
+export function buildUserMessage(
   args: GenerationArgs,
   editable: LoadedFile[],
   context: LoadedFile[]
@@ -179,7 +235,7 @@ function effectivelyUnchanged(oldContent: string, newContent: string): boolean {
   return !oldContent.endsWith("\n") && newContent === `${oldContent}\n`;
 }
 
-function correctiveMessage(problem: string, missing: string[]): string {
+export function correctiveMessage(problem: string, missing: string[]): string {
   const missingNote =
     missing.length > 0
       ? `The following declared file(s) were missing from your response: ${missing.join(", ")}. `
@@ -258,7 +314,14 @@ export async function runGeneration(
     statted.filter((f) => editableSet.has(normalizeRel(f.rel))),
     config.maxOutputTokens,
     config.outputBytesPerToken,
-    config.outputUsableFraction
+    config.outputUsableFraction,
+    {
+      contextTokens: await resolveContextTokens(config, args.model, deps),
+      // Every file sent, editable AND context, plus the spec — all of it shares
+      // the window with the answer.
+      inputBytes: promptInputBytes(statted, args.spec, args.error_output),
+      inputBytesPerToken: config.inputBytesPerToken,
+    }
   );
 
   const editable = await loadFiles(config.root, editablePaths, config.maxFileKb);
@@ -333,7 +396,11 @@ export async function runGeneration(
     throw new ToolError(
       `The local model failed to produce valid output after a corrective retry: ${lastProblem}. ` +
         (lastMissing.length > 0 ? `Missing files: ${lastMissing.join(", ")}. ` : "") +
-        "Consider narrowing the spec, sending fewer files, or raising LOCAL_CODER_MAX_OUTPUT_TOKENS if truncated.",
+        "Consider narrowing the spec or sending fewer files. If it truncated, raising " +
+        "LOCAL_CODER_MAX_OUTPUT_TOKENS only helps when that cap is what bound the answer — " +
+        "prompt and answer share the model's context window, so past ~25 KB of editable source " +
+        "at a 16k window the window is the binding limit and the fix is to reload the model with " +
+        "a larger context (see `status` → context_window).",
       "model_output_malformed",
       { problem: lastProblem, missing_files: lastMissing, model }
     );

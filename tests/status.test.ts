@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { CommandRunner } from "../src/exec.js";
 import { runStatus } from "../src/tools/status.js";
 import {
   fakeRunner,
@@ -12,6 +13,70 @@ import {
 } from "./helpers.js";
 
 const GB = 1024 ** 3;
+
+/**
+ * `fakeRunner` keys on the command alone, so it cannot give `lms ls` and
+ * `lms ps` different bodies — which the context window needs, since only `ps`
+ * reports a context length.
+ */
+function lmsSubcommandRunner(bodies: { ls?: string; ps?: string }): CommandRunner {
+  return async (command, args) => {
+    if (command !== "lms") throw new Error(`unexpected command: ${command}`);
+    const body = args[0] === "ps" ? bodies.ps : args[0] === "ls" ? bodies.ls : undefined;
+    if (body === undefined) throw new Error(`no canned body for: lms ${args.join(" ")}`);
+    return body;
+  };
+}
+
+describe("status context window", () => {
+  const psBody = JSON.stringify([
+    { modelKey: "test-solo-model", contextLength: 16_384, maxContextLength: 262_144 },
+  ]);
+
+  it("reports the window probed from lms, and how much a reload could buy", async () => {
+    const { fetchImpl } = queuedFetch([{ data: [{ id: "test-solo-model" }] }]);
+    const result = await runStatus(testConfig(makeTempRoot()), {
+      fetchImpl,
+      platform: "linux",
+      runner: lmsSubcommandRunner({ ls: lmsListBody([]), ps: psBody }),
+    });
+
+    expect(result.context_window.tokens).toBe(16_384);
+    expect(result.context_window.source).toBe("lms");
+    expect(result.context_window.max_tokens).toBe(262_144);
+  });
+
+  it("prefers the explicit setting over the probe", async () => {
+    const { fetchImpl } = queuedFetch([{ data: [{ id: "test-solo-model" }] }]);
+    const result = await runStatus(testConfig(makeTempRoot(), { contextTokens: 32_768 }), {
+      fetchImpl,
+      platform: "linux",
+      runner: lmsSubcommandRunner({ ls: lmsListBody([]), ps: psBody }),
+    });
+
+    expect(result.context_window.tokens).toBe(32_768);
+    expect(result.context_window.source).toBe("config");
+    expect(result.config.context_tokens).toBe(32_768);
+  });
+
+  /**
+   * The case worth surfacing loudest: nothing loaded and nothing configured
+   * means the context pre-flight is switched OFF, and a user seeing
+   * whole-file answers come back short needs to be able to find that out.
+   */
+  it("reports source 'unknown' when the window cannot be determined", async () => {
+    const { fetchImpl } = queuedFetch([{ data: [] }]);
+    const result = await runStatus(testConfig(makeTempRoot()), {
+      fetchImpl,
+      platform: "linux",
+      runner: noLmsRunner(),
+    });
+
+    expect(result.context_window.tokens).toBeNull();
+    expect(result.context_window.source).toBe("unknown");
+    expect(result.config.context_tokens).toBeNull();
+  });
+});
 
 describe("status", () => {
   it("reports reachable: false with the lms hint when the endpoint is down — and never throws", async () => {

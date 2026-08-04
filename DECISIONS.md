@@ -1208,3 +1208,53 @@ itself is emitted only on `true`.
 Two rounds of review on one sentence, in opposite directions. The pattern worth
 keeping: "we cannot tell" is a claim about the evidence and needs checking as
 carefully as the claim it replaces.
+
+### The output cap was never the ceiling — input and output share one window
+
+`enforceOutputCap` compared an estimated *output* size against
+`maxOutputTokens` and nothing else. That is half of the constraint. The model
+holds prompt and answer in one context window, and the whole-file contract sends
+every editable file **in** and gets every one **back**, so a request costs
+roughly twice the bytes it touches. `run 2026-08-04-mac-12-variance` is what the
+missing half looks like: `src/tools/repair.ts` cleared the output cap at ~10,187
+estimated tokens against ~14,745 usable, and then needed 8,756 prompt + 7,670
+completion = 16,426 in a 16,384-token window.
+
+The response was not an error. It was a `<file>` block, properly closed,
+`finish_reason: "stop"`, **90 lines short**. Every signal the pipeline reads says
+that is fine — which is why this belonged in the pre-flight rather than in
+better error handling downstream. There is no downstream.
+
+Three choices inside the fix are worth stating, because each had a cheaper wrong
+version.
+
+**Two divisors, not one.** Reusing `outputBytesPerToken` on the input side is the
+obvious move and it cost real coverage immediately: `run 2026-08-04-mac-16-preflight`
+refused a 26,345 B pair that measured 11,237 actual tokens and had returned
+complete 3 of 3. The two quantities are not the same kind of thing. The output
+divisor predicts how many tokens a model will *emit* — a guess about behaviour,
+kept pessimistic because under-guessing means a truncation. The input divisor
+counts tokens in text that already exists, which is arithmetic. Fitted against
+the 13 measured prompts, 3.9 is the largest value that under-predicts none of
+them.
+
+**An unknown window fails open.** `pickLoadedContextTokens` returns null — skip
+the check — when `lms` is unavailable, when nothing is loaded, and when several
+models are loaded and none was named. A pre-flight that *refuses* work must not
+act on a guess; the asymmetry is that skipping risks one bad response, while
+guessing wrong refuses everything. The guard tests for a finite positive number
+rather than `!== null` for a reason that was observed, not imagined: `Config`
+literals in `tests/helpers.ts` are not type-checked (`tsconfig` covers `src/**`),
+so a missing field arrives as `undefined`, makes the budget `NaN`, every `<=`
+false, and a check meant to refuse one request refuses every one. Fifty tests
+went red on the `!== null` version.
+
+**`status` reports the window, including when it does not know it.**
+`context_window.source` is `config`, `lms` or `unknown`, and `unknown` is the
+case worth surfacing loudest: it means the check is switched off, silently. A
+refusal users cannot explain is a refusal they will work around.
+
+What this does **not** claim: that ~25 KB is a property of the contract. It is a
+property of a 30B coder loaded at 16,384 tokens. The model supports 262,144, and
+the honest remedy for both refused cases is `lms load --context-length` plus
+`LOCAL_CODER_CONTEXT_TOKENS` to match — not a looser estimate.

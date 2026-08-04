@@ -218,7 +218,23 @@ All environment variables are optional, with sane defaults:
 | `LOCAL_CODER_TIMEOUT_MS` | `300000` | per-request timeout (local models are slow on big generations) |
 | `LOCAL_CODER_MAX_FILE_KB` | `256` | per-file size cap |
 | `LOCAL_CODER_MAX_CONTEXT_KB` | `512` | total assembled-context cap |
+| `LOCAL_CODER_CONTEXT_TOKENS` | *(probed from `lms ps`)* | the loaded model's context window, shared by prompt **and** answer — see below |
+| `LOCAL_CODER_INPUT_BYTES_PER_TOKEN` | `3.9` | bytes of prompt per input token, for the context pre-flight |
 | `LOCAL_CODER_AUTO_CLAUDE_MD` | `1` | write the delegation policy into the project's `CLAUDE.md` at startup (see below); `0` to leave the file alone |
+
+### The context window is the real ceiling
+
+`LOCAL_CODER_MAX_OUTPUT_TOKENS` bounds the answer. It does **not** bound the request, because the prompt and the answer share one context window — and the whole-file output contract sends every editable file in *and* gets every one back, so a request costs roughly **twice** the bytes it touches.
+
+A pre-flight refuses requests that cannot fit, with `context_would_overflow`. It needs to know the window, and it finds out in this order:
+
+1. `LOCAL_CODER_CONTEXT_TOKENS`, if set.
+2. `lms ps`, when exactly one model is loaded (or the one you named is).
+3. Otherwise **the check is skipped** — it refuses requests, so it will not act on a guess.
+
+Run `status` to see which happened: `context_window.source` is `config`, `lms`, or `unknown`. If it says `unknown`, nothing is enforcing the window.
+
+Measured on a 30B coder at a 16,384-token window, the practical whole-file ceiling is **~25 KB of editable source per call**. Above it, the model does not necessarily fail loudly: `evidence/2026-08-04-mac-12-variance.contract-stability.json` records a 35.6 KB file coming back as a properly closed `<file>` block, with `finish_reason: "stop"`, **missing 90 lines** — a response every automated check accepts. Reload with a larger context (`lms load --context-length`) and set `LOCAL_CODER_CONTEXT_TOKENS` to match, or send fewer files per call.
 
 ## Model selection
 

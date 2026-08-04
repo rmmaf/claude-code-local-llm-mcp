@@ -87,9 +87,33 @@ What may be built next, and the number that decides it.
   16384-token cap a response cannot truncate before **~208 s**, so **B14 is not
   executable at all below that `timeoutMs`** and reports zero truncations by
   arithmetic rather than by merit.
+- **`D8` is MEASURED, and it did not stay a diagnostic**
+  (`run 2026-08-04-mac-11` … `-mac-17`, six artifacts under `evidence/`).
+  `scripts/contract-stability.ts` runs a 10-file size ladder of this repo, 665 B
+  to 35,656 B, plus three multi-file groups, scoring every response
+  `complete` / `elided` / `truncated` through `src/contract-probe.ts` — which
+  lives under `src/` on purpose, because `tsconfig.json` covers `src/**` only and
+  a scoring bug there would corrupt every number silently. Headline: **94.7%
+  complete** over 38 scored responses, and **the outcome is a function of size,
+  not a random variable** — 13 of 13 cases unanimous across three repeats, 12
+  byte-identical. Practical ceiling on this configuration: **~23 KB of editable
+  source** at a 16,384-token window.
+- **What `D8` found is why it stopped being a diagnostic.** Input and output
+  share one context window, and nothing in this codebase consulted it: the one
+  failing case came back as a properly closed `<file>` block with
+  `finish_reason: "stop"`, **missing 90 lines**. That shipped a context
+  pre-flight (`context_would_overflow`, `LOCAL_CODER_CONTEXT_TOKENS`,
+  `pickLoadedContextTokens`, `status.context_window`) which was on no roadmap.
+  The numbers and the unresolved threshold question are in **B14**.
+- **A `D3`/`D10` by-product, unlooked-for:** four LM Studio runtime crashes under
+  memory pressure, all on the single largest case — a 16 GB model plus the KV
+  cache for a ~7,700-token answer on a 36 GB machine. Refusing that request up
+  front removed them entirely. `lms ps` also now yields the loaded
+  `contextLength` (16,384) and `maxContextLength` (262,144), which is **not**
+  `D2`: a context length is not a measured KV-cache footprint.
 - **Still needed:** `D2` (real KV cache per context), `D3` (RAM ceiling and
   Auto-Evict), `D5` (Docker Desktop VM cost), `D10` (RAM floor with work apps
-  open), `D8` (output contract, stability, elision — now the engine of `repair`).
+  open).
 - **Dropped unless B8 < 70%:** `D7` (RAG recall and index footprint).
 - **Changed shape:** the RAM planner now sizes **two small models** (a repairer
   and a triager) instead of squeezing in one 27B. The question moved from
@@ -160,6 +184,28 @@ What may be built next, and the number that decides it.
 - **Blocked on B14 too, in one direction only:** if the pre-flight turns out to
   be too strict, its refusal count is inflated and would open this gate on an
   artefact. Read B14's result before reading this one.
+- **A number now exists, and this gate does NOT move on it.**
+  `run 2026-08-04-mac-17-preflight` ran the full `D8` corpus with both pre-flights
+  enforcing: **`output_would_truncate` refused 0 of 13**;
+  `context_would_overflow` refused 2. Two independent reasons that is not this
+  gate's number. **(a) Wrong denominator.** The amendment above fixed it to the
+  *captured* corpus for one stated reason — whoever writes the fixtures chooses
+  their sizes and therefore chooses the refusal rate — and a deliberately
+  size-graded ladder is that same problem in different clothes. 0% here would
+  kill this gate on an artefact of its own construction, which is the outcome the
+  amendment was written to prevent. **(b) A code that did not exist when the
+  threshold was written.** `context_would_overflow` shipped in this same run.
+  Both codes refuse a whole-file answer that will not fit; only one is named
+  above. **Which code the threshold means is an open question and is left open**
+  — deciding it now, with the counts already on the table, is choosing a
+  threshold by its answer. Whoever resolves it should write the resolution here
+  *before* the captured corpus runs, and say which of the two readings was
+  intended.
+- **B14 is now a second thing to read first, alongside the pre-existing note.**
+  If the estimator is too strict, refusals are inflated and this gate opens on an
+  artefact — that was already written down. `run 2026-08-04-mac-16-preflight`
+  observed exactly that over-refusal on a real request. Both directions are now
+  live, not just one.
 - **Active-gate count:** **six active** (G3, G4, G5, G6, G7, G-stop) since G2
   closed. **G7 takes the last slot under the ceiling of 6** — a seventh needs
   one of these to close or become moot first.

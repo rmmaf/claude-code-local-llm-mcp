@@ -1,6 +1,6 @@
 import { getClaudeMdState, type ClaudeMdResult } from "../claude-md.js";
 import type { Config } from "../config.js";
-import { getLmsModels, getLoadedLmsModels } from "../lms.js";
+import { getLmsModels, getLoadedLmsModels, pickLoadedContextTokens } from "../lms.js";
 import { listModels } from "../llm-client.js";
 import { log } from "../logger.js";
 import { bytesToGb, getMemoryInfo, type MemoryInfo } from "../memory.js";
@@ -38,6 +38,22 @@ export interface StatusResult {
   } | null;
   auto_selection: { model: string; reason: string };
   /**
+   * The context window the pre-flight will judge requests against, and where the
+   * number came from. Input and output SHARE it, so it — not
+   * `max_output_tokens` — is what bounds a whole-file answer.
+   *
+   * Here because `context_would_overflow` is a refusal users have to be able to
+   * explain, and `tokens: null` is the case worth surfacing loudest: the check
+   * is switched off, silently, until `lms` can name one loaded model or
+   * `LOCAL_CODER_CONTEXT_TOKENS` is set.
+   */
+  context_window: {
+    tokens: number | null;
+    source: "config" | "lms" | "unknown";
+    /** How much larger a reload could make it, when `lms` says. */
+    max_tokens: number | null;
+  };
+  /**
    * What the startup install of the delegation policy did, or null when it has
    * not run in this process. Read-only: `status` reports the outcome, it never
    * writes. See `src/claude-md.ts`.
@@ -52,6 +68,8 @@ export interface StatusResult {
     timeout_ms: number;
     max_file_kb: number;
     max_context_kb: number;
+    /** Explicit override, or null when the window is probed from `lms`. */
+    context_tokens: number | null;
     root: string;
   };
 }
@@ -105,6 +123,22 @@ export async function runStatus(config: Config, deps: ToolDeps = {}): Promise<St
         }
       : null,
     auto_selection: autoSelection,
+    context_window: (() => {
+      const probed = pickLoadedContextTokens(loaded, autoSelection.model);
+      const tokens = config.contextTokens ?? probed;
+      return {
+        tokens,
+        source:
+          config.contextTokens !== null
+            ? ("config" as const)
+            : probed !== null
+              ? ("lms" as const)
+              : ("unknown" as const),
+        max_tokens:
+          loaded?.find((m) => m.ids.some((id) => id === autoSelection.model))?.maxContextLength ??
+          null,
+      };
+    })(),
     claude_md: getClaudeMdState(),
     config: {
       base_url: config.baseUrl,
@@ -115,6 +149,7 @@ export async function runStatus(config: Config, deps: ToolDeps = {}): Promise<St
       timeout_ms: config.timeoutMs,
       max_file_kb: config.maxFileKb,
       max_context_kb: config.maxContextKb,
+      context_tokens: config.contextTokens,
       root: config.root,
     },
   };

@@ -17,7 +17,14 @@ import {
 import { log } from "../logger.js";
 import { createTelemetryWriter, type TelemetryWriter } from "../telemetry.js";
 import { runGate, type CheckReport, type GateResult } from "./gate.js";
-import { normalizeRel, runGeneration, statAll, type ToolDeps } from "./shared.js";
+import {
+  normalizeRel,
+  promptInputBytes,
+  resolveContextTokens,
+  runGeneration,
+  statAll,
+  type ToolDeps,
+} from "./shared.js";
 
 export const repairToolName = "repair";
 
@@ -366,11 +373,24 @@ export async function runRepair(
   // no round is spent, and no telemetry row claims a failure that never
   // happened. Editable files only; `context_files` are never echoed back.
   const editableSet = new Set(files);
+  // Resolved ONCE here, then handed to every round through deps. The loop runs
+  // `gate` and a generation per round; re-probing `lms ps` each time would put a
+  // shell-out inside the budget for a value that cannot change mid-loop.
+  const contextTokens = await resolveContextTokens(config, args.model, deps);
   enforceOutputCap(
     statted.filter((f) => editableSet.has(normalizeRel(f.rel))),
     config.maxOutputTokens,
     config.outputBytesPerToken,
-    config.outputUsableFraction
+    config.outputUsableFraction,
+    // Files plus the spec. Each round ALSO prepends that round's gate failures,
+    // which cannot be known here — `runGeneration`'s own pre-flight sees them
+    // and re-checks with the same window, so the round is refused there rather
+    // than truncated. This check is the cheap early bail-out, not the last word.
+    {
+      contextTokens,
+      inputBytes: promptInputBytes(statted, args.spec),
+      inputBytesPerToken: config.inputBytesPerToken,
+    }
   );
 
   const snapshots = await snapshot(config.root, files, config.maxFileKb);
@@ -380,7 +400,10 @@ export async function runRepair(
   const progress = { checksRan: false };
 
   try {
-    return await repairLoop(args, config, deps, {
+    // `contextTokens` rides along so `generationDeps` hands the SAME window to
+    // every round's pre-flight. Passing it explicitly — including as null —
+    // suppresses the per-round `lms ps` probe either way.
+    return await repairLoop(args, config, { ...deps, contextTokens }, {
       now,
       telemetry,
       started,

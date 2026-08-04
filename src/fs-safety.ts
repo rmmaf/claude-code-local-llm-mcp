@@ -204,6 +204,42 @@ export function enforceContextCaps(
 }
 
 /**
+ * What the context pre-flight needs on top of the editable files.
+ *
+ * `inputBytes` is EVERYTHING that goes into the prompt — editable files, context
+ * files, and the spec — because all of it competes with the answer for the same
+ * window. That is the opposite of the output estimate, which counts editable
+ * files only.
+ */
+export interface ContextWindowCheck {
+  /** Loaded context length in tokens, or null to skip the check. */
+  contextTokens: number | null;
+  /** Total bytes of the whole prompt: every file sent, plus the spec. */
+  inputBytes: number;
+  /**
+   * Bytes of prompt per input token. Deliberately NOT the output divisor — see
+   * `Config.inputBytesPerToken`. Omitted, it falls back to the output divisor,
+   * which is safe but over-refuses.
+   */
+  inputBytesPerToken?: number;
+}
+
+/**
+ * Tokens the prompt costs beyond the bytes it carries: the system prompt, the
+ * `<file path=…>` tag lines, and the closing "respond with exactly N blocks"
+ * instruction.
+ *
+ * Fitted, not guessed. Least squares over the 14 measured requests of
+ * `evidence/2026-08-04-mac-11` and `-mac-12-variance` gives
+ * `prompt_tokens ≈ 287 + bytes/4.11`, and ~85 of that intercept is the probe
+ * spec's own text — which `inputBytes` already counts — leaving ~200 for the
+ * fixed scaffolding. Residuals are within ±3% for every request over 9 KB, and
+ * the worst under-prediction across all 14 is 2.9%, which `usableFraction`
+ * covers.
+ */
+const PROMPT_OVERHEAD_TOKENS = 200;
+
+/**
  * Refuse a request whose whole-file answer would not fit in one response.
  *
  * The output contract (`shared.ts`) asks the model for the COMPLETE content of
@@ -223,29 +259,94 @@ export function enforceContextCaps(
  * without the model's tokenizer, and it would still be wrong for a model that
  * spends part of the same budget on reasoning tokens. B14 measures how often it
  * is wrong in the direction that matters.
+ *
+ * SECOND CHECK — THE CONTEXT WINDOW, when `window` is supplied. The output cap
+ * above is necessary and NOT sufficient, because input and output share one
+ * window and this function used to see only half of it:
+ * `run 2026-08-04-mac-12-variance` sent `src/tools/repair.ts` (35.6 KB) past a
+ * cap that computed ~10187 estimated output tokens against ~14745 usable and
+ * said yes — while the real request needed 8756 prompt tokens plus a ~8300-token
+ * answer in a 16384-token window. The model stopped when the window filled:
+ * 8756 + 7673 = 16429. It returned a `<file>` block that was properly closed,
+ * carried `finish_reason: "stop"`, and was missing 90 lines.
+ *
+ * That is the failure this check exists to prevent, and it is worse than a
+ * truncation: every signal the pipeline reads says the response is fine.
+ * `parseFileBlocks` finds the block, `finishReason` is not `"length"`, no file
+ * is missing, so no corrective retry fires and `runGeneration` returns a diff
+ * that DELETES the 90 lines. Only a human reading the diff would catch it.
+ *
+ * Skipped when the window is unknown, never guessed — see
+ * `pickLoadedContextTokens`. A pre-flight that refuses work must be sure.
  */
 export function enforceOutputCap(
   editable: ReadonlyArray<{ rel: string; bytes: number }>,
   maxOutputTokens: number,
   bytesPerToken: number,
-  usableFraction: number
+  usableFraction: number,
+  window?: ContextWindowCheck
 ): void {
   const budget = Math.floor(maxOutputTokens * usableFraction);
   const totalBytes = editable.reduce((sum, f) => sum + f.bytes, 0);
   const estimate = Math.round(totalBytes / bytesPerToken);
-  if (estimate <= budget) return;
+  if (estimate > budget) {
+    throw new ToolError(
+      `The whole-file answer for these files is estimated at ~${estimate} output tokens, ` +
+        `over the ~${budget} usable of ${maxOutputTokens}. Editable files: ` +
+        editable.map((f) => `${f.rel} (${formatKb(f.bytes)})`).join(", ") +
+        `. The response would be truncated mid-file, so nothing is sent. ` +
+        `Send fewer files, split the change, or raise LOCAL_CODER_MAX_OUTPUT_TOKENS.`,
+      "output_would_truncate",
+      {
+        estimated_output_tokens: estimate,
+        usable_output_tokens: budget,
+        max_output_tokens: maxOutputTokens,
+        bytes_per_token: bytesPerToken,
+        files: editable.map((f) => ({ path: f.rel, kb: kb(f.bytes) })),
+      }
+    );
+  }
+
+  // The context pre-flight. Skipped entirely when the window is unknown — see
+  // `pickLoadedContextTokens` for why a guess is worse than no check.
+  //
+  // The guard tests for a finite positive NUMBER rather than `!== null`, because
+  // the failure it prevents is asymmetric and was observed: a Config literal
+  // built without `contextTokens` (nothing type-checks those — `tsconfig`
+  // covers `src/**` only) arrives as `undefined`, makes the budget NaN, and
+  // every `<=` against NaN is false, so a check meant to refuse ONE oversized
+  // request refuses EVERY request instead. An unknown window must fail open.
+  if (window === undefined) return;
+  const { contextTokens } = window;
+  if (typeof contextTokens !== "number" || !Number.isFinite(contextTokens) || contextTokens <= 0) {
+    return;
+  }
+  const contextBudget = Math.floor(contextTokens * usableFraction);
+  const inputDivisor =
+    typeof window.inputBytesPerToken === "number" && window.inputBytesPerToken > 0
+      ? window.inputBytesPerToken
+      : bytesPerToken;
+  const inputEstimate = Math.round(window.inputBytes / inputDivisor) + PROMPT_OVERHEAD_TOKENS;
+  const total = inputEstimate + estimate;
+  if (total <= contextBudget) return;
   throw new ToolError(
-    `The whole-file answer for these files is estimated at ~${estimate} output tokens, ` +
-      `over the ~${budget} usable of ${maxOutputTokens}. Editable files: ` +
+    `This request needs ~${total} tokens (~${inputEstimate} of prompt plus ~${estimate} for the ` +
+      `whole-file answer) but the loaded model's context is ${contextTokens} tokens, ` +
+      `~${contextBudget} of it usable. Input and output SHARE that window, so raising ` +
+      `LOCAL_CODER_MAX_OUTPUT_TOKENS cannot help. Editable files: ` +
       editable.map((f) => `${f.rel} (${formatKb(f.bytes)})`).join(", ") +
-      `. The response would be truncated mid-file, so nothing is sent. ` +
-      `Send fewer files, split the change, or raise LOCAL_CODER_MAX_OUTPUT_TOKENS.`,
-    "output_would_truncate",
+      `. Send fewer or smaller files, or reload the model with a larger context ` +
+      `(\`lms load --context-length\`) and set LOCAL_CODER_CONTEXT_TOKENS to match.`,
+    "context_would_overflow",
     {
+      estimated_total_tokens: total,
+      estimated_input_tokens: inputEstimate,
       estimated_output_tokens: estimate,
-      usable_output_tokens: budget,
-      max_output_tokens: maxOutputTokens,
+      usable_context_tokens: contextBudget,
+      context_tokens: contextTokens,
       bytes_per_token: bytesPerToken,
+      input_bytes_per_token: inputDivisor,
+      input_bytes: window.inputBytes,
       files: editable.map((f) => ({ path: f.rel, kb: kb(f.bytes) })),
     }
   );
