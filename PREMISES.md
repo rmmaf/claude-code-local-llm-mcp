@@ -228,6 +228,13 @@ pre-registered as its own premise before anything is measured against it.
     source+test pairs fit (85%). At the shipped 0.9 headroom the bar is 7372
     tokens, which also refuses `gate.ts` + its test (8075) — **10 of 13** (77%).
     The repo is not behind a wall; it is sitting on the edge of one.
+    **Counted on a CRLF checkout**, so these are the pessimistic side: the same
+    files are ~1% smaller with LF endings (`run 2026-08-04-mac-08`), and a pair
+    within 1% of the bar can therefore land on either side of it by machine.
+  - **Verified against a real server**, `run 2026-08-04-mac-08`: the request that
+    truncated in `mac-05` is now refused with `output_would_truncate` and writes
+    **no telemetry row at all** — the property that un-shares the label — while a
+    request that fits passes the pre-flight and reaches the gate normally.
   - **Why refusing is worth more than the coverage it costs.** A truncated
     response throws and lands under `stopped_because: "model_failed"`, the same
     label a genuine loop failure gets. That shared label is what made B6
@@ -475,6 +482,15 @@ pre-registered as its own premise before anything is measured against it.
   `maxOutputTokens` before anything was stripped. No fixed divisor covers a
   variable amount of thinking, so if this premise falls, thinking is the first
   suspect and the fix may be the model rather than the constant.
+- **A second term, now measured rather than suspected:** the estimate is
+  line-ending dependent, because bytes are. The same two files come to 8882
+  tokens on a CRLF checkout and 8787 on an LF one — **1.1%**, and the 95-token
+  gap is exactly the 333 carriage returns in `tests/selection.test.ts`
+  (`run 2026-08-04-mac-08`). The estimator is byte-exact on both; the input
+  differs. **A request within ~1% of the bar can be refused on one machine and
+  allowed on another.** The 0.9 headroom is ten times that, so nothing is changed
+  for it — it is recorded because B14 is about the estimate's accuracy and this
+  is a term in it, not because it is currently costing anything.
 - **Experiment:** over the B6/B7 corpus, count (a) requests the pre-flight
   refused and (b) `finish_reason: "length"` among the requests it let through.
   Both are already visible: (a) is an `output_would_truncate` `ToolError`, (b) is

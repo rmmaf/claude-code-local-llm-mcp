@@ -5,12 +5,13 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B0's disposition shipped — the tools are scoped, they say so, and the output
-contract is unchanged.** `enforceOutputCap` estimates the whole-file answer for
-the editable files and refuses before anything is read: from `runGeneration` and,
-separately, from `runRepair` before the loop, so a request that cannot fit costs
-zero rounds and no telemetry row. **That unblocks B6** — truncation used to share
-the `model_failed` label with real loop failures, and now cannot reach a round.
+**B0's disposition shipped and is verified against a real server**
+(`run 2026-08-04-mac-08`): the tools are scoped, they say so, and the output
+contract is unchanged. `enforceOutputCap` estimates the whole-file answer for the
+editable files and refuses before anything is read — from `runGeneration` and,
+separately, from `runRepair` before the loop. **That unblocks B6:** truncation
+used to share the `model_failed` label with real loop failures; now it costs zero
+rounds and writes no telemetry row, so it cannot be mistaken for one.
 
 ## Next action
 
