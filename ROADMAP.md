@@ -127,16 +127,26 @@ What may be built next, and the number that decides it.
   not, and not matching is **detectable and refusable**, not silent corruption.
   The recorded reason is good and it does not transfer. That is the whole of why
   this gate may be opened at all.
-- **Opens only if ≥ 40% of the corpus's 20 tasks are refused by the pre-flight**
-  (`output_would_truncate`). The threshold is above the base rate on purpose:
-  **15% of this repo's source+test pairs are over the cap today**, so refusals
-  arriving at roughly that rate would say the refusal is uncorrelated with where
-  real work happens.
+- **Opens only if ≥ 40% of the CAPTURED corpus's tasks are refused by the
+  pre-flight** (`output_would_truncate`). The threshold is above the base rate on
+  purpose: **15% of this repo's source+test pairs are over the cap today**, so
+  refusals arriving at roughly that rate would say the refusal is uncorrelated
+  with where real work happens.
 - **Dies if < 20%.** At or near the base rate, the whole-file contract is not
   what blocks real work, and rewriting it would be paying for coverage nobody
-  was reaching for. **Both numbers are fixed here, before the corpus runs**, for
+  was reaching for. **Both numbers are fixed here, before any corpus runs**, for
   the reason G2 spells out: after the fact, "the implementation was wrong, not
   the idea" is always available.
+- **AMENDED before any data existed: the denominator is the *captured* corpus,
+  not corpus #1.** As first written this said "the corpus", and corpus #1 turned
+  out to be synthetic — which means whoever writes the fixtures chooses their
+  sizes and therefore chooses the refusal rate. Fixtures small enough to measure
+  B6 rather than B0 give 0% by construction and would have killed this gate
+  without evidence about anything. A pre-registered threshold decided by its own
+  generator is worse than no threshold. **The amendment is legitimate only
+  because it happened here, before the run:** the same edit after seeing a
+  result would be the exact move this file exists to prevent, and the difference
+  is the timing and nothing else.
 - **What it would cost if it opens:** a new parser, a new apply path, and it
   touches the compare-and-swap, the rollback and `effectivelyUnchanged`, all of
   which assume whole content today. It also needs **its own premise**: the rate

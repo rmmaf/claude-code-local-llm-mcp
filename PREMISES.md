@@ -259,6 +259,24 @@ pre-registered as its own premise before anything is measured against it.
   local model; every test uses a mocked one.
 - **Experiment:** 20 real mechanical failures (type errors, failing assertions,
   lint, missing imports); record `passed` and `rounds_used`.
+- **Corpus #1 is SYNTHETIC, and its distribution is chosen rather than
+  observed.** `scripts/corpus-run.sh` drives 20 tasks — 8 type errors, 4 missing
+  imports, 8 failing assertions — and that split is somebody's decision, so any
+  rate it produces carries the caveat **on the same line as the number**. Two
+  reasons it could not be observed instead, both checked rather than assumed:
+  - **The repo's history does not contain mechanical failures.** All 17 `fix:`
+    commits touching `src/` and `tests/` insert 17–368 lines, and every subject
+    describes a reasoning error. Reverting one yields a design task wearing a
+    red gate, which is the wrong category.
+  - **No archive of real failures existed.** `gate` parsed a typed `Failure[]`
+    on every red run and wrote `{checks, passed}` to telemetry, so the failures
+    were computed and dropped. Fixed now — the capture hook writes them to
+    `.local-coder/corpus/`, and **corpus #2 is the one that measures** instead
+    of choosing.
+- **Lint is structurally unreachable in this venue.** This repo configures no
+  linter, so one of B6's four categories cannot appear in any corpus taken here.
+  Same shape as B5's ceiling and for the same reason: the repo, not the tool.
+  A rate measured over three categories is not a rate over four.
 - **Measured:** **1 task, 11 `repair` calls, and still not a rate.**
   `run 2026-08-03-mac-06` recovered the payloads `run 2026-08-03-mac-05` reported
   it could not find. They were never missing: telemetry writes `rounds_used`
