@@ -115,8 +115,39 @@ What may be built next, and the number that decides it.
 - **Closes as dead if:** B13 < 5 pp, **or** the injection pushes the median
   `repair` round past B7's 150 s fall threshold — the lever fills the context the
   project exists to empty, so a time regression kills it outright.
-- **Active-gate count:** five active (G3, G4, G5, G6, G-stop) since G2 closed.
-  One slot left under the ceiling of 6.
+## G7 — search/replace output contract · `unevaluated`
+
+- **What it would be:** the model returns anchored `search → replace` blocks
+  instead of whole files, so output is proportional to the **edit** rather than
+  to the file. Coverage stops depending on file size.
+- **Why this is not the thing `DECISIONS.md` already rejected.** What was
+  rejected is **LLM-authored unified diffs**, and the stated reason is broken
+  hunks — line numbers and hunk arithmetic the model has to get right. Anchored
+  search/replace has neither: an exact string either matches once or it does
+  not, and not matching is **detectable and refusable**, not silent corruption.
+  The recorded reason is good and it does not transfer. That is the whole of why
+  this gate may be opened at all.
+- **Opens only if ≥ 40% of the corpus's 20 tasks are refused by the pre-flight**
+  (`output_would_truncate`). The threshold is above the base rate on purpose:
+  **15% of this repo's source+test pairs are over the cap today**, so refusals
+  arriving at roughly that rate would say the refusal is uncorrelated with where
+  real work happens.
+- **Dies if < 20%.** At or near the base rate, the whole-file contract is not
+  what blocks real work, and rewriting it would be paying for coverage nobody
+  was reaching for. **Both numbers are fixed here, before the corpus runs**, for
+  the reason G2 spells out: after the fact, "the implementation was wrong, not
+  the idea" is always available.
+- **What it would cost if it opens:** a new parser, a new apply path, and it
+  touches the compare-and-swap, the rollback and `effectivelyUnchanged`, all of
+  which assume whole content today. It also needs **its own premise**: the rate
+  at which a small local model emits a usable search/replace block is exactly
+  the kind of number this project does not accept by assumption.
+- **Blocked on B14 too, in one direction only:** if the pre-flight turns out to
+  be too strict, its refusal count is inflated and would open this gate on an
+  artefact. Read B14's result before reading this one.
+- **Active-gate count:** **six active** (G3, G4, G5, G6, G7, G-stop) since G2
+  closed. **G7 takes the last slot under the ceiling of 6** — a seventh needs
+  one of these to close or become moot first.
 
 ## G-stop — STOPPING CRITERION · `open`
 

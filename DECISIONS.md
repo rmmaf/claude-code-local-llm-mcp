@@ -101,6 +101,40 @@ stdout purity.
   output). Unclosed `<think>` (truncation artifact) strips to end of string.
   Markdown code fences wrapping the whole output are also tolerated and
   stripped, since small models do this even when told not to.
+- **The contract is kept, and the tools are scoped to fit it (B0's disposition).**
+  Whole-file output means the answer is the **sum** of the editable files,
+  regenerated on every attempt and every `repair` round, against
+  `maxOutputTokens`. Over the cap the response truncates mid-file — and
+  `repair` files that under `stopped_because: "model_failed"`, the same label a
+  genuine loop failure gets. That shared label, not the lost coverage, is the
+  expensive part: it is what made B6 unmeasurable.
+  `enforceOutputCap` (`src/fs-safety.ts`) estimates the answer from the editable
+  files' bytes and **refuses before anything is read or generated**, exactly as
+  `enforceContextCaps` already does for the input. Called from `runGeneration`
+  and, separately, from `runRepair` **before the loop** — so a request that
+  cannot fit costs zero rounds and writes no telemetry row.
+  - **Editable files only.** `context_files` go into the prompt and are never
+    echoed back, so they cost input budget and no output budget at all.
+  - **The estimate is an estimate**, and both constants are env-tunable
+    (`LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN`, `LOCAL_CODER_OUTPUT_USABLE_FRACTION`).
+    3.5 is not taste: it is the divisor at which the estimate reproduces the one
+    truncation ever observed (`run 2026-08-03-mac-05`). **B14** is what replaces
+    the calibration with a measurement; a test pins the constant to that
+    observation so it cannot drift away from it quietly.
+  - **`scaffold` is not covered**, and this is the record of that rather than an
+    oversight. It has its own generation loop, does not go through
+    `runGeneration`, and creates files that do not exist yet — so there is no
+    input size from which to estimate an output.
+- **Why not switch to search/replace blocks instead.** That is the other
+  disposition B0 allows, and it is **not rejected — it is gated** (`ROADMAP.md`
+  G7, opens at ≥ 40% of the corpus refused, dies below 20%). Worth being precise
+  about what the rejection above does and does not cover: what was rejected is
+  **LLM-authored unified diffs**, for broken hunks — line numbers and hunk
+  arithmetic. Anchored search/replace has neither, and a failed anchor is
+  detectable and refusable rather than silently wrong. So the recorded reason is
+  correct and simply does not reach that design. The cheap arm ships first and
+  the corpus decides whether the expensive one is needed, which is the same
+  order G3 uses for RAG.
 
 ## File safety
 

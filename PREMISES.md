@@ -217,8 +217,32 @@ pre-registered as its own premise before anything is measured against it.
   the tools are scoped to small files and said to be. **Raising
   `LOCAL_CODER_MAX_OUTPUT_TOKENS` buys headroom, not a fix:** the cost still
   scales with total file size × rounds.
-- **Status:** **fallen**, and it precedes B6 — decide the contract before
-  spending more runs on close rates.
+- **Disposition, decided:** the **second** option — the tools are scoped, and
+  they say so. `enforceOutputCap` estimates the whole-file answer for the
+  editable files and **refuses** before anything is read or generated, mirroring
+  what `enforceContextCaps` already does for the input. The output contract is
+  unchanged, so `DECISIONS.md § Model output contract` stands as written.
+  - **How much this repo keeps**, measured (estimate `bytes/3.5`, cap 8192):
+    **43 of 46** `.ts` files fit alone (93%; the three that do not are
+    `repair.ts`, `repair.test.ts`, `cost-meter.test.ts`), and **11 of 13**
+    source+test pairs fit (85%). At the shipped 0.9 headroom the bar is 7372
+    tokens, which also refuses `gate.ts` + its test (8075) — **10 of 13** (77%).
+    The repo is not behind a wall; it is sitting on the edge of one.
+  - **Why refusing is worth more than the coverage it costs.** A truncated
+    response throws and lands under `stopped_because: "model_failed"`, the same
+    label a genuine loop failure gets. That shared label is what made B6
+    unmeasurable. A refusal happens before any round, so it cannot be confused
+    with one — **B6 becomes measurable without touching the output contract.**
+  - **`scaffold` is deliberately not covered.** It does not go through
+    `runGeneration`, and its files do not exist yet, so there is no input size to
+    estimate an output from. Recorded rather than left as a silent hole.
+  - **What did NOT happen:** the whole-file contract was not replaced with
+    anchored search/replace blocks. That is **G7** in `ROADMAP.md`, with its
+    opening threshold fixed in advance and decided by the corpus running under
+    this refusal.
+- **Status:** **fallen**, disposition decided. B6's blocker is cleared; B0 itself
+  stays fallen, because what the premise claims — that the tools reach this
+  project's own files — is still false for 15–23% of them.
 
 ## B6 — `repair` closes ≥ 50% of mechanical failures within 3 rounds
 
@@ -433,6 +457,40 @@ pre-registered as its own premise before anything is measured against it.
   load-bearing. The gate plus orchestrator escalation stays the whole answer, and
   the residue is recorded in `DECISIONS.md` as an accepted limitation rather than
   reopened as a tuning problem.
+- **Status:** open
+
+## B14 — no request that passes the output pre-flight truncates
+
+- **Assumed:** none do — (assumed)
+- **Source of the assumption:** the estimator, and it is an estimator. Output
+  tokens are guessed from bytes at a fixed divisor, because the server does not
+  have the model's tokenizer. The divisor was **calibrated against the one
+  truncation this project has observed** — `src/selection.ts` +
+  `tests/selection.test.ts`, 31,086 bytes, which `bytes/3.5` puts at 8,882
+  tokens against a 8,192 cap, so the pre-flight refuses exactly the request that
+  `run 2026-08-03-mac-05` truncated on. One point is a calibration, not a curve.
+- **The known unmodelled term:** reasoning tokens share the same budget.
+  `DECISIONS.md` records that Qwen3 hybrid-thinking output has been seen and is
+  stripped at parse time — but it was generated, and it was charged to
+  `maxOutputTokens` before anything was stripped. No fixed divisor covers a
+  variable amount of thinking, so if this premise falls, thinking is the first
+  suspect and the fix may be the model rather than the constant.
+- **Experiment:** over the B6/B7 corpus, count (a) requests the pre-flight
+  refused and (b) `finish_reason: "length"` among the requests it let through.
+  Both are already visible: (a) is an `output_would_truncate` `ToolError`, (b) is
+  the `error` text in the per-round telemetry trace.
+- **Measured:** — (no run)
+- **Falls if:** > 10% of the requests that pass still truncate.
+- **If it falls:** recalibrate `LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN` and
+  `LOCAL_CODER_OUTPUT_USABLE_FRACTION` **against that run's data**, which is the
+  only thing that turns them from a defensible guess into a measurement. Do not
+  compensate by widening what counts as editable.
+- **Symmetrical failure, deliberately not given a threshold yet:** the estimator
+  can also be too strict, refusing requests that would have fit. That costs
+  coverage silently, and the same corpus can bound it — but only by running the
+  refused requests with the cap raised, which is a second experiment and is not
+  pre-registered here. Recorded so the one-sided threshold above is not mistaken
+  for the whole question.
 - **Status:** open
 
 ---
