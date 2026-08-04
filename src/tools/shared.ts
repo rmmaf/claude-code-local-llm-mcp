@@ -120,6 +120,37 @@ export interface GenerationArgs {
   error_output?: string | undefined;
 }
 
+/**
+ * One model request, kept separate from every other one in the same generation.
+ *
+ * WHY PER ATTEMPT AND NOT SUMMED. A generation makes up to two requests — the
+ * first, and the corrective retry — and `usage` below is their SUM. A context
+ * window is a per-request ceiling, so comparing the sum against it is a category
+ * error that fires in both directions: the retry's prompt carries the whole bad
+ * response plus the corrective message, so any round that retries inflates the
+ * total far past what either request actually cost, while a round that ends in
+ * `model_output_malformed` used to report nothing at all — and that is precisely
+ * the case most likely to BE context exhaustion. B16 reads these rows; a
+ * detector that drops its positives and invents negatives measures nothing.
+ */
+export interface GenerationAttempt {
+  attempt: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  finish_reason: string | null;
+  /**
+   * What the ENVELOPE looked like — whether every declared block arrived and
+   * closed. Deliberately not a contract verdict: `src/contract-probe.ts` also
+   * scores `elided`, and that tier reads a run of deleted lines as dropped
+   * content, which is invalid here because deleting lines is exactly what
+   * `repair` is asked to do. The envelope half is unambiguous for any caller;
+   * the elision half is only measurable under the diagnostic's probe spec,
+   * whose task is a pure append.
+   */
+  envelope: "complete" | "missing_blocks" | "no_blocks" | "length";
+  missing_files: string[];
+}
+
 export interface GenerationResult {
   summary: string;
   diff: string;
@@ -128,14 +159,18 @@ export interface GenerationResult {
   model: string;
   selection_reason: string;
   latency_ms: number;
-  usage: Usage;
   /**
-   * The window this request was judged against, or null when it could not be
-   * determined. Returned alongside `usage` because the two are only meaningful
-   * together: `prompt_tokens + completion_tokens` against THIS number is what
-   * `contextExhausted` reads, and it is the only signal that catches a response
-   * which came back well-formed and short. B16's method depends on a caller
-   * being able to record all three.
+   * SUMMED ACROSS ATTEMPTS. Fine for billing, wrong for anything compared
+   * against a context window — use `attempts` for that. See `GenerationAttempt`.
+   */
+  usage: Usage;
+  /** Every model request this generation made, in order. */
+  attempts: GenerationAttempt[];
+  /**
+   * The window these requests were judged against, or null when it could not be
+   * determined. Returned because `prompt_tokens + completion_tokens` of a single
+   * attempt against THIS number is what `contextExhausted` reads, and it is the
+   * only signal that catches a response which came back well-formed and short.
    */
   context_tokens: number | null;
 }
@@ -354,6 +389,10 @@ export async function runGeneration(
   ];
 
   const usage: Usage = { prompt_tokens: 0, completion_tokens: 0 };
+  // Every request, recorded as it happens rather than reconstructed afterwards —
+  // the malformed path throws, and anything gathered only at the return is lost
+  // exactly when it matters most.
+  const attempts: GenerationAttempt[] = [];
   let outcome: ModelAttemptOutcome | null = null;
   let lastProblem = "";
   let lastMissing: string[] = [];
@@ -383,6 +422,22 @@ export async function runGeneration(
     const parsed = parseFileBlocks(result.content, (p) => declared.has(normalizeRel(p)));
     const returned = parsed.files; // keys already normalized by the parser
     const missing = [...declared.keys()].filter((p) => !returned.has(p));
+
+    attempts.push({
+      attempt,
+      prompt_tokens: result.usage.prompt_tokens,
+      completion_tokens: result.usage.completion_tokens,
+      finish_reason: result.finishReason,
+      envelope:
+        result.finishReason === "length"
+          ? "length"
+          : missing.length === 0
+            ? "complete"
+            : returned.size === 0
+              ? "no_blocks"
+              : "missing_blocks",
+      missing_files: missing,
+    });
 
     if (result.finishReason === "length") {
       lastProblem =
@@ -416,7 +471,18 @@ export async function runGeneration(
         "at a 16k window the window is the binding limit and the fix is to reload the model with " +
         "a larger context (see `status` → context_window).",
       "model_output_malformed",
-      { problem: lastProblem, missing_files: lastMissing, model }
+      // `attempts` and `context_tokens` ride on the ERROR, not only on the
+      // success return. This is the path where a response came back short, so
+      // it is B16's most informative case and the one a caller cannot otherwise
+      // see: by the time this throws, up to two real responses have been
+      // received, measured and discarded.
+      {
+        problem: lastProblem,
+        missing_files: lastMissing,
+        model,
+        attempts,
+        context_tokens: contextTokens,
+      }
     );
   }
 
@@ -491,6 +557,7 @@ export async function runGeneration(
     selection_reason: reason,
     latency_ms: Date.now() - started,
     usage,
+    attempts,
     context_tokens: contextTokens,
   };
 }

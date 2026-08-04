@@ -290,18 +290,22 @@ describe("repair loop", () => {
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as {
-      rounds?: Array<Record<string, unknown>>;
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
     };
-    expect(detail.rounds?.[0]).toMatchObject({
+    expect(detail.rounds?.[0]?.attempts).toHaveLength(1);
+    expect(detail.rounds?.[0]?.attempts?.[0]).toMatchObject({
+      attempt: 1,
       prompt_tokens: 4_000,
       completion_tokens: 1_000,
       context_tokens: 8_192,
+      envelope: "complete",
     });
     // Round 2's prompt grew, which is the point: 7,100 + 1,000 reaches the
     // 8,192 window while round 1's 5,000 did not. The row records the raw
     // numbers and leaves the verdict to `contextExhausted`, so the rule can be
     // corrected later without invalidating rows already written.
-    expect(detail.rounds?.[1]).toMatchObject({
+    expect(detail.rounds?.[1]?.attempts?.[0]).toMatchObject({
+      attempt: 1,
       prompt_tokens: 7_100,
       completion_tokens: 1_000,
       context_tokens: 8_192,
@@ -309,11 +313,93 @@ describe("repair loop", () => {
   });
 
   /**
-   * A round whose generation threw never got a response, so it has no token
-   * counts. Writing zeroes would read as a request that cost nothing rather
-   * than one that never returned — and B16 counts admitted requests.
+   * THE FALSE POSITIVE. `GenerationResult.usage` is the SUM of both requests,
+   * and a context window is a per-request ceiling — so a corrective retry, whose
+   * prompt carries the whole bad response plus the correction, pushes the total
+   * past a window neither request came near. Summed here: 4,000 + 7,000 prompt
+   * and 1,000 + 1,000 completion = 13,000 against 8,192. Per attempt: 5,000 and
+   * 8,000, and only the second one genuinely reaches it.
    */
-  it("omits token counts for a round that never got a response", async () => {
+  it("keeps each attempt separate, so a retry cannot fake context exhaustion", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      // Attempt 1: no <file> block at all, so the corrective retry fires.
+      chatBody("I cannot do that.", { promptTokens: 4_000, completionTokens: 1_000 }),
+      chatBody(fileBlock("src/math.ts", FIXED), { promptTokens: 7_000, completionTokens: 1_000 }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const attempts = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0]?.attempts;
+
+    expect(attempts).toHaveLength(2);
+    expect(attempts?.[0]).toMatchObject({
+      attempt: 1,
+      prompt_tokens: 4_000,
+      completion_tokens: 1_000,
+      envelope: "no_blocks",
+    });
+    expect(attempts?.[1]).toMatchObject({ attempt: 2, prompt_tokens: 7_000, envelope: "complete" });
+    // Neither attempt is the sum, which is the whole point of recording them
+    // apart: 13,000 against a 8,192 window would have read as exhausted.
+    for (const a of attempts ?? []) {
+      expect(a.prompt_tokens).not.toBe(11_000);
+    }
+  });
+
+  /**
+   * THE FALSE NEGATIVE, and the more damaging one. `model_output_malformed` is
+   * thrown after TWO responses were received and measured — the case most likely
+   * to be context exhaustion. Recording only on the success path would drop
+   * B16's positives while keeping every negative.
+   */
+  it("records the responses a malformed-output throw discards", async () => {
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([
+      chatBody("nothing usable", { promptTokens: 4_000, completionTokens: 4_000 }),
+      chatBody("still nothing", { promptTokens: 6_000, completionTokens: 2_200 }),
+    ]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      contextTokens: 8_192,
+    });
+
+    const round = ((await readTelemetry(root))[0]?.detail as {
+      rounds?: Array<{ error?: string; attempts?: Array<Record<string, unknown>> }>;
+    }).rounds?.[0];
+
+    expect(round?.error).toContain("corrective retry");
+    expect(round?.attempts).toHaveLength(2);
+    expect(round?.attempts?.[0]).toMatchObject({
+      attempt: 1,
+      prompt_tokens: 4_000,
+      completion_tokens: 4_000,
+      context_tokens: 8_192,
+      envelope: "no_blocks",
+    });
+    // 6,000 + 2,200 = 8,200 against 8,192: the second attempt did fill the
+    // window, and before this the round reported no tokens at all.
+    expect(round?.attempts?.[1]).toMatchObject({ attempt: 2, prompt_tokens: 6_000 });
+  });
+
+  /**
+   * A round that never got a response contributes nothing. Writing zeroes would
+   * read as a request that cost nothing rather than one that never returned, and
+   * B16 counts requests the pre-flight ADMITTED and that came back.
+   */
+  it("omits attempts for a round whose request never returned", async () => {
     const root = tempRoot();
     await setup(root);
     const { fetchImpl } = queuedFetch([{ status: 500, body: "boom" }]);
@@ -325,12 +411,11 @@ describe("repair loop", () => {
       contextTokens: 8_192,
     });
 
-    const detail = (await readTelemetry(root))[0]?.detail as {
+    const round = ((await readTelemetry(root))[0]?.detail as {
       rounds?: Array<Record<string, unknown>>;
-    };
-    expect(detail.rounds?.[0]).toHaveProperty("error");
-    expect(detail.rounds?.[0]).not.toHaveProperty("prompt_tokens");
-    expect(detail.rounds?.[0]).not.toHaveProperty("context_tokens");
+    }).rounds?.[0];
+    expect(round).toHaveProperty("error");
+    expect(round).not.toHaveProperty("attempts");
   });
 
   it("writes the model to telemetry, so a latency read from the log has a subject", async () => {

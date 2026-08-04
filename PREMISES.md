@@ -806,8 +806,25 @@ pre-registered as its own premise before anything is measured against it.
 - **Method, not threshold:** `contextExhausted` in `src/contract-probe.ts` —
   `prompt_tokens + completion_tokens >= contextTokens`, and **null when the
   window is unknown**, the same fail-open rule `pickLoadedContextTokens` follows.
-  A response is *content-missing* when `src/contract-probe.ts` scores it
-  anything but `complete`.
+  **Per REQUEST, never summed**: a generation makes up to two requests and
+  `GenerationResult.usage` is their total, while a context window is a
+  per-request ceiling. The retry's prompt carries the whole bad response plus the
+  correction, so a summed comparison reports exhaustion for rounds where neither
+  request came near the window.
+- **The outcome has two halves and only one is measurable outside the
+  diagnostic.** *Envelope* — did every declared block arrive and close — is
+  unambiguous anywhere, and it is what `repair` rows contribute. *Elision* —
+  content dropped from a block that IS present — is **not derivable from a
+  `repair` round at all**, because `contract-probe` reads a run of deleted lines
+  as dropped content and deleting lines is exactly what `repair` was asked to do.
+  Only the diagnostic's probe spec, whose task is a pure append, separates them.
+  **`repair` telemetry therefore contributes to the envelope count only**, and a
+  score that pooled the two would be counting legitimate fixes as failures.
+- **The outcome is recorded independently of the detector, and that is
+  structural.** `envelope` comes from `parseFileBlocks`, not from
+  `contextExhausted`. If the two were derived from the same signal this premise
+  would be scoring its own detector, and could never distinguish "the pre-flight
+  works" from "the detector is blind".
 - **The detector is not marginal.** Over `evidence/2026-08-04-mac-11` …
   `-mac-17` it separates **70 complete responses (max 11,918 tokens)** from **10
   failures (min 16,426)** against a 16,384-token window — a **4,508-token gap**.
@@ -819,12 +836,20 @@ pre-registered as its own premise before anything is measured against it.
   motivating observation, exactly as `run 2026-08-04-mac-09` was for B14. The
   data that produced a detector cannot also confirm it.
 - **Experiment:** a fresh `scripts/contract-stability.ts` run at the loaded
-  window, plus `repair` telemetry from ordinary work — `detail.rounds[]` now
-  carries `prompt_tokens`, `completion_tokens` and `context_tokens` **per
-  round**, because `repair` prepends each round's gate failures and the prompt
-  grows, so the round most likely to fill the window is the last one, whose
-  output is the one that gets applied. Denominator: requests the pre-flight
-  **admitted**; a refusal is a fact about the request, not a verdict on it.
+  window — the only source that scores **both** halves — plus `repair` telemetry
+  from ordinary work for the envelope half. `detail.rounds[].attempts[]` carries
+  `prompt_tokens`, `completion_tokens`, `context_tokens`, `finish_reason` and
+  `envelope` **per attempt**, at two levels of separation. Per round, because
+  `repair` prepends each round's gate failures so the prompt grows and the round
+  likeliest to fill the window is the last one, whose output is the one that gets
+  applied. Per attempt inside it, for the summing reason above.
+  **Including the rounds that threw:** `model_output_malformed` is raised after
+  up to two responses were received and measured, so it is this premise's
+  likeliest positive — recording only the success path would drop the positives
+  and keep every negative, biasing the rate in one direction. A round that never
+  got a response carries no attempts at all, which is different from zero.
+  Denominator: requests the pre-flight **admitted**; a refusal is a fact about
+  the request, not a verdict on it.
 - **VOID unless the corpus reaches the bar.** A run in which **no** admitted
   request exceeds **70% of `contextBudget`** is VOID, not a pass. This is
   corpus #1's lesson made a rule: a ladder that cannot reach the bar returns 0
@@ -859,10 +884,21 @@ pre-registered as its own premise before anything is measured against it.
   It cannot be set through the OpenAI-compatible endpoint, so whatever the GUI
   holds is what ran, and no artifact records it. This premise counts the harm
   either way; the causal story in `DECISIONS.md` is what depends on the answer.
-- **Known gap in the denominator:** `implement`, `fix` and `scaffold` write **no
-  telemetry at all**, so only `repair` and the diagnostic contribute. That is not
-  arbitrary — B14's denominator was the B6/B7 corpus, and B6/B7 are `repair`
-  premises — but it is a gap, and closing it is a separate change.
+- **Known gaps in the denominator, both recorded rather than closed.**
+  `implement`, `fix` and `scaffold` write **no telemetry at all**, so only
+  `repair` and the diagnostic contribute — not arbitrary, since B14's denominator
+  was the B6/B7 corpus and B6/B7 are `repair` premises, but a gap. And `repair`
+  contributes the envelope half only, per the split above. **A run scored on
+  `repair` rows alone bounds this premise from one side and must say so**; only a
+  diagnostic run scores it whole.
+- **Found by adversarial review, before any of this was measured.** The first
+  version of the instrumentation compared `GenerationResult.usage` — a sum over
+  both requests — against a per-request window, and recorded nothing at all on
+  the `model_output_malformed` path. That combination invents positives on any
+  round that retried and discards the real ones, which would have produced a
+  rate with no relationship to the quantity. Recorded because the numbers this
+  premise will eventually carry are only as good as the row that produced them,
+  and this file is where an instrument's history belongs.
 - **Status:** open
 
 ---
@@ -894,12 +930,12 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 327 passing** (331 total,
+`npm test` reports **4 failures / 329 passing** (333 total,
 `run 2026-08-04-win-02`). The same four, and the same causes, as when this was
 first recorded at 4/202 in `run 2026-08-02-win-03` — re-confirmed by a fresh
 `git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, again
 after importing the Mac's `D8` work (**+38 tests, no new failure**), and again
-adding B16 (**+7**). The four, by name, so the count is checkable rather than
+adding B16 and the fixes its adversarial review forced (**+9**). The four, by name, so the count is checkable rather than
 trusted: `tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
 `tests/regression.test.ts:117`.
 
