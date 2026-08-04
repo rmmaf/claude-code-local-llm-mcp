@@ -141,12 +141,20 @@ pre-registered as its own premise before anything is measured against it.
   output whenever raw is smaller. This does not bear on B3, which is a median
   premise and passing it comfortably; it is recorded as a design defect so the
   headline number does not bury it.
-- **The same defect is in `repair`.** All **4 of 4** rows in
-  `run 2026-08-04-mac-07` returned more bytes than the raw check output they
-  replaced: 950 → 1,381, and three at 356 → ~1,000. Those are `repair` calls, so
-  they are **not B3 data** — B3 counts `gate` calls — but they put the same
-  mechanism in a second tool. `repair`'s case for existing is turn collapse, not
-  bytes; what this forbids is reporting it as a byte saving.
+- **The same defect is in `repair`, and `run 2026-08-04-mac-09` splits the two
+  modes cleanly by check kind.** Over 20 `repair` calls:
+  - **`npm-test`-gated, 8 calls: median −99.6%** — that is, 99.6% *smaller*.
+    Totals **1,919,136 → 6,859 bytes**, 280x. This is the mode that justifies
+    the whole first lever.
+  - **`tsc`-gated, 12 calls: median +378.6% bigger**, totals **2,308 → 10,048**,
+    and negative in **12 of 12** with no exceptions. When the raw output is a
+    couple of hundred bytes the structured envelope costs more than the text it
+    replaces, every time.
+  Those are `repair` calls, so still **not B3 data** — B3 counts `gate` calls —
+  but the mechanism is the same one and the split is now unambiguous with n=20.
+  It also corrects the reading of `run 2026-08-04-mac-07`, where 4 of 4 rows were
+  negative and only the bad mode was visible. **The tool's byte value lives
+  entirely in the test half**, and a tsc-only call is byte-negative every time.
 - **Falls if:** median < 40% over 20 real `gate` calls.
 - **If it falls:** structured extraction is worth less than assumed and the whole
   first lever shrinks — `gate` would still collapse turns (B5), but its byte
@@ -326,10 +334,29 @@ pre-registered as its own premise before anything is measured against it.
   The truncation half is **not** fixed, so a
   `model_failed` row still means *either* B0 *or* the loop, and B6 cannot be
   measured cleanly until the output contract is decided.
+- **`run 2026-08-04-mac-09`: 20 of 20, on the synthetic corpus.** Type 8/8,
+  import 4/4, assert 8/8, with `qwen3-coder-30b-a3b-instruct-dwq-v2`. Nineteen
+  closed in one round; `import-03` took two — the model wrote the wrong module
+  specifier, the gate returned, and it corrected. That is the only task in the
+  corpus where the loop did what the loop exists to do.
+  - **This does not decide B6, and the reason is the word *real* in the
+    experiment above.** The fixtures are single-fault, single-file and a few
+    hundred bytes, which deviates from the written experiment in exactly the
+    direction that inflates a close rate. The threshold is cleared twice over
+    and the premise stays `open` until corpus #2, which the capture hook is
+    collecting from real work.
+  - **The two halves do not carry the same weight, and 100% must not read as one
+    uniform thing.** The 8 assertion tasks are pinned by tests: a failing
+    assertion closes only by making the code do the thing. The 12 tsc tasks go
+    green either by fixing the fault or by silencing the type, and the telemetry
+    cannot separate those — `stats` is `{added:1, removed:1}` for both. Under
+    B6's own definition closure *is* the gate going green, so all 20 count; the
+    **8 of 8 behaviourally verified** is the number that cannot be gamed.
 - **Falls if:** < 30%.
 - **If it falls:** `repair` degrades to a one-shot `fix` with a gate around it,
   and the turn-collapse lever is worth roughly a third of the estimate.
-- **Status:** open
+- **Status:** open — measured far above the threshold, on a corpus the premise
+  did not ask for.
 
 ## B7 — a `repair` round costs ≤ 90 s
 
@@ -372,9 +399,30 @@ pre-registered as its own premise before anything is measured against it.
     `onModelResolved` the moment it resolves and *before* the first request, so a
     round that throws still names it, and the telemetry detail now carries it. A
     `null` there means no generation ever started — which is a fact, not a loss.
+- **`run 2026-08-04-mac-09`: median 2.10 s over 21 rounds** (2.07 s excluding the
+  one cold round; range 1.81–10.12 s). First figure with n > 3, and it does not
+  decide B7 either — the fixtures are a few hundred bytes, and B0 established
+  that generation cost scales with file size, so a real failure on a real file is
+  slower by an unknown factor.
+  - **THE MODEL IS NOT THE BOTTLENECK IN A ROUND**, and this is the finding that
+    changes what to do about B7. `model_ms` is ~1.2 s in *both* halves of the
+    corpus. What differs is the gate: **0.74 s** for `tsc` against **3.63 s** for
+    the test suite, so a test-gated round costs **4.82 s** against **1.99 s** —
+    2.4x, on the same model and the same size of fixture. The lever for lowering
+    B7 is therefore the **gate**, narrowing what a round re-runs, and not the
+    smaller or faster local model the "If it falls" line below reaches for.
+  - **B7's median is a statement about the check mix.** A corpus that is mostly
+    type errors reports a different B7 than one that is mostly tests, on
+    identical hardware. Whatever corpus finally decides this has to record its
+    mix, or the number cannot be compared to the next one.
+  - **The cold round confirms `mac-07`:** 10.12 s against 20 warm rounds between
+    1.81 and 5.04 s. One cold round per session, so its weight falls as a corpus
+    grows — another reason the split is reported and not just the median.
 - **Falls if:** median > 150 s.
 - **If it falls:** three rounds cost more wall-clock than the user will accept.
-  Lower `max_rounds` to 2, or pick a smaller model, and re-measure B6 after.
+  Lower `max_rounds` to 2, or narrow what the gate re-runs per round — **not**
+  "pick a smaller model", which `run 2026-08-04-mac-09` shows is aimed at the
+  wrong term. Re-measure B6 after.
 - **Status:** open
 
 ## B8 — `locate` arm A (ripgrep + import graph + git recency, NO model) finds the right files ≥ 70% of the time
@@ -513,7 +561,12 @@ pre-registered as its own premise before anything is measured against it.
   refused and (b) `finish_reason: "length"` among the requests it let through.
   Both are already visible: (a) is an `output_would_truncate` `ToolError`, (b) is
   the `error` text in the per-round telemetry trace.
-- **Measured:** — (no run)
+- **Measured:** **0 of 20**, `run 2026-08-04-mac-09` — no round carried a
+  truncation, and no task was refused either. **This does not decide B14**: the
+  corpus never stressed the estimator. Every fixture is a few hundred bytes
+  against a 7372-token bar, so 0 truncations is what the construction guarantees
+  rather than what the estimator earned. B14 needs requests *near* the bar, which
+  corpus #1 by design does not contain and corpus #2 will.
 - **Falls if:** > 10% of the requests that pass still truncate.
 - **If it falls:** recalibrate `LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN` and
   `LOCAL_CODER_OUTPUT_USABLE_FRACTION` **against that run's data**, which is the

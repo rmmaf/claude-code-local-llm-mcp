@@ -5,33 +5,33 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**Corpus #1 is built and unrun; the capture hook for corpus #2 is live.** A red
-`gate` now archives the `Failure[]` it parses to `.local-coder/corpus/` with the
-tree state to replay it — the third field on this branch the caller saw and the
-log did not, after `rounds[]` and `model`. `scripts/corpus-run.sh` drives 20
-synthetic tasks **one on disk at a time**: twenty broken fixtures at once would
-put each other's failures in every gate run and `repair` would never reach green.
-All 20 were verified — one tsc error each, or one failing assertion each.
+**Corpus #1 ran: 20 of 20 closed** (`run 2026-08-04-mac-09`,
+`qwen3-coder-30b-a3b-instruct-dwq-v2`), B7's median at **2.10 s** over 21 rounds,
+zero truncations. **B6, B7 and B14 all stay `open`** — the corpus is synthetic
+and single-fault, deviating from all three experiments in the direction that
+flatters them, so it is recorded as strong evidence that decides nothing. The
+8 assertion tasks are the half that cannot be gamed, and they are 8/8.
 
 ## Next action
 
-**Run corpus #1 on the Mac:** `setup`, paste the one prompt it prints, `check`.
-It hard-stops if `tsc` or `npm test` is already red, which is the precondition
-most likely to be wrong there. It yields B6's close rate, B7's median with the
-cold/warm split, and B14's truncation count — **not G7**, whose denominator was
-amended to the *captured* corpus before any data existed, because a synthetic
-corpus lets its own author choose the refusal rate that decides the gate.
+**Corpus #2, from the capture hook, is what decides B6.** It needs real work to
+accumulate in `.local-coder/corpus/` and then hand labelling of which failures
+are mechanical, recorded with whoever labelled them. Two things corpus #1 could
+not touch and #2 will: **B14** needs requests near the pre-flight bar, and
+**G7**'s denominator is the captured corpus by amendment.
 
-## Waiting on
+## Two findings that outlive the score
 
-- **The Mac's `selectModelsBestFit`** — `2fabd32` on `wip/select-models-best-fit`,
-  unpushed, needs a rebase; no credentials there.
-- **B5 needs another repo** — 2 checks, no linter, so B6's lint category is out too.
+- **The model is not the bottleneck in a round.** `model_ms` is ~1.2 s in both
+  halves; the gate is 0.74 s (`tsc`) against 3.63 s (tests). The lever for B7 is
+  the gate, not a smaller model — which is where B7's own "if it falls" pointed.
+- **`repair`'s byte value is entirely in the test half:** 1,919,136 → 6,859
+  bytes on `npm-test`, against 2,308 → 10,048 on `tsc`, negative in 12 of 12.
 
 ## Do not redo
 
-- **Read the per-request ceiling from the run, never from the environment.** The
-  MCP server's `env` lives in `~/.claude.json`; a shell export cannot reach it.
-- **`tests/` is not type-checked** (`tsconfig` includes `src/**` only), so a new
-  `Config` field missing from `testConfig` becomes NaN at runtime, not an error.
+- **Read the per-request ceiling from the run, never from the environment** —
+  the server's `env` is in `~/.claude.json`; a shell export cannot reach it.
+- **`tests/` is not type-checked**, so a `Config` field missing from
+  `testConfig` becomes NaN at runtime rather than a compile error.
 - **Verify with `npm test`, not `npx vitest run`** — the latter skips the build.
