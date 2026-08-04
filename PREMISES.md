@@ -141,6 +141,12 @@ pre-registered as its own premise before anything is measured against it.
   output whenever raw is smaller. This does not bear on B3, which is a median
   premise and passing it comfortably; it is recorded as a design defect so the
   headline number does not bury it.
+- **The same defect is in `repair`.** All **4 of 4** rows in
+  `run 2026-08-04-mac-07` returned more bytes than the raw check output they
+  replaced: 950 → 1,381, and three at 356 → ~1,000. Those are `repair` calls, so
+  they are **not B3 data** — B3 counts `gate` calls — but they put the same
+  mechanism in a second tool. `repair`'s case for existing is turn collapse, not
+  bytes; what this forbids is reporting it as a byte saving.
 - **Falls if:** median < 40% over 20 real `gate` calls.
 - **If it falls:** structured extraction is worth less than assumed and the whole
   first lever shrinks — `gate` would still collapse turns (B5), but its byte
@@ -246,6 +252,12 @@ pre-registered as its own premise before anything is measured against it.
   - **This corrects the previous run's wording.** "It did not close" was wrong as
     written — two calls did close, both in one round. What no single call did was
     close the *original* failure within 3 rounds.
+  - **`run 2026-08-04-mac-07` adds one more failure that did not close.** A
+    6-line fixture went `2 → 1 → 1 → 1` over three rounds and stopped at
+    `max_rounds` with `passed: false` and a one-line diff: round 1 removed one of
+    the two type errors, rounds 2 and 3 changed nothing. Same shape as the corpus
+    above, where no round after the first improved anything either. **Still not a
+    rate**, and now for a second reason — the fixture is synthetic.
   **B0 fell underneath this and the payload cannot separate them:** a truncated
   response (`finish_reason=length`, `shared.ts:283`) throws after the corrective
   retry and lands under `stopped_because: "model_failed"` — the same label a
@@ -255,7 +267,14 @@ pre-registered as its own premise before anything is measured against it.
   went *into* that `min` and reports `budget` when it was `<=` the per-request
   limit. Neither downstream signal can stand in for it — a clock read after the
   abort has already moved, and the applied value maps a tie and a comfortable
-  budget onto the same number. The truncation half is **not** fixed, so a
+  budget onto the same number. **That half is now verified against a real model**
+  (`run 2026-08-04-mac-07`): with the ceiling at 20000 ms, an applied 14061 ms
+  reported `budget` and an applied 20000 ms reported `model_failed`, twice — the
+  label flipping with the ceiling and nothing else, across three rows with no
+  counterexample. The `budget` row carries one round holding a timeout error, so
+  it went through the new branch (`repair.ts:625`) and not the pre-existing
+  between-rounds one (`repair.ts:519`), which would have produced zero rounds.
+  The truncation half is **not** fixed, so a
   `model_failed` row still means *either* B0 *or* the loop, and B6 cannot be
   measured cleanly until the output contract is decided.
 - **Falls if:** < 30%.
@@ -270,21 +289,38 @@ pre-registered as its own premise before anything is measured against it.
   run, on the target hardware. Untested.
 - **Experiment:** the same 20 failures as B6; take the median of
   `model_latency_ms + gate_ms` per round.
-- **Measured:** **the experiment could not have been run — on this run or any
-  earlier one — and that was an instrument gap, not a missing run.** Every round
-  already measures `model_latency_ms` and `gate_ms` (`repair.ts:65`) and hands
-  them to the *caller* in `rounds[]`; `telemetry.record` kept only the call total
-  and the round count (`repair.ts:673`). So B7's statistic was never in the log,
-  and the gap would have swallowed the next run too. **Fixed in this commit**:
-  the per-round trace is now written into the telemetry detail.
-  What `run 2026-08-03-mac-06` supports meanwhile is an **upper bound**:
-  `latency_ms / rounds` over the 10 calls that had a failure to fix has a median
-  of **93.6 s** (per call, seconds: 9.8, 13.9, 52.1, 77.7, 85.2, 102.0, 222.0,
-  300.1, 305.5, 325.9). It over-attributes on purpose — it charges the first
-  gate, the rollback and the tree fingerprint to the rounds — so the true figure
-  is below it. Above the 90 s assumption, below the 150 s fall line, from about
-  one task. **It does not decide B7**; it is a different statistic, recorded so
-  the assumption stops being unexamined.
+- **Measured:** **median 2.15 s per round**, `run 2026-08-04-mac-07`, model
+  `qwen3-coder-30b-a3b-instruct-dwq-v2`. The instrument gap is closed — the
+  per-round trace now reaches telemetry — so this is the first time B7's own
+  statistic has existed in the log. Three completed rounds, `model_ms + gate_ms`:
+  **12.60 s, 2.15 s, 1.84 s**. **It does not decide B7:** n=3 from ONE task, on a
+  6-line synthetic fixture chosen small on purpose to escape B0, against an
+  experiment that asks for 20 real mechanical failures. Comfortably below both
+  the 90 s assumption and the 150 s fall line, and that comparison is not yet
+  worth much at this n.
+  - **The cold round costs ~6x the warm ones** (12.60 s against 2.15 and 1.84).
+    Round 1 carries model load and prompt processing. So whatever median B7
+    finally reports depends on how many rounds in the corpus are cold: a corpus
+    of one-round tasks measures something near 12.6 s, a corpus of long loops
+    something near 2 s. **The corpus must record the split, not only the median.**
+  - **Three further rounds are censored and excluded.** They timed out before the
+    gate ran (`model_ms` 20137, 20145, 14199; `gate_ms` 0), so they measure the
+    per-request ceiling rather than the round. Putting them in the median would
+    measure the instrument.
+  - **`run 2026-08-03-mac-06`'s upper bound stands unchanged as history:** median
+    **93.6 s** of `latency_ms / rounds` over the 10 calls that had a failure to
+    fix (per call, seconds: 9.8, 13.9, 52.1, 77.7, 85.2, 102.0, 222.0, 300.1,
+    305.5, 325.9). It over-attributes on purpose — the first gate, the rollback
+    and the tree fingerprint are all charged to the rounds — and the real
+    per-round figure landing far below it is what that construction predicted.
+  - **Which model produced these timings is recoverable only for the call that
+    succeeded.** `repair` assigns `model` after `runGeneration` *returns*
+    (`repair.ts:576`), so a round that throws discards the name `resolveModel`
+    already produced inside it, and `model` never reaches telemetry at all — it
+    lives only in the returned payload (`repair.ts:717`). Failed rows therefore
+    cannot be attributed to a model, and failed rows are exactly what B6 counts.
+    **This has to be fixed before the 20-failure corpus is run**, or that corpus
+    will have the same hole in the same place.
 - **Falls if:** median > 150 s.
 - **If it falls:** three rounds cost more wall-clock than the user will accept.
   Lower `max_rounds` to 2, or pick a smaller model, and re-measure B6 after.
