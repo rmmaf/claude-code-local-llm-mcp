@@ -490,6 +490,57 @@ describe("repair loop", () => {
   });
 
   /**
+   * THE ABORT PATH. A response that arrived and was measured must not vanish
+   * because something AFTER it threw — the post-generation gate, a locked file,
+   * a check config the repair itself invalidated. `runRepair`'s outer catch
+   * rolls back and rethrows, so a buffer living inside the loop went with it,
+   * and those are exactly the partial-failure paths where an admitted response
+   * did arrive. Dropping them biases B16 away from what it exists to expose.
+   */
+  it("keeps the attempts when the whole repair aborts", async () => {
+    const root = tempRoot();
+    await setup(root);
+    // The exact scenario the outer catch names: a check config the repair
+    // itself invalidated. The model rewrites `checks.json` to declare nothing,
+    // so the gate AFTER the generation throws instead of returning failures.
+    const { fetchImpl } = queuedFetch([
+      chatBody(
+        fileBlock("src/math.ts", FIXED) +
+          "\n" +
+          fileBlock(".local-coder/checks.json", `{"checks":[]}\n`),
+        { promptTokens: 4_100, completionTokens: 4_100 }
+      ),
+    ]);
+
+    await expect(
+      runRepair(
+        { ...baseArgs, files: ["src/math.ts", ".local-coder/checks.json"], max_rounds: 1 },
+        testConfig(root),
+        {
+          processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
+          fetchImpl,
+          runner: noLmsRunner(),
+          contextTokens: 8_192,
+        }
+      )
+    ).rejects.toThrow();
+
+    const rows = await readTelemetry(root);
+    expect(rows).toHaveLength(1);
+    const detail = rows[0]?.detail as { aborted?: boolean; attempts?: Array<Record<string, unknown>> };
+    expect(detail.aborted).toBe(true);
+    // 4,100 + 4,100 = 8,200 against 8,192: a response that DID fill the window,
+    // on the very path where it used to be discarded.
+    expect(detail.attempts).toHaveLength(1);
+    expect(detail.attempts?.[0]).toMatchObject({
+      round: 1,
+      prompt_tokens: 4_100,
+      completion_tokens: 4_100,
+      context_tokens: 8_192,
+    });
+  });
+
+  /**
    * A round that never got a response contributes nothing. Writing zeroes would
    * read as a request that cost nothing rather than one that never returned, and
    * B16 counts requests the pre-flight ADMITTED and that came back.

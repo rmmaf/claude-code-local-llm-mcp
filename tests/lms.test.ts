@@ -104,6 +104,20 @@ describe("pickLoadedContextTokens", () => {
     expect(pickLoadedContextTokens(rows, undefined)).toBeNull();
   });
 
+  /**
+   * THE BORROWING CASE, and it was live. A named model that is not loaded tells
+   * us nothing about the window it will be loaded with — and that stays true
+   * when exactly one OTHER model happens to be loaded. Returning that one's
+   * window hands the pre-flight a number belonging to a different model: 32,768
+   * here, while the request runs on a model whose window may be half that. The
+   * request is admitted, overflows, and comes back as a closed, well-formed,
+   * shorter file. The inverse pairing refuses work that would have fit.
+   */
+  it("declines rather than borrowing the window of the one unrelated loaded model", () => {
+    const rows = loaded([{ modelKey: "loaded-a", contextLength: 32_768 }]);
+    expect(pickLoadedContextTokens(rows, "some-other-model")).toBeNull();
+  });
+
   it("declines when the named model is not among several loaded ones", () => {
     const rows = loaded([
       { modelKey: "a", contextLength: 4096 },

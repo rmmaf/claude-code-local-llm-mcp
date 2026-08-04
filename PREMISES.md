@@ -899,11 +899,14 @@ pre-registered as its own premise before anything is measured against it.
   contributes the envelope half only, per the split above. **A run scored on
   `repair` rows alone bounds this premise from one side and must say so**; only a
   diagnostic run scores it whole.
-- **The instrument was wrong six ways before it measured anything, and two
-  rounds of adversarial review found all six.** Recorded rather than quietly
+- **The instrument was wrong eight ways before it measured anything, and three
+  rounds of adversarial review found all eight.** Recorded rather than quietly
   fixed, because the numbers this premise will eventually carry are worth exactly
-  as much as the row that produced them — and because five of the six biased the
-  rate rather than breaking it, which is the kind of defect that ships.
+  as much as the row that produced them — and because most of the eight biased
+  the rate rather than breaking it, which is the kind of defect that ships. **Two
+  were live data-loss bugs**, not measurement errors: the pre-flight is what
+  stands between an overflowing request and a silently shortened file, and both
+  let one through.
   - **Summed usage against a per-request window.** `GenerationResult.usage`
     totals both requests; the retry carries the whole bad response plus the
     correction, so any round that retried read as exhausted. False positives.
@@ -926,6 +929,22 @@ pre-registered as its own premise before anything is measured against it.
   - **Absent `usage` became zero rather than unknown**, so a server that reports
     no tokens would have made every request read as fitting, and this premise
     could have "held" on no data at all.
+  - **The window was resolved before the model, and could belong to a different
+    one.** With nothing named, the probe answered with whatever single model
+    happened to be loaded while auto-selection sent the work elsewhere — and
+    `pickLoadedContextTokens` compounded it by returning the sole loaded model's
+    window even when a DIFFERENT model was named. A 32k model loaded and a 16k
+    model used admits a request that overflows; the inverse refuses work that
+    fits. The second live bug. The model is now resolved first and the window
+    asked only about it, a named-and-not-loaded model returns null, and `repair`
+    no longer pins one window across rounds — the reasoning that justified the
+    pin ("a value that cannot change mid-loop") was false, because with no model
+    named each round re-selects.
+  - **Attempts were lost when the whole repair aborted.** They lived in the
+    loop, and the outer catch rolls back and rethrows without writing telemetry
+    — so a response that arrived and was measured vanished whenever a
+    post-generation failure fired. `runRepair` now owns the buffer and writes an
+    `aborted` row from the catch, guarded so the two paths cannot both write.
 - **Status:** open
 
 ---
@@ -957,12 +976,12 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 332 passing** (336 total,
+`npm test` reports **4 failures / 335 passing** (339 total,
 `run 2026-08-04-win-02`). The same four, and the same causes, as when this was
 first recorded at 4/202 in `run 2026-08-02-win-03` — re-confirmed by a fresh
 `git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, again
 after importing the Mac's `D8` work (**+38 tests, no new failure**), and again
-adding B16 and the fixes its two adversarial reviews forced (**+12**). The four,
+adding B16 and the fixes its three adversarial reviews forced (**+15**). The four,
 by name, so the count is checkable rather than trusted:
 `tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
 `tests/regression.test.ts:117`.

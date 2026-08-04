@@ -183,9 +183,14 @@ export function pickLoadedContextTokens(
     const needle = wanted.trim().toLowerCase();
     const hit = loaded.find((m) => m.ids.some((id) => id.toLowerCase() === needle));
     if (hit !== undefined) return hit.contextLength;
-    // Fall through: an explicit model that is not loaded tells us nothing about
-    // the context it will be loaded with.
-    if (loaded.length > 1) return null;
+    // A named model that is not loaded tells us NOTHING about the context it
+    // will be loaded with — and that stays true when exactly one other model
+    // happens to be loaded. Returning that one's window borrows a number from an
+    // unrelated model: a 32k model loaded while the request goes to a 16k one
+    // admits a request that overflows, and the answer comes back as a closed,
+    // well-formed, shorter file. The inverse spelling of the same mistake
+    // refuses work that would have fit.
+    return null;
   }
   if (loaded.length > 1) {
     log.warn(

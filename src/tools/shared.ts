@@ -176,6 +176,14 @@ export interface GenerationAttempt {
    */
   envelope: "complete" | "missing_blocks" | "no_blocks";
   missing_files: string[];
+  /**
+   * The window THIS request was judged against, carried on the attempt rather
+   * than on the round. A caller cannot supply it from its own scope: the model
+   * is resolved per generation, so a loop that pinned one window across rounds
+   * would score a later round against a window belonging to an earlier round's
+   * model. The number and the request it describes travel together or not at all.
+   */
+  context_tokens: number | null;
 }
 
 export interface GenerationResult {
@@ -385,7 +393,20 @@ export async function runGeneration(
   // returned result reports it, so a caller can tell a response that fit from
   // one that filled the window. Re-resolving for the report could disagree with
   // what was actually enforced.
-  const contextTokens = await resolveContextTokens(config, args.model, deps);
+  // THE MODEL FIRST, THEN ITS WINDOW. Resolving the window from `args.model`
+  // asks about a model that may not be the one this request runs on: with
+  // nothing named, `args.model` is undefined and the probe would answer with
+  // whatever single model happens to be loaded, while auto-selection sends the
+  // work to a different catalog entry. A 32k model loaded and a 16k model
+  // selected admits a request that overflows — and an overflowing request is
+  // what comes back closed, well-formed and short. The inverse pairing refuses
+  // work that would have fit.
+  const { model, reason } = await resolveModel(args.model, config, deps);
+  // Announced before anything below can throw, so a caller that survives the
+  // throw still has something to attribute the attempt to — including a
+  // pre-flight refusal, which is a fact about a specific model's window.
+  deps.onModelResolved?.(model);
+  const contextTokens = await resolveContextTokens(config, model, deps);
   const editableStats = statted.filter((f) => editableSet.has(normalizeRel(f.rel)));
   enforceOutputCap(
     editableStats,
@@ -403,12 +424,6 @@ export async function runGeneration(
 
   const editable = await loadFiles(config.root, editablePaths, config.maxFileKb);
   const context = await loadFiles(config.root, contextPaths, config.maxFileKb);
-
-  const { model, reason } = await resolveModel(args.model, config, deps);
-  // Announced here rather than returned, because everything below this line can
-  // throw and a caller that survives the throw would otherwise have nothing to
-  // attribute the attempt to.
-  deps.onModelResolved?.(model);
 
   const declared = new Map(editable.map((f) => [normalizeRel(f.rel), f]));
   const messages: ChatMessage[] = [
@@ -496,6 +511,7 @@ export async function runGeneration(
       envelope:
         missing.length === 0 ? "complete" : returned.size === 0 ? "no_blocks" : "missing_blocks",
       missing_files: missing,
+      context_tokens: contextTokens,
     };
     attempts.push(record);
     // Handed over the moment it exists, because everything below — the diff, the

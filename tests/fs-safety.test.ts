@@ -363,6 +363,38 @@ describe("file content safety", () => {
     expect(calls.length).toBe(1);
   });
 
+  /**
+   * The window must belong to the model this request actually runs on. A model
+   * loaded at 4,096 while the work goes to a different one is not evidence about
+   * the second model's window, and treating it as such refuses valid work here —
+   * the same mistake pointing the other way admits a request that overflows and
+   * comes back as a closed, well-formed, shorter file.
+   *
+   * 20 KB clears the output cap at 16,384/0.9 and would NOT clear a 4,096-token
+   * window, so if the borrowed number were still in play this would throw.
+   */
+  it("does not judge a request against an unrelated loaded model's window", async () => {
+    const root = makeTempRoot();
+    await writeFileTree(root, { "wide.ts": "x".repeat(20 * 1024) });
+    const { fetchImpl, calls } = queuedFetch([
+      chatBody(fileBlock("wide.ts", `${"x".repeat(20 * 1024)}\n`)),
+    ]);
+    await runImplement(
+      { spec: "x", files: ["wide.ts"], model: "the-model-we-will-use" },
+      testConfig(root, { maxOutputTokens: 16_384 }),
+      {
+        fetchImpl,
+        platform: "linux",
+        // `lms ps` reports a DIFFERENT model, loaded small.
+        runner: async (command, args) =>
+          command === "lms" && args[0] === "ps"
+            ? JSON.stringify([{ modelKey: "someone-elses-model", contextLength: 4_096 }])
+            : "",
+      }
+    );
+    expect(calls).toHaveLength(1);
+  });
+
   it("refuses the exact request that truncated in run 2026-08-03-mac-05", async () => {
     // The calibration this constant rests on, pinned so it cannot drift away
     // from the observation that justified it. src/selection.ts (15,454 B) plus

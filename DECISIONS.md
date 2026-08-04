@@ -1263,6 +1263,19 @@ accumulated messages rather than re-derived from the files, since the appended
 response is the whole reason the size moved, and a retry that will not fit is
 **not sent** rather than sent and hoped for.
 
+**The window belongs to the model, and the model is resolved first.** This was
+backwards for three commits: `resolveContextTokens` ran on `args.model`, which is
+undefined whenever nothing is named, and `resolveModel` picked the actual model
+afterwards. The probe then answered with whatever single model happened to be
+loaded — a number about a model the request would never touch.
+`pickLoadedContextTokens` made it worse by returning that sole loaded model's
+window even when a *different* model had been named explicitly. Both spellings
+are the same mistake: 32k loaded and 16k used admits a request that overflows,
+16k loaded and 32k used refuses work that fits. A named model that is not loaded
+now returns null, and `repair` no longer pins one window for the whole loop —
+that pin was justified by "a value that cannot change mid-loop", which is untrue
+the moment no model is named and each round re-selects.
+
 **`status` reports the window, including when it does not know it.**
 `context_window.source` is `config`, `lms` or `unknown`, and `unknown` is the
 case worth surfacing loudest: it means the check is switched off, silently. A

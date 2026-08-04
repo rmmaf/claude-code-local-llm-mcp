@@ -15,6 +15,7 @@ import {
   ToolError,
 } from "../fs-safety.js";
 import { log } from "../logger.js";
+import { resolveModel } from "../selection.js";
 import { createTelemetryWriter, type TelemetryWriter } from "../telemetry.js";
 import { runGate, type CheckReport, type GateResult } from "./gate.js";
 import {
@@ -374,10 +375,18 @@ export async function runRepair(
   // no round is spent, and no telemetry row claims a failure that never
   // happened. Editable files only; `context_files` are never echoed back.
   const editableSet = new Set(files);
-  // Resolved ONCE here, then handed to every round through deps. The loop runs
-  // `gate` and a generation per round; re-probing `lms ps` each time would put a
-  // shell-out inside the budget for a value that cannot change mid-loop.
-  const contextTokens = await resolveContextTokens(config, args.model, deps);
+  // The model, then ITS window — and only for this bail-out.
+  //
+  // THIS VALUE IS NOT PINNED ACROSS ROUNDS, and the comment that used to say it
+  // could be was wrong on its own terms: it argued the window "cannot change
+  // mid-loop", but with no model named each round re-selects, and a different
+  // model is a different window. Pinning made every later round judge itself
+  // against an earlier round's model. Each round now resolves its own, which
+  // costs one `lms ps` (~120 ms measured) against generations that run for
+  // seconds to minutes — and a caller who wants the probe gone still sets
+  // `LOCAL_CODER_CONTEXT_TOKENS` or passes `contextTokens` in deps.
+  const { model: preflightModel } = await resolveModel(args.model, config, deps);
+  const contextTokens = await resolveContextTokens(config, preflightModel, deps);
   enforceOutputCap(
     statted.filter((f) => editableSet.has(normalizeRel(f.rel))),
     config.maxOutputTokens,
@@ -399,23 +408,60 @@ export async function runRepair(
   const fingerprintBefore = await treeFingerprint(config.root, vcs);
   const ours = new Set(snapshots.map((s) => s.rel));
   const progress = { checksRan: false };
+  const invocationId = randomUUID();
+  /**
+   * Owned HERE, not inside the loop, so an abort cannot take it with it.
+   *
+   * Every round's responses are appended as they are parsed. If the loop throws
+   * — a locked file, a check config the repair itself invalidated, a
+   * `runGateNow` that fails after a generation succeeded — the catch below
+   * rolls back and rethrows, and a buffer living inside the loop would be
+   * garbage collected with it. Those are precisely the partial-failure paths
+   * where an admitted response DID arrive, so dropping them biases B16 away
+   * from the responses the instrumentation exists to expose.
+   */
+  const attempts: RecordedAttempt[] = [];
+  const telemetryState = { written: false };
 
   try {
-    // `contextTokens` rides along so `generationDeps` hands the SAME window to
-    // every round's pre-flight. Passing it explicitly — including as null —
-    // suppresses the per-round `lms ps` probe either way.
-    return await repairLoop(args, config, { ...deps, contextTokens }, {
+    // `contextTokens` is NOT forwarded: each round resolves its own model and
+    // therefore its own window. What the caller put in `deps` still wins, which
+    // is how the suite stays offline and how `LOCAL_CODER_CONTEXT_TOKENS` skips
+    // the probe entirely.
+    return await repairLoop(args, config, deps, {
       now,
       telemetry,
       started,
       snapshots,
       files,
-      invocationId: randomUUID(),
+      invocationId,
       vcs,
       fingerprintBefore,
       progress,
+      attempts,
+      telemetryState,
     });
   } catch (error) {
+    // The responses this abort would otherwise erase. Written before the
+    // rollback, because the rollback can throw too, and a row that says only
+    // "aborted" is still a row: B16 needs to know the request happened.
+    if (!telemetryState.written) {
+      telemetryState.written = true;
+      await telemetry.record({
+        tool: "repair",
+        invocation_id: invocationId,
+        // No verdict was produced, so there are no suppression figures to claim.
+        bytes_raw: 0,
+        bytes_returned: 0,
+        turns_collapsed: 0,
+        latency_ms: now() - started,
+        detail: {
+          aborted: true,
+          stopped_because: "aborted",
+          attempts: attempts.map(({ round, ...a }) => ({ round, ...a })),
+        },
+      });
+    }
     // The tool's contract is that a failed loop leaves the tree as it found it.
     // Without this, anything thrown after the model has already written — a
     // locked file, a check config the repair itself invalidated — would hand the
@@ -490,7 +536,14 @@ interface RepairContext {
    * on that path nothing has executed, so nothing can have touched the tree.
    */
   progress: { checksRan: boolean };
+  /** Owned by `runRepair` so an abort cannot discard it — see the declaration. */
+  attempts: RecordedAttempt[];
+  /** Flipped by whichever path writes the row, so an abort cannot double-write. */
+  telemetryState: { written: boolean };
 }
+
+/** One model request, tagged with the round it belongs to. */
+type RecordedAttempt = { round: number } & GenerationAttempt;
 
 async function repairLoop(
   args: RepairArgs,
@@ -499,6 +552,7 @@ async function repairLoop(
   ctx: RepairContext
 ): Promise<RepairResult> {
   const { now, telemetry, started, snapshots, files, invocationId, vcs, fingerprintBefore } = ctx;
+  const { attempts: roundAttempts, telemetryState } = ctx;
 
   const maxRounds = args.max_rounds ?? DEFAULT_MAX_ROUNDS;
   const budgetMs = (args.budget_seconds ?? DEFAULT_BUDGET_SECONDS) * 1000;
@@ -572,10 +626,10 @@ async function repairLoop(
 
   const rounds: RoundTrace[] = [];
   /**
-   * Every model REQUEST, keyed to its round — parallel to `rounds` and
-   * deliberately NOT part of `RoundTrace`, which is returned to Claude and where
-   * this project's whole thesis says bytes are expensive. Telemetry goes to disk
-   * and costs no context.
+   * Every model REQUEST, tagged with its round. Deliberately NOT part of
+   * `RoundTrace`, which is returned to Claude and where this project's whole
+   * thesis says bytes are expensive. Telemetry goes to disk and costs no context.
+   * Owned by `runRepair` (see `ctx.attempts`) so an abort cannot discard it.
    *
    * PER REQUEST, never summed, at two levels. Per round, because each round
    * prepends that round's gate failures so the prompt GROWS, and the round most
@@ -592,16 +646,10 @@ async function repairLoop(
    * exhaustion. Only a round that never got a response contributes nothing —
    * inventing zeroes there would read as a request that cost nothing rather than
    * one that never returned.
+   *
+   * The window rides on each attempt rather than on the round, because the model
+   * is resolved per generation and a different model is a different window.
    */
-  const roundAttempts: Array<{ round: number; context_tokens: number | null } & GenerationAttempt> =
-    [];
-  /**
-   * The window every round is judged against. `runRepair` resolved it once and
-   * put it in `deps`, and `runGeneration` short-circuits to that same value, so
-   * reading it here cannot disagree with what was actually enforced. Undefined
-   * would mean "probe", which repair never does per round — see `runRepair`.
-   */
-  const roundWindow = generationDeps.contextTokens ?? null;
   let stoppedBecause: RepairResult["stopped_because"] = "max_rounds";
 
   // The best state the loop ever produced, kept in memory. Nothing below writes
@@ -678,7 +726,7 @@ async function repairLoop(
             // failed write would otherwise delete an already-measured response
             // from B16's denominator — silently, and only on the racy paths.
             onAttempt: (attempt) => {
-              roundAttempts.push({ round, context_tokens: roundWindow, ...attempt });
+              roundAttempts.push({ round, ...attempt });
             },
           }
         );
@@ -831,6 +879,9 @@ async function repairLoop(
   };
   result.bytes_returned = JSON.stringify(result).length;
 
+  // Claimed before the write, so `runRepair`'s abort path cannot add a second
+  // row if anything below this line throws.
+  telemetryState.written = true;
   await telemetry.record({
     tool: "repair",
     invocation_id: invocationId,
