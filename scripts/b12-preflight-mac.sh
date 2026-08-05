@@ -82,7 +82,7 @@ cleanup() {
     rm -f "$REPO/$SCRATCH_SRC"
     printf '    ..    removed %s\n' "$SCRATCH_SRC"
   fi
-  [ -n "${MCP_CFG:-}" ] && rm -f "$MCP_CFG"
+  [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"
   return 0
 }
 trap cleanup EXIT INT TERM
@@ -218,7 +218,14 @@ ok "model endpoint answering: $REACHABLE"
 # ---------------------------------------------------------------------------
 next "MCP server, scoped to this run"
 
-MCP_CFG=$(mktemp -t b12mcp)
+# EXTENSIONS MATTER TO BOTH CONSUMERS, and `mktemp -t` gives random ones.
+# `--mcp-config` takes "JSON files or strings", so a path that does not look
+# like a file is a candidate for being parsed as a literal string; and node
+# refuses a script whose extension it does not know outright --
+# ERR_UNKNOWN_FILE_EXTENSION, measured. One directory, two named files.
+TMP_DIR=$(mktemp -d -t b12pre)
+[ -n "$TMP_DIR" ] || refuse "mktemp -d produced no directory"
+MCP_CFG="$TMP_DIR/mcp.json"
 [ -n "$MCP_CFG" ] || refuse "mktemp produced no path for the temporary --mcp-config"
 cat > "$MCP_CFG" <<JSON
 {"mcpServers":{"local-coder":{"type":"stdio","command":"node","args":["$REPO/dist/server.js"],"env":{}}}}
@@ -336,9 +343,9 @@ if [ -f "$ART" ]; then
   # and JS is where it broke. This crashed on the Mac and the artifact went out
   # with no commit, no version and no tree verdict: the provenance the run exists
   # to carry. A quoted heredoc is passed through verbatim by bash.
-  MERGE_JS=$(mktemp -t b12merge)
+  MERGE_JS="$TMP_DIR/merge.cjs"
   cat > "$MERGE_JS" <<'JS'
-import { readFileSync, writeFileSync } from "node:fs";
+const { readFileSync, writeFileSync } = require("node:fs");
 const [file, sha, branch, ver, model, session, leftover, untracked, rc, claudeExit, claudeLog] =
   process.argv.slice(2);
 const o = JSON.parse(readFileSync(file, "utf8"));
@@ -353,7 +360,7 @@ o.context = {
 writeFileSync(file, JSON.stringify(o, null, 2) + "\n");
 JS
   node "$MERGE_JS" "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID" "$LEFTOVER" "$UNTRACKED" "$TREE_RC" "$CLAUDE_EXIT" "$CLAUDE_LOG_TAIL" || refuse "could not write provenance into $ART"
-  rm -f "$MERGE_JS"
+  :
   cp "$ART" "$OUT_DIR/" 2>/dev/null && ok "copied to $OUT_DIR/$(basename "$ART")"
 fi
 
