@@ -22,7 +22,7 @@ import {
   multipliersFor,
 } from "../src/cost/rates.js";
 import type { BilledRequest } from "../src/cost/transcript.js";
-import { listTranscripts, projectTranscriptDir, readTranscript } from "../src/cost/transcript.js";
+import { listTranscripts, projectTranscriptDir, readTranscript, sessionFiles } from "../src/cost/transcript.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -157,6 +157,82 @@ describe("transcript parsing", () => {
     expect(transcript.requests[0]?.usage.cacheWrite1h).toBe(0);
   });
 
+  it("reads a session as the union of its files, not just the main transcript", async () => {
+    // The defect that reopened G1. `listTranscripts` did a non-recursive readdir,
+    // so `<sessionId>/subagents/**` was invisible and a multi-agent session
+    // reported roughly half its cache tokens while printing "0 subagent" -- a gap
+    // that reads as a measurement.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    await fs.writeFile(path.join(dir, `${sid}.jsonl`), `${assistantRecord("req-main", { write1h: 100 })}\n`, "utf8");
+    const nested = path.join(dir, sid, "subagents", "workflows", "wf_1");
+    await fs.mkdir(nested, { recursive: true });
+    await fs.writeFile(
+      path.join(nested, "agent-x.jsonl"),
+      `${assistantRecord("req-sub", { write1h: 700, read: 5000 }, { isSidechain: true })}\n`,
+      "utf8"
+    );
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.files).toHaveLength(2);
+    expect(transcript.requests).toHaveLength(2);
+    expect(transcript.requests.reduce((n, r) => n + r.usage.cacheRead, 0)).toBe(5000);
+  });
+
+  it("counts a record once when the same uuid appears in two files of one session", async () => {
+    // RECORD identity across the union. Without it the union double-counts, and
+    // the invariant `|uuids(main) U uuids(sub)| == |main| + |sub|` is what B20's
+    // oracle checks on the other side.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    const shared = assistantRecord("req-1", { write1h: 100 });
+    await fs.writeFile(path.join(dir, `${sid}.jsonl`), `${shared}\n`, "utf8");
+    await fs.mkdir(path.join(dir, sid, "subagents"), { recursive: true });
+    await fs.writeFile(path.join(dir, sid, "subagents", "agent-x.jsonl"), `${shared}\n`, "utf8");
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.duplicateUuid).toBe(1);
+  });
+
+  it("excludes a record that sits under the session directory but belongs to another session", async () => {
+    // A file under a directory is not thereby a request OF that session. The
+    // record says whose it is; believe the record, not the path.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    await fs.writeFile(path.join(dir, `${sid}.jsonl`), `${assistantRecord("req-1", { write1h: 100 })}\n`, "utf8");
+    await fs.mkdir(path.join(dir, sid, "tool-results"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, sid, "tool-results", "other.jsonl"),
+      `${assistantRecord("req-9", { write1h: 9999 }, { sessionId: "some-other-session" })}\n`,
+      "utf8"
+    );
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.foreignSession).toBe(1);
+    expect(transcript.requests[0]?.usage.cacheWrite1h).toBe(100);
+  });
+
+  it("excludes api-error records by their own fields, never by usage reading zero", async () => {
+    clock = 0;
+    const root = tempRoot();
+    const file = await writeTranscript(root, [
+      // A legitimate record whose usage is all zeros must still be admitted.
+      assistantRecord("req-1", {}),
+      assistantRecord("req-2", { output: 9 }, { isApiErrorMessage: true }),
+      assistantRecord("req-3", { output: 9 }, { message: { model: "<synthetic>", content: [], usage: { output_tokens: 9 } } }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.apiError).toBe(2);
+    expect(transcript.requests[0]?.usage.output).toBe(0);
+  });
+
   it("takes the LAST record's usage in a requestId group, because the first one is partial", async () => {
     // The real shape: intermediate records carry a partial completion count and
     // the terminal record carries the whole answer. Over this project 327 of
@@ -170,7 +246,7 @@ describe("transcript parsing", () => {
         type: "assistant",
         requestId: "req-1",
         sessionId: "s",
-        uuid: `u-${output}`,
+        uuid: `u-${tool}-${output}`,
         timestamp: new Date(1_700_000_000_000 + output).toISOString(),
         message: {
           model: "test-model",

@@ -41,6 +41,16 @@ export interface ToolResultStats {
 
 export interface SessionReport {
   file: string;
+  /**
+   * EVERY file the session was read from. A session is the main transcript plus
+   * whatever sits under `<sessionId>/`, so one path can no longer describe what
+   * was counted -- and `B20` requires the evidence artifact to say which files a
+   * number came from, because "44 main, 0 subagent" read as a measurement for
+   * four days while it was a gap.
+   */
+  files: string[];
+  /** What the admission rule threw away. A zero here is never ambiguous. */
+  excluded: { duplicateUuid: number; apiError: number; foreignSession: number; noSessionId: number };
   sessionId: string;
   models: string[];
   requests: number;
@@ -147,6 +157,8 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
 
   return {
     file: transcript.file,
+    files: transcript.files,
+    excluded: transcript.excluded,
     sessionId: transcript.sessionId,
     models: [...models].sort(),
     requests: transcript.requests.length,

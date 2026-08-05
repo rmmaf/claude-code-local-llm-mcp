@@ -21,7 +21,7 @@ import path from "node:path";
 import { readTelemetry, TELEMETRY_REL_PATH } from "../telemetry.js";
 import { loadRates, RATES_REL_PATH } from "./rates.js";
 import { buildCounterfactual, buildSessionReport, entryCostOfSegment, scopeTelemetry } from "./report.js";
-import { listTranscripts, projectTranscriptDir, readTranscript } from "./transcript.js";
+import { listSessionIds, projectTranscriptDir, readTranscript, sessionFiles } from "./transcript.js";
 
 // Built at runtime so no escape sequence has to survive a file round-trip.
 const ESC = String.fromCharCode(27);
@@ -32,6 +32,7 @@ const RESET = `${ESC}[0m`;
 interface Options {
   dir: string | null;
   files: string[];
+  session: string | null;
   last: number;
   all: boolean;
   root: string;
@@ -39,7 +40,7 @@ interface Options {
 }
 
 function parseArgs(argv: string[]): Options {
-  const options: Options = { dir: null, files: [], last: 1, all: false, root: process.cwd(), json: false };
+  const options: Options = { dir: null, files: [], session: null, last: 1, all: false, root: process.cwd(), json: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = (): string => {
@@ -50,6 +51,7 @@ function parseArgs(argv: string[]): Options {
     switch (arg) {
       case "--dir": options.dir = next(); break;
       case "--file": options.files.push(next()); break;
+      case "--session": options.session = next(); break;
       case "--last": options.last = Number(next()); break;
       case "--all": options.all = true; break;
       case "--root": options.root = path.resolve(next()); break;
@@ -57,7 +59,7 @@ function parseArgs(argv: string[]): Options {
       case "--help":
       case "-h":
         process.stdout.write(
-          "usage: cost-meter [--dir <transcripts>] [--file <f>]... [--last N|--all] [--root <project>] [--json]\n"
+          "usage: cost-meter [--dir <transcripts>] [--file <f>]... [--session <id>] [--last N|--all] [--root <project>] [--json]\n"
         );
         process.exit(0);
         break;
@@ -100,22 +102,32 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const rates = await loadRates(options.root);
 
-  let files = options.files.map((f) => path.resolve(f));
-  if (files.length === 0) {
+  // A SESSION, NOT A FILE. Since Claude Code 2.1.219 one session is the main
+  // transcript plus every `.jsonl` under `<sessionId>/`, and reading only the
+  // first showed roughly half the cache tokens of a multi-agent session.
+  // `--file` still reads exactly what it is handed: it is an explicit override,
+  // and an override that quietly widened would be its own defect.
+  const units: Array<{ files: string[]; sessionId?: string }> = [];
+  if (options.files.length > 0) {
+    for (const one of options.files) units.push({ files: [path.resolve(one)] });
+  } else {
     const dir = options.dir ?? projectTranscriptDir(options.root, os.homedir());
-    const found = await listTranscripts(dir);
+    const found = options.session !== null ? [options.session] : await listSessionIds(dir);
     if (found.length === 0) {
-      process.stderr.write(`no transcripts found in ${dir}\n`);
+      process.stderr.write(`no transcripts found in ${dir}` + String.fromCharCode(10));
       process.exit(1);
     }
-    files = options.all ? found : found.slice(-options.last);
+    const chosen = options.session !== null || options.all ? found : found.slice(-options.last);
+    // The id selects the FILES; the session's identity still comes from the
+    // records, so a directory whose filenames are not session ids still reads.
+    for (const id of chosen) units.push({ files: await sessionFiles(dir, id) });
   }
 
   const telemetry = await readTelemetry(options.root);
   const payloads: unknown[] = [];
 
-  for (const file of files) {
-    const transcript = await readTranscript(file);
+  for (const unit of units) {
+    const transcript = await readTranscript(unit.files, unit.sessionId);
     const session = buildSessionReport(transcript, rates);
     if (session.requests === 0) continue;
 

@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 
 /**
@@ -64,17 +65,32 @@ export interface ToolResultRecord {
 }
 
 export interface Transcript {
+  /** Every file the session was read from — main transcript first. */
+  files: string[];
+  /** Kept for the single-file callers and the report header. */
   file: string;
   sessionId: string;
   requests: BilledRequest[];
   toolResults: ToolResultRecord[];
   /** Lines that failed to parse — a live session's last line is often partial. */
   skippedLines: number;
+  /**
+   * What the admission rule threw away, so a zero is never ambiguous. B20's
+   * oracle reports the same four counts and the two must agree; a silent
+   * exclusion is how a session with traffic reads as a clean one.
+   */
+  excluded: {
+    duplicateUuid: number;
+    apiError: number;
+    foreignSession: number;
+    noSessionId: number;
+  };
 }
 
 interface RawRecord {
   type?: string;
   uuid?: string;
+  isApiErrorMessage?: boolean;
   parentUuid?: string | null;
   requestId?: string;
   sessionId?: string;
@@ -201,18 +217,43 @@ function sidechainRoot(uuid: string, parents: Map<string, string | null>, sidech
   return current;
 }
 
-/** Parse one transcript file. Unparseable lines are counted, never fatal. */
-export async function readTranscript(file: string): Promise<Transcript> {
-  const text = await fs.readFile(file, "utf8");
+/**
+ * Parse ONE SESSION, which since Claude Code 2.1.219 is several files: the main
+ * transcript plus every `.jsonl` under `<sessionId>/`. Passing a bare string
+ * still reads a single file, which is what `--file` and the older tests do.
+ *
+ * The session's identity comes from THE RECORDS, not from the path. A caller may
+ * pass one to be explicit, but with none the anchor is the first admitted
+ * record's own `sessionId` — a filename is a convention and `record.sessionId` is
+ * the data. Records that disagree with the anchor are excluded, because a file
+ * sitting under a session's directory is not thereby a request OF that session.
+ *
+ * Anchoring on the FILENAME instead was tried and reverted the same hour: a
+ * corpus whose files are named anything else came back with every record
+ * excluded and the session read as empty, which is the false-empty failure this
+ * repair exists to remove, reintroduced by the repair.
+ *
+ * Unparseable lines are counted, never fatal.
+ */
+export async function readTranscript(
+  file: string | string[],
+  sessionId?: string
+): Promise<Transcript> {
+  const files = typeof file === "string" ? [file] : [...file];
+  if (files.length === 0) throw new Error("readTranscript needs at least one file");
+  let anchor = sessionId;
 
   const records: RawRecord[] = [];
   let skippedLines = 0;
-  for (const line of text.split("\n")) {
-    if (line.trim() === "") continue;
-    try {
-      records.push(JSON.parse(line) as RawRecord);
-    } catch {
-      skippedLines++;
+  for (const one of files) {
+    const text = await fs.readFile(one, "utf8");
+    for (const line of text.split("\n")) {
+      if (line.trim() === "") continue;
+      try {
+        records.push(JSON.parse(line) as RawRecord);
+      } catch {
+        skippedLines++;
+      }
     }
   }
 
@@ -228,6 +269,9 @@ export async function readTranscript(file: string): Promise<Transcript> {
   // record of that request — the usage repeats, the content blocks do not.
   const byRequest = new Map<string, BilledRequest>();
   const toolNames = new Map<string, string>();
+  /** RECORD identity across the file union — not request identity. */
+  const seenUuid = new Set<string>();
+  const excluded = { duplicateUuid: 0, apiError: 0, foreignSession: 0, noSessionId: 0 };
   /**
    * Compaction boundaries PER THREAD. A compaction resets one conversation's
    * context; main and each subagent have independent contexts. Pooling the
@@ -245,7 +289,34 @@ export async function readTranscript(file: string): Promise<Transcript> {
       if (list === undefined) boundariesByThread.set(thread, [parseTime(record.timestamp)]);
       else list.push(parseTime(record.timestamp));
     }
+    // ADMISSION, the four steps `PREMISES.md` B20 fixes, in its order. The
+    // meter and `scripts/session-token-walk.mjs` answer to that text rather than
+    // to each other, which is the only reason a residual of exactly 0 means
+    // anything. Every exclusion is counted; none is silent.
     if (record.type !== "assistant" || typeof record.requestId !== "string") continue;
+    if (record.message?.usage === undefined) continue;
+    if (record.isApiErrorMessage === true || record.message?.model === "<synthetic>") {
+      excluded.apiError++;
+      continue;
+    }
+    if (anchor === undefined && typeof record.sessionId === "string") anchor = record.sessionId;
+    if (anchor !== undefined) {
+      if (typeof record.sessionId !== "string") {
+        excluded.noSessionId++;
+        continue;
+      }
+      if (record.sessionId !== anchor) {
+        excluded.foreignSession++;
+        continue;
+      }
+    }
+    if (typeof record.uuid === "string") {
+      if (seenUuid.has(record.uuid)) {
+        excluded.duplicateUuid++;
+        continue;
+      }
+      seenUuid.add(record.uuid);
+    }
 
     const toolUses = readToolUses(record.message?.content);
     for (const use of toolUses) toolNames.set(use.id, use.name);
@@ -332,11 +403,13 @@ export async function readTranscript(file: string): Promise<Transcript> {
   }
 
   return {
-    file,
-    sessionId: requests[0]?.sessionId ?? path.basename(file, ".jsonl"),
+    files,
+    file: files[0]!,
+    sessionId: anchor ?? requests[0]?.sessionId ?? path.basename(files[0]!, ".jsonl"),
     requests,
     toolResults,
     skippedLines,
+    excluded,
   };
 }
 
@@ -364,4 +437,50 @@ export async function listTranscripts(dir: string): Promise<string[]> {
     files.map(async (file) => ({ file, mtime: (await fs.stat(file)).mtimeMs }))
   );
   return stats.sort((a, b) => a.mtime - b.mtime).map((s) => s.file);
+}
+
+/**
+ * Every `*.jsonl` under a directory, recursively.
+ *
+ * ONLY `ENOENT` MAY BE SWALLOWED. A missing directory is a fact about the corpus
+ * — a single-threaded session has none. `EACCES`, `ENOTDIR`, `EPERM` and `EIO`
+ * are facts about this process, and returning `[]` for one of those reports "no
+ * subagent traffic" for a session that has some, which is the defect this whole
+ * repair exists to remove.
+ */
+async function jsonlUnder(dir: string): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return [];
+    throw error;
+  }
+  const out: string[] = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...(await jsonlUnder(full)));
+    else if (entry.name.endsWith(".jsonl")) out.push(full);
+  }
+  return out.sort();
+}
+
+/**
+ * The file union of one session: its main transcript, then every `.jsonl`
+ * anywhere under `<sessionId>/`, sorted.
+ *
+ * NOT `<sessionId>/subagents/`. The layout has already moved once — that move is
+ * why this repair exists — and a literal path segment is the same assumption
+ * `listTranscripts` made with its non-recursive `readdir`. Order is load-bearing:
+ * a `requestId` group takes its usage from the LAST record in file order, so the
+ * main transcript comes first and the rest are sorted deterministically.
+ */
+export async function sessionFiles(dir: string, sessionId: string): Promise<string[]> {
+  return [path.join(dir, `${sessionId}.jsonl`), ...(await jsonlUnder(path.join(dir, sessionId)))];
+}
+
+/** Session ids in a directory, oldest first — one per main transcript. */
+export async function listSessionIds(dir: string): Promise<string[]> {
+  const mains = await listTranscripts(dir);
+  return mains.map((file) => path.basename(file, ".jsonl"));
 }
