@@ -44,6 +44,22 @@ PERMISSION_MODE="${B12_PERMISSION_MODE:-acceptEdits}"
 SCRATCH_SRC="src/b12-scratch.ts"
 OUT_DIR="$HOME/Desktop"
 
+# NOTHING THE CLEANUP TOUCHES IS INHERITED FROM THE ENVIRONMENT.
+#
+# `TMP_DIR` is an ordinary variable name and the trap is installed long before
+# the script assigns it, so ANY early refusal -- `lms` missing, a dirty tree --
+# ran `rm -rf` on whatever the caller happened to have exported. Measured: a
+# directory of unrelated files, deleted. `set -u` does not help, because the
+# variable IS set; that is the whole problem.
+#
+# Cleared here, and each removal is additionally gated on a flag this script
+# sets only after it created the thing.
+TMP_DIR=""
+TMP_MINE=0
+SCRATCH_MINE=0
+CLAUDE_LOG=""
+MERGE_JS=""
+
 step=0
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 ok()   { printf '    ok    %s\n' "$1"; }
@@ -82,7 +98,7 @@ cleanup() {
     rm -f "$REPO/$SCRATCH_SRC"
     printf '    ..    removed %s\n' "$SCRATCH_SRC"
   fi
-  [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"
+  [ "${TMP_MINE:-0}" = "1" ] && [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"
   return 0
 }
 trap cleanup EXIT INT TERM
@@ -225,6 +241,7 @@ next "MCP server, scoped to this run"
 # ERR_UNKNOWN_FILE_EXTENSION, measured. One directory, two named files.
 TMP_DIR=$(mktemp -d -t b12pre)
 [ -n "$TMP_DIR" ] || refuse "mktemp -d produced no directory"
+TMP_MINE=1
 MCP_CFG="$TMP_DIR/mcp.json"
 [ -n "$MCP_CFG" ] || refuse "mktemp produced no path for the temporary --mcp-config"
 cat > "$MCP_CFG" <<JSON
