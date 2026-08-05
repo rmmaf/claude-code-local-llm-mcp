@@ -68,6 +68,20 @@ What may be built next, and the number that decides it.
   reported as measured on this plan. **B12 and G-stop consume ratios only** —
   reduction against a control arm — and a ratio survives an unknown pricing basis
   only if that basis is constant across both arms.
+- **NARROWED 2026-08-05, while pre-registering B12: a session's total is not that
+  session's cost.** Measured — **zero of 5,769** billable-shaped records carry a
+  foreign `sessionId`, because Claude Code **rewrites the id** on the inherited
+  records it copies into a resumed or forked conversation's file. So B20's
+  session rule cannot separate a session's own work from what it inherited,
+  nothing in the format marks a record as inherited, and **535 of 1,904 distinct
+  billed requests (28.1%) are claimed by two or more sessions** — 87 by four. Per
+  session the inherited share runs **1% to 100%** and no session is clean. G1 is
+  untouched: B20 compares the two sides over the same files, both read a shared
+  record identically, and the residual of 0 stands. What is narrowed is what may
+  be read OFF a session total afterwards. **A session is therefore not an
+  observation, and B12 may not use one as its unit** — a mostly-inherited session
+  divides by another conversation's cost. Narrowing only, in the one direction a
+  closed gate's text may move.
 - **Recorded without a threshold: the uniform-discount assumption.** The ratio
   argument above needs the plan's discount to be **uniform across token classes**.
   If the subscription discounts cache reads differently from output, a saving
