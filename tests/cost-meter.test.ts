@@ -239,9 +239,40 @@ describe("transcript parsing", () => {
     expect(transcript.requests).toHaveLength(1);
     expect(transcript.excluded.apiError).toBe(1);
     expect(transcript.admittedWithoutUuid).toBe(0);
-    // The general form, and the one that survives a future edit: the counter can
-    // never exceed the number of records actually admitted.
-    expect(transcript.admittedWithoutUuid).toBeLessThanOrEqual(transcript.requests.length);
+  });
+
+  it("counts RECORDS without a uuid, which is why it may exceed the request count", async () => {
+    // Written because the previous test asserted the opposite as its "general
+    // form" -- that the counter can never exceed `requests.length` -- and that is
+    // false. It passed only because that fixture's counter is 0.
+    //
+    // A request is a `requestId` GROUP; this counter is over RECORDS, like every
+    // `excluded.*` field beside it. Three admitted records of one group, none
+    // carrying a uuid, is 3 against 1 request, and 3 is the honest number: the
+    // risk being reported is that any one of those records could reappear in a
+    // second file with nothing able to catch it. Per group it would understate.
+    //
+    // The oracle agrees exactly, and goes further -- `admittedWithoutUuid > 0`
+    // marks the session `suspect`, so it is dropped from B20's scored set rather
+    // than compared. All eleven real sessions report 0 on both sides.
+    clock = 0;
+    const root = tempRoot();
+    const noUuid = (output: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-1",
+        requestId: "req-1", // ONE group
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: output } },
+      });
+    const file = await writeTranscript(root, [noUuid(10), noUuid(20), noUuid(30)]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.admittedWithoutUuid).toBe(3);
+    expect(transcript.admittedWithoutUuid).toBeGreaterThan(transcript.requests.length);
+    // Still the last record of the group, unaffected by any of this.
+    expect(transcript.requests[0]?.usage.output).toBe(30);
   });
 
   it("counts a record once when the same uuid appears in two files of one session", async () => {

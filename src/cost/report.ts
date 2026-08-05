@@ -49,7 +49,11 @@ export interface SessionReport {
    * four days while it was a gap.
    */
   files: string[];
-  /** Admitted but carrying no uuid, so nothing could de-duplicate it. */
+  /**
+   * RECORDS admitted carrying no uuid, so nothing could de-duplicate them. The
+   * unit is records, not `requestId` groups, so this may exceed `requests` — and
+   * does, whenever one group has several such records. See `Transcript`.
+   */
   admittedWithoutUuid: number;
   /** What the admission rule threw away. A zero here is never ambiguous. */
   excluded: { duplicateUuid: number; apiError: number; foreignSession: number; noSessionId: number };

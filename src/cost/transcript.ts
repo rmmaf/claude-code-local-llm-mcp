@@ -75,11 +75,23 @@ export interface Transcript {
   /** Lines that failed to parse — a live session's last line is often partial. */
   skippedLines: number;
   /**
+   * RECORDS the rule admitted that carry no uuid, so nothing could de-duplicate
+   * them — what it KEPT and cannot vouch for, not what it threw away.
+   *
+   * The unit is records, like every `excluded` count below and unlike
+   * `requests`, which are `requestId` GROUPS. **It may therefore exceed
+   * `requests.length`**, and legitimately: three records of one group is 3, and
+   * the risk being stated is per record, since any one of them could reappear in
+   * a second file with nothing able to catch it. B20's oracle counts the same
+   * way and additionally marks such a session `suspect`, dropping it from the
+   * scored set. All eleven sessions in that set report 0.
+   */
+  admittedWithoutUuid: number;
+  /**
    * What the admission rule threw away, so a zero is never ambiguous. B20's
    * oracle reports the same four counts and the two must agree; a silent
    * exclusion is how a session with traffic reads as a clean one.
    */
-  admittedWithoutUuid: number;
   excluded: {
     duplicateUuid: number;
     apiError: number;
