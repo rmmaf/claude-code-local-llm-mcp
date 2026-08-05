@@ -45,6 +45,28 @@ refuse() {
 }
 next() { step=$((step + 1)); say "$step. $1"; }
 
+# ONE RULE, ONE PLACE: tracked changes, with git's exit status CHECKED rather
+# than inferred from empty output.
+#
+# `$(git status ... | grep -v "^?? " || true)` returns "" when git fails, and ""
+# reads as "clean". A check that cannot run reported the good outcome -- at the
+# start it let the run proceed over a tree it never inspected, and at the end it
+# wrote `treeAsFound: true` into the artifact. That is false safety evidence, in
+# a file whose whole job is to be trusted later.
+#
+# Sets GIT_RC and GIT_TRACKED. Callers decide what to do; nobody guesses.
+git_tracked_changes() {
+  GIT_TRACKED=""
+  local raw
+  raw=$(git status --porcelain 2>&1)
+  GIT_RC=$?
+  [ $GIT_RC -ne 0 ] && return 0
+  [ -z "$raw" ] && return 0
+  GIT_TRACKED=$(printf '%s
+' "$raw" | grep -v "^?? " || true)
+  return 0
+}
+
 cleanup() {
   if [ "${SCRATCH_MINE:-0}" = "1" ] && [ -n "${REPO:-}" ] && [ -f "$REPO/$SCRATCH_SRC" ]; then
     rm -f "$REPO/$SCRATCH_SRC"
@@ -71,7 +93,10 @@ command -v lms >/dev/null 2>&1 || refuse \
   "the \`lms\` CLI is missing. Without it there is no local model, and \`repair\` is exactly what this pre-flight exists to exercise. Install LM Studio's CLI, then re-run."
 ok "lms present"
 
-CLAUDE_VER=$(claude --version 2>/dev/null | head -1)
+# Recorded in the artifact, so it may not be silently empty. A blank version
+# there would read as "not applicable" rather than as "we never asked".
+CLAUDE_VER=$(claude --version 2>&1 | head -1)
+[ -n "$CLAUDE_VER" ] || refuse "claude --version produced nothing. The version is part of the evidence, and an empty one is a gap that looks like a value."
 ok "claude $CLAUDE_VER"
 
 # ---------------------------------------------------------------------------
@@ -83,12 +108,14 @@ cd "$REPO" || refuse "cannot enter $REPO"
 # --mcp-config, and Claude Code resolves that against ITS cwd, not this one.
 REPO=$(pwd -P)
 
-DIRTY=$(git status --porcelain 2>/dev/null | grep -v "^?? " || true)
-if [ -n "$DIRTY" ]; then
-  printf '%s\n' "$DIRTY" | sed 's/^/      /'
+git_tracked_changes
+[ $GIT_RC -eq 0 ] || refuse "git status failed (exit $GIT_RC). The tree was never inspected, and an uninspected tree must not read as a clean one."
+if [ -n "$GIT_TRACKED" ]; then
+  printf '%s
+' "$GIT_TRACKED" | sed 's/^/      /'
   refuse "the working tree has tracked changes. Checking out over them would either fail or lose them, and neither belongs in a measurement run. Commit or stash, then re-run."
 fi
-ok "tree clean of tracked changes"
+ok "tree clean of tracked changes (git status ran, exit 0)"
 
 info "fetching origin/$BRANCH"
 git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable?"
@@ -163,10 +190,17 @@ TS
 SCRATCH_MINE=1
 ok "created $SCRATCH_SRC"
 
-if npx tsc -p tsconfig.json --noEmit >/dev/null 2>&1; then
-  refuse "tsc still passes with the scratch error in place, so \`gate\` will not be red and \`repair\` will have nothing to close. The fixture is not doing its job — stop and look at $SCRATCH_SRC."
-fi
-ok "tsc is red, as intended"
+# Exit 0 means the fixture is not doing its job. Exit 1 or 2 means type errors,
+# which is what we want. ANYTHING ELSE means tsc could not run -- and reading
+# that as "red, as intended" is the same false-safe shape as the git check:
+# `npx` missing or offline would have been recorded as a working fixture.
+npx tsc -p tsconfig.json --noEmit >/dev/null 2>&1
+TSC_RC=$?
+case $TSC_RC in
+  0) refuse "tsc still passes with the scratch error in place, so \`gate\` will not be red and \`repair\` will have nothing to close. Look at $SCRATCH_SRC." ;;
+  1|2) ok "tsc is red, as intended (exit $TSC_RC)" ;;
+  *) refuse "tsc could not run (exit $TSC_RC). A tool that failed to start is not a red gate, and treating it as one would certify a fixture nobody compiled." ;;
+esac
 
 # ---------------------------------------------------------------------------
 next "Scratch session: one gate call, one repair call"
@@ -217,7 +251,12 @@ PRE_EXIT=$?
 # failed six times in this session's other rule, so it is checked instead.
 [ "${SCRATCH_MINE:-0}" = "1" ] && rm -f "$REPO/$SCRATCH_SRC"
 SCRATCH_MINE=0
-LEFTOVER=$(git status --porcelain 2>/dev/null | grep -v "^?? " || true)
+git_tracked_changes
+TREE_RC=$GIT_RC
+LEFTOVER="$GIT_TRACKED"
+# Informational only -- no verdict is drawn from it, so an empty result on
+# failure costs nothing. Said here so the next reader does not have to work out
+# why this one is allowed the pattern the two above are not.
 UNTRACKED=$(git status --porcelain 2>/dev/null | grep "^?? " || true)
 
 # The artifact is kept whether it passed or failed. A failed pre-flight is the
@@ -225,11 +264,14 @@ UNTRACKED=$(git status --porcelain 2>/dev/null | grep "^?? " || true)
 if [ -f "$ART" ]; then
   node -e '
     const fs = require("fs");
-    const [file, sha, branch, ver, model, session, leftover, untracked] = process.argv.slice(1);
+    const [file, sha, branch, ver, model, session, leftover, untracked, rc] = process.argv.slice(1);
     const o = JSON.parse(fs.readFileSync(file, "utf8"));
     o.context = {
       commit: sha, branch, claudeVersion: ver, model, sessionId: session, host: "mac",
-      treeAsFound: leftover.length === 0,
+      // `null` is UNKNOWN, never `true`. If the check could not run, saying
+      // the tree was as found would be evidence invented by a failure.
+      treeCheckRan: rc === "0",
+      treeAsFound: rc === "0" ? leftover.length === 0 : null,
       trackedChangesLeftBehind: leftover ? leftover.split("
 ") : [],
       untrackedFilesPresent: untracked ? untracked.split("
@@ -237,7 +279,7 @@ if [ -f "$ART" ]; then
     };
     fs.writeFileSync(file, JSON.stringify(o, null, 2) + "
 ");
-  ' "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID" "$LEFTOVER" "$UNTRACKED"
+  ' "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID" "$LEFTOVER" "$UNTRACKED" "$TREE_RC"
   cp "$ART" "$OUT_DIR/" 2>/dev/null && ok "copied to $OUT_DIR/$(basename "$ART")"
 fi
 
@@ -252,7 +294,13 @@ else
 '
 fi
 
-if [ -n "$LEFTOVER" ]; then
+if [ $TREE_RC -ne 0 ]; then
+  printf '
+    TREE INTEGRITY UNKNOWN — git status failed (exit %s). The artifact
+' "$TREE_RC"
+  printf '    records this as unknown rather than as clean.
+'
+elif [ -n "$LEFTOVER" ]; then
   printf '
     THE TREE IS NOT AS IT WAS FOUND — repair touched more than the
 '
