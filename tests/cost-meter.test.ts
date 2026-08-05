@@ -10,6 +10,7 @@ import {
   buildCounterfactual,
   buildSessionReport,
   entryCostOfSegment,
+  invocationOwners,
   positionalMultiplier,
   priceUsage,
   scopeTelemetry,
@@ -993,6 +994,141 @@ describe("telemetry and the counterfactual", () => {
     expect(result.byTool[0]?.calls).toBe(1);
     expect(result.byTool[0]?.turnsCollapsed).toBe(0);
     expect(result.byTool[0]?.bytesSuppressed).toBe(3700);
+  });
+
+  it("refuses a call whose invocation id two sessions both carry, on both sides", async () => {
+    // The id join was built to beat the timestamp window, and it does. But an
+    // `invocation_id` is CALL identity and it was being read as SESSION
+    // OWNERSHIP. Claude Code writes a resumed or forked conversation's inherited
+    // records into the new session file, so one `gate` result is physically
+    // present in every descendant and EVERY descendant's join matches it.
+    //
+    // Measured on this project before the fix: one id in four transcripts, its
+    // saving credited four times -- 21 gate rows on disk against 24 calls
+    // attributed, 3,756,512 suppressed bytes against 4,043,702, 1.076x. The four
+    // sessions shared 347 to 692 records pairwise and three had the same first
+    // timestamp, which is what a fork looks like on disk.
+    //
+    // No rule recovers the owner from the files alone, so both sides refuse it
+    // and report the magnitude. Under-counting is the safe direction here:
+    // `G-stop` STOPS the project on a low number.
+    clock = 0;
+    const shared = "33333333-3333-4333-8333-333333333333";
+    const at500 = new Date(1_700_000_000_500).toISOString();
+    const lineage = async (): Promise<string> => {
+      clock = 0;
+      return writeTranscript(tempRoot(), [
+        assistantRecord("req-1", { write1h: 100 }, {
+          message: {
+            model: "test-model",
+            content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+            usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+          },
+        }),
+        JSON.stringify({
+          type: "user",
+          uuid: "res-1",
+          parentUuid: null,
+          sessionId: "sess-1",
+          timestamp: at500,
+          message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+          toolUseResult: {
+            content: [{ type: "text", text: JSON.stringify({ passed: false, invocation_id: shared }) }],
+          },
+        }),
+        assistantRecord("req-2", { write1h: 100, read: 1000 }),
+      ]);
+    };
+    const parent = await readTranscript(await lineage());
+    const child = await readTranscript(await lineage());
+
+    // The set is what makes it visible; neither transcript can see it alone.
+    const ambiguous = invocationOwners([parent, child]);
+    expect([...ambiguous]).toEqual([shared]);
+    expect([...invocationOwners([parent])]).toEqual([]);
+
+    const row = {
+      ts: at500,
+      invocation_id: shared,
+      tool: "gate",
+      bytes_raw: 7400,
+      bytes_returned: 3700,
+      turns_collapsed: 0,
+      latency_ms: 1,
+    };
+    for (const transcript of [parent, child]) {
+      const result = buildCounterfactual(
+        transcript,
+        [row],
+        DEFAULT_RATES,
+        buildSessionReport(transcript, DEFAULT_RATES),
+        ambiguous
+      );
+      expect(result.ambiguous).toBe(1);
+      expect(result.byTool).toEqual([]);
+      expect(result.unitsTotal).toBe(0);
+      // Refused, not vanished: the magnitude is reported so the exclusion is
+      // visible rather than reading as a session that simply saved nothing.
+      expect(result.ambiguousUnits).toBeGreaterThan(0);
+    }
+
+    // Without the set it is still credited once -- which is the pre-fix
+    // behaviour, and the reason this is a defect of the CALLER's knowledge and
+    // not of the join itself.
+    const alone = buildCounterfactual(parent, [row], DEFAULT_RATES, buildSessionReport(parent, DEFAULT_RATES));
+    expect(alone.byTool[0]?.calls).toBe(1);
+  });
+
+  it("withholds the saved fraction rather than reporting one built on timestamps", async () => {
+    // `provenanceUnavailable` means this transcript DOES call our tools but no
+    // result echoes an invocation id, so the exact join is gone and only the
+    // timestamp fallback remains -- the very thing that cannot tell two sessions
+    // apart. Reporting a number from it is worse than reporting none: `G-stop`
+    // stops this project below 15%, so a confident low figure IS the decision.
+    // Same treatment as session USD, withheld unless every model is priced.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_500).toISOString(),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ passed: false }) }] }, // no echo
+      }),
+      assistantRecord("req-2", { write1h: 100, read: 1000 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [
+        {
+          ts: new Date(1_700_000_000_500).toISOString(),
+          invocation_id: "44444444-4444-4444-8444-444444444444",
+          tool: "gate",
+          bytes_raw: 7400,
+          bytes_returned: 3700,
+          turns_collapsed: 0,
+          latency_ms: 1,
+        },
+      ],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.provenanceUnavailable).toBe(true);
+    // WITHHELD, and null is not 0: the units are still reported so the reader
+    // can see there was something to withhold.
+    expect(result.savedFraction).toBeNull();
+    expect(result.unitsTotal).toBeGreaterThan(0);
   });
 
   it("keeps the time window on every row the id join cannot vouch for", async () => {

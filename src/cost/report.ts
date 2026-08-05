@@ -321,10 +321,34 @@ export interface CounterfactualReport {
   usdTotal: number | null;
   /** Session cost as billed, for the ratio that answers "did this pay?". */
   sessionUnits: number;
-  /** Estimated fraction saved: saved / (billed + saved). */
-  savedFraction: number;
+  /**
+   * Estimated fraction saved: saved / (billed + saved).
+   *
+   * **`null` means WITHHELD, not zero.** It is withheld whenever the exact join
+   * is unavailable and the timestamp fallback is doing the work, on the same
+   * principle as session USD being withheld unless every model is priced: a
+   * confident number below `G-stop`'s 15% would read as a decision to stop the
+   * project, and this is the one direction of error the meter exists to prevent.
+   */
+  savedFraction: number | null;
   /** Telemetry rows whose invocation never appears in this transcript — another session's. */
   excludedForeign: number;
+  /**
+   * Rows whose invocation id appears in MORE THAN ONE session, so no session can
+   * claim them. An `invocation_id` is call identity; it was being used as
+   * session ownership, and those are not the same thing. Claude Code writes a
+   * resumed or forked conversation's inherited records into the new session
+   * file, so one `gate` result physically exists in every descendant — measured
+   * here: one id in four transcripts, its saving credited four times, 21 rows on
+   * disk against 24 calls attributed.
+   *
+   * The server cannot stamp a session id at write time (it is never told one),
+   * so ownership is resolved on the read side by whoever can see the whole
+   * session set. When nobody can, these rows are refused rather than guessed.
+   */
+  ambiguous: number;
+  /** What those rows WOULD have added, so the refusal is visible rather than silent. */
+  ambiguousUnits: number;
   /**
    * Rows carrying no invocation id. They are NOT counted: a tool that cannot
    * point at the transcript entry it produced cannot show its output ever
@@ -373,6 +397,42 @@ function isLocalToolResult(record: ToolResultRecord): boolean {
  * them, and a long-running `repair` can finish well after the last billed
  * request through no fault of its own.
  */
+/**
+ * Invocation ids carried by more than one session, which therefore belong to
+ * none of them.
+ *
+ * This exists at all because an `invocation_id` is CALL identity and the join
+ * was using it as SESSION OWNERSHIP. Claude Code writes a resumed or forked
+ * conversation's inherited records into the new session file, so one `gate`
+ * result is physically present in every descendant and every descendant's join
+ * matches it. Measured on this project: one id in four transcripts, credited
+ * four times — 21 rows on disk against 24 calls attributed, 1.076x on bytes.
+ *
+ * It cannot be fixed at write time: the MCP server is never told which Claude
+ * Code session is calling it, so it has nothing to stamp. It cannot be fixed
+ * inside a single session's read either, since one transcript cannot know what
+ * another contains. So it is resolved here, by the caller that enumerates the
+ * whole set, and refused where the set is unknown.
+ *
+ * Takes the transcripts already read rather than re-reading: the extraction has
+ * to be the SAME rule the join uses, and a second implementation of it is how
+ * two consumers of one rule drift apart.
+ */
+export function invocationOwners(transcripts: Iterable<Transcript>): Set<string> {
+  const owners = new Map<string, number>();
+  for (const transcript of transcripts) {
+    const here = new Set<string>();
+    for (const result of transcript.toolResults) {
+      if (!isLocalToolResult(result)) continue;
+      if (result.invocationId !== null) here.add(result.invocationId);
+    }
+    for (const id of here) owners.set(id, (owners.get(id) ?? 0) + 1);
+  }
+  const ambiguous = new Set<string>();
+  for (const [id, count] of owners) if (count > 1) ambiguous.add(id);
+  return ambiguous;
+}
+
 export function scopeTelemetry(
   transcript: Transcript,
   telemetry: TelemetryRecord[],
@@ -422,7 +482,14 @@ export function buildCounterfactual(
   transcript: Transcript,
   telemetry: TelemetryRecord[],
   rates: Rates,
-  session: SessionReport
+  session: SessionReport,
+  /**
+   * Invocation ids that more than one session's transcript carries, so this one
+   * cannot claim them. Built by the caller, which is the only layer that sees
+   * the whole session set — see `invocationOwners`. Empty means "checked and
+   * none", which is why the caller passes it explicitly rather than omitting it.
+   */
+  ambiguousIds: ReadonlySet<string> = new Set()
 ): CounterfactualReport {
   const byTool = new Map<string, ToolSaving>();
 
@@ -451,6 +518,25 @@ export function buildCounterfactual(
   let excludedForeign = 0;
   let unverifiable = 0;
   let unverifiableUnits = 0;
+  let ambiguous = 0;
+  let ambiguousUnits = 0;
+
+  /**
+   * What a row WOULD have added had it been creditable. Both refusal paths
+   * report their magnitude, and they must report it the same way — computing it
+   * twice is how two numbers derived from one rule drift apart.
+   */
+  const wouldHaveAdded = (entry: TelemetryRecord): number => {
+    const would = requestAtOrAfter(transcript.requests, Date.parse(entry.ts), "main");
+    if (would === null) return 0;
+    const wm = multipliersFor(rates, rateKey(would.model, would.speed));
+    const wttl = would.usage.cacheWrite5m > would.usage.cacheWrite1h ? "5m" : "1h";
+    const wmult = positionalMultiplier(would.index, would.segmentSize, wm, wttl);
+    return (
+      (Math.max(0, entry.bytes_raw - entry.bytes_returned) / rates.charsPerToken) * wmult +
+      entry.turns_collapsed * would.usage.cacheRead * wm.cacheRead
+    );
+  };
   /** Tools that matched at least one request whose model has no configured price. */
   const unpriced = new Set<string>();
 
@@ -466,15 +552,19 @@ export function buildCounterfactual(
     // Reported, with its magnitude, so the exclusion is visible and not silent.
     if (entry.invocation_id === undefined) {
       unverifiable++;
-      const would = requestAtOrAfter(transcript.requests, Date.parse(entry.ts), "main");
-      if (would !== null) {
-        const wm = multipliersFor(rates, rateKey(would.model, would.speed));
-        const wttl = would.usage.cacheWrite5m > would.usage.cacheWrite1h ? "5m" : "1h";
-        const wmult = positionalMultiplier(would.index, would.segmentSize, wm, wttl);
-        unverifiableUnits +=
-          (Math.max(0, entry.bytes_raw - entry.bytes_returned) / rates.charsPerToken) * wmult +
-          entry.turns_collapsed * would.usage.cacheRead * wm.cacheRead;
-      }
+      unverifiableUnits += wouldHaveAdded(entry);
+      continue;
+    }
+
+    // The id exists in this transcript AND in someone else's. A resumed or
+    // forked conversation carries the original records forward, so the same
+    // `gate` result is physically present in every descendant session and each
+    // one's join matches it. Crediting it to all of them counted one call four
+    // times. There is no rule that recovers the owner from the files alone, so
+    // it is refused here rather than guessed, and its magnitude is reported.
+    if (ambiguousIds.has(entry.invocation_id)) {
+      ambiguous++;
+      ambiguousUnits += wouldHaveAdded(entry);
       continue;
     }
 
@@ -565,8 +655,14 @@ export function buildCounterfactual(
     unitsTotal,
     usdTotal,
     sessionUnits,
-    savedFraction: denominator === 0 ? 0 : unitsTotal / denominator,
+    // WITHHELD, not zero, when the exact join is unavailable: everything counted
+    // then came from the timestamp fallback, which cannot tell two overlapping
+    // sessions apart. A number produced that way, compared against `G-stop`'s
+    // 15%, is a decision to stop the project taken on a guess.
+    savedFraction: provenanceUnavailable ? null : denominator === 0 ? 0 : unitsTotal / denominator,
     excludedForeign,
+    ambiguous,
+    ambiguousUnits,
     unverifiable,
     unverifiableUnits,
     provenanceUnavailable,

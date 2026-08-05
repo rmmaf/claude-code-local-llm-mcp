@@ -20,7 +20,14 @@ import path from "node:path";
 
 import { readTelemetry, TELEMETRY_REL_PATH } from "../telemetry.js";
 import { loadRates, RATES_REL_PATH } from "./rates.js";
-import { buildCounterfactual, buildSessionReport, entryCostOfSegment, scopeTelemetry } from "./report.js";
+import {
+  buildCounterfactual,
+  buildSessionReport,
+  entryCostOfSegment,
+  invocationOwners,
+  scopeTelemetry,
+} from "./report.js";
+import type { Transcript } from "./transcript.js";
 import { listSessionIds, projectTranscriptDir, readTranscript, sessionFiles } from "./transcript.js";
 
 // Built at runtime so no escape sequence has to survive a file round-trip.
@@ -108,11 +115,20 @@ async function main(): Promise<void> {
   // `--file` still reads exactly what it is handed: it is an explicit override,
   // and an override that quietly widened would be its own defect.
   const units: Array<{ files: string[]; sessionId?: string }> = [];
+  /**
+   * Every session in the directory, not only the chosen ones. Ownership of a
+   * telemetry row is a fact about the SET — an `invocation_id` present in two
+   * sessions belongs to neither — and `--session X` alone cannot see that. So
+   * the set is always enumerated, even for a single-session run.
+   */
+  let siblings: string[] = [];
   if (options.files.length > 0) {
     for (const one of options.files) units.push({ files: [path.resolve(one)] });
   } else {
     const dir = options.dir ?? projectTranscriptDir(options.root, os.homedir());
-    const found = options.session !== null ? [options.session] : await listSessionIds(dir);
+    const all = await listSessionIds(dir);
+    siblings = all;
+    const found = options.session !== null ? [options.session] : all;
     if (found.length === 0) {
       process.stderr.write(`no transcripts found in ${dir}` + String.fromCharCode(10));
       process.exit(1);
@@ -135,8 +151,25 @@ async function main(): Promise<void> {
   const telemetry = await readTelemetry(options.root);
   const payloads: unknown[] = [];
 
+  // Read every session ONCE, chosen or not, and keep it. The chosen ones are
+  // reported; the rest exist only to answer "does anyone else carry this
+  // invocation id?". Reading them twice, or extracting ids by a second rule
+  // written here, is precisely how the two sides of B20 drifted apart.
+  const dir = options.dir ?? projectTranscriptDir(options.root, os.homedir());
+  const read = new Map<string, Transcript>();
+  for (const id of siblings) read.set(id, await readTranscript(await sessionFiles(dir, id), id));
   for (const unit of units) {
-    const transcript = await readTranscript(unit.files, unit.sessionId);
+    if (unit.sessionId === undefined || !read.has(unit.sessionId)) {
+      read.set(unit.sessionId ?? unit.files.join("|"), await readTranscript(unit.files, unit.sessionId));
+    }
+  }
+  // `--file` hands us an explicit list and no set to compare against, so nothing
+  // can be shown ambiguous and nothing is claimed to have been checked.
+  const ambiguousIds = invocationOwners(read.values());
+
+  for (const unit of units) {
+    const transcript =
+      read.get(unit.sessionId ?? unit.files.join("|")) ?? (await readTranscript(unit.files, unit.sessionId));
     const session = buildSessionReport(transcript, rates);
     // How many records the admission rule refused. A session with none admitted
     // and some refused is a MIS-READ, not an empty session, and the difference
@@ -145,7 +178,7 @@ async function main(): Promise<void> {
     if (session.requests === 0 && dropped === 0) continue;
 
     const scoped = scopeTelemetry(transcript, telemetry);
-    const counterfactual = buildCounterfactual(transcript, scoped, rates, session);
+    const counterfactual = buildCounterfactual(transcript, scoped, rates, session, ambiguousIds);
 
     if (options.json) {
       // NOTHING BUT JSON GOES TO STDOUT HERE. The zero-request branch used to
@@ -346,12 +379,27 @@ ${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
           `    ${DIM}nothing counted — every telemetry row in range was withheld${RESET}\n`
         );
       }
+      // WITHHELD PRINTS AS A SENTENCE, NEVER AS A NUMBER. `G-stop` stops this
+      // project below 15%, so a figure produced by the timestamp fallback would
+      // be read as that decision. Same treatment as an unpriced session's USD.
       process.stdout.write(
         `    ${DIM}${"─".repeat(51)}${RESET}\n` +
-          `    ${BOLD}${pct(counterfactual.savedFraction)} of what this session would have cost${RESET}\n` +
-          `    ${DIM}suppression term is an estimate (charsPerToken=${rates.charsPerToken}); ` +
-          `turn-collapse term is a floor${RESET}\n`
+          (counterfactual.savedFraction === null
+            ? `    ${BOLD}saving WITHHELD — the exact join is unavailable${RESET}\n` +
+              `    ${DIM}rows carry an invocation id but no result in this transcript echoes one, ` +
+              `so only timestamps remain and those cannot tell two sessions apart${RESET}\n`
+            : `    ${BOLD}${pct(counterfactual.savedFraction)} of what this session would have cost${RESET}\n` +
+              `    ${DIM}suppression term is an estimate (charsPerToken=${rates.charsPerToken}); ` +
+              `turn-collapse term is a floor${RESET}\n`)
       );
+      if (counterfactual.ambiguous > 0) {
+        process.stdout.write(
+          `    ${DIM}${int(counterfactual.ambiguous)} row(s) whose invocation id appears in more ` +
+            `than one session were NOT counted (~${int(counterfactual.ambiguousUnits)} units ` +
+            `withheld): a resumed conversation carries the original record forward, so the call ` +
+            `belongs to no single session${RESET}\n`
+        );
+      }
       if (counterfactual.excludedForeign > 0) {
         process.stdout.write(
           `    ${DIM}${int(counterfactual.excludedForeign)} telemetry row(s) belong to another ` +
