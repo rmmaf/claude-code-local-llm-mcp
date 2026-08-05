@@ -1064,20 +1064,137 @@ defect, and it pinned four of them in place.
   negative. This is the one premise whose failure means deletion, not adjustment.
 - **Status:** open
 
-## B12 — the combined saving is ≥ 30% of cost per task
+## B12 — a task done with the server installed costs ≥ 30% less billed Anthropic context than the same task done without it
 
 - **Assumed:** ≥ 30% — (assumed; the per-lever estimate behind it is a derivation
   over the measured cost split, not a measurement)
-- **Source of the assumption:** the cost decomposition below plus the positional
+- **Source of the assumption:** the cost decomposition plus the positional
   multiplier.
-- **Experiment:** 20 real tasks run with the MCP server enabled and disabled;
-  compare with `npm run cost-meter`. There is no hook arm — G2 is closed, so the
-  server is the whole of what is being measured.
-- **Measured:** — (no run)
-- **Falls if:** < 15% — see `G-stop` in `ROADMAP.md`.
+- **PRE-REGISTERED 2026-08-05, BEFORE ANY OBSERVATION EXISTS.** The full design
+  is frozen verbatim in `evidence/2026-08-05-b12-preregistration.json`,
+  **sha256 `5d42b19a899d4cc4538fcdb4d7573d17cf8ca9d4cb557f148c1746e6181ea55e`**,
+  committed as an ancestor of every observation. It carries the clauses this
+  entry states plus the ones only an implementer needs: 23 VOID conditions, 11
+  artifacts with their field lists, 16 covariates, and the run script's
+  obligations. **What is written here decides; what is written there implements.**
+  Freezing by hash rather than by prose is deliberate — B20 spent four emissions
+  discovering that a frozen claim nobody can check is not frozen.
+  - **How it was produced, because the method bounds what it is worth:** three
+    independent designs from different angles, each attacked on four adversarial
+    lenses by reviewers told to refute rather than to be fair, then synthesised.
+    **12 attack passes, 120 findings — 38 rated fatal, 72 major. No design
+    survived intact.** Four load-bearing claims were verified against the code
+    before being accepted; one was a defect in code shipped that same morning
+    (`wouldHaveAdded` hardcoding the main thread, fixed at `47b65f7`).
+- **States the outcome as the HARM, not the DETECTOR.** The harm is *the task
+  cost the same or more*. `savedFraction` is named separately under **Method**,
+  so a detector found blind falsifies the METHOD and leaves B12 standing. B14
+  returned a pass because its detector could not look; this is written so that
+  cannot repeat.
+  - **"a task", not "an attempt":** scored only if the task's committed
+    acceptance command exits 0. Otherwise the numerator is earned at a
+    verification step and the denominator is croppable by quitting, so every
+    fraction rises by giving up.
+  - **"installed", not "invoked":** a task that never calls a tool still pays the
+    tool schemas in every system prompt of every thread. `unitsAddedByInstallation`
+    is a term in the metric, not a caveat.
+  - **"less billed Anthropic context", never "less cost":** `repair`, `scaffold`,
+    `implement` and `fix` move work to a local model whose tokens and seconds are
+    outside the denominator **by construction**. A reduction here is consistent
+    with a pure relocation.
+- **Method, not threshold:** the counterfactual accounting in `src/cost/report.ts`,
+  joined by `invocation_id`, priced from `.local-coder/rates.json`. It is
+  PRIMARY and runs FIRST; the paired A/B runs second and **can only kill a hold,
+  never grant one**.
+  - **"The estimator is a floor" is DELETED — it is false, and no verdict
+    asymmetry may rest on it.** Four biases, each measured here, and they run in
+    BOTH directions: the positional multiplier takes `T` from the treated
+    session's own segment, which the tool lengthened by being called; the
+    numerator is uncapped above Claude Code's own 30,000-character truncation
+    ceiling (B2); `Math.max(0, …)` records a byte-negative call as zero, and
+    negative is the majority mode on a TypeScript repo (`run 2026-08-04-mac-09`:
+    `repair` negative **12 of 12**); and the refusal machinery deflates silently —
+    four sessions once printed a confident `0.0000` while refusing **534,443
+    units**.
+  - **Therefore the scored quantity is a BRACKET, not a point.** `R_lo` credits
+    every row at the cache write alone and zero re-reads; `R_hi` uses the
+    observed segment. Publishing a bound as a point value is the error the
+    `savedFraction` withholding rule already exists to prevent, one level up.
+- **Unit of observation: ONE TASK WINDOW**, delimited by a `requestId` snapshot
+  taken immediately before and diffed immediately after — any id absent from the
+  pre-snapshot was **originated** by the task. **Not a session:** `ROADMAP.md` G1
+  is narrowed to say why, and the snapshot costs 0.69 s and 77 KiB. The snapshot
+  covers **every project slug this machine writes to** — this repository owns
+  four right now — because a one-slug snapshot returns `inherited = 0` for arms
+  that wrote elsewhere, which is a check that cannot fail.
+- **Scored as a VECTOR, not a scalar:** pooled `R`, plus `R_gate`, `R_repair` and
+  an explicit `R_other`, because G-stop requires each delivery to pay for itself
+  and pooling lets one delivery's exposure hold another's verdict hostage.
+- **Holds if** all seven conditions in the frozen design, of which the first is
+  **`R_lo` ≥ 30% over ≥ 20 admitted observations** — the WHOLE bracket clears the
+  line, the only reading of a frozen threshold against an interval that does not
+  require picking a point after seeing the data. A hold must also survive
+  deleting its best task, its best row, and reinstating everything it dropped.
+  - **Said now rather than in a post-mortem: this may be unreachable.** On a
+    25-request task suppressing 200 KB at the write component alone, `R_lo` is
+    roughly 26%. **It is genuinely possible that no honest run of this design
+    ever holds.** That is a fact about the design's power, disclosed before the
+    data, not an excuse to be discovered after it.
+- **Falls if `R_hi⁺` < 15%** — computed at the observed segment, over the FULL
+  observation set, granting every refused and excluded unit its measured
+  magnitude. A fall stops the project, so it must survive the most generous
+  arithmetic the data admits.
+  - **And the fall is CONDITIONAL.** It stands unappealed only if no refused
+    magnitude is `null`, `R_hi⁺` was evaluable, the excluded observations do not
+    carry more tool calls than the admitted ones, and both subagent strata are
+    evaluable and both below 15%. Otherwise it is `open — provisional` until the
+    A/B lands. **A fall on a deflated instrument stops the project permanently,
+    which is strictly the worse of the two errors**, and every source design
+    guarded only the other one.
+  - **A bracket straddling a line is `open`, with both ends published.** `open`
+    is not a defeat; it is what an interval spanning a threshold honestly says.
+  - **Two subagent strata in different bands with a clean refusal ledger is
+    VOID, not a fall** — that is the signature of a coverage bug, the shape that
+    hid 390 of 2,703 requests for four days.
+- **Why these numbers, and they are not being re-derived:** `git log` shows B12
+  edited exactly once, at `59cf135` on 2026-08-02, and never since. **30% and 15%
+  pre-date every measurement in this file's B12 line and have never moved.** Two
+  numbers in the design have no ancestor — the pacing ceiling and the per-task
+  denominator share cap — and both are labelled CHOSEN rather than derived, in
+  the pre-registration commit, before any observation.
+- **Attempt cap: TWO registered scored runs**, on B20's "no more replacements"
+  basis, with the second manifest sealed and hashed at the SAME commit as the
+  first so attempt 2 is a pre-registered replication rather than a re-draw
+  informed by twenty per-task outcomes. A VOID consumes an attempt except for
+  enumerated vendor-side causes. After two, **the recorded conclusion is that
+  G-stop is not evaluable in this venue** and the continue/stop decision is made
+  on a stated non-metered basis.
+- **What a hold does NOT establish** — eleven items in the frozen design; the
+  four that bite hardest:
+  1. **NOT that G-stop is satisfied.** G-stop names three surviving deliveries
+     and requires each to pay for itself. **The cost meter suppresses nothing and
+     writes no telemetry row, so it has no `R_d` and structurally cannot have
+     one.** B12 holding therefore cannot close G-stop, and that consequence is
+     fixed here, in advance, rather than argued when it arrives.
+  2. **NOT that the task set is representative.** The manifest is **authored**.
+     B20's set was every session at a commit — a rule with no discretion — and
+     that defence does not transfer. B3 measured the two verification modes
+     **400x apart**, so the author's choice of tasks is the largest single lever
+     on `R`.
+  3. **NOT that total cost fell rather than moved.** Local compute is outside the
+     denominator by construction.
+  4. **NOT anything about correctness.** B4 is open and unmeasured. Acceptance
+     rates per arm are published beside every ratio precisely so a cost reduction
+     bought by doing less is visible as one.
+- **The operator cannot be blinded, and no clause makes that residual zero.** The
+  treatment IS the presence of the tools in the operator's own tool list. Seven
+  channels are enumerated and bounded in the frozen design; what remains is
+  declared, not repaired.
 - **If it falls:** the project stops. Only the pieces that individually paid for
-  themselves in the counterfactual accounting survive.
-- **Status:** open
+  themselves survive — and per item 1 above, the cost meter cannot be shown to
+  have done so by this instrument.
+- **Measured:** — (no run)
+- **Status:** open · **pre-registered**, run not started
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 

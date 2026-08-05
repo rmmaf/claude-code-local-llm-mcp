@@ -358,7 +358,20 @@ counterfactual accounting survive. This is deliberately a hard number and not a
 judgment call: the failure mode this whole registry exists to prevent is
 continuing to build on a premise that quietly stopped being true.
 
-- **Measured by:** B12, over 20 real tasks with the server and hook on versus off.
+- **Measured by:** B12, **pre-registered 2026-08-05** — design frozen by sha256 in
+  `evidence/2026-08-05-b12-preregistration.json`, run not started.
+- **ONE OF THE THREE DELIVERIES CANNOT BE SCORED BY THIS CRITERION, and that is
+  structural rather than a gap to be filled.** G-stop requires each surviving
+  delivery to individually pay for itself in the counterfactual accounting. The
+  counterfactual credits a tool for bytes it suppressed and turns it collapsed.
+  **The cost meter suppresses nothing and writes no telemetry row**, so it has no
+  per-delivery ratio and cannot acquire one without becoming a different thing.
+  So B12 holding closes G-stop for `gate`, leaves `repair` on its own exposure,
+  and **cannot close G-stop overall**. The choice this forces — amend G-stop to
+  name the meter as infrastructure rather than as a delivery that must pay, or
+  accept that G-stop is not evaluable as written — is recorded here now, unmade,
+  because making it after seeing `R` would be choosing the criterion to fit the
+  result. **It is the project owner's call and it is not urgent until B12 runs.**
 - **Reopens if:** a later measurement with a new `run_id` clears 15%.
 - **15% is a RATIO, and that is what makes it reachable on this account.** A
   constant pricing basis cancels between the two arms, so G-stop never needed the
