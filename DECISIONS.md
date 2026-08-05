@@ -1375,9 +1375,28 @@ the app's own bundled JavaScript and the `@lmstudio/sdk` type declarations.
 
 **An earlier version of this section said "no user configuration file carries
 it", and that was overstated.** The search behind it used `grep -I`, which skips
-binary files, and it never looked in `~/Library/Application Support/` — where an
-Electron app actually keeps its state on macOS. What is established is narrower:
-the policy is not in the CLI and not in the data directory. Combined with the open issue that the OpenAI-compatible endpoint
+binary files, and it never looked in `~/Library/Application Support/`.
+
+**Now enumerated rather than assumed. Six routes, all dead:**
+
+| Route | Result |
+|---|---|
+| `lms ps --json` | `contextLength` and `maxContextLength` only |
+| `lms` CLI | no configuration subcommand; `lms get` *downloads* models and presets |
+| `~/.lmstudio`, binaries included, incl. `.internal/ui-state` and `hub` | no match |
+| `~/Library/Application Support` | LM Studio keeps nothing there at all |
+| `lms log stream` | prompt in and output out; no prediction config |
+| OpenAI-compatible endpoint | rejects the field ([lmstudio-bug-tracker#532](https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/532)) |
+
+One route is untried: the `@lmstudio/sdk`, where `contextOverflowPolicy` is a
+declared type. It ships inside LM Studio's own plugin `node_modules`, so it can
+be reached without installing anything.
+
+**The design consequence does not wait on that.** A property this project can
+neither read nor set is one no shipped behaviour may depend on — which is why
+B16 counts the *harm* and names the mechanism only as an open question. That was
+written before any of this was known, and it is the reason none of it blocks
+anything. Combined with the open issue that the OpenAI-compatible endpoint
 rejects it, that means **the policy is app state that this project can neither
 read nor set**. The GUI is the only place it exists, so this point cannot be
 closed by anything automatable, and any run whose conclusion depends on the
