@@ -571,13 +571,26 @@ defect, and it pinned four of them in place.
     one fixture record as `admittedWithoutUuid: 1` *and* `excluded.apiError: 1` —
     the same record counted as admitted and as rejected in one payload — because
     the counter sat in the record-level pass, which knows only assistant-plus-usage
-    and not the api-error or session checks that decide admission. It could
-    therefore exceed the number of requests admitted, and read non-zero on a
-    session that admitted nothing. The oracle counts at the point of admission and
-    reported 0. **All eleven sessions report 0 on both sides**, which is why this
-    corpus could never have shown it: the fourth time a number agreed for a reason
-    belonging to the corpus and not to the rules. Vectors again identical; only
-    the instrument commit differs, and that is the whole reason to re-emit.
+    and not the api-error or session checks that decide admission. The symptom was
+    that a **rejected** record was counted as admitted, so the number could read
+    non-zero on a session that admitted nothing. The oracle counts at the point of
+    admission and reported 0. **All eleven sessions report 0 on both sides**, which
+    is why this corpus could never have shown it: the fourth time a number agreed
+    for a reason belonging to the corpus and not to the rules. Vectors again
+    identical; only the instrument commit differs, and that is the whole reason to
+    re-emit.
+    - **RETRACTED from the sentence above as first written: "it could therefore
+      exceed the number of requests admitted."** That was offered as a symptom of
+      the defect and it is not one — the counter exceeds the request count by
+      design, because it counts **records** while a request is a `requestId`
+      **group**. Three admitted records of one group with no uuid is 3 against 1,
+      and 3 is the honest number, since each could reappear in a second file
+      undetected. The false version was also **pinned as an assertion in
+      `tests/cost-meter.test.ts`**, where it passed only because that fixture's
+      counter is 0. A fixture refuted it; the test now pins the true behaviour.
+      Nothing scored changes: `win-14`'s artifacts carry 0 for all eleven
+      sessions, and the oracle marks any session with a non-zero count `suspect`,
+      which drops it from the set before it can be compared.
 - **What the repair recovered: 390 of 2,703 billed requests were invisible.**
   The meter printed `(N main, 0 subagent)` on every session for four days. The
   gap is not spread evenly — `514a829f` is 78% subagent by request count while
