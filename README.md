@@ -252,6 +252,8 @@ Measured on a 30B coder at a 16,384-token window, the practical whole-file ceili
 
 Raise it where it is real — LM Studio's per-model default load context — rather than in `LOCAL_CODER_CONTEXT_TOKENS`. The setting only takes effect when `lms ps` cannot answer, and that is exactly when the model is *not* loaded and JIT will bring it up at the default anyway.
 
+**Why "the default" and not what you loaded:** LM Studio's `justInTimeModelLoading` (in `~/.lmstudio/.internal/http-server-config.json`, on by default) reloads a model the server is asked for but does not have — at the model's *default* context, not at whatever your last `lms load --context-length` requested. So an explicit 32,768 silently becomes 16,384 after any unload, with nothing reconfigured. Turning JIT off makes that loud: the server errors instead of serving a differently-configured model.
+
 ## Model selection
 
 `local-coder` picks which local model to run from a **catalog** you define, weighing two things: **what each model is for** (its objective) and **whether it fits the free RAM** on the machine right now.

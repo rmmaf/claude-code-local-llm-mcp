@@ -1276,7 +1276,31 @@ now returns null, and `repair` no longer pins one window for the whole loop —
 that pin was justified by "a value that cannot change mid-loop", which is untrue
 the moment no model is named and each round re-selects.
 
-**The configured window is a belief and it loses to the observation.** The first
+### The window drift has a named cause, and it is a feature that is switched on
+
+`~/.lmstudio/.internal/http-server-config.json` on the measuring machine carries
+`"justInTimeModelLoading": true`. That is what brings a model back when the
+server is asked for one that is not loaded — **at the model's default context,
+not at whatever the last explicit `lms load` asked for.**
+
+It does not prove what happened on 2026-08-04: the crash that preceded the
+reload still has two candidate causes and the machine had two workloads on it.
+But it removes the mystery from the *shape* of the outcome. A window that was
+32,768 by explicit request and 16,384 afterwards is not the app behaving oddly;
+it is JIT loading doing exactly what it says, and it needs no crash to happen —
+an unload for any reason is enough.
+
+Two consequences worth having written down. **`LOCAL_CODER_CONTEXT_TOKENS` is at
+its most dangerous precisely when JIT is on**, because the setting is only
+consulted when `lms ps` cannot answer, which is the not-loaded state, which is
+when JIT is about to load at the default and contradict it. And **turning JIT
+off makes the failure loud**: the server errors instead of silently serving a
+differently-configured model. That is a change to the operator's machine rather
+than to this repository, so it is recorded here rather than made.
+
+### The configured window is a belief and it loses to the observation
+
+The first
 version had `LOCAL_CODER_CONTEXT_TOKENS` short-circuit the probe entirely, and
 justified it on cost: the probe is a ~120 ms shell-out. That ordering was
 backwards, and it took a measurement to see why. A model explicitly loaded at
@@ -1342,11 +1366,18 @@ It is one look at a settings panel. Until someone takes it, the causal claim
 above is a hypothesis and is labelled as one. B16 is unaffected either way — it
 counts the harm, not the mechanism, which is exactly why it was written that way.
 
-**Searched, and it is not reachable from the CLI or from disk.** `lms ps --json`
-reports `contextLength` and `maxContextLength` and nothing about the policy, and
-a recursive text search of `~/.lmstudio` turns up only the app's own bundled
-JavaScript and the `@lmstudio/sdk` type declarations — no user configuration file
-carries it. Combined with the open issue that the OpenAI-compatible endpoint
+**Searched, and it is not reachable from the CLI.** `lms ps --json` reports
+`contextLength` and `maxContextLength` and nothing about the policy, and `lms`
+has no configuration subcommand at all — `lms get` *downloads* models and
+presets, it does not read local settings. Searches of `~/.lmstudio` (including
+`.internal/ui-state`, `.internal/*.json` and `hub`, binaries included) find only
+the app's own bundled JavaScript and the `@lmstudio/sdk` type declarations.
+
+**An earlier version of this section said "no user configuration file carries
+it", and that was overstated.** The search behind it used `grep -I`, which skips
+binary files, and it never looked in `~/Library/Application Support/` — where an
+Electron app actually keeps its state on macOS. What is established is narrower:
+the policy is not in the CLI and not in the data directory. Combined with the open issue that the OpenAI-compatible endpoint
 rejects it, that means **the policy is app state that this project can neither
 read nor set**. The GUI is the only place it exists, so this point cannot be
 closed by anything automatable, and any run whose conclusion depends on the
