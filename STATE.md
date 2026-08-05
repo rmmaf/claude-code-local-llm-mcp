@@ -5,30 +5,31 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B12 IS PRE-REGISTERED AND THE RUN HAS NOT STARTED.** The design is frozen
-verbatim in `evidence/2026-08-05-b12-preregistration.json` and named in the
-premise by sha256 — 3 designs, 12 adversarial passes, **120 findings, 38 fatal,
-none survived intact**. It killed the claim all three shared: the counterfactual
-is **not a floor**, so B12 scores a **bracket** and a fall is **conditional**.
-Two repairs to code shipped the same morning came out of it (`47b65f7`).
+**ALL TEN OF B12's INSTRUMENT REPAIRS ARE IN** — the frozen design names ten, not
+the seven I miscounted here last session. Signed suppression; the 30,000-char
+truncation cap; turn collapse out of every scored number; `repair` crediting its
+gate once; thread-resolved nullable magnitudes; `unmatched` as the fourth refusal
+class; a per-`requestId` subset accessor; ownership grouped by the reporting
+unit; `unitsAddedByInstallation` (16,127 measured chars); `scripts/b12-run.mjs`.
+**Credited saving on this corpus fell 6.3x: 12.1M units to 1,924,485.**
 
 ## Next action
 
-**Seven instrument repairs are pre-conditions of the first scored observation**,
-all named in the frozen design: signed suppression, the client truncation cap,
-turn-collapse out of every scored number, `repair` crediting its gate once,
-`unmatched` given a magnitude, and a per-`requestId`-subset accessor on
-`SessionReport`. Then the pre-flight, then the 5-task pilot. **Yours:** whether
-G-stop still names the cost meter as a delivery that must pay — it structurally
-cannot be scored, having nothing to suppress; G7's threshold; B14 3.978 vs 3.5.
+**Pre-flight first** — `node scripts/b12-run.mjs preflight`, ten minutes, passes
+today. Then route this project's remaining mechanical work through `repair`,
+which has **never once been called**, so G-stop's third delivery has exposure the
+experiment did not manufacture. Only then seal the manifest. **Yours:** G-stop
+names the cost meter as a delivery that must pay for itself and it structurally
+cannot be scored that way; G7's threshold; B14 3.978 vs 3.5.
 
 ## Do not redo
 
-- **Read the value; never the one you expected** — clock for timestamps, fixture
-  for properties. A 0 residual agreed 4x by corpus, not by rule.
-- **A key is only identity in the space it was minted for.** `uuid`, `requestId`,
-  `invocation_id` — each was read as an identity it does not carry.
-- **An unknown summed as zero is a withheld number printed as a low one.** Same
-  error, one level down; it shipped twice in one day.
-- **B12's manifest is AUTHORED.** B20's "the set was fixed by enumeration" does
-  not transfer, and B3 measured the two verification modes 400x apart.
+- **Read the value; never the one you expected.** A 0 residual agreed 4x by
+  corpus, not by rule. The snapshot cost I recorded was 40x low — one slug, not 56.
+- **A key is only identity in the space it was minted for**, and ambiguity is
+  relative to the unit that REPORTS. Lineage grouping under per-session reporting
+  would have re-broken the double-count it was meant to fix.
+- **An unknown summed as zero is a withheld number printed as a low one.** Twice
+  in one day, and the second fix invented 283,176 units from the wrong thread.
+- **Two implementations that never meet agree by corpus.** Harness and meter are
+  compared in a test, on fields the real corpus does not contain.
