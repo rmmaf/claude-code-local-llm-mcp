@@ -79,6 +79,7 @@ export interface Transcript {
    * oracle reports the same four counts and the two must agree; a silent
    * exclusion is how a session with traffic reads as a clean one.
    */
+  admittedWithoutUuid: number;
   excluded: {
     duplicateUuid: number;
     apiError: number;
@@ -321,6 +322,10 @@ export async function readTranscript(
   const records: RawRecord[] = [];
   const seenUuid = new Set<string>();
   const excluded = { duplicateUuid: 0, apiError: 0, foreignSession: 0, noSessionId: 0 };
+  // Admitted but undedupable: the rule admits it, and nothing can catch it if
+  // the same record ever appears in two files. Counted so the risk is stated.
+  let admittedWithoutUuid = 0;
+  let noKeySeq = 0;
   for (const record of raw) {
     if (typeof record.uuid === "string") {
       if (seenUuid.has(record.uuid)) {
@@ -328,6 +333,8 @@ export async function readTranscript(
         continue;
       }
       seenUuid.add(record.uuid);
+    } else if (record.type === "assistant" && record.message?.usage !== undefined) {
+      admittedWithoutUuid++;
     }
     if (anchor !== undefined && typeof record.sessionId === "string" && record.sessionId !== anchor) {
       excluded.foreignSession++;
@@ -369,7 +376,12 @@ export async function readTranscript(
     // meter and `scripts/session-token-walk.mjs` answer to that text rather than
     // to each other, which is the only reason a residual of exactly 0 means
     // anything. Every exclusion is counted; none is silent.
-    if (record.type !== "assistant" || typeof record.requestId !== "string") continue;
+    // `requestId` is a GROUPING KEY, not an admission condition, and B20's rule
+    // does not list it as one. Requiring it here silently dropped usage-bearing
+    // records -- the mirror of the oracle silently dropping records with no
+    // `uuid`. Opposite directions, both silent, and on a corpus where every
+    // record carries both keys the two sides agreed by accident.
+    if (record.type !== "assistant") continue;
     if (record.message?.usage === undefined) continue;
     if (isApiError(record)) {
       excluded.apiError++;
@@ -385,7 +397,14 @@ export async function readTranscript(
     const toolUses = readToolUses(record.message?.content);
     for (const use of toolUses) toolNames.set(use.id, use.name);
 
-    const existing = byRequest.get(record.requestId);
+    // A record with no `requestId` cannot be grouped with anything, so it is its
+    // own group of one — which is what step 4 already implies and what the
+    // oracle has always done.
+    const rid =
+      typeof record.requestId === "string"
+        ? record.requestId
+        : `__norid__${typeof record.uuid === "string" ? record.uuid : `#${noKeySeq++}`}`;
+    const existing = byRequest.get(rid);
     if (existing !== undefined) {
       existing.toolUses.push(...toolUses);
       // THE LAST RECORD OF A GROUP CARRIES THE USAGE, NOT THE FIRST.
@@ -414,9 +433,10 @@ export async function readTranscript(
     }
 
     const isSidechain = record.isSidechain === true;
-    const uuid = typeof record.uuid === "string" ? record.uuid : record.requestId;
-    byRequest.set(record.requestId, {
-      requestId: record.requestId,
+    // Falls back to the grouping key, which is always a string by now.
+    const uuid = typeof record.uuid === "string" ? record.uuid : rid;
+    byRequest.set(rid, {
+      requestId: rid,
       sessionId: record.sessionId ?? "",
       model: record.message?.model ?? "unknown",
       speed: readSpeed(record.message?.usage),
@@ -473,6 +493,7 @@ export async function readTranscript(
     requests,
     toolResults,
     skippedLines,
+    admittedWithoutUuid,
     excluded,
   };
 }

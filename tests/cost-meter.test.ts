@@ -180,6 +180,39 @@ describe("transcript parsing", () => {
     expect(transcript.requests.reduce((n, r) => n + r.usage.cacheRead, 0)).toBe(5000);
   });
 
+  it("admits a usage-bearing record whose grouping or dedup key is missing", async () => {
+    // `requestId` is a grouping key and `uuid` is a dedup key. B20's admission
+    // rule lists neither as a condition, and each implementation had quietly
+    // turned the key IT needed into one: the meter dropped records with no
+    // requestId, the oracle dropped records with no uuid. Opposite directions,
+    // both silent, so on a corpus where every record carries both — this one,
+    // 5,669 of 5,669 — the two sides agreed by accident.
+    clock = 0;
+    const root = tempRoot();
+    const bare = (extra: Record<string, unknown>, output: number): string => {
+      const r: Record<string, unknown> = {
+        type: "assistant",
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: output } },
+        ...extra,
+      };
+      return JSON.stringify(r);
+    };
+    const file = await writeTranscript(root, [
+      bare({ uuid: "u1", requestId: "req-1" }, 100),
+      bare({ uuid: "u2" }, 777), // no requestId: its own group of one
+      bare({ requestId: "req-3" }, 555), // no uuid: admitted, but undedupable
+    ]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(3);
+    expect(transcript.requests.reduce((n, r) => n + r.usage.output, 0)).toBe(1432);
+    // The undedupable one is counted AND reported: nothing can catch it if the
+    // same record ever turns up in a second file.
+    expect(transcript.admittedWithoutUuid).toBe(1);
+  });
+
   it("counts a record once when the same uuid appears in two files of one session", async () => {
     // RECORD identity across the union. Without it the union double-counts, and
     // the invariant `|uuids(main) U uuids(sub)| == |main| + |sub|` is what B20's

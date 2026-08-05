@@ -257,6 +257,8 @@ function walkSession(dir, sessionId) {
   let splitOnlyTokens = 0;
   let excludedForeignSession = 0;
   let excludedNoSessionId = 0;
+  let admittedWithoutUuid = 0;
+  let noKeySeq = 0;
 
   for (const { file, isSubagent } of ordered) {
     let admitted = 0;
@@ -306,23 +308,37 @@ function walkSession(dir, sessionId) {
       }
 
       // Step 3 — de-duplicate by uuid, which is RECORD identity.
+      //
+      // `uuid` is a DEDUP KEY, not an admission condition, and the rule does not
+      // list it as one. Dropping a usage-bearing record for lacking one was this
+      // file inventing a requirement out of what its own bookkeeping needed --
+      // the mirror of the meter dropping records that lacked a `requestId`. The
+      // two errors ran in opposite directions and both were silent, so on a
+      // corpus where every record carries both keys the sides agreed by
+      // accident. Admitted and COUNTED now: a record that cannot be
+      // de-duplicated is a fact the run has to state, because if it ever appears
+      // in two files nothing will catch it.
       const uuid = record.uuid;
-      if (typeof uuid !== "string") continue;
-      // Source is recorded first, so the invariant sees the occurrence even when
-      // the accounting drops it as a duplicate.
-      uuidSources.set(uuid, (uuidSources.get(uuid) ?? 0) | (isSubagent ? 2 : 1));
-      if (seenUuid.has(uuid)) {
-        uuidDuplicates += 1;
-        continue;
+      if (typeof uuid === "string") {
+        // Source is recorded first, so the invariant sees the occurrence even
+        // when the accounting drops it as a duplicate.
+        uuidSources.set(uuid, (uuidSources.get(uuid) ?? 0) | (isSubagent ? 2 : 1));
+        if (seenUuid.has(uuid)) {
+          uuidDuplicates += 1;
+          continue;
+        }
+        seenUuid.add(uuid);
+      } else {
+        admittedWithoutUuid += 1;
       }
-      seenUuid.add(uuid);
       admitted += 1;
 
       if (typeof record.version === "string") versions.add(record.version);
 
       // Step 4 — group by requestId; the LAST write wins because files and lines
       // are walked in order. A record with no requestId is its own group.
-      const rid = typeof record.requestId === "string" ? record.requestId : `__norid__${uuid}`;
+      const rid =
+        typeof record.requestId === "string" ? record.requestId : `__norid__${uuid ?? `#${noKeySeq++}`}`;
       const c = classes(usage);
       if (c.splitDisagrees) splitDisagreements += 1;
       splitOnlyTokens += c.splitOnlyTokens;
@@ -402,6 +418,7 @@ function walkSession(dir, sessionId) {
       excludedApiError,
       excludedForeignSession,
       excludedNoSessionId,
+      admittedWithoutUuid,
       skippedUnparseable,
     },
     // B20's invariant: |uuids(main) U uuids(sub)| == |main| + |sub|, i.e. no uuid
@@ -440,10 +457,11 @@ function walkSession(dir, sessionId) {
     // labelling every one of them "a requestId group spanning files", so an
     // operator would have hunted for a group that does not exist. A flag whose
     // printed reason can be wrong is worse than a flag with no reason.
-    suspect: groupsSpanningFiles > 0 || excludedNoSessionId > 0,
+    suspect: groupsSpanningFiles > 0 || excludedNoSessionId > 0 || admittedWithoutUuid > 0,
     suspectReasons: [
       ...(groupsSpanningFiles > 0 ? [`requestId group spanning ${groupsSpanningFiles} file(s)`] : []),
       ...(excludedNoSessionId > 0 ? [`${excludedNoSessionId} record(s) with no sessionId`] : []),
+      ...(admittedWithoutUuid > 0 ? [`${admittedWithoutUuid} record(s) with no uuid, so undedupable`] : []),
     ],
   };
 }

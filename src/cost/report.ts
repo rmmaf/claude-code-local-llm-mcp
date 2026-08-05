@@ -49,6 +49,8 @@ export interface SessionReport {
    * four days while it was a gap.
    */
   files: string[];
+  /** Admitted but carrying no uuid, so nothing could de-duplicate it. */
+  admittedWithoutUuid: number;
   /** What the admission rule threw away. A zero here is never ambiguous. */
   excluded: { duplicateUuid: number; apiError: number; foreignSession: number; noSessionId: number };
   sessionId: string;
@@ -158,6 +160,7 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
   return {
     file: transcript.file,
     files: transcript.files,
+    admittedWithoutUuid: transcript.admittedWithoutUuid,
     excluded: transcript.excluded,
     sessionId: transcript.sessionId,
     models: [...models].sort(),
