@@ -413,8 +413,22 @@ function preflight(args) {
       check("savedFraction !== null", c.savedFraction !== null, String(c.savedFraction));
       // Without both tools exercised, the five above can pass on a session that
       // called nothing -- the vacuous-check shape this project keeps hitting.
-      check("gate produced a credited row", tools.includes("gate"), tools.join(",") || "(none)");
-      check("repair produced a credited row", tools.includes("repair"), tools.join(",") || "(none)");
+      // A ROW IS NOT EXERCISE. `repair` writes a zeroed telemetry row on its
+      // abort path -- deliberately, so B16 knows the request happened -- and
+      // `buildCounterfactual` creates the `byTool` entry before it examines
+      // anything. So `tools.includes("repair")` is satisfied by a `repair` that
+      // reached an unreachable model and gave up, which is precisely the vacuous
+      // shape the comment above warns about. Require the row to carry work.
+      const exercised = (name) => {
+        const t = c.byTool.find((x) => x.tool === name);
+        if (t === undefined) return { ok: false, detail: "no row" };
+        const did = t.bytes.signedUncapped !== 0 || t.turnsCollapsed > 0;
+        return { ok: did, detail: did ? `${t.calls} call(s)` : "a row that did no work (abort?)" };
+      };
+      for (const name of ["gate", "repair"]) {
+        const e = exercised(name);
+        check(`${name} produced a row that did work`, e.ok, e.detail);
+      }
     }
   }
 
