@@ -1069,7 +1069,8 @@ describe("telemetry and the counterfactual", () => {
       expect(result.unitsTotal).toBe(0);
       // Refused, not vanished: the magnitude is reported so the exclusion is
       // visible rather than reading as a session that simply saved nothing.
-      expect(result.ambiguousUnits).toBeGreaterThan(0);
+      expect(result.ambiguousUnits.units).toBeGreaterThan(0);
+      expect(result.ambiguousUnits.unsized).toBe(0);
       // AND THE FRACTION IS WITHHELD, NOT ZERO. This session's only telemetry
       // was a real saving whose owner is unknown, so 0 would assert it saved
       // nothing -- a different false claim, and the dangerous one, since G-stop
@@ -1407,8 +1408,8 @@ describe("telemetry and the counterfactual", () => {
     expect(result.ambiguous).toBe(1);
     expect(result.byTool).toEqual([]);
     // The point of the test: refused, and the magnitude is KNOWN and non-zero.
-    expect(result.ambiguousUnits).toBeGreaterThan(0);
-    expect(result.refusedMagnitudeUnknown).toBe(0);
+    expect(result.ambiguousUnits.units).toBeGreaterThan(0);
+    expect(result.ambiguousUnits.unsized).toBe(0);
   });
 
   it("counts a refusal it cannot size instead of summing the unknown as zero", async () => {
@@ -1449,8 +1450,81 @@ describe("telemetry and the counterfactual", () => {
     );
 
     expect(result.ambiguous).toBe(1);
-    expect(result.ambiguousUnits).toBe(0);
-    expect(result.refusedMagnitudeUnknown).toBe(1);
+    // Not "0 units refused": NO units sized, plus one refusal nobody could size.
+    expect(result.ambiguousUnits.units).toBe(0);
+    expect(result.ambiguousUnits.unsized).toBe(1);
+  });
+
+  it("does not borrow another thread's request to size a subagent's refusal", async () => {
+    // The first fix for the hardcoded-"main" bug replaced it with a FALLBACK to
+    // main, which is worse than the bug it replaced: it does not compute an
+    // approximate answer, it computes a DIFFERENT one — against a thread that
+    // never paid for the call — and returns it as known, with the unsized
+    // counter reading 0.
+    //
+    // Measured on exactly this fixture before the fallback was removed:
+    // 283,176 units reported as known, of which 270,000 came from the main
+    // thread's cacheRead of 900,000 (turns_collapsed 3 x 900,000 x 0.1). The
+    // subagent's own thread has nothing after the call at all, so the honest
+    // answer is that the magnitude is unknown.
+    clock = 0;
+    const id = "77777777-7777-4777-8777-777777777777";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub-1",
+        sessionId: "sess-1",
+        uuid: "s1",
+        parentUuid: null,
+        isSidechain: true,
+        timestamp: at(500),
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-x", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: "s1",
+        sessionId: "sess-1",
+        isSidechain: true,
+        timestamp: at(600),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-x" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      // Nothing follows on the SUBAGENT thread. A main-thread request does
+      // follow, and it is the one the fallback used to reach for.
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-main-2",
+        sessionId: "sess-1",
+        uuid: "m2",
+        parentUuid: null,
+        isSidechain: false,
+        timestamp: at(900),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 900_000, output_tokens: 0 },
+        },
+      }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(600), invocation_id: id, tool: "gate", bytes_raw: 40_000, bytes_returned: 1_000, turns_collapsed: 3, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id])
+    );
+
+    expect(result.ambiguous).toBe(1);
+    expect(result.ambiguousUnits.unsized).toBe(1);
+    expect(result.ambiguousUnits.units).toBe(0);
   });
 
   it("values suppressed bytes with the multiplier of the request that would have cached them", async () => {
@@ -1632,7 +1706,7 @@ describe("telemetry and the counterfactual", () => {
     expect(result.unitsTotal).toBe(0);
     expect(result.savedFraction).toBe(0);
     // Withheld, not hidden: the magnitude is reported so the exclusion is visible.
-    expect(result.unverifiableUnits).toBeGreaterThan(0);
+    expect(result.unverifiableUnits.units).toBeGreaterThan(0);
   });
 });
 

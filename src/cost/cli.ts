@@ -101,6 +101,18 @@ function pad(text: string, width: number): string {
   return text.length >= width ? text : text + " ".repeat(width - text.length);
 }
 
+/**
+ * A refused magnitude in words. `units` is a floor while anything is `unsized`,
+ * so the sentence has to say so -- a reader who sees "~500k withheld" and is not
+ * told there is more will treat it as the whole of what was refused.
+ */
+function refused(m: { units: number; unsized: number }): string {
+  const sized = `~${int(m.units)} units withheld`;
+  if (m.unsized === 0) return sized;
+  if (m.units === 0) return `${int(m.unsized)} of them could not be sized at all, so the amount withheld is UNKNOWN`;
+  return `at least ${sized}, and ${int(m.unsized)} more that could not be sized`;
+}
+
 function padStart(text: string, width: number): string {
   return text.length >= width ? text : " ".repeat(width - text.length) + text;
 }
@@ -403,8 +415,8 @@ ${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
       if (counterfactual.ambiguous > 0) {
         process.stdout.write(
           `    ${DIM}${int(counterfactual.ambiguous)} row(s) whose invocation id appears in more ` +
-            `than one session were NOT counted (~${int(counterfactual.ambiguousUnits)} units ` +
-            `withheld): a resumed conversation carries the original record forward, so the call ` +
+            `than one session were NOT counted (${refused(counterfactual.ambiguousUnits)}): ` +
+            `a resumed conversation carries the original record forward, so the call ` +
             `belongs to no single session${RESET}\n`
         );
       }
@@ -417,7 +429,7 @@ ${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
       if (counterfactual.unverifiable > 0) {
         process.stdout.write(
           `    ${DIM}${int(counterfactual.unverifiable)} row(s) had no invocation id and were ` +
-            `NOT counted (~${int(counterfactual.unverifiableUnits)} units withheld): a tool that ` +
+            `NOT counted (${refused(counterfactual.unverifiableUnits)}): a tool that ` +
             `cannot point at the transcript entry it produced cannot show its output ever ` +
             `reached the context${RESET}\n`
         );

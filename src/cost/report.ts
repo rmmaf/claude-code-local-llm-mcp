@@ -315,6 +315,20 @@ export interface ToolSaving {
   unmatched: number;
 }
 
+/**
+ * A refused class's magnitude, in the only shape that cannot lie about itself.
+ *
+ * `units` is the sum of the refusals that COULD be sized, and never contains a
+ * zero standing in for one that could not. `unsized` counts those, so `units` is
+ * a FLOOR whenever it is non-zero. A single scalar cannot express "about 500k,
+ * plus some unknown amount", and this file already learned one level up that a
+ * number which cannot say it is incomplete gets read as if it were complete.
+ */
+export interface RefusedMagnitude {
+  units: number;
+  unsized: number;
+}
+
 export interface CounterfactualReport {
   byTool: ToolSaving[];
   unitsTotal: number;
@@ -348,13 +362,13 @@ export interface CounterfactualReport {
    */
   ambiguous: number;
   /** What those rows WOULD have added, so the refusal is visible rather than silent. */
-  ambiguousUnits: number;
+  ambiguousUnits: RefusedMagnitude;
   /**
    * Refused rows whose magnitude could not be computed — no request matched, so
    * the amount withheld is UNKNOWN rather than zero. Reported apart from the
    * unit totals because a sum cannot say "and some unknown amount besides".
    */
-  refusedMagnitudeUnknown: number;
+
   /**
    * EVERY row the join refused, in one number. It exists because `ambiguous` was
    * added as a third refusal class and wired into only one of the three places
@@ -375,7 +389,7 @@ export interface CounterfactualReport {
    */
   unverifiable: number;
   /** What those rows WOULD have added, so the exclusion is visible rather than silent. */
-  unverifiableUnits: number;
+  unverifiableUnits: RefusedMagnitude;
   /**
    * True when this transcript DOES contain calls to our tools but none of their
    * results carry an `invocation_id`. That means the echo did not survive into
@@ -535,9 +549,9 @@ export function buildCounterfactual(
 
   let excludedForeign = 0;
   let unverifiable = 0;
-  let unverifiableUnits = 0;
+  const unverifiableUnits: RefusedMagnitude = { units: 0, unsized: 0 };
   let ambiguous = 0;
-  let ambiguousUnits = 0;
+  const ambiguousUnits: RefusedMagnitude = { units: 0, unsized: 0 };
 
   /**
    * What a row WOULD have added had it been creditable. Both refusal paths
@@ -560,9 +574,14 @@ export function buildCounterfactual(
       entry.invocation_id !== undefined ? byInvocation.get(entry.invocation_id) : undefined;
     const at = source?.timestampMs ?? Date.parse(entry.ts);
     const thread = source?.thread ?? "main";
-    const would =
-      requestAtOrAfter(transcript.requests, at, thread) ??
-      (thread === "main" ? null : requestAtOrAfter(transcript.requests, at, "main"));
+    // THE ROW'S OWN THREAD OR NOTHING. This first shipped falling back to main
+    // when a subagent's thread had no later request, which does not compute an
+    // approximate answer -- it computes a DIFFERENT one, against a thread that
+    // never paid for the call, and returns it as known. Measured on a fixture:
+    // 283,176 units reported with the unknown counter reading 0, of which
+    // 270,000 came from a main-thread `cacheRead` of 900,000 the subagent never
+    // touched. Unknown is the honest answer and it has somewhere to go now.
+    const would = requestAtOrAfter(transcript.requests, at, thread);
     if (would === null) return null;
     const wm = multipliersFor(rates, rateKey(would.model, would.speed));
     const wttl = would.usage.cacheWrite5m > would.usage.cacheWrite1h ? "5m" : "1h";
@@ -572,19 +591,10 @@ export function buildCounterfactual(
       entry.turns_collapsed * would.usage.cacheRead * wm.cacheRead
     );
   };
-  /**
-   * Refusals whose magnitude could not be computed at all. Counted separately so
-   * a reader can tell "we refused ~500k units" from "we refused an unknown
-   * amount", which a single summed number cannot express.
-   */
-  let refusedMagnitudeUnknown = 0;
-  const addRefused = (entry: TelemetryRecord): number => {
+  const addRefused = (into: RefusedMagnitude, entry: TelemetryRecord): void => {
     const units = wouldHaveAdded(entry);
-    if (units === null) {
-      refusedMagnitudeUnknown++;
-      return 0;
-    }
-    return units;
+    if (units === null) into.unsized++;
+    else into.units += units;
   };
   /** Tools that matched at least one request whose model has no configured price. */
   const unpriced = new Set<string>();
@@ -601,7 +611,7 @@ export function buildCounterfactual(
     // Reported, with its magnitude, so the exclusion is visible and not silent.
     if (entry.invocation_id === undefined) {
       unverifiable++;
-      unverifiableUnits += addRefused(entry);
+      addRefused(unverifiableUnits, entry);
       continue;
     }
 
@@ -613,7 +623,7 @@ export function buildCounterfactual(
     // it is refused here rather than guessed, and its magnitude is reported.
     if (ambiguousIds.has(entry.invocation_id)) {
       ambiguous++;
-      ambiguousUnits += addRefused(entry);
+      addRefused(ambiguousUnits, entry);
       continue;
     }
 
@@ -723,7 +733,6 @@ export function buildCounterfactual(
     excludedForeign,
     ambiguous,
     ambiguousUnits,
-    refusedMagnitudeUnknown,
     unverifiable,
     unverifiableUnits,
     refusedRows: excludedForeign + ambiguous + unverifiable,
