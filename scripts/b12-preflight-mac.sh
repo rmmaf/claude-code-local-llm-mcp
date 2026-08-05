@@ -268,20 +268,28 @@ case "$SESSION_ID" in
 esac
 info "session $SESSION_ID"
 
+# ITS OUTPUT IS KEPT. The first real run exited 1 and wrote no transcript, and
+# the one thing that would have said why had been sent to /dev/null. A run that
+# discards the evidence for its own failure has to be repeated to learn nothing
+# new.
+CLAUDE_LOG=$(mktemp -t b12claude)
 DISABLE_AUTOUPDATER=1 claude --print \
   --session-id "$SESSION_ID" \
   --permission-mode "$PERMISSION_MODE" \
   --mcp-config "$MCP_CFG" \
   --allowed-tools "mcp__local-coder__gate,mcp__local-coder__repair" \
   "Call mcp__local-coder__gate exactly once. It will be red: src/b12-scratch.ts has a type error. Then call mcp__local-coder__repair exactly once to fix that file. Do not edit any file yourself, do not use Bash, and do not call any other tool." \
-  >/dev/null 2>&1
+  >"$CLAUDE_LOG" 2>&1
 CLAUDE_EXIT=$?
 
 if [ $CLAUDE_EXIT -ne 0 ]; then
-  info "claude exited $CLAUDE_EXIT — continuing, because the pre-flight reads the transcript and will say what it found"
+  info "claude exited $CLAUDE_EXIT — its output is below and goes into the artifact"
+  sed 's/^/      /' "$CLAUDE_LOG" | tail -20
 else
   ok "scratch session finished"
 fi
+CLAUDE_LOG_TAIL=$(tail -c 4000 "$CLAUDE_LOG" 2>/dev/null || true)
+rm -f "$CLAUDE_LOG"
 
 # ---------------------------------------------------------------------------
 next "Pre-flight"
@@ -323,24 +331,29 @@ UNTRACKED=$(git status --porcelain 2>/dev/null | grep "^?? " || true)
 # The artifact is kept whether it passed or failed. A failed pre-flight is the
 # result the pre-flight exists to produce; hiding it would defeat the point.
 if [ -f "$ART" ]; then
-  node -e '
-    const fs = require("fs");
-    const [file, sha, branch, ver, model, session, leftover, untracked, rc] = process.argv.slice(1);
-    const o = JSON.parse(fs.readFileSync(file, "utf8"));
-    o.context = {
-      commit: sha, branch, claudeVersion: ver, model, sessionId: session, host: "mac",
-      // `null` is UNKNOWN, never `true`. If the check could not run, saying
-      // the tree was as found would be evidence invented by a failure.
-      treeCheckRan: rc === "0",
-      treeAsFound: rc === "0" ? leftover.length === 0 : null,
-      trackedChangesLeftBehind: leftover ? leftover.split("
-") : [],
-      untrackedFilesPresent: untracked ? untracked.split("
-") : [],
-    };
-    fs.writeFileSync(file, JSON.stringify(o, null, 2) + "
-");
-  ' "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID" "$LEFTOVER" "$UNTRACKED" "$TREE_RC"
+  # A QUOTED HEREDOC, NOT `node -e`. The inline form had three JS strings whose
+  # "\n" arrived as a REAL newline -- the escaping crossed Python, bash and JS,
+  # and JS is where it broke. This crashed on the Mac and the artifact went out
+  # with no commit, no version and no tree verdict: the provenance the run exists
+  # to carry. A quoted heredoc is passed through verbatim by bash.
+  MERGE_JS=$(mktemp -t b12merge)
+  cat > "$MERGE_JS" <<'JS'
+import { readFileSync, writeFileSync } from "node:fs";
+const [file, sha, branch, ver, model, session, leftover, untracked, rc, claudeExit, claudeLog] =
+  process.argv.slice(2);
+const o = JSON.parse(readFileSync(file, "utf8"));
+o.context = {
+  commit: sha, branch, claudeVersion: ver, model, sessionId: session, host: "mac",
+  treeCheckRan: rc === "0",
+  treeAsFound: rc === "0" ? leftover.length === 0 : null,
+  trackedChangesLeftBehind: leftover ? leftover.split("\n") : [],
+  untrackedFilesPresent: untracked ? untracked.split("\n") : [],
+  scratchSession: { exitCode: Number(claudeExit), log: claudeLog },
+};
+writeFileSync(file, JSON.stringify(o, null, 2) + "\n");
+JS
+  node "$MERGE_JS" "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID" "$LEFTOVER" "$UNTRACKED" "$TREE_RC" "$CLAUDE_EXIT" "$CLAUDE_LOG_TAIL" || refuse "could not write provenance into $ART"
+  rm -f "$MERGE_JS"
   cp "$ART" "$OUT_DIR/" 2>/dev/null && ok "copied to $OUT_DIR/$(basename "$ART")"
 fi
 
