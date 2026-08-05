@@ -5,14 +5,13 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B20 STATES THE ADMISSION RULE IN FULL — FOUR STEPS, IN ONE PLACE.** Nine
-oracle defects across four reviews, all before anything was scored. The last
-two: the `sessionId` guard fired only when the field was present, so it admitted
-any record omitting it and did not implement the rule printed above it; and the
-refutation of *broadening is safe* had landed in `PREMISES.md` while
-`DECISIONS.md` still asserted it — both retracted in place now. Missing
-`sessionId` is excluded **and** marks the session `suspect`: 0 of 5,595 records
-lack it, so non-zero means the layout moved.
+**B20 STATES THE ADMISSION RULE IN FULL — FOUR STEPS, IN ONE PLACE.** Eleven
+oracle/record defects across five reviews, all before anything was scored. The
+last two: a `suspect` session was printed under a reason it did not have, and
+**seven `ts` values in `MEASUREMENTS.jsonl` were incremented by hand, five of
+them into the future** — retracted, not rewritten. `ts` is now read from the
+clock; the authoritative time for every run this session is its **commit date**,
+which is what the pre-registration ordering actually rests on.
 
 ## Next action
 
@@ -25,8 +24,8 @@ threshold, and B14's 3.978 vs 3.5.
 
 ## Do not redo
 
-- **Build the fixture; assert nothing about the instrument.** And a refutation
-  must reach every file carrying the claim, not just the one it was written in.
+- **Read the value; never write down the one you expected.** Timestamps from the
+  clock, properties from a fixture. That covers most of the eleven.
 - **If the oracle needs another correction, G1 cannot close in this venue** —
   say so and decide on a stated non-metered basis. That is a permitted ending.
 - **B16's `> 10%` and 20-request denominator are INHERITED from B14.** Rederiving

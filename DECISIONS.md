@@ -2011,3 +2011,44 @@ the instrument instead of measuring one.** The vacuous invariant, the hardcoded
 path segment, the swallowed error, the stale rule string and this monotonicity
 claim are the same mistake five times. Each fix in this round was a fixture
 first and a patch second, which is the only reason any of them is trustworthy.
+
+### a fabricated timestamp is not the same class of error as a wrong number
+
+**Found by stop-time review 2026-08-05. Seven rows written this session carry a
+`ts` I incremented by hand instead of reading; five of them are in the FUTURE**,
+by 27 to 217 minutes. The real span of the work was 05:14Z to 06:23Z.
+
+`MEASUREMENTS.jsonl:53` has carried a rounding error since the day B1 fell — it
+records the meter's error as `2.313` where the arithmetic gives `2.312` — and
+that row stands, harmlessly, because **a wrong derived value is checkable from
+its own `method` string.** Anyone can recompute `(119.11 - 35.96) / 35.96` and
+see it. The row carries its own audit.
+
+A wrong `ts` carries nothing. It cannot be recomputed from anything in the file,
+it looks exactly like a right one, and it establishes a **false ordering against
+every real timestamp it sits next to**. That is not a cosmetic difference in this
+repository, because **ordering is the load-bearing property of every
+pre-registration argument here.** The entire claim that B17's threshold preceded
+its data — the claim three premises and eleven commits rest on — is a claim
+*about time*. A file whose timestamps are invented cannot support it from its own
+contents.
+
+**Retracted rather than corrected**, per the rule this file already follows:
+history is not rewritten, the claim built on it is. The seven rows stand and
+`run 2026-08-05-win-09-ts-retraction` says what is wrong with them.
+
+**What actually saves the ordering argument is that it never depended on `ts`.**
+Commit dates are real, verifiable, produced by something other than me, and
+already recorded: `git show -s --format=%cI` over this branch gives
+02:14:19-03:00 through 03:23:25-03:00. Every run_id maps to a time through its
+commit. The pre-registration ordering is provable from `git log` whether or not
+a single `ts` in this file is trustworthy — which is luck, not design, and the
+lesson is to stop relying on luck.
+
+**The fix is to stop inventing the field.** `ts` is read from the system clock at
+write time. The retraction row is the first one written that way.
+
+**And the wider shape, which is now four for four.** The vacuous invariant, the
+hardcoded path segment, the monotonicity claim, and this: every one is a value
+asserted where a value could have been read or measured. The instrument was never
+the problem. *Writing down what I expected instead of what was there* was.
