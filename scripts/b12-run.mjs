@@ -413,12 +413,20 @@ function preflight(args) {
       check("savedFraction !== null", c.savedFraction !== null, String(c.savedFraction));
       // Without both tools exercised, the five above can pass on a session that
       // called nothing -- the vacuous-check shape this project keeps hitting.
-      // A ROW IS NOT EXERCISE. `repair` writes a zeroed telemetry row on its
-      // abort path -- deliberately, so B16 knows the request happened -- and
-      // `buildCounterfactual` creates the `byTool` entry before it examines
-      // anything. So `tools.includes("repair")` is satisfied by a `repair` that
-      // reached an unreachable model and gave up, which is precisely the vacuous
-      // shape the comment above warns about. Require the row to carry work.
+      // A ROW IS NOT EXERCISE -- and the reason I first gave for this was WRONG,
+      // so it is written down instead of quietly replaced.
+      //
+      // I claimed an aborted `repair` would satisfy `tools.includes("repair")`,
+      // because it writes a zeroed telemetry row and `buildCounterfactual`
+      // creates the `byTool` entry before examining anything. Measured on a
+      // fixture: it does not. An abort returns an ERROR payload, `errorResult`
+      // carries no `invocation_id`, so the row finds no matching tool result,
+      // lands in `excludedForeign`, and never reaches `byTool`. The original
+      // check would have failed correctly.
+      //
+      // This stronger form is kept because it can only tighten, but NO live path
+      // to it is known: a `repair` that succeeds reports its last gate's raw
+      // bytes, which are non-zero. It guards a shape, not an observed defect.
       const exercised = (name) => {
         const t = c.byTool.find((x) => x.tool === name);
         if (t === undefined) return { ok: false, detail: "no row" };
