@@ -399,11 +399,11 @@ defect, and it pinned four of them in place.
   - **A THRESHOLD CAN BE FITTED.** Move it and the same data changes verdict, in
     whichever direction the author prefers. **Frozen absolutely, from the
     pre-registration commit, no exceptions.**
-  - **AN ENUMERATION RULE IS A FACTUAL CLAIM ABOUT WHERE A VENDOR WRITES FILES.**
-    Getting it wrong cannot flatter a result; it can only make the oracle see
-    **less** and therefore only make the premise **fail to detect** the defect it
-    is hunting. Correcting it is repair, not tuning — **provided the correction
-    only ever broadens**, which is checkable rather than arguable.
+  - **AN ENUMERATION RULE IS A FACTUAL CLAIM ABOUT WHERE A VENDOR WRITES FILES,
+    AND IT MUST BE EXACT.** Under-inclusion hides the defect; over-inclusion
+    invents one. Neither is safe, and correcting it is repair rather than tuning
+    only because the **thresholds** it feeds are frozen and verified — never
+    because of anything about the correction's direction.
 - **FROZEN ABSOLUTELY, and byte-identical to the pre-registration commit — this
   part of the claim survives and has been checked:** the outcome, the threshold
   of **exactly 0**, the **Holds if** and **Falls if** conditions, the
@@ -420,13 +420,32 @@ defect, and it pinned four of them in place.
   back as a clean single-threaded session with a passing invariant.
   - **Timing:** before any comparison has been run, and there is therefore no
     residual the new wording could have been chosen to accommodate.
-  - **Direction, and it is checkable:** the new rule is a strict **superset** of
-    the old. It can only admit more records, so it can only make the meter look
-    **worse**, never better. A change that can only hurt the thing under test is
-    not fitted in its favour.
-  - **The latitude is bounded by that direction and by nothing else. Any
-    NARROWING of the enumeration voids everything**, at any time, before or after
-    a run. Broadening is repair; narrowing is how a gap gets hidden.
+  - **"BROADENING IS ALWAYS SAFE" WAS WRITTEN HERE AND IS FALSE. Measured, not
+    reasoned about.** The claim was that a superset of files can only make the
+    oracle count more, therefore only make the meter look worse, therefore never
+    be fitted in its favour. **A superset of FILES is not a superset of COUNTED
+    TOKENS**, because step 3 is last-write-wins per `requestId`, not a sum. A
+    stray `.jsonl` under the session directory holding an early partial copy of a
+    group **replaces** the winning record: measured **695 → 5 output tokens** on
+    a fixture. That is the file set growing and the count *shrinking* — the
+    direction that drives a residual toward zero and can hold this premise on a
+    meter that is wrong. A second fixture, a foreign session's record in the same
+    place, went the other way: **695 → 4,937.**
+  - **So direction is not a safety proxy and the latitude is not bounded by it.**
+    What bounds it is: the thresholds are frozen absolutely and verifiably; the
+    conformance suite must be green; and **any enumeration change after the first
+    scored run requires every existing `evidence/` artifact to be re-emitted**, so
+    a change in counted tokens appears as a diff rather than being absorbed.
+    Today that costs nothing because no artifact exists — which is exactly why
+    the correction is being made now rather than argued about later.
+  - **Two structural guards, both on signals the oracle already computed and
+    ignored.** A record is admitted only if its own `sessionId` matches the
+    session — a file under a directory is not thereby a request *of* that session.
+    And a `requestId` group spanning more than one file marks the session
+    **`suspect`**: last-write-wins is undefined there, the oracle cannot know
+    which record is authoritative, so it refuses to score rather than guessing.
+    Both are zero across the real corpus, and both are now shown failing in
+    `tests/session-token-walk.test.ts`.
 - **The emitted artifact must describe the rule that produced it.** For one
   commit the oracle's `rule` string still named `subagents/**` after the walk had
   been broadened, so an `evidence/` file would have carried a false account of
@@ -458,17 +477,21 @@ defect, and it pinned four of them in place.
   1. **VOID** unless `evidence/<run_id>.meter.json` and
      `evidence/<run_id>.walk.json` are both committed, machine-produced, with the
      four-class vector per session per side.
-  2. **VOID** if the oracle changed after the run it scores; if any
-     **absolutely frozen** rule above changed at all; if the enumeration was
-     **narrowed** at any point; or if the conformance suite was not passing at
+  2. **VOID** if the oracle changed after the run it scores without every
+     existing `evidence/` artifact being re-emitted; if any **absolutely frozen**
+     rule above changed at all; or if the conformance suite was not passing at
      the commit the run was produced from.
   3. **VOID** if the Claude Code version that wrote any session in the set
      differs from the version recorded at that run.
   4. **VOID sessions do not count toward the set.** A session with no admitted
      request satisfies "every class differs by exactly 0" on both sides
-     trivially; the oracle now marks those `void` and they are excluded from the
+     trivially; the oracle marks those `void` and they are excluded from the
      ≥ 5. Zero requests is a fact about the corpus, never a verdict about the
      meter.
+  5. **SUSPECT sessions do not count toward the set either, and do not fall it.**
+     A `requestId` group spanning files makes the walk's own aggregation
+     undefined, so the session says nothing about the meter in either direction.
+     Excluded and reported, never scored.
 - **NO MORE REPLACEMENTS. This line ends here.** B19 permitted one and this is
   it. If the oracle needs a fifth correction, the recorded conclusion is that
   **G1 cannot be closed in this venue**, G-stop is not evaluable, and the

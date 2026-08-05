@@ -5,14 +5,14 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B20 FREEZES THE STANDARD — AND "THE STANDARD" IS TWO KINDS OF RULE.** Four
-false-negative paths in the oracle across three reviews, each of which would
-have made the premise HOLD on a broken meter. B17 and B19 are `moot`: they froze
-the *code*. B20's first draft then claimed byte-identity for everything, false
-the same day — the enumeration clause had already been broadened. **A threshold
-can be fitted and is frozen absolutely (verified untouched); an enumeration rule
-cannot be, since being wrong makes the oracle see LESS, so it is repairable in
-the broadening direction only and any narrowing voids everything.**
+**B20 FREEZES THE THRESHOLDS; THE ENUMERATION IS REPAIRABLE AND MUST BE EXACT.**
+Seven oracle defects across three reviews, all before anything was scored, all
+false negatives or false artifacts. The last refuted a claim B20 made in its own
+text — *broadening can only make the oracle count more*. **False**: step 3 is
+last-write-wins, not a sum, so a stray `.jsonl` with an early partial copy read
+**695 → 5**, the direction that HOLDS the premise on a broken meter. Guarded by
+matching `sessionId`, and a `requestId` group spanning files marks the session
+`suspect` and refuses to score. B17/B19 `moot`; thresholds verified untouched.
 
 ## Next action
 
@@ -25,8 +25,8 @@ threshold, and B14's 3.978 vs 3.5.
 
 ## Do not redo
 
-- **The conformance suite is the freeze**, and the emitted `rule` string must
-  describe the run that produced it — the artifact is the record.
+- **Assert nothing about the instrument — build the fixture.** Five of the seven
+  defects were properties I claimed instead of measured.
 - **If the oracle needs another correction, G1 cannot close in this venue** —
   say so and decide on a stated non-metered basis. That is a permitted ending.
 - **B16's `> 10%` and 20-request denominator are INHERITED from B14.** Rederiving

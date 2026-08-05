@@ -1941,3 +1941,55 @@ wrong hurts**. Thresholds hurt the reader and are frozen. Factual claims about
 someone else's file layout hurt the author and are repairable one way only. A
 freeze that cannot tell those apart will either pin a bug or license a fit, and
 which of the two it does is luck.
+
+### a superset of files is not a superset of tokens
+
+**Refuted by fixture 2026-08-05, `run 2026-08-05-win-07-monotonicity`.** The claim
+was mine, it was in `PREMISES.md`, and I wrote it without testing it:
+
+> the new rule is a strict **superset** of the old. It can only admit more
+> records, so it can only make the meter look **worse**, never better. A change
+> that can only hurt the thing under test is not fitted in its favour.
+
+Every clause of that is reasonable and the conclusion is false, because the
+aggregation is **last-write-wins per `requestId`, not summation**. Adding a file
+does not add its tokens; it changes **which record wins**.
+
+| fixture | truth | oracle read |
+|---|---|---|
+| main only, 3-record group, terminal record 695 | 695 | 695 |
+| plus a stray `.jsonl` holding an early **partial copy** of that group | 695 | **5** |
+| plus a stray `.jsonl` holding **another session's** record | 695 | **4,937** |
+
+The middle row is the dangerous one. The file set grew and the count *shrank*, by
+690 tokens, which moves a residual **toward zero** — the direction that makes
+this premise **HOLD on a meter that is wrong**. The exact failure the claim
+asserted was impossible.
+
+**Direction is not a safety proxy.** Under-inclusion hides the defect;
+over-inclusion invents one; and "broadening" can do either depending on what the
+added file contains. What actually bounds the latitude to repair an enumeration
+is that **the thresholds it feeds are frozen and verified**, the conformance
+suite is green, and any change after the first scored run forces every existing
+artifact to be re-emitted so a delta in counted tokens shows up as a diff.
+
+**Both failures were already visible in numbers this oracle computed and
+ignored** — `groupsSpanningFiles` and a `sessionId` comparison that was counted
+and never acted on. That is its own lesson: a diagnostic nobody branches on is a
+comment with a number in it.
+
+Guarded now, and in the honest way for each. A record is admitted only if its own
+`sessionId` matches — the record says whose it is, and the record is what to
+believe rather than the path. A `requestId` group spanning files marks the session
+**`suspect`**, and the oracle **refuses to score it** rather than guessing which
+record is authoritative; B20 makes such a session neither count toward the set nor
+fall it, because an undefined aggregation says nothing about the meter in either
+direction.
+
+**Seven defects across three stop-time reviews, all before anything was scored,
+all false negatives or false artifacts.** The arithmetic has been correct the
+whole way through. What kept going wrong is one thing: **asserting a property of
+the instrument instead of measuring one.** The vacuous invariant, the hardcoded
+path segment, the swallowed error, the stale rule string and this monotonicity
+claim are the same mistake five times. Each fix in this round was a fixture
+first and a patch second, which is the only reason any of them is trustworthy.
