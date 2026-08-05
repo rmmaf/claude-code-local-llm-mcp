@@ -199,77 +199,75 @@ export function classifyRun({
   exitCode,
   signal,
   errorCode,
-  wallMs,
   budgetMs,
   budgetEnforced = true,
   originatedCount,
   slugsBefore,
   slugsAfter,
 }) {
-  const spawnFailed = errorCode !== null && errorCode !== undefined && errorCode !== "ETIMEDOUT";
-
-  // CENSORED MEANS WE STOPPED IT, AND ONLY `ETIMEDOUT` SAYS SO. `spawnSync` sets
-  // that code exactly when it kills a child at the timeout it was given, so it
-  // is positive evidence. Duration is not: it says how long something took, not
-  // who ended it.
+  // AN ENUMERATION, NOT A CHAIN OF CONDITIONS.
   //
-  // This shipped as `ETIMEDOUT || (exitCode !== 0 && wallMs >= budgetMs)`, and
-  // the second half laundered late failures. The SAME failure -- exit 1 -- came
-  // back invalid when it happened early and censored-and-valid when it happened
-  // late, so an arm that hung on a network call for the whole budget and then
-  // died of an expired credential was archived as a legitimate budget-exhausted
-  // observation. It did not even need to have originated anything.
+  // Six defects landed in this rule while it was written as `&&`-ed predicates,
+  // and they came in two families. Three were fields it was never handed -- the
+  // exit code, the signal, whether the budget was even enforced. Two were fields
+  // it should never have used: `wallMs` standing in as evidence of who ended the
+  // process, twice, in consecutive repairs. The sixth was `exitCode !== 0` where
+  // the intent was `exitCode === null`, which is the same slip as the first five
+  // wearing different clothes -- a condition that happens to be true of the case
+  // in mind and also of a case not in mind.
   //
-  // AND THE CHILD MUST NOT HAVE FINISHED. `ETIMEDOUT` alone is not enough:
-  // `spawnSync` measures the whole call, so node's own startup and teardown
-  // count toward the timer. Measured -- a child sleeping 330ms under a 400ms
-  // timeout returns `status: 0` AND `ETIMEDOUT` at 405ms wall. That child
-  // completed. Recording it as censored files a finished task as a lower bound
-  // and throws away the observation it actually produced.
-  const censored = !spawnFailed && errorCode === "ETIMEDOUT" && exitCode !== 0;
+  // So the outcome is now DECIDED BY CASE over the triple `spawnSync` actually
+  // returns, with no fall-through and every branch named. An unhandled
+  // combination becomes a named outcome a reader can see rather than a default
+  // nobody chose. `wallMs` is not a parameter at all any more: nothing here is
+  // entitled to reason from duration.
+  const outcome = (() => {
+    // The spawn itself failed: ENOENT, EACCES. No child ever ran.
+    if (errorCode !== null && errorCode !== undefined && errorCode !== "ETIMEDOUT") return "spawn_failed";
+    // WE stopped it at the budget. `ETIMEDOUT` says the timeout fired, and a
+    // null status says the child never got to exit on its own -- both are
+    // required. `spawnSync` times the WHOLE call, so a child that finished can
+    // still carry `ETIMEDOUT`: measured, a 330ms child under a 400ms timeout
+    // returns `status: 0` AND `ETIMEDOUT` at 405ms because node's startup and
+    // teardown count toward the timer.
+    if (errorCode === "ETIMEDOUT" && exitCode === null) return "censored";
+    // Killed, but not by us.
+    if (exitCode === null) return "killed_by_signal";
+    // The CLI failed. NOT the same as the agent failing the task: `claude
+    // --print` exits 0 either way, and a genuine failure to solve it is caught
+    // by the acceptance predicate as `accepted: false`, which is data and is
+    // kept. This covers a bad flag, an expired credential, a context overflow,
+    // and a crash partway through -- including one that carries `ETIMEDOUT`
+    // because it died as the timer crossed.
+    if (exitCode !== 0) return "exited_nonzero";
+    return "completed";
+  })();
 
-  // WHETHER THE BUDGET WAS ENFORCED IS A FACT THE HARNESS KNOWS, NOT SOMETHING
-  // TO INFER FROM THE CLOCK. The first version of this check read
-  // `wallMs >= budgetMs`, which is the same duration-as-evidence mistake one
-  // line up: with a timeout actually set, `spawnSync` raises `ETIMEDOUT` the
-  // moment the wall crosses, so the check could essentially only fire on a
-  // legitimate completion whose measured wall included spawn overhead. It could
-  // produce false positives and almost nothing else.
-  const budgetNotEnforced = budgetEnforced === false;
-
+  const censored = outcome === "censored";
   const reasons = [];
-  if (spawnFailed) reasons.push(`the CLI could not be run: ${errorCode}`);
 
-  // AN EXECUTION FAILURE IS NOT AN OBSERVATION, and it is not the same thing as
-  // a task the agent failed. `claude --print` exits 0 whether or not the agent
-  // succeeded — an agent that tried and got nowhere still exits 0 and is caught
-  // by the acceptance predicate as `accepted: false`, which IS data. A non-zero
-  // exit is the CLI itself failing: a bad flag, an expired credential, a context
-  // overflow, a crash partway through.
-  //
-  // This was missed because the exit code was never passed in at all. Measured:
-  // `claude --definitely-not-a-flag` returns status 1 with NO spawn error, so
-  // `errorCode` stayed null, `spawnFailed` stayed false, and an arm that had
-  // already originated a few requests before dying came back `valid: true` — a
-  // truncated fragment archived as a complete task.
-  // Not when the spawn itself failed: that is one cause, and reporting it twice
-  // reads as two things having gone wrong.
-  if (!censored && !spawnFailed && exitCode !== 0) {
-    reasons.push(
-      `the CLI exited ${exitCode === null ? `on signal ${signal ?? "(unknown)"}` : exitCode} without finishing`
-    );
+  if (outcome === "spawn_failed") reasons.push(`the CLI could not be run: ${errorCode}`);
+  if (outcome === "killed_by_signal") {
+    reasons.push(`the CLI was killed on signal ${signal ?? "(unknown)"} by something other than its budget`);
   }
+  if (outcome === "exited_nonzero") reasons.push(`the CLI exited ${exitCode} without finishing`);
 
+  // A censored arm is excused: killed before its first billed request, it still
+  // measures "this task did not finish inside the budget", and dropping
+  // budget-exhausted CONTROL arms removes exactly the evidence that favours the
+  // tools.
   if (originatedCount === 0 && !censored) {
     reasons.push("no requestId was originated: the arm produced no billed request, or its slug was outside the snapshot");
   }
   if (slugsAfter < slugsBefore) {
     reasons.push(`snapshot scope shrank mid-observation, ${slugsBefore} slugs to ${slugsAfter}`);
   }
-  if (budgetNotEnforced) {
+  // A fact the harness holds, never inferred from the clock.
+  if (budgetEnforced === false) {
     reasons.push(`no timeout was passed to the child, so the ${budgetMs}ms budget was never enforced`);
   }
-  return { censored, valid: reasons.length === 0, reasons };
+
+  return { outcome, censored, valid: reasons.length === 0, reasons };
 }
 
 // ---------------------------------------------------------------------------
@@ -545,7 +543,6 @@ function observe(args) {
     exitCode: result.code,
     signal: result.signal,
     errorCode: result.errorCode,
-    wallMs,
     budgetMs,
     originatedCount: originated.length,
     slugsBefore: before.slugsWalked,
@@ -556,6 +553,9 @@ function observe(args) {
 
   const observation = {
     valid: invalid.length === 0,
+    // Which case the run fell into, named. A boolean records that something was
+    // wrong; this records what, and it is what a re-adjudication reads.
+    outcome: verdict.outcome,
     invalidReasons: invalid,
     ts: stamp(),
     runId: manifest.runId ?? null,

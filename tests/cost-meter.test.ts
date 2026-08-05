@@ -2087,9 +2087,9 @@ describe("the cost-meter CLI", () => {
 describe("the B12 harness", () => {
   const runNode = promisify(execFile);
   const BUDGET = 45 * 60 * 1000;
-  const classify = async (over: Record<string, unknown>): Promise<{ censored: boolean; valid: boolean; reasons: string[] }> => {
+  const classify = async (over: Record<string, unknown>): Promise<{ outcome: string; censored: boolean; valid: boolean; reasons: string[] }> => {
     const mod = await import("../scripts/b12-run.mjs");
-    return (mod as { classifyRun: (o: unknown) => { censored: boolean; valid: boolean; reasons: string[] } }).classifyRun({
+    return (mod as { classifyRun: (o: unknown) => { outcome: string; censored: boolean; valid: boolean; reasons: string[] } }).classifyRun({
       exitCode: 0,
       signal: null,
       errorCode: null,
@@ -2230,6 +2230,45 @@ describe("the B12 harness", () => {
     const killed = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT", wallMs: 416, budgetMs: 400 });
     expect(killed.censored).toBe(true);
     expect(killed.valid).toBe(true);
+  });
+
+  it("does not censor a FAILURE that happened to die as the timer crossed", async () => {
+    // The previous repair wrote `exitCode !== 0` where it meant
+    // `exitCode === null`, so it excluded the exit-0 boundary case it was
+    // written for and admitted the exit-1 one it was not: a crash carrying
+    // `ETIMEDOUT` came back censored and valid, with no reasons.
+    //
+    // Only a process that was really killed has no exit status of its own.
+    const crashedAtBoundary = await classify({ exitCode: 1, errorCode: "ETIMEDOUT" });
+    expect(crashedAtBoundary.outcome).toBe("exited_nonzero");
+    expect(crashedAtBoundary.censored).toBe(false);
+    expect(crashedAtBoundary.valid).toBe(false);
+  });
+
+  it("names every outcome, so an unhandled combination cannot become a default", async () => {
+    // Six defects landed in this rule while it was a chain of `&&`s: three
+    // fields it was never handed, two it should never have used (duration, in
+    // consecutive repairs), and one `!== 0` that should have been `=== null`.
+    // The shape was the problem -- a condition true of the case in mind is
+    // easily also true of one that is not. The rule is now decided by case, and
+    // every branch is named in the artifact rather than left as a fall-through
+    // nobody chose.
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{}, "completed"],
+      [{ exitCode: 0, errorCode: "ETIMEDOUT" }, "completed"],
+      [{ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" }, "censored"],
+      [{ exitCode: null, signal: "SIGKILL" }, "killed_by_signal"],
+      [{ exitCode: 2 }, "exited_nonzero"],
+      [{ exitCode: null, errorCode: "ENOENT" }, "spawn_failed"],
+    ];
+    for (const [over, expected] of cases) {
+      const got = (await classify(over)) as unknown as { outcome: string };
+      expect(got.outcome).toBe(expected);
+    }
+    // Exactly one outcome is both valid and not a completion.
+    const censored = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" });
+    expect(censored.valid).toBe(true);
+    expect(censored.censored).toBe(true);
   });
 
   it("admits exactly what the meter admits, on records that vary one field at a time", async () => {
