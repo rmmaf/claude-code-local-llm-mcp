@@ -1494,3 +1494,132 @@ one response come back short. So whatever the overflow policy is, the practical
 rule is already decided: **the declared window must be verified against `lms ps`
 before it is trusted**, and a run that skips that verification is measuring its
 own configuration rather than the model. B16 carries that as a VOID condition.
+
+### the session is N files, and the meter was reading one
+
+**Measured 2026-08-05, `run 2026-08-05-win-02-layout`, before B17 was written.**
+
+For four days B1's fall carried a failure labelled *Scope*: the meter counted
+**65%** of `/usage`'s cache-read tokens for the same session, and the record said
+"this is not arithmetic" and then stopped, because `/usage`'s scope could not be
+determined from the data available. It was never a scope mystery. It is a file
+discovery bug, and it is visible without `/usage` at all.
+
+Since Claude Code 2.1.219 a session is not one file:
+
+```
+~/.claude/projects/<slug>/<sessionId>.jsonl                          <- main thread only
+~/.claude/projects/<slug>/<sessionId>/subagents/agent-*.jsonl
+~/.claude/projects/<slug>/<sessionId>/subagents/workflows/wf_*/agent-*.jsonl
+~/.claude/projects/<slug>/<sessionId>/subagents/workflows/wf_*/journal.jsonl   <- NOT a request log
+```
+
+`listTranscripts` (`src/cost/transcript.ts:319-331`) does a **non-recursive**
+`fs.readdir` and keeps names ending in `.jsonl`. The `<sessionId>/` directory
+does not end in `.jsonl`, so it is dropped whole. In this project: **11 files at
+the top level, 37 recursively.**
+
+| session `5fe28335` | main | subagents | meter sees |
+|---|---|---|---|
+| billed requests | 44 | 62 | 41.5% |
+| `cache_read` | 7,186,947 | 5,934,022 | **54.8%** |
+| `cache_creation` | 280,814 | 403,787 | **41.0%** |
+| `output` | 113,508 | 985 | 99.1% |
+| `input` | 909 | 116 | 88.7% |
+
+That is the signature B1 recorded against `/usage` — high output coverage,
+badly degraded cache coverage — and the mechanism explains why: subagents burn
+cache reads and return almost no tokens to the parent.
+
+**Four things follow, and only the first is the bug.**
+
+1. **The error is a function of session shape, not a constant.** Near zero on a
+   single-threaded session, ~45% on a multi-agent one, ~4% pooled across the
+   eleven here. No single number describes it, which is why B17 scores every
+   session in its set separately rather than in aggregate — and why any B12
+   comparison must record subagent share as a covariate.
+2. **`(N main, 0 subagent)` is the worse version of the failure.** The meter
+   prints that line on every session, and it reads as a measurement. `isSidechain`
+   is `true` on 172 of 172 records in the subagent files and `false` on 114 of
+   114 in the main file, so the whole sidechain apparatus in `src/cost/` —
+   `sidechainRoot`, per-thread compaction, the thread-scoped counterfactual join —
+   is correct code that can never fire under this layout. **A careful
+   implementation of the previous layout is indistinguishable from a working one
+   until something counts the files.**
+3. **The scope of the repair is larger than "recurse".** `buildSessionReport`
+   takes one `Transcript`; `Transcript.sessionId` is `requests[0].sessionId`; the
+   CLI emits one payload per file; `--last 1` sorts by mtime, so the "newest
+   session" can be a subagent file; `sidechainRoot` walks a `parentUuid` map built
+   within a single file. The meter has to start emitting one vector per
+   `sessionId`, not one per file.
+4. **`journal.jsonl` is a trap for whoever fixes it.** It ends in `.jsonl`, sits
+   under `subagents/workflows/wf_*/`, holds records keyed `{type, key, agentId}`,
+   and carries agent return values in which the string `usage` appears. A glob of
+   `**/*.jsonl` that sums anything usage-shaped double counts. B17's admission
+   rule excludes it by requiring `type: "assistant"` with `message.usage`.
+
+**The transferable lesson.** A reader that enumerates files has a **discovery
+rule**, and a discovery rule is falsifiable separately from the arithmetic it
+feeds. B1 tested the two together, against a comparator that could resolve
+neither, and got a number that named the wrong half. `MEASUREMENTS.jsonl` had
+recorded the arithmetic as internally consistent — 251 duplicate groups all
+carrying identical usage, no record missing a `requestId`, `usage.iterations`
+summing to the top level — which was true, and true of one file.
+
+### the freeze forbids measuring, not repairing
+
+**Decided 2026-08-05.** `STATE.md:20` and `PREMISES.md:793-794` both say
+`src/cost/` "is frozen while G1 is reopened". Neither is a rule; both are
+parenthetical gloss inside B15's problem, explaining why
+`classify-verification.mjs` must live elsewhere. The only normative text is G1's
+own reopening condition — **"nothing meter-derived may be measured until it
+agrees"** — which bans a use, not an edit.
+
+The reading is settled by reductio rather than by preference: **read as a blanket
+edit ban, the freeze makes G1's own written closing condition unreachable by
+construction.** G1 closes when the meter agrees; the meter cannot agree until the
+discovery bug is fixed; the fix is in `src/cost/transcript.ts`. A rule that
+guarantees the gate it guards can never close is not a discipline, it is a
+deadlock, and the shorthand overshot what the condition says.
+
+**What survives, and it is the part that was doing real work:** the meter may not
+be edited to **serve a different premise** while it is under audit. B15's
+`classify-verification.mjs` still may not move into `src/cost/` — and its actual
+reason was never the freeze anyway, it was that `transcript.ts` architecturally
+cannot answer B15's question, since it keeps `{id, name}` per tool call and
+discards each call's `input`.
+
+**Two boundaries, because "repair" is exactly the word that stretches.**
+
+- The **oracle** goes in `scripts/session-token-walk.mjs` and imports nothing
+  from `src/cost/`. An oracle that shared code with the thing it checks would
+  agree by construction.
+- The **repair** goes in `src/cost/`, not in a script. `ROADMAP.md` names
+  `src/cost/{cli,rates,transcript,report}.ts` as G1's *Delivered* artifact, and
+  B12 and `savedFraction` read the meter — so a script that agrees with the
+  oracle would verify an instrument nobody uses.
+- The repair's scope is bounded in advance: it may change **which files are read**
+  and how records are merged and deduplicated across the union. It may not touch
+  `rates.ts`, and it may not change per-record token extraction beyond the
+  `useSplit` consistency fix recorded below, which is a separate commit.
+
+**A judgment call belongs here rather than in `ROADMAP.md`** by the first rule of
+`PREMISES.md`, and the precedent for resolving an ambiguity in governing text by
+a recorded decision is the gate-ceiling note that same file already carries.
+
+### the split is used when present, and the comment says "and consistent"
+
+`readUsage` (`src/cost/transcript.ts:117-121`) documents the rule as *"the split
+is authoritative when present **and consistent**"*. The guard written is
+`splitTotal > 0`. The consistency check was never written, and
+`Math.max(0, total - splitTotal)` silently swallows a negative remainder.
+
+**Counterexample, on disk, in session `c9e2fe70`:** a record with
+`cache_creation_input_tokens: 0` and
+`cache_creation.ephemeral_1h_input_tokens: 278`. `useSplit` is true, so the meter
+books **278 cacheWrite-1h tokens against a top-level field that says zero** — in
+the class carrying the 2.0x multiplier, the most expensive of the five.
+
+Found by adversarial review of B17's design, before B17 ran. Repaired in its own
+commit, ahead of the discovery fix, because a known signed defect inside a scored
+class would make a zero-residual result mean less than it says.

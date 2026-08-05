@@ -27,12 +27,39 @@ What may be built next, and the number that decides it.
   meter-derived may be measured until it agrees.** That covers B12 and anything
   reading `savedFraction`. It does not cover B6 or B7, which come from `repair`'s
   own returned payload and never touch the meter.
-- **Closes again when:** the meter agrees with a comparator to within 5%. Which
-  comparator is now an open question, not a detail: `/usage` reports 20.0% of
-  published list price for its own token counts, so it is not measuring
-  list-price API cost. **Pick and pre-register the comparator as its own premise
-  before running anything against it** — choosing it after seeing a disagreement
-  is how a threshold gets quietly fitted to the data.
+- **Closes again when: B17 holds.** The comparator is pre-registered there, and
+  it is not `/usage`.
+- **THE ORIGINAL CONDITION — "within 5%" of a dollar comparator — IS DELETED, NOT
+  SATISFIED.** It cannot be met on this account and no amount of repair will make
+  it meetable: `/usage` reports **20.0% of published list price for its own token
+  counts** because this is a Max subscription, and a Max subscription produces no
+  per-token invoice to check against. **Even a perfect meter leaves the dollar
+  disagreement at roughly 5x, permanently.** Recording that as a property of the
+  venue is the honest move; leaving the 5% standing beside B17's condition would
+  be worse than either, because a marginal reading would then sit inside both and
+  whoever adjudicated later would get to choose which one it answered to.
+- **Timing, stated because it is the only thing that makes this legitimate.**
+  This replacement is written **before** the oracle exists, before the meter is
+  repaired, and before any comparison has been run — the same claim G7's
+  amendment below rests on, and the difference is the timing and nothing else.
+  What licenses it is `PREMISES.md`'s own disposition of B1: failure 2 says the
+  *experiment* was mis-specified, so a corrected instrument check is proposed and
+  pre-registered as its own premise. That is B17.
+- **What closing this does NOT license.** No absolute dollar figure may be
+  reported as measured on this plan. **B12 and G-stop consume ratios only** —
+  reduction against a control arm — and a ratio survives an unknown pricing basis
+  only if that basis is constant across both arms.
+- **Recorded without a threshold: the uniform-discount assumption.** The ratio
+  argument above needs the plan's discount to be **uniform across token classes**.
+  If the subscription discounts cache reads differently from output, a saving
+  ratio computed at list rates is biased by an unknown amount in an unknown
+  direction. Nothing here measures that, nothing can measure it from the data
+  available, and it is currently doing silent work for the entire stopping
+  criterion. Named here so it stops being silent.
+- **The repair may proceed, and `src/cost/` being "frozen" does not forbid it.**
+  See `DECISIONS.md § the freeze forbids measuring, not repairing`. The short
+  form: read as a blanket edit ban, the freeze makes this gate's own written
+  closing condition unreachable by construction.
 
 ## G2 — deterministic layer (PostToolUse hook) · `closed` (dead)
 
@@ -78,6 +105,11 @@ What may be built next, and the number that decides it.
   anyway, pointers cost *on top of* the read and the tool is strictly negative.
 - **Motivation, measured:** `Agent` results were 472 KiB of 816 KiB (58%) of all
   tool output in a real session — the largest single contributor to context.
+  **That denominator is now known to be main-thread only** and the number is
+  therefore understated by an unknown, session-dependent amount: the meter that
+  produced it could not see `<sessionId>/subagents/**`. Flagged rather than
+  recomputed — recomputing needs the oracle B17 pre-registers, and a number
+  corrected by hand would be the same class of error twice.
 
 ## G5 — Mac diagnostics, reduced · `unevaluated`
 
@@ -290,6 +322,16 @@ continuing to build on a premise that quietly stopped being true.
 
 - **Measured by:** B12, over 20 real tasks with the server and hook on versus off.
 - **Reopens if:** a later measurement with a new `run_id` clears 15%.
+- **15% is a RATIO, and that is what makes it reachable on this account.** A
+  constant pricing basis cancels between the two arms, so G-stop never needed the
+  meter's absolute dollars to be right — it needs the meter to count the same
+  tokens on both sides and price them consistently. That is what G1 now closes
+  on. **Two conditions ride on it and both are stated in G1**: the discount must
+  be uniform across token classes, which is unmeasured; and the two arms must not
+  differ in **subagent share**, because the coverage error is a function of
+  session shape (near zero single-threaded, ~45% multi-agent). Record the
+  subagent share as a covariate on every arm, or the comparison flatters
+  whichever side spawned fewer agents.
 
 ---
 

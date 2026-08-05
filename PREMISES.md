@@ -74,6 +74,171 @@ and stays that way. Failure 2 says the *experiment* was mis-specified — a
 finding, not an excuse — and a corrected instrument check has to be proposed and
 pre-registered as its own premise before anything is measured against it.
 
+**That check is now written, as B17 below, and it does not use `/usage`.** Both
+of B1's failures turned out to belong to the comparator: the scope gap has a
+located mechanical cause in the meter, and the basis gap is a property of the
+subscription that no threshold can remove. B17 replaces the instrument rather
+than the number. **B1 stays `fallen`.**
+
+## B17 — the cost meter counts every billed token a session incurred
+
+**This is a repair verification, not a blind instrument test.** The mechanism was
+diagnosed before this premise was written, the fix is known, and the expected
+residual is zero. What is pre-registered here is therefore **not** an unknown
+outcome — it is the **admission rule and the oracle**, fixed in text before the
+repair is written, so the repair cannot be tuned by redefining what counts.
+Pre-registration is working here as a commitment device against reinterpretation,
+not as evidence about an unknown, and saying so is the difference between a
+limitation declared and a limitation found later.
+
+- **Assumed:** the meter's per-class token totals for one `sessionId` equal the
+  totals over every billed record that session wrote — (assumed)
+- **Source of the assumption:** the coverage defect is mechanical and located —
+  `listTranscripts` does a non-recursive `readdir` and cannot see
+  `<sessionId>/subagents/**`, which since Claude Code 2.1.219 is where every
+  sidechain record lives. See `DECISIONS.md § the session is N files`.
+- **States the outcome as the HARM, not the DETECTOR — B16's correction applied
+  to B1's error.** B1 named `/usage` in its own title, so when `/usage` turned
+  out to measure a different scope on a different basis, the *premise* recorded
+  "the meter is wrong" and G1 stayed shut. Here the outcome is **a billed record
+  went uncounted**; the comparator is named separately under **Method**, and a
+  comparator found blind falsifies the method and leaves this premise standing to
+  be re-measured with a better one.
+- **Method, not threshold:** an independent enumeration in
+  `scripts/session-token-walk.mjs`, importing nothing from `src/cost/`, written
+  to Claude Code 2.1.219's **own shipped enumerator** and quoting it here so that
+  both implementations answer to this text rather than to each other — the main
+  directory's `*.jsonl` files, **plus `<sessionId>/subagents/**` recursively,
+  deduplicated by record `uuid`**. Writing the oracle to a vendor specification
+  is what makes this a conformance test rather than a second guess checked
+  against a first.
+- **`/usage` is disqualified, and that is a finding rather than a preference.**
+  Its existence as a token source cannot be settled by reading the binary — two
+  independent readings of the same bundle disagree over whether the panel renders
+  a token block at all or only cost and utilisation percentages. It is compact-
+  formatted to one decimal, which quantises by up to **±4.8%** just above a unit
+  boundary; its "This session" is ambiguous between the running process and the
+  `sessionId`'s whole history, **measured at 13.3% apart on output**; it is
+  ephemeral; and reading it costs a live session and a hand transcription. A
+  comparator whose existence is not decidable by inspection cannot gate anything.
+- **Admission rule, fixed here and frozen:** a billed request is a record with
+  `type: "assistant"` carrying `message.usage`, deduplicated by `uuid`,
+  **excluding** records with `isApiErrorMessage: true` — which carry a real
+  `requestId`, `model: "<synthetic>"` and all-zero usage, so they must be
+  excluded by those fields and **never** by usage reading zero, since a
+  legitimate record can also read zero at the top level. **Excluding files that
+  are not request logs:** `subagents/workflows/wf_*/journal.jsonl` ends in
+  `.jsonl`, holds records keyed `{type, key, agentId}`, and carries agent return
+  values in which the string `usage` appears — a naive `**/*.jsonl` glob double
+  counts. Both implementations are written to this paragraph.
+- **Metric, exact:** per class `c ∈ {input, cacheRead, cacheWrite, output}`,
+  `meter_c − oracle_c`, **in integers**. `cacheWrite` is compared as
+  `cacheWrite1h + cacheWrite5m` summed, stated rather than discovered. Plus one
+  invariant, measured and archived:
+  `|uuids(main) ∪ uuids(subagents)| == |main| + |subagents|`. Without it the
+  union can pass by two errors cancelling. **`isSidechain` is not a key and does
+  not establish this** — it is `false` on every record of the main file and
+  `true` on every record of a subagent file, so it identifies the source, not the
+  record.
+- **Experiment:** for **every** session present in `~/.claude/projects/<slug>/`
+  at the pre-registration commit, run the repaired meter selecting that
+  `sessionId` explicitly, run `scripts/session-token-walk.mjs` over the same id,
+  and difference the four classes. The set is fixed by that enumeration rule
+  rather than chosen, so no session can be dropped after its residual is seen.
+- **Holds if:** every class differs by **exactly 0 tokens** on **every** session
+  in a set fixed by enumeration rule, containing **≥ 5 sessions**, of which
+  **≥ 1 is single-threaded** (zero subagent records) and **≥ 1 contains
+  `subagents/workflows/wf_*/` nesting**.
+- **The single-threaded session is a required arm, not an exclusion.** An earlier
+  draft made it VOID on the grounds that it cannot distinguish a fixed meter from
+  a broken one. That is a power argument wearing a definedness argument's
+  clothes: both denominators are ~10⁷ and the metric is perfectly defined there.
+  Dropping it would have discarded the negative control — the arm that shows the
+  repair does not *introduce* error where there was none — which is the role
+  `run 2026-08-04-mac-19-32k` plays for B16.
+- **Falls if:** any class differs by ≥ 1 token on any session in the set.
+- **Why the number is 0, and why B1's 5% does not transfer.** Both sides are
+  integer sums of the same integers read from the same files. There is no
+  sampling, no estimation, no display formatting and no clock, so a one-token
+  difference is a defect with a locatable cause and never noise. B1's 5% was a
+  **dollar** threshold against a rounded live panel; inheriting it would be a
+  threshold with no argument behind it, which is what G7's rule 4 forbids.
+  Removing the panel removes every mechanism that would justify a non-zero
+  tolerance, so the correct tolerance is zero.
+- **Disclosure of what was known when the threshold was fixed.** The readdir
+  mechanism, session `5fe28335`'s per-class coverage (cacheRead 54.8%,
+  cacheWrite 41.0%, output 99.1%, input 88.7%) and the ~96% pooled coverage over
+  eleven sessions were all computed **before** this premise was written, under
+  `run 2026-08-05-win-02-layout`. **The threshold of 0 uses none of those
+  figures.** Recorded rather than suppressed, per the rule G7 states: do not
+  forbid the second number, report when the deviation happened.
+- **Void conditions, fixed here rather than argued afterwards.** Each is
+  demanding on the *experiment* rather than permissive on the *result*, which is
+  the only direction a construction rule may be chosen in after the fact:
+  1. **VOID unless `evidence/<run_id>.meter.json` and
+     `evidence/<run_id>.walk.json` are both committed**, carrying the four-class
+     vector per session per side, the `uuid` disjointness count, the subagent
+     request share per session, the Claude Code version, and the SHAs of the
+     pre-registration, oracle and repair commits. **Machine-produced JSON only.**
+     Hand-typed numbers do not archive a run: B1's comparator side survives
+     nowhere but inside free-text `method` strings, which is why its fall cannot
+     be re-adjudicated today.
+  2. **VOID if `scripts/session-token-walk.mjs` or the admission rule above
+     changed after the pre-registration commit.** What is frozen is the standard,
+     not the instrument — the meter may be iterated freely against it, and must
+     be, since repairing it is the point.
+  3. **VOID if the Claude Code version that wrote any session in the set differs
+     from the version recorded at pre-registration.** 2.1.219 is running and
+     2.1.220 is already on disk; an auto-update silently changes the layout being
+     conformed to.
+- **Attempt cap, and what it binds.** The readings are deterministic and
+  re-runnable, so capping *them* would mean nothing. What is capped is
+  restatement: **G1's closing condition may be restated on a different comparator
+  ONCE MORE, in total.** After that the recorded conclusion is that G-stop is not
+  evaluable in this venue, and the continue/stop decision is made on a stated
+  non-metered basis. The cap exists because "the comparator was wrong, not the
+  meter" is infinitely available — the same hazard G2 names for implementations
+  and B15 for strings.
+- **If it falls:** the residual is not file discovery and the defect is in the
+  arithmetic. Next suspect is the dedup by `requestId` — first record wins, later
+  usage discarded — which is correct only while Claude Code repeats usage verbatim
+  per content block. **Do not compensate by widening the tolerance**; a tolerance
+  is what this premise removed.
+- **What a hold does NOT establish**, stated so it cannot be cited for more
+  later: that Anthropic billed these records; that the transcript writer wrote
+  every record it should have; that tokens map to the right rate key — 1h/5m TTL
+  attribution, model attribution, and the `speed` fast-mode suffix `rateKey()`
+  builds are tested by nothing here; and that any absolute dollar figure is
+  measurable on this plan.
+- **Measured:** — (no run)
+- **Status:** open
+
+## B18 — Claude Code's own accounting of a session equals the on-disk union
+
+- **Assumed:** they agree — (assumed)
+- **EXPLORATORY. It cannot open or close G1, and no gate reads it.** B17 asks
+  whether the meter reads every billed record **on disk**; that is a claim about
+  the meter. B18 asks whether the records on disk are the ones Claude Code
+  **credited**; that is a claim about Claude Code's internal consistency, and it
+  cannot decide a premise about the meter. The hierarchy is fixed here before
+  either runs, with its reason, which is what distinguishes it from choosing the
+  gating outcome after seeing both — the move G7's rule 2 exists to prevent.
+- **Method:** `claude -p --output-format json` → `result.modelUsage` summed
+  across model rows, against the oracle walk over `result.session_id`, on a run
+  that spawns nested workflow subagents. Recorded alongside: the CLI version, the
+  process `startedAt`, and **both** vectors — the union by `sessionId` and that
+  union restricted to `timestamp >= startedAt` — so the process-versus-history
+  ambiguity is visible rather than silently absorbed into a residual. If
+  `~/.claude.json → projects[<cwd>].lastModelUsage` populates, it is recorded
+  unrounded; it is empty for all four entries of this project today, and a
+  60-second pilot settles whether that is permanent.
+- **Experiment:** one headless run with nested subagents, both vectors archived.
+- **Measured:** — (no run)
+- **Falls if:** nothing. A disagreement here is a finding about the venue and
+  produces a new premise; it does not touch B17's status. Recorded without a
+  threshold, deliberately, for the reason above.
+- **Status:** open
+
 ## B2 — `hookSpecificOutput.updatedToolOutput` changes what is BILLED, not only what is displayed
 
 - **Assumed:** it does — (assumed, from documentation only)

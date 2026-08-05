@@ -176,6 +176,11 @@ and 13.8% of all tool-result bytes, and most of that is `npm test` / `tsc` / `gi
 output — exactly what `gate` already handles, structurally, by parsing rather than
 truncating.
 
+> That range rests on a denominator now known to be **main-thread only** (see the
+> retraction under *Measuring what it saves*). Flagged rather than recomputed:
+> correcting it needs the enumeration `B17` pre-registers, and a number patched by
+> hand would repeat the error that produced it.
+
 ## Measuring what it saves
 
 From a clone of this repo:
@@ -192,6 +197,8 @@ npx -y -p github:rmmaf/claude-code-local-llm-mcp local-coder-cost-meter
 
 Reads Claude Code's own transcripts, so it reports **billed** quantities rather than estimates. Per session it prints the cost split, the context-growth curve, the multiplier a turn-0 token carries, which tools put the most bytes into context, and — once the local tools have run — an estimated saving per tool joined from `.local-coder/telemetry.jsonl`.
 
+> **⚠ RETRACTED, 2026-08-05 — it reads one file, and a session is N files.** Since Claude Code 2.1.219 subagent traffic is written to `<sessionId>/subagents/**/agent-*.jsonl`, and the meter's file discovery is a non-recursive `readdir` that cannot see it. On a multi-agent session it reports roughly **half** the cache tokens; on a single-threaded one it is correct. The error is a function of session shape, not a constant, so no scale factor fixes an old number. The repair and its pre-registered check are `B17` in `PREMISES.md`; the mechanism is in `DECISIONS.md § the session is N files`. **Until `B17` holds, treat every figure this tool prints as a lower bound.**
+
 ```bash
 npm run cost-meter -- --last 5 --json
 ```
@@ -199,6 +206,8 @@ npm run cost-meter -- --last 5 --json
 Fill in `models[...].inputPerMTok` in `.local-coder/rates.json` to see dollars; without it the report uses input-equivalent units, which are exact and are what the comparison actually needs.
 
 > Dollar figures are withheld unless **every** billed request in the session has a configured model price. A session that mixes a priced main model with an unpriced subagent model reports `null` rather than a partial sum wearing the label of a total.
+>
+> **⚠ RETRACTED, 2026-08-05.** The second sentence describes a safety property that has never been able to fire. Subagent requests are not in the file the meter reads, so a mixed-model session cannot be detected and the report shows the main model's total *as* the total — which is precisely the "partial sum wearing the label of a total" this paragraph promised to prevent. The first sentence still holds for whatever the meter does see. See `B17`.
 
 **What to expect:** the first call after idle time is slow (JIT loads ~17 GB into memory — tens of seconds), subsequent calls are much faster; a multi-file generation can take minutes on a 30B model. Everything heavy happens locally; your Anthropic bill sees only specs and diffs.
 
