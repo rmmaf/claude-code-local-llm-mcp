@@ -1297,6 +1297,34 @@ describe("the cost-meter CLI", () => {
     expect(stdout).toContain("mis-read");
   }, 30_000);
 
+  it("attributes to the session that was asked for, or to nothing at all", async () => {
+    // --session X selects <X>.jsonl AND everything under <X>/. Discarding X and
+    // anchoring on the first billable record let the report come back labelled Y
+    // -- with X's own subagent records then excluded as foreign, silently. It
+    // also made the meter identify a session by a different rule than the oracle
+    // does, so B20's residual of 0 would have been agreement by coincidence.
+    clock = 0;
+    const root = tempRoot();
+    const transcripts = tempRoot();
+    // The file is named for one session and holds another's records.
+    await fs.writeFile(
+      path.join(transcripts, "sess-1.jsonl"),
+      `${assistantRecord("req-1", { write1h: 100 }, { sessionId: "a-different-session" })}
+`,
+      "utf8"
+    );
+
+    const cli = path.join(import.meta.dirname, "..", "dist", "cost", "cli.js");
+    const { stdout } = await execFileAsync(process.execPath, [cli, "--dir", transcripts, "--root", root, "--json"]);
+    const payload = JSON.parse(stdout) as Array<{ session: { sessionId: string; requests: number; excluded: Record<string, number> } }>;
+
+    expect(payload).toHaveLength(1);
+    // Never Y's id on a report the operator asked about X.
+    expect(payload[0]?.session.sessionId).toBe("sess-1");
+    expect(payload[0]?.session.requests).toBe(0);
+    expect(payload[0]?.session.excluded.foreignSession).toBe(1);
+  }, 30_000);
+
   it("keeps --json parseable, and the admitted-nothing session inside the payload", async () => {
     // The zero-request branch wrote its human line unconditionally, so --json
     // emitted ANSI prose and then the array: unparseable, and B20 requires these
@@ -1331,7 +1359,7 @@ describe("the cost-meter CLI", () => {
     const root = tempRoot();
     const transcripts = tempRoot();
     await fs.writeFile(
-      path.join(transcripts, "session.jsonl"),
+      path.join(transcripts, "sess-1.jsonl"),
       `${[
         assistantRecord("req-1", { write1h: 100 }),
         assistantRecord("req-2", { write1h: 100, read: 1000 }),
@@ -1379,7 +1407,7 @@ describe("the cost-meter CLI", () => {
     // A session that DID call gate, whose result carries no invocation id, so
     // `provenanceUnavailable` is true — while the telemetry log does not exist.
     await fs.writeFile(
-      path.join(transcripts, "session.jsonl"),
+      path.join(transcripts, "sess-1.jsonl"),
       `${[
         assistantRecord("req-1", { write1h: 100 }, {
           message: {
@@ -1423,7 +1451,7 @@ describe("the cost-meter CLI", () => {
     const root = tempRoot();
     const transcripts = tempRoot();
     await fs.writeFile(
-      path.join(transcripts, "session.jsonl"),
+      path.join(transcripts, "sess-1.jsonl"),
       `${[
         assistantRecord("req-1", { write1h: 100 }),
         assistantRecord("req-2", { write1h: 100, read: 1000 }),

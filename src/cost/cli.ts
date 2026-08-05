@@ -118,9 +118,18 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     const chosen = options.session !== null || options.all ? found : found.slice(-options.last);
-    // The id selects the FILES; the session's identity still comes from the
-    // records, so a directory whose filenames are not session ids still reads.
-    for (const id of chosen) units.push({ files: await sessionFiles(dir, id) });
+    // THE ID IS PASSED, NOT JUST USED TO FIND THE FILES. Discarding it let the
+    // read anchor on whatever the first billable record happened to say, so
+    // `--session X` could return a total attributed to Y -- with X's own
+    // subagent records then excluded as foreign, silently, because only a count
+    // changed and not the visibility.
+    //
+    // It also made the two sides of B20 identify a session by DIFFERENT RULES:
+    // the oracle requires record.sessionId to equal the id it was given, the
+    // meter took the first record's word for it. They agreed on the scored run
+    // because filename and records match on all 11 files of this corpus --
+    // agreement by coincidence, which is the thing B20 exists to exclude.
+    for (const id of chosen) units.push({ files: await sessionFiles(dir, id), sessionId: id });
   }
 
   const telemetry = await readTelemetry(options.root);
