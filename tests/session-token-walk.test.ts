@@ -267,6 +267,32 @@ describe("session-token-walk", () => {
     expect(session.suspect).toBe(false);
   });
 
+  it("excludes a record with NO sessionId and says so, rather than admitting or hiding it", async () => {
+    // The guard was conditional on the field being present, so it admitted any
+    // record that omitted it and did not implement the rule it declared. Made
+    // unconditional — but absence is counted separately and marks the session
+    // suspect, because silently excluding them all is how a session with real
+    // traffic comes back empty, which this file has already done twice.
+    const dir = await corpus([record(U(1), "req-1", { output_tokens: 695 })]);
+    const stray = path.join(dir, SID, "tool-results");
+    await fs.mkdir(stray, { recursive: true });
+    await fs.writeFile(
+      path.join(stray, "nosid.jsonl"),
+      `${JSON.stringify({
+        type: "assistant",
+        uuid: U(6),
+        requestId: "req-9",
+        message: { model: "claude-opus-5", usage: { output_tokens: 4242 } },
+      })}\n`,
+      "utf8"
+    );
+
+    const session = await walk(dir);
+    expect(session.tokens.output).toBe(695);
+    expect(session.records.excludedNoSessionId).toBe(1);
+    expect(session.suspect).toBe(true);
+  });
+
   it("emits a rule string that describes what it actually does", async () => {
     // The artifact is the record. For one commit the emitted `rule` still said
     // `<sessionId>/subagents/** recursive` after the walk had been broadened to

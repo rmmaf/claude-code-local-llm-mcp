@@ -22,19 +22,24 @@
  * than to each other: the main directory's `*.jsonl` files, plus
  * every `*.jsonl` under `<sessionId>/` recursively, de-duplicated by `uuid`.
  *
- * ADMISSION, in the three steps `PREMISES.md` B20 fixes and freezes:
+ * ADMISSION, in the four steps `PREMISES.md` B20 states in full:
  *
  *   1. Admit records with `type: "assistant"` carrying `message.usage`.
  *      Exclude `isApiErrorMessage: true` and `model: "<synthetic>"` — they carry
  *      a real `requestId` and all-zero usage, so they must be excluded by those
  *      fields and NEVER by usage reading zero, since a legitimate record can
  *      also read zero at the top level.
- *   2. De-duplicate by `uuid`. That is RECORD identity across the file union,
+ *   2. Require `record.sessionId === <this session>`, unconditionally. A file
+ *      under a session's directory is not thereby a request OF that session, and
+ *      a record with no `sessionId` at all is excluded AND marks the session
+ *      suspect — never silently dropped, because that is how a session with
+ *      traffic comes back empty.
+ *   3. De-duplicate by `uuid`. That is RECORD identity across the file union,
  *      not request identity.
- *   3. Group by `requestId`; take the group's usage from its LAST record in file
+ *   4. Group by `requestId`; take the group's usage from its LAST record in file
  *      order.
  *
- * Step 3 is the one that found a defect. `src/cost/transcript.ts:239-243` keeps
+ * Step 4 is the one that found a defect. `src/cost/transcript.ts:239-243` keeps
  * the FIRST record and discards later usage, on the recorded ground that usage
  * repeats verbatim per content block. It does, except for `output_tokens`: over
  * this project 327 of 1,647 multi-record groups differ, in 327 of 327 the first
@@ -145,7 +150,7 @@ function jsonlUnder(dir) {
  * session's directory, not a magic name inside it.
  *
  * **BROADENING IS NOT AUTOMATICALLY SAFE, AND AN EARLIER DRAFT SAID IT WAS.** A
- * superset of FILES is not a superset of COUNTED TOKENS, because step 3 is
+ * superset of FILES is not a superset of COUNTED TOKENS, because step 4 is
  * last-write-wins per `requestId` rather than a sum: a stray `.jsonl` holding an
  * early partial copy of a group REPLACES the winning record and the session
  * counts LESS. Measured, 695 -> 5 output tokens on a fixture. That is the
@@ -154,7 +159,7 @@ function jsonlUnder(dir) {
  * ignored: records are admitted only if their own `sessionId` matches, and a
  * `requestId` group spanning more than one file marks the session `suspect`.
  *
- * Order is load-bearing — step 3 takes the LAST record in file order — so the
+ * Order is load-bearing — step 4 takes the LAST record in file order — so the
  * main file comes first and the rest are sorted, deterministically.
  */
 function sessionFiles(dir, sessionId) {
@@ -251,6 +256,7 @@ function walkSession(dir, sessionId) {
   let splitDisagreements = 0;
   let splitOnlyTokens = 0;
   let excludedForeignSession = 0;
+  let excludedNoSessionId = 0;
 
   for (const { file, isSubagent } of ordered) {
     let admitted = 0;
@@ -282,12 +288,24 @@ function walkSession(dir, sessionId) {
       // `.jsonl` under it, and a stray one holding another session's records
       // would be counted here: measured at 695 -> 4,937 output tokens on a
       // fixture. The record says whose it is; believe the record, not the path.
-      if (typeof record.sessionId === "string" && record.sessionId !== sessionId) {
+      //
+      // The requirement is UNCONDITIONAL -- an earlier draft only checked when
+      // the field happened to be present, which admitted any record that omitted
+      // it and so did not implement the rule it claimed. Absent is counted
+      // SEPARATELY and marks the session suspect rather than being quietly
+      // dropped: 0 of 5,595 records in this corpus lack it, so a non-zero means
+      // the layout changed, and silently excluding them all would zero a session
+      // that has traffic -- the false empty this file has already produced twice.
+      if (typeof record.sessionId !== "string") {
+        excludedNoSessionId += 1;
+        continue;
+      }
+      if (record.sessionId !== sessionId) {
         excludedForeignSession += 1;
         continue;
       }
 
-      // Step 2 — de-duplicate by uuid, which is RECORD identity.
+      // Step 3 — de-duplicate by uuid, which is RECORD identity.
       const uuid = record.uuid;
       if (typeof uuid !== "string") continue;
       // Source is recorded first, so the invariant sees the occurrence even when
@@ -302,7 +320,7 @@ function walkSession(dir, sessionId) {
 
       if (typeof record.version === "string") versions.add(record.version);
 
-      // Step 3 — group by requestId; the LAST write wins because files and lines
+      // Step 4 — group by requestId; the LAST write wins because files and lines
       // are walked in order. A record with no requestId is its own group.
       const rid = typeof record.requestId === "string" ? record.requestId : `__norid__${uuid}`;
       const c = classes(usage);
@@ -383,6 +401,7 @@ function walkSession(dir, sessionId) {
       uuidDuplicatesDropped: uuidDuplicates,
       excludedApiError,
       excludedForeignSession,
+      excludedNoSessionId,
       skippedUnparseable,
     },
     // B20's invariant: |uuids(main) U uuids(sub)| == |main| + |sub|, i.e. no uuid
@@ -417,7 +436,7 @@ function walkSession(dir, sessionId) {
     // making the oracle count LESS, which is the direction that can drive a
     // residual to zero on a meter that is wrong. Zero across the real corpus, so
     // any non-zero is corruption or a layout this walk does not understand.
-    suspect: groupsSpanningFiles > 0,
+    suspect: groupsSpanningFiles > 0 || excludedNoSessionId > 0,
   };
 }
 
