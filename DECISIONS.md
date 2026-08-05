@@ -1694,3 +1694,103 @@ Found by writing B17's oracle, before the oracle existed — which is the argume
 for pre-registering an admission rule in prose. Specifying what a billed request
 *is*, precisely enough for a second implementation, is what forced the question
 that the first implementation had answered by assumption.
+
+### a check that cannot fail is worse than no check
+
+**Found by stop-time review 2026-08-05, before the oracle had scored anything.**
+
+B17's disjointness invariant exists for one reason, and B17 states it: *"Without
+it the union can pass by two errors cancelling."* No `uuid` may occur in both a
+main transcript and a subagent file, because if one does, the file union is
+double-counting or the de-duplication is silently dropping a request.
+
+The implementation could not fail. Per-source `uuid` sets were populated **after**
+the global de-duplication guard:
+
+```js
+if (seenUuid.has(uuid)) { uuidDuplicates += 1; continue; }
+seenUuid.add(uuid);
+(isSubagent ? subUuids : mainUuids).add(uuid);   // <- never reached for a collision
+```
+
+The main file is walked first, so a `uuid` on both sides landed in `mainUuids`
+alone and its subagent occurrence was dropped as a duplicate before the second
+set ever saw it. The intersection was empty **by construction**.
+
+Given a corpus built specifically to violate it — one `uuid` written into both
+files — it reported:
+
+```
+uuidDisjoint : {mainUuids: 2, subagentUuids: 1, sharedUuids: 0, holds: true}
+```
+
+while discarding that subagent's request and its 70 output tokens. The check
+answered *yes* to the only question it was built to answer *no* to.
+
+**This is the same failure as the meter printing `(N main, 0 subagent)`.** In
+both cases a number that reads as a measurement is an artefact of the loop that
+produced it, and in both cases the honest-looking output is what stops anyone
+looking further. The zero the oracle now reports on the real corpus is a
+measurement; the previous zero was a shape of the code.
+
+**Three things this changes, beyond the fix.**
+
+1. **The freeze attaches to a SHA, not a date.** B17 froze
+   `scripts/session-token-walk.mjs` as of a commit and forbade the clock moving
+   twice. Both defects were in the file at that commit. A date freezes whatever
+   was there, defects included, and can only be believed; a SHA can be checked.
+   B19 names commit `9078a49`.
+2. **An invariant must be shown to fail before it may be cited.** B19 will not
+   read its `Holds if` as satisfied unless `tests/session-token-walk.test.ts` is
+   present and passing, and that file's load-bearing case is the corpus where the
+   invariant returns `false`. B16 got its negative control by accident, when a
+   run declared the wrong window and became the control group the project never
+   had; this one is deliberate. **An invariant never shown to fail is not
+   evidence** — it is a line of output.
+3. **B17 dies of its own VOID condition, and that is the system working.** The
+   condition was written to stop the standard being tuned once residuals were
+   visible. No residual was visible; the edits strengthen the check and remove a
+   self-inflicted disagreement; and it still voids B17, because a rule that bends
+   when the author judges the bend harmless is not a rule. Renumbering to B19 and
+   inheriting the outcome, threshold and admission rule **verbatim** costs one
+   commit and preserves the only thing this registry produces.
+
+### the oracle's cache-write rule was fighting the repair it measures against
+
+Second defect from the same review, and it would have made B19 fall on nothing.
+
+`readUsage` documents its rule as *"the split is authoritative when present **and
+consistent**; otherwise attribute the whole cache write to the 5-minute TTL"*.
+The consistency check was never written — that is the defect recorded above under
+*the split is used when present* — and the repair implements the documented
+intent by requiring `splitTotal === total` and falling back to the top-level
+total.
+
+The oracle, meanwhile, took `max(total, split)`, justified in its own header as
+*"the reading that cannot silently drop a token that was written."* That
+reasoning is not obviously wrong. It is simply **a different rule from the one
+the other side of the comparison will use**, and B19 compares the two sides.
+
+Fifteen records in this corpus carry a top-level `cache_creation_input_tokens` of
+**0** against an `ephemeral_1h_input_tokens` of **2,452 to 4,911**:
+
+| rule | cacheWrite over those 15 records |
+|---|---|
+| `max(total, split)` — the oracle's first draft | **42,558** |
+| `total` — what the repaired meter will report | **0** |
+
+So B19 would have shown a 42,558-token residual produced entirely by the oracle's
+preference, and whoever read it would have concluded the meter miscounts.
+
+**Resolved by taking the rule that predates the argument.** `cacheWrite` is the
+top-level total on both sides, which is `readUsage`'s own documented fallback and
+therefore cannot have been chosen to fit anything here. The 15 records and their
+42,558 split-only tokens are **counted and totalled in the oracle's output**, so
+the quantity is visible and unscored rather than invisible and absorbed.
+
+**What stays open, deliberately.** Which of the two numbers Anthropic actually
+bills is not decidable from these files. B17 already said in terms that it does
+not score TTL attribution and B19 inherits that, so the honest disposition is a
+named open question rather than a rule chosen by whoever happened to write the
+second implementation. **Anyone who wants that answer needs a premise of their
+own**, and it will need a comparator this venue does not currently have.

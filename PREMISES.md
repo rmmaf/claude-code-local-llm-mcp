@@ -82,6 +82,22 @@ than the number. **B1 stays `fallen`.**
 
 ## B17 — the cost meter counts every billed token a session incurred
 
+> ### ⚠ `moot` — superseded by B19, and killed by its own VOID condition.
+>
+> Stop-time review found two defects in `scripts/session-token-walk.mjs` before
+> it had scored anything: a disjointness invariant that **could not fail**, and a
+> `cacheWrite` rule that contradicted the `useSplit` repair by 42,558 tokens. See
+> `DECISIONS.md § a check that cannot fail is worse than no check`. Fixing them
+> edited the oracle after the commit **VOID condition 2** froze it at, and that
+> condition also says the clock may not move again — so every run scorable under
+> B17 is void, permanently. **B19 replaces it, inheriting the outcome, the
+> threshold, the holds/falls conditions and the admission rule VERBATIM**, so
+> nothing is re-derived and nothing is loosened. Same disposition as B14 → B16,
+> and for the same reason: the premise was never wrong, its method was.
+>
+> Everything below stands as written, and B19 points at it rather than repeating
+> it.
+
 **This is a repair verification, not a blind instrument test.** The mechanism was
 diagnosed before this premise was written, the fix is known, and the expected
 residual is zero. What is pre-registered here is therefore **not** an unknown
@@ -254,7 +270,9 @@ limitation declared and a limitation found later.
   builds are tested by nothing here; and that any absolute dollar figure is
   measurable on this plan.
 - **Measured:** — (no run)
-- **Status:** open
+- **Status:** **moot** — superseded by B19, see the box at the top of this block.
+  It was never measured, so it is `moot` rather than `fallen`. B14's disposition
+  exactly, and for the same reason: the premise was sound, its method was not.
 
 ## B18 — Claude Code's own accounting of a session equals the on-disk union
 
@@ -278,8 +296,64 @@ limitation declared and a limitation found later.
 - **Experiment:** one headless run with nested subagents, both vectors archived.
 - **Measured:** — (no run)
 - **Falls if:** nothing. A disagreement here is a finding about the venue and
-  produces a new premise; it does not touch B17's status. Recorded without a
+  produces a new premise; it does not touch B19's status. Recorded without a
   threshold, deliberately, for the reason above.
+- **Status:** open
+
+## B19 — the cost meter counts every billed token a session incurred
+
+**Replaces B17, which is `moot`.** B17 was never measured and nothing about it
+was wrong except its instrument: its oracle carried a disjointness invariant that
+could not fail and a `cacheWrite` rule that contradicted the repair by 42,558
+tokens. Fixing them edited the file B17's VOID condition had frozen, and that
+condition also forbade the clock moving twice — so B17 is unscorable by its own
+text and this premise takes a fresh number. **IDs are never recycled**; B14 → B16
+is the precedent, including that the outcome did not change.
+
+- **INHERITED VERBATIM FROM B17, and that is the point:** the outcome, the
+  threshold of **exactly 0**, the **Holds if** and **Falls if** conditions, the
+  **admission rule** with its three steps, the **Experiment**, the
+  **Method, not threshold** clause, the **disclosure** of what was known when the
+  threshold was fixed, and the statement of **what a hold does NOT establish**.
+  Read them there. Nothing is re-derived and nothing is loosened — **the
+  admission rule did not change in the repair**; only the implementation, and an
+  extraction rule the admission rule never specified.
+- **What is new, 1 — the extraction rule, which B17 left unstated and should not
+  have.** `cacheWrite` is the **top-level `cache_creation_input_tokens`** on both
+  sides; the TTL split never overrides it. This is not a choice made here: it is
+  what `readUsage`'s own comment already fixes — *"the split is authoritative when
+  present **and consistent**; otherwise attribute the whole cache write to the
+  5-minute TTL"* — text that predates all of this, which is why adopting it
+  cannot be fitting. Fifteen records carry a top-level 0 against an
+  `ephemeral_1h` of 2,452 to 4,911; under the two rules the sides differ by
+  **42,558 tokens**, so B17 would have fallen on its own oracle's preference.
+  Those records and their tokens are **counted and totalled** in the oracle's
+  output — visible and unscored rather than invisible and absorbed. Which reading
+  Anthropic bills is not decidable from these files, and this premise does not
+  score TTL attribution.
+- **What is new, 2 — the invariant must be demonstrated capable of failing before
+  it may score anything.** B17's disjointness check reported `sharedUuids: 0` on a
+  corpus built to violate it, because the per-source sets were filled after the
+  de-duplication guard. It was cited as a passing check and was a loop artefact.
+  `tests/session-token-walk.test.ts` now holds the corpus where it comes back
+  **false**, and this premise's `Holds if` may not be read as satisfied unless
+  that test is present and passing. **An invariant never shown to fail is not
+  evidence** — the same lesson as B16's negative control arriving by accident,
+  learned here on purpose.
+- **VOID conditions: B17's three, with condition 2 re-pointed.** VOID unless both
+  `evidence/<run_id>.meter.json` and `evidence/<run_id>.walk.json` are committed
+  with the full four-class vector per session per side, machine-produced. VOID if
+  the Claude Code version that wrote any session differs from the version
+  recorded here. And **VOID if `scripts/session-token-walk.mjs` differs from
+  commit `9078a49`, or the admission rule changes** — the freeze now attaches to
+  a **SHA rather than a date**, because a date froze a file whose defects had not
+  yet been found and that is exactly how B17 died. A SHA can be checked; a date
+  can only be believed.
+- **This clock does not move.** If the oracle needs a third correction, the
+  honest reading is that the method is not converging, and the remedy is to say
+  so rather than to renumber again. **One more replacement, total** — the same
+  cap B17 put on restating G1's comparator, applied to the instrument.
+- **Measured:** — (no run)
 - **Status:** open
 
 ## B2 — `hookSpecificOutput.updatedToolOutput` changes what is BILLED, not only what is displayed

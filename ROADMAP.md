@@ -27,15 +27,17 @@ What may be built next, and the number that decides it.
   meter-derived may be measured until it agrees.** That covers B12 and anything
   reading `savedFraction`. It does not cover B6 or B7, which come from `repair`'s
   own returned payload and never touch the meter.
-- **Closes again when: B17 holds.** The comparator is pre-registered there, and
-  it is not `/usage`.
+- **Closes again when: B19 holds.** The comparator is pre-registered there, and
+  it is not `/usage`. (B19 replaces B17, which went `moot` when stop-time review
+  found two defects in its oracle and fixing them tripped B17's own freeze. The
+  outcome, the threshold and the admission rule are inherited verbatim.)
 - **THE ORIGINAL CONDITION — "within 5%" of a dollar comparator — IS DELETED, NOT
   SATISFIED.** It cannot be met on this account and no amount of repair will make
   it meetable: `/usage` reports **20.0% of published list price for its own token
   counts** because this is a Max subscription, and a Max subscription produces no
   per-token invoice to check against. **Even a perfect meter leaves the dollar
   disagreement at roughly 5x, permanently.** Recording that as a property of the
-  venue is the honest move; leaving the 5% standing beside B17's condition would
+  venue is the honest move; leaving the 5% standing beside B19's condition would
   be worse than either, because a marginal reading would then sit inside both and
   whoever adjudicated later would get to choose which one it answered to.
 - **Timing, stated because it is the only thing that makes this legitimate.**
@@ -44,7 +46,8 @@ What may be built next, and the number that decides it.
   amendment below rests on, and the difference is the timing and nothing else.
   What licenses it is `PREMISES.md`'s own disposition of B1: failure 2 says the
   *experiment* was mis-specified, so a corrected instrument check is proposed and
-  pre-registered as its own premise. That is B17.
+  pre-registered as its own premise. That was B17, and is now B19 — the
+  replacement changed the instrument, never the outcome or the threshold.
 - **What closing this does NOT license.** No absolute dollar figure may be
   reported as measured on this plan. **B12 and G-stop consume ratios only** —
   reduction against a control arm — and a ratio survives an unknown pricing basis
@@ -108,7 +111,7 @@ What may be built next, and the number that decides it.
   **That denominator is now known to be main-thread only** and the number is
   therefore understated by an unknown, session-dependent amount: the meter that
   produced it could not see `<sessionId>/subagents/**`. Flagged rather than
-  recomputed — recomputing needs the oracle B17 pre-registers, and a number
+  recomputed — recomputing needs the oracle B19 pre-registers, and a number
   corrected by hand would be the same class of error twice.
 
 ## G5 — Mac diagnostics, reduced · `unevaluated`
