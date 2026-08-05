@@ -411,6 +411,16 @@ defect, and it pinned four of them in place.
   fixed, and the statement of **what a hold does NOT establish**. `git diff` over
   `PREMISES.md` from the pre-registration commit touches none of those lines.
   Read them in B17.
+  - **Checked field by field at `win-14`, not asserted:** ten bullets extracted
+    from B17 at `db4874e` and at `HEAD` and compared byte-for-byte — the heading,
+    the HARM/DETECTOR statement, `Metric, exact`, `Experiment`, `Holds if`, the
+    single-threaded-arm clause, `Falls if`, why the number is 0, the disclosure,
+    and what a hold does not establish. **All ten identical.** The fields that
+    differ are the ones amended with a note (`Admission rule`), the consequence
+    field `If it falls` — which is not the falsification condition `Falls if` —
+    and `Status`. **The check failed vacuously twice before it worked**: once
+    comparing `None` to `None` when a regex matched nothing, once on a field
+    marker that never existed. It now asserts the markers were found.
 - **AMENDED 2026-08-05, and this is the amendment the clause above exists to
   license:** the enumeration is **every `*.jsonl` under `<sessionId>/`,
   recursively** — not `<sessionId>/subagents/**` as B17 wrote it. The original
