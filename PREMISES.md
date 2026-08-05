@@ -391,13 +391,48 @@ code that implements it. Freezing the code was over-tight in the direction that
 matters least and useless in the direction that matters most: it never stopped a
 defect, and it pinned four of them in place.
 
-- **FROZEN, and inherited VERBATIM from B17 via B19:** the outcome, the threshold
-  of **exactly 0**, the **Holds if** and **Falls if** conditions, the **admission
-  rule** and its three steps, the **Experiment**, the **Method, not threshold**
-  clause, the **disclosure** of what was known when the threshold was fixed, and
-  the statement of **what a hold does NOT establish**. Read them in B17. Nothing
-  has been re-derived across three premises, and that is checkable: the numbers
-  and the rule text are byte-identical to the pre-registration commit.
+- **"THE STANDARD" IS TWO DIFFERENT KINDS OF THING, AND THE FIRST DRAFT OF THIS
+  PREMISE LUMPED THEM.** That was wrong within a day: it claimed everything was
+  byte-identical to the pre-registration commit while the oracle had already been
+  broadened past the enumeration clause. The two need different treatment and the
+  difference is not a matter of taste.
+  - **A THRESHOLD CAN BE FITTED.** Move it and the same data changes verdict, in
+    whichever direction the author prefers. **Frozen absolutely, from the
+    pre-registration commit, no exceptions.**
+  - **AN ENUMERATION RULE IS A FACTUAL CLAIM ABOUT WHERE A VENDOR WRITES FILES.**
+    Getting it wrong cannot flatter a result; it can only make the oracle see
+    **less** and therefore only make the premise **fail to detect** the defect it
+    is hunting. Correcting it is repair, not tuning — **provided the correction
+    only ever broadens**, which is checkable rather than arguable.
+- **FROZEN ABSOLUTELY, and byte-identical to the pre-registration commit — this
+  part of the claim survives and has been checked:** the outcome, the threshold
+  of **exactly 0**, the **Holds if** and **Falls if** conditions, the
+  **Experiment**, the **disclosure** of what was known when the threshold was
+  fixed, and the statement of **what a hold does NOT establish**. `git diff` over
+  `PREMISES.md` from the pre-registration commit touches none of those lines.
+  Read them in B17.
+- **AMENDED 2026-08-05, and this is the amendment the clause above exists to
+  license:** the enumeration is **every `*.jsonl` under `<sessionId>/`,
+  recursively** — not `<sessionId>/subagents/**` as B17 wrote it. The original
+  clause encoded a literal path segment, which is the identical assumption
+  `listTranscripts` makes with its non-recursive `readdir` and **the exact defect
+  this premise exists to falsify**. A corpus with agents one directory over came
+  back as a clean single-threaded session with a passing invariant.
+  - **Timing:** before any comparison has been run, and there is therefore no
+    residual the new wording could have been chosen to accommodate.
+  - **Direction, and it is checkable:** the new rule is a strict **superset** of
+    the old. It can only admit more records, so it can only make the meter look
+    **worse**, never better. A change that can only hurt the thing under test is
+    not fitted in its favour.
+  - **The latitude is bounded by that direction and by nothing else. Any
+    NARROWING of the enumeration voids everything**, at any time, before or after
+    a run. Broadening is repair; narrowing is how a gap gets hidden.
+- **The emitted artifact must describe the rule that produced it.** For one
+  commit the oracle's `rule` string still named `subagents/**` after the walk had
+  been broadened, so an `evidence/` file would have carried a false account of
+  its own method. Pinned by `tests/session-token-walk.test.ts`. **In this
+  repository the artifact is the record**, and a record that misdescribes itself
+  is worse than a missing one.
 - **Also frozen, inherited from B19:** the **extraction rule** — `cacheWrite` is
   the top-level `cache_creation_input_tokens` on both sides, per `readUsage`'s own
   documented fallback, with the 15 disagreeing records counted and totalled
@@ -423,8 +458,9 @@ defect, and it pinned four of them in place.
   1. **VOID** unless `evidence/<run_id>.meter.json` and
      `evidence/<run_id>.walk.json` are both committed, machine-produced, with the
      four-class vector per session per side.
-  2. **VOID** if the oracle changed after the run it scores, or if the frozen
-     rules above changed at all, or if the conformance suite was not passing at
+  2. **VOID** if the oracle changed after the run it scores; if any
+     **absolutely frozen** rule above changed at all; if the enumeration was
+     **narrowed** at any point; or if the conformance suite was not passing at
      the commit the run was produced from.
   3. **VOID** if the Claude Code version that wrote any session in the set
      differs from the version recorded at that run.

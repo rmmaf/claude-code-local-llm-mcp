@@ -5,14 +5,14 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B20 FREEZES THE STANDARD, NOT THE CODE.** Two reviews found **four**
-false-negative paths in the oracle, each of which would have made the premise
-HOLD on a broken meter — the last pair this project's own bug in costume: a
-hardcoded `subagents` segment and a catch-all `readdir` called a corpus with
-agents one directory over a *clean single-threaded session*. B17 and B19 are
-`moot`, never measured, killed by VOID conditions that froze the code before
-it was trustworthy. B20 pins the rules and thresholds, frees the code until
-the first scored run, and moves trust from a hash to a suite. **Last one.**
+**B20 FREEZES THE STANDARD — AND "THE STANDARD" IS TWO KINDS OF RULE.** Four
+false-negative paths in the oracle across three reviews, each of which would
+have made the premise HOLD on a broken meter. B17 and B19 are `moot`: they froze
+the *code*. B20's first draft then claimed byte-identity for everything, false
+the same day — the enumeration clause had already been broadened. **A threshold
+can be fitted and is frozen absolutely (verified untouched); an enumeration rule
+cannot be, since being wrong makes the oracle see LESS, so it is repairable in
+the broadening direction only and any narrowing voids everything.**
 
 ## Next action
 
@@ -25,8 +25,8 @@ threshold, and B14's 3.978 vs 3.5.
 
 ## Do not redo
 
-- **The oracle's four negative controls are the freeze.**
-  `tests/session-token-walk.test.ts` must keep failing what it is meant to fail.
+- **The conformance suite is the freeze**, and the emitted `rule` string must
+  describe the run that produced it — the artifact is the record.
 - **If the oracle needs another correction, G1 cannot close in this venue** —
   say so and decide on a stated non-metered basis. That is a permitted ending.
 - **B16's `> 10%` and 20-request denominator are INHERITED from B14.** Rederiving

@@ -1891,3 +1891,53 @@ finding it out.
 correction, the recorded conclusion is that **G1 cannot be closed in this venue**
 and the continue/stop decision is made on a stated non-metered basis. Reaching
 that honestly is a permitted outcome. A sixth renumber is not.
+
+### not everything called "the standard" is the same kind of rule
+
+**Found by stop-time review 2026-08-05, one day after B20 was written to fix the
+previous version of this mistake.**
+
+B20's whole point was that B17 and B19 froze the wrong object — the
+implementation rather than the standard. It was right, and it was still not
+enough, because **"the standard" is two different kinds of thing and B20's first
+draft lumped them into one claim of byte-identity.** That claim was false within
+a day, and in the most embarrassing possible place: the same turn that wrote it
+had already broadened the oracle past the enumeration clause it declared frozen.
+
+| | can it be fitted? | treatment |
+|---|---|---|
+| **threshold** — `exactly 0`, `>= 5 sessions`, holds/falls | **yes.** Move it and the same data changes verdict, in the author's preferred direction | frozen absolutely, from pre-registration, no exceptions |
+| **enumeration rule** — where the vendor writes files | **no.** Getting it wrong makes the oracle see *less*, so it can only make the premise FAIL TO DETECT the defect | repairable, in the broadening direction only |
+
+The asymmetry is the whole argument. A wrong threshold flatters whoever chose it.
+A wrong enumeration **hurts the person who wrote it** — it hides the very gap
+they are hunting. B17's clause said `<sessionId>/subagents/**`, which is a
+literal path segment, which is the identical assumption `listTranscripts` makes
+with its non-recursive `readdir`, which is **the defect this premise exists to
+falsify**. Freezing that clause was freezing the bug.
+
+**So the latitude is bounded by direction, and the bound is checkable rather than
+arguable.** The new enumeration is a strict superset of the old: it can only
+admit more records, therefore only make the meter look worse, never better.
+**Broadening is repair. Narrowing is how a gap gets hidden, and it voids
+everything, at any time, before or after a run.**
+
+**The second finding is smaller and sharper.** The oracle emits its rule as a
+string into every artifact, and B20 requires those artifacts as evidence. For one
+commit the string still said `subagents/** recursive` after the walk had been
+broadened — so an `evidence/` file would have carried a **false account of its own
+method**, with nothing inside it to reveal the discrepancy. In this repository
+the artifact is the record; a record that misdescribes itself is worse than a
+missing one, because a missing one is obviously missing.
+
+It is pinned now by a test that ties the string to *observed behaviour* rather
+than to itself: the run the string labels must be one that counted agents living
+outside `subagents/`. A test that only compared the string to a constant would
+have rotted the same way the string did.
+
+**The compressed lesson, after four rounds of this:** every rule in a
+pre-registration should carry, in its own text, **the direction in which being
+wrong hurts**. Thresholds hurt the reader and are frozen. Factual claims about
+someone else's file layout hurt the author and are repairable one way only. A
+freeze that cannot tell those apart will either pin a bug or license a fit, and
+which of the two it does is luck.
