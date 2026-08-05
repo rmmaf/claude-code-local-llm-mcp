@@ -5,7 +5,7 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B20 HOLDS AND G1 IS CLOSED.** `run 2026-08-05-win-13-b20`: the meter's
+**B20 HOLDS AND G1 IS CLOSED.** `run 2026-08-05-win-14-b20`: the meter's
 per-class token totals equal an independent enumeration's, **residual exactly 0
 on 4 classes x 11 sessions**, artifacts under `evidence/`. The set was fixed by
 enumeration, not chosen — none void, none suspect, both arms present, one CLI
@@ -25,8 +25,8 @@ constant (`514a829f` 78%, seven sessions 0%), so record it as a covariate.
 
 ## Do not redo
 
-- **Read the value; never write down the one you expected.** Clock for
-  timestamps, fixture for properties — nearly every defect this session found.
+- **Read the value; never the one you expected** — clock for timestamps, fixture
+  for properties. A 0 residual agreed 4x by corpus, not by rule; fixtures found all.
 - **B20's set was fixed by enumeration and the artifacts are committed.** Any
   re-run must re-emit them; an oracle change after a scored run voids that run.
 - **B16's `> 10%` and 20-request denominator are INHERITED from B14.** Rederiving

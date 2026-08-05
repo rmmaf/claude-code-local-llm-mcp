@@ -522,9 +522,9 @@ defect, and it pinned four of them in place.
   continue/stop decision is made on a stated non-metered basis. That is a real
   outcome this project is allowed to reach, and reaching it honestly beats a
   sixth renumber.
-- **Measured: `run 2026-08-05-win-13-b20`. Residual EXACTLY 0 on every class of
+- **Measured: `run 2026-08-05-win-14-b20`. Residual EXACTLY 0 on every class of
   every session — 4 classes x 11 sessions — and the request counts equal on all
-  eleven.** Artifacts: `evidence/2026-08-05-win-13-b20.{walk,meter,comparison}.json`,
+  eleven.** Artifacts: `evidence/2026-08-05-win-14-b20.{walk,meter,comparison}.json`,
   machine-produced, carrying the four-class vector per session per side, the
   `uuid` disjointness counts, the subagent share per session, the Claude Code
   version and the three commit SHAs.
@@ -557,6 +557,17 @@ defect, and it pinned four of them in place.
     the residual was 0 for a reason that was a property of the corpus rather than
     of the rules, and each time a fixture varying one field found what reading
     the two implementations side by side did not.
+    **A fourth emission followed, and it is the scored one.** The meter reported
+    one fixture record as `admittedWithoutUuid: 1` *and* `excluded.apiError: 1` —
+    the same record counted as admitted and as rejected in one payload — because
+    the counter sat in the record-level pass, which knows only assistant-plus-usage
+    and not the api-error or session checks that decide admission. It could
+    therefore exceed the number of requests admitted, and read non-zero on a
+    session that admitted nothing. The oracle counts at the point of admission and
+    reported 0. **All eleven sessions report 0 on both sides**, which is why this
+    corpus could never have shown it: the fourth time a number agreed for a reason
+    belonging to the corpus and not to the rules. Vectors again identical; only
+    the instrument commit differs, and that is the whole reason to re-emit.
 - **What the repair recovered: 390 of 2,703 billed requests were invisible.**
   The meter printed `(N main, 0 subagent)` on every session for four days. The
   gap is not spread evenly — `514a829f` is 78% subagent by request count while
