@@ -1123,10 +1123,15 @@ defect, and it pinned four of them in place.
 - **Unit of observation: ONE TASK WINDOW**, delimited by a `requestId` snapshot
   taken immediately before and diffed immediately after — any id absent from the
   pre-snapshot was **originated** by the task. **Not a session:** `ROADMAP.md` G1
-  is narrowed to say why, and the snapshot costs 0.69 s and 77 KiB. The snapshot
-  covers **every project slug this machine writes to** — this repository owns
-  four right now — because a one-slug snapshot returns `inherited = 0` for arms
-  that wrote elsewhere, which is a check that cannot fail.
+  is narrowed to say why. The snapshot covers **every project slug this machine
+  writes to**, because a one-slug snapshot returns `inherited = 0` for arms that
+  wrote elsewhere, which is a check that cannot fail — and each arm runs in a
+  fresh worktree, so its slug does not exist when the "before" is taken.
+  **Corrected 2026-08-05: at that scope the snapshot is 56 slugs, 7,158 files and
+  70,453 ids, and takes ~25-31 s, not the 0.69 s first recorded** — that figure
+  was one slug, and one slug is exactly the scoping the clause forbids. Two per
+  observation over 45 observations is ~40 minutes, which is the price of making
+  inheritance impossible by construction rather than by inference.
 - **Scored as a VECTOR, not a scalar:** pooled `R`, plus `R_gate`, `R_repair` and
   an explicit `R_other`, because G-stop requires each delivery to pay for itself
   and pooling lets one delivery's exposure hold another's verdict hostage.

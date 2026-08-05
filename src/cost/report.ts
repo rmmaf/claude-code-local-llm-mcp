@@ -594,6 +594,46 @@ export function invocationOwners(
   return ambiguous;
 }
 
+/**
+ * What INSTALLING the server costs a session, whether or not a tool is called.
+ *
+ * B12's harm is stated over tasks with the server **installed**, not invoked,
+ * and this is why: the seven tool schemas sit in the system prompt of every
+ * thread, are written once per context segment and re-read on every request in
+ * that segment. A task that never calls a tool still pays it, and on a one-sided
+ * model that cost lands in the denominator of both arms and cancels — which is
+ * exactly the accounting that lets an unused tool look free.
+ *
+ * `installedChars` is MEASURED, never assumed: the wire JSON of the server's own
+ * `tools/list` response plus the policy block it writes into `CLAUDE.md`. On
+ * this build, 15,227 + 900 = 16,127 characters (`run 2026-08-05-win-16-b12-repairs`).
+ * It is passed in rather than hardcoded because it moves whenever a description
+ * is edited — B15 measured 114 tokens for one 422-character edit.
+ *
+ * Priced per thread+segment at entry position 0, since the system prompt is the
+ * first thing in a context and the last thing to leave it.
+ */
+export function unitsAddedByInstallation(
+  transcript: Transcript,
+  rates: Rates,
+  installedChars: number
+): number {
+  const tokens = installedChars / rates.charsPerToken;
+  const firstOfSegment = new Map<string, BilledRequest>();
+  for (const request of transcript.requests) {
+    const key = `${request.thread}#${request.segment}`;
+    const seen = firstOfSegment.get(key);
+    if (seen === undefined || request.index < seen.index) firstOfSegment.set(key, request);
+  }
+  let units = 0;
+  for (const request of firstOfSegment.values()) {
+    const m = multipliersFor(rates, rateKey(request.model, request.speed));
+    const ttl = request.usage.cacheWrite5m > request.usage.cacheWrite1h ? "5m" : "1h";
+    units += tokens * positionalMultiplier(0, request.segmentSize, m, ttl);
+  }
+  return units;
+}
+
 export function scopeTelemetry(
   transcript: Transcript,
   telemetry: TelemetryRecord[],

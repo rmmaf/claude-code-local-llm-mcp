@@ -15,6 +15,7 @@ import {
   positionalMultiplier,
   priceUsage,
   scopeTelemetry,
+  unitsAddedByInstallation,
 } from "../src/cost/report.js";
 import {
   DEFAULT_MULTIPLIERS,
@@ -24,7 +25,7 @@ import {
   multipliersFor,
 } from "../src/cost/rates.js";
 import type { BilledRequest } from "../src/cost/transcript.js";
-import { listTranscripts, projectTranscriptDir, readTranscript, sessionFiles } from "../src/cost/transcript.js";
+import { listSessionIds, listTranscripts, projectTranscriptDir, readTranscript, sessionFiles } from "../src/cost/transcript.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -1652,6 +1653,29 @@ describe("telemetry and the counterfactual", () => {
     expect(result.savedFraction).toBe(0);
   });
 
+  it("charges the installed tool schemas once per segment and re-read after", async () => {
+    // B12's harm is over tasks with the server INSTALLED, not invoked. The seven
+    // schemas measured 15,227 characters of `tools/list` wire JSON on this build
+    // plus a 900-character policy block, and they sit in the system prompt of
+    // every thread whether or not a tool is called. Omitting this term lets an
+    // unused tool look free.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }),
+      assistantRecord("req-2", { write1h: 100 }),
+      assistantRecord("req-3", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const chars = 16_127;
+    const units = unitsAddedByInstallation(transcript, DEFAULT_RATES, chars);
+
+    // One main segment of 3 requests: entering at position 0 costs the 1h write
+    // (2.0) plus two re-reads (0.1 each) = 2.2 per token.
+    expect(units).toBeCloseTo((chars / DEFAULT_RATES.charsPerToken) * 2.2, 6);
+    // It is NOT free and it is NOT tiny: ~4,360 tokens of context on this build.
+    expect(units).toBeGreaterThan(9_000);
+  });
+
   it("keeps a call that ADDED bytes as the negative it is", async () => {
     // The shipped clamp records `max(0, raw - returned)`, so a tool call that
     // returned more than the operation produced counts as having saved nothing
@@ -2058,6 +2082,89 @@ describe("the cost-meter CLI", () => {
     expect(stdout).not.toContain("savings appear once the local tools run");
     expect(stdout).not.toContain("every telemetry row in range was withheld");
   }, 30_000);
+});
+
+describe("the B12 harness", () => {
+  const runNode = promisify(execFile);
+
+  it("admits exactly what the meter admits, on records that vary one field at a time", async () => {
+    // `scripts/b12-run.mjs` re-implements B20's admission rule because it must
+    // run before `dist/` exists. Two implementations of one rule that are never
+    // compared is this project's signature defect: it produced a residual of 0
+    // FOUR times for reasons belonging to the corpus rather than to the rules,
+    // and reading them side by side found none of the four.
+    //
+    // So they are compared here, on a fixture that exercises every field the
+    // rule mentions -- which the real corpus does not, since all 5,669 of its
+    // records carry both keys and none is an api-error in an awkward place.
+    const root = tempRoot();
+    const slug = path.join(root, "slug-one");
+    await fs.mkdir(slug, { recursive: true });
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const rec = (extra: Record<string, unknown>, ms: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-1",
+        timestamp: at(ms),
+        message: { model: "test-model", content: [], usage: { output_tokens: 10 } },
+        ...extra,
+      });
+    const main = [
+      rec({ uuid: "u1", requestId: "req-1" }, 0), // ordinary
+      rec({ uuid: "u2" }, 1), // no requestId: admitted, ungroupable
+      rec({ requestId: "req-3" }, 2), // no uuid: admitted, undedupable
+      rec({ uuid: "u4", requestId: "req-4", isApiErrorMessage: true }, 3), // excluded by field
+      JSON.stringify({
+        type: "assistant",
+        uuid: "u5",
+        requestId: "req-5",
+        sessionId: "sess-1",
+        timestamp: at(4),
+        message: { model: "<synthetic>", content: [], usage: { output_tokens: 0 } },
+      }), // excluded by model
+      JSON.stringify({ type: "user", uuid: "u6", sessionId: "sess-1", timestamp: at(5), message: { content: [] } }),
+      "not json at all",
+      "",
+    ].join("\n");
+    await fs.writeFile(path.join(slug, "sess-1.jsonl"), `${main}\n`, "utf8");
+    // The same record in a subagent file: dedup by uuid must catch it ONCE.
+    await fs.mkdir(path.join(slug, "sess-1", "subagents"), { recursive: true });
+    await fs.writeFile(
+      path.join(slug, "sess-1", "subagents", "agent-a.jsonl"),
+      `${rec({ uuid: "u1", requestId: "req-1" }, 0)}\n${rec({ uuid: "u7", requestId: "req-7" }, 6)}\n`,
+      "utf8"
+    );
+
+    const out = path.join(root, "snap.json");
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    await runNode(process.execPath, [script, "snapshot", "--root", root, "--out", out], {
+      cwd: process.cwd(),
+    });
+    const harness: string[] = JSON.parse(await fs.readFile(out, "utf8")).requestIds;
+
+    const meter = new Set<string>();
+    for (const id of await listSessionIds(slug)) {
+      const transcript = await readTranscript(await sessionFiles(slug, id), id);
+      for (const request of transcript.requests) meter.add(request.requestId);
+    }
+
+    // req-1 once despite two files, req-3 and req-7 present, req-4 and req-5 out.
+    expect([...harness].sort()).toEqual(["req-1", "req-3", "req-7"]);
+    expect([...meter].filter((r) => !r.startsWith("__norid__")).sort()).toEqual(["req-1", "req-3", "req-7"]);
+    expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
+  });
+
+  it("refuses a snapshot that found nothing rather than reporting an empty machine", async () => {
+    // A snapshot returning zero ids is a scoping error -- four worktrees mean
+    // four slugs, and a run scored against the wrong tree returns a confident
+    // 0.0000 on every observation, which is a FALL on the primary instrument.
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "empty-slug"), { recursive: true });
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    await expect(
+      runNode(process.execPath, [script, "snapshot", "--root", root], { cwd: process.cwd() })
+    ).rejects.toThrow(/REFUSED/);
+  });
 });
 
 describe("against a real transcript, when one is present", () => {
