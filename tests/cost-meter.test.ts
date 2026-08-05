@@ -197,6 +197,40 @@ describe("transcript parsing", () => {
     expect(transcript.excluded.duplicateUuid).toBe(1);
   });
 
+  it("never lets a rejected api-error record decide which session the files belong to", async () => {
+    // An api-error record is type "assistant" with a real requestId, and a retry
+    // writes one FIRST. When the anchor was "the first assistant record carrying
+    // a sessionId", one of these at the head of a file — carrying a different
+    // session — anchored the read to a session that owns nothing here, every
+    // legitimate record was excluded as foreign, and the CLI printed NOTHING.
+    // A record the admission rule refuses to count must not decide what counts.
+    clock = 0;
+    const root = tempRoot();
+    const file = await writeTranscript(root, [
+      assistantRecord("req-err", {}, { sessionId: "a-different-session", isApiErrorMessage: true }),
+      assistantRecord("req-1", { write1h: 100 }),
+      assistantRecord("req-2", { write1h: 200 }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.sessionId).toBe("sess-1");
+    expect(transcript.requests).toHaveLength(2);
+    expect(transcript.requests.reduce((n, r) => n + r.usage.cacheWrite1h, 0)).toBe(300);
+  });
+
+  it("counts records out rather than losing them when an explicit session id matches nothing", async () => {
+    // The other half: zero admitted is a fact that must be reportable, not an
+    // absence. Every exclusion is counted so a caller can tell "this session had
+    // no traffic" from "this read found none of it".
+    clock = 0;
+    const root = tempRoot();
+    const file = await writeTranscript(root, [assistantRecord("req-1", { write1h: 100 })]);
+
+    const transcript = await readTranscript(file, "some-other-session");
+    expect(transcript.requests).toHaveLength(0);
+    expect(transcript.excluded.foreignSession).toBe(1);
+  });
+
   it("counts a tool result once when its record appears in two files, not just billed requests", async () => {
     // The admission rule was applied to the billed-request loop and not to the
     // one over tool results, which iterates the SAME records. On this project
@@ -1237,6 +1271,31 @@ describe("telemetry and the counterfactual", () => {
  */
 describe("the cost-meter CLI", () => {
   const execFileAsync = promisify(execFile);
+
+  it("reports a session that admitted nothing instead of printing nothing at all", async () => {
+    // Skipping on `requests === 0` printed no session line, no zero and no
+    // counts, so a session read through the wrong anchor became invisible rather
+    // than merely wrong. A session whose only assistant records are api-errors
+    // reaches the same branch honestly, and must still be visible.
+    clock = 0;
+    const root = tempRoot();
+    const transcripts = tempRoot();
+    await fs.writeFile(
+      path.join(transcripts, "sess-1.jsonl"),
+      `${[
+        assistantRecord("req-a", {}, { isApiErrorMessage: true }),
+        assistantRecord("req-b", {}, { isApiErrorMessage: true }),
+      ].join("\n")}\n`,
+      "utf8"
+    );
+
+    const cli = path.join(import.meta.dirname, "..", "dist", "cost", "cli.js");
+    const { stdout } = await execFileAsync(process.execPath, [cli, "--dir", transcripts, "--root", root]);
+
+    expect(stdout).toContain("0 billed requests");
+    expect(stdout).toContain("apiError 2");
+    expect(stdout).toContain("mis-read");
+  }, 30_000);
 
   it("shows withheld rows even when nothing at all was counted", async () => {
     clock = 0;

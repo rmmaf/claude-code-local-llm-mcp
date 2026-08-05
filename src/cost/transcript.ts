@@ -106,6 +106,42 @@ interface RawRecord {
   };
 }
 
+/**
+ * An api-error record: `type: "assistant"`, a real `requestId`, all-zero usage,
+ * and `model: "<synthetic>"`. Excluded by these fields and NEVER by usage
+ * reading zero, since a legitimate record can read zero at the top level.
+ *
+ * Shared by the anchor and the billed-request loop deliberately. They disagreed
+ * once — see `isBillableShape` — and a predicate written twice is a predicate
+ * that will differ.
+ */
+function isApiError(record: RawRecord): boolean {
+  return record.isApiErrorMessage === true || record.message?.model === "<synthetic>";
+}
+
+/**
+ * The shape that may be a billed request, and therefore the ONLY shape allowed
+ * to decide which session these files belong to.
+ *
+ * The anchor used to be the first `type: "assistant"` record carrying a
+ * `sessionId`, api-error records included. One such record at the head of a file
+ * — they lead a file often, being what a retry writes first — carrying a
+ * different `sessionId` set the anchor to a session that owns nothing here, and
+ * then every legitimate record was excluded as foreign. Measured on a fixture:
+ * two real requests, both dropped, and the CLI printed NOTHING AT ALL.
+ *
+ * **A record the admission rule refuses to count must not be allowed to decide
+ * what counts.**
+ */
+function isBillableShape(record: RawRecord): boolean {
+  return (
+    record.type === "assistant" &&
+    typeof record.requestId === "string" &&
+    record.message?.usage !== undefined &&
+    !isApiError(record)
+  );
+}
+
 function num(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -275,7 +311,7 @@ export async function readTranscript(
   let anchor = sessionId;
   if (anchor === undefined) {
     for (const record of raw) {
-      if (record.type === "assistant" && typeof record.sessionId === "string") {
+      if (isBillableShape(record) && typeof record.sessionId === "string") {
         anchor = record.sessionId;
         break;
       }
@@ -335,7 +371,7 @@ export async function readTranscript(
     // anything. Every exclusion is counted; none is silent.
     if (record.type !== "assistant" || typeof record.requestId !== "string") continue;
     if (record.message?.usage === undefined) continue;
-    if (record.isApiErrorMessage === true || record.message?.model === "<synthetic>") {
+    if (isApiError(record)) {
       excluded.apiError++;
       continue;
     }

@@ -129,7 +129,30 @@ async function main(): Promise<void> {
   for (const unit of units) {
     const transcript = await readTranscript(unit.files, unit.sessionId);
     const session = buildSessionReport(transcript, rates);
-    if (session.requests === 0) continue;
+    if (session.requests === 0) {
+      // NEVER SILENTLY. A session with no billed request but with exclusions is
+      // the shape of a mis-read, not of an empty session, and skipping it prints
+      // nothing at all -- no session line, no zero, no counts. That is how a
+      // mis-anchored session became invisible rather than merely wrong.
+      const dropped = Object.values(transcript.excluded).reduce((n, v) => n + v, 0);
+      if (dropped > 0) {
+        process.stdout.write(
+          `
+${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
+            `${DIM}${transcript.files.length} file(s)${RESET}
+` +
+            `  0 billed requests, and ${int(dropped)} record(s) excluded ` +
+            `(${Object.entries(transcript.excluded)
+              .filter(([, v]) => v > 0)
+              .map(([k, v]) => `${k} ${v}`)
+              .join(", ")})
+` +
+            `  ${DIM}a session with traffic on disk and none admitted is a mis-read, not an empty session${RESET}
+`
+        );
+      }
+      continue;
+    }
 
     const scoped = scopeTelemetry(transcript, telemetry);
     const counterfactual = buildCounterfactual(transcript, scoped, rates, session);
