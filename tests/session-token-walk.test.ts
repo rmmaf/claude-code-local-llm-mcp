@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { makeTempRoot } from "./helpers.js";
 
 /**
- * B19's oracle, and specifically the claims that would otherwise rot.
+ * B20's oracle, and specifically the claims that would otherwise rot.
  *
  * The first version of `scripts/session-token-walk.mjs` shipped a disjointness
  * invariant that COULD NOT FAIL: per-source uuid sets were filled after the
@@ -20,7 +20,7 @@ import { makeTempRoot } from "./helpers.js";
  *
  * So the load-bearing test here is the NEGATIVE control: a corpus where the
  * invariant must come back false. An invariant never shown to fail is not
- * evidence, and B19's `Holds if` is written on this check.
+ * evidence, and B20's `Holds if` is written on this check.
  */
 const execFileAsync = promisify(execFile);
 const ORACLE = path.join(import.meta.dirname, "..", "scripts", "session-token-walk.mjs");
@@ -160,6 +160,64 @@ describe("session-token-walk", () => {
     expect(session.records.admitted).toBe(1);
     expect(session.records.excludedApiError).toBe(2);
     expect(session.tokens.output).toBe(0);
+  });
+
+  it("finds agent logs wherever they sit under the session directory, not only under subagents/", async () => {
+    // The second false-empty path. An earlier draft hardcoded `subagents`, and a
+    // corpus one directory over came back as a clean single-threaded session:
+    // 2 requests, 0 subagent, invariant passing, 1,500 output tokens uncounted.
+    // The layout has already changed once; that change is the whole finding.
+    const dir = await corpus([record(U(1), "req-main", { output_tokens: 50 })], {
+      [path.join("..", "agents", "agent-x.jsonl")]: [record(U(2), "req-sub", { output_tokens: 700 })],
+    });
+    const session = await walk(dir);
+
+    expect(session.tokens.output).toBe(750);
+    expect(session.requests.subagent).toBe(1);
+  });
+
+  it("throws rather than reporting an empty session when the directory cannot be read", async () => {
+    // ENOENT is a fact about the corpus and may be swallowed. Anything else is a
+    // fact about this process, and swallowing it reports "no subagent traffic"
+    // for a session that has some — the bug this oracle exists to detect,
+    // committed inside the detector. A file where the directory belongs gives
+    // ENOTDIR, which is the portable way to reach that branch.
+    const dir = makeTempRoot("token-walk-");
+    await fs.writeFile(path.join(dir, `${SID}.jsonl`), `${record(U(1), "req-1", { output_tokens: 5 })}\n`, "utf8");
+    await fs.writeFile(path.join(dir, SID), "not a directory", "utf8");
+
+    await expect(walk(dir)).rejects.toThrow();
+  });
+
+  it("marks a session with no admitted request VOID instead of passing it", async () => {
+    // Zero on both sides satisfies "every class differs by exactly 0" trivially.
+    // Zero requests is a fact about the corpus, never a verdict about the meter.
+    const dir = await corpus([JSON.stringify({ type: "user", uuid: U(9) })]);
+    const session = await walk(dir);
+
+    expect(session.void).toBe(true);
+    expect(session.requests.total).toBe(0);
+    // And the invariant is vacuously true here, which is exactly why `void` and
+    // not `holds` is what excludes the session.
+    expect(session.uuidDisjoint.holds).toBe(true);
+  });
+
+  it("distinguishes a session with no directory from one whose directory holds no request log", async () => {
+    const bare = await corpus([record(U(1), "req-1", { output_tokens: 5 })]);
+    expect((await walk(bare)).files).toMatchObject({
+      sessionDirExists: false,
+      sessionDirYieldedNoLogs: false,
+    });
+
+    // Real shape: two sessions in this project carry a tool-results/ directory
+    // and no agent log. Benign, but only after someone looks.
+    const withResults = await corpus([record(U(1), "req-1", { output_tokens: 5 })]);
+    await fs.mkdir(path.join(withResults, SID, "tool-results"), { recursive: true });
+    await fs.writeFile(path.join(withResults, SID, "tool-results", "x.txt"), "payload", "utf8");
+    expect((await walk(withResults)).files).toMatchObject({
+      sessionDirExists: true,
+      sessionDirYieldedNoLogs: true,
+    });
   });
 
   it("admits nothing from a workflows journal, without matching its filename", async () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * B19's oracle: what a session's billed token vector is, counted independently
+ * B20's oracle: what a session's billed token vector is, counted independently
  * of `src/cost/`.
  *
  * WHY THIS EXISTS. B1 fell at +231% and its record could name only one half of
@@ -18,11 +18,11 @@
  * way. Sharing a helper would silently re-import the bug.
  *
  * THE RULE IS NOT MINE. It is Claude Code 2.1.219's own shipped enumerator, and
- * B19 quotes it so that both implementations answer to the premise text rather
+ * B20 quotes it so that both implementations answer to the premise text rather
  * than to each other: the main directory's `*.jsonl` files, plus
- * `<sessionId>/subagents/**` recursively, de-duplicated by record `uuid`.
+ * every `*.jsonl` under `<sessionId>/` recursively, de-duplicated by `uuid`.
  *
- * ADMISSION, in the three steps `PREMISES.md` B19 fixes and freezes:
+ * ADMISSION, in the three steps `PREMISES.md` B20 fixes and freezes:
  *
  *   1. Admit records with `type: "assistant"` carrying `message.usage`.
  *      Exclude `isApiErrorMessage: true` and `model: "<synthetic>"` — they carry
@@ -51,7 +51,7 @@
  * WHAT THIS DELIBERATELY DOES NOT DECIDE. `cacheWrite` is the TOP-LEVEL
  * `cache_creation_input_tokens` and the TTL split never overrides it — see
  * `classes()` for why, and for the 42,558 tokens that ride on the choice. The
- * 1h/5m ATTRIBUTION is not scored here and B19 says so; the disagreeing records
+ * 1h/5m ATTRIBUTION is not scored here and B20 says so; the disagreeing records
  * are COUNTED and their tokens TOTALLED rather than resolved. Nor is
  * `usage.iterations` summed — it rolls up to the top level.
  *
@@ -103,13 +103,24 @@ function transcriptDir(root, home) {
   return path.join(home, ".claude", "projects", slug);
 }
 
-/** Every `*.jsonl` under a directory, recursively. Missing directory is empty. */
+/**
+ * Every `*.jsonl` under a directory, recursively.
+ *
+ * ONLY `ENOENT` MAY BE SWALLOWED. A missing directory is a fact about the
+ * corpus — a single-threaded session has none. Every other error (`EACCES`,
+ * `ENOTDIR`, `EPERM`, `EIO`) is a fact about this process, and returning `[]`
+ * for one of those reports "no subagent traffic" for a session that has some.
+ * An earlier draft caught everything: it turned an unreadable directory into a
+ * clean single-threaded session with a passing invariant, which is the exact bug
+ * this oracle exists to detect, committed inside the detector.
+ */
 function jsonlUnder(dir) {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (error && error.code === "ENOENT") return [];
+    throw error;
   }
   const out = [];
   for (const entry of entries) {
@@ -121,10 +132,21 @@ function jsonlUnder(dir) {
 }
 
 /**
- * The file union of one session: its main transcript, then every `.jsonl` under
- * `<sessionId>/subagents/` recursively. Order is load-bearing — step 3 takes the
- * LAST record in file order — so the main file comes first and subagent files
- * are sorted, deterministically.
+ * The file union of one session: its main transcript, then every `.jsonl`
+ * anywhere under `<sessionId>/`, recursively.
+ *
+ * NOT `<sessionId>/subagents/`. An earlier draft hardcoded that segment, and a
+ * corpus whose agents sat one directory over — `agents/`, or a level deeper —
+ * came back as a clean single-threaded session: 2 requests, 0 subagent, a
+ * passing invariant, and 1,500 output tokens on disk that nothing counted. **The
+ * layout has already changed once, and that change is this project's entire
+ * finding.** A literal path segment is the same class of assumption
+ * `listTranscripts` made with its non-recursive `readdir`, so the rule is the
+ * session's directory, not a magic name inside it. Strictly broader: it can only
+ * find more, and `journal.jsonl` is still excluded by the record predicate.
+ *
+ * Order is load-bearing — step 3 takes the LAST record in file order — so the
+ * main file comes first and the rest are sorted, deterministically.
  */
 function sessionFiles(dir, sessionId) {
   const main = path.join(dir, `${sessionId}.jsonl`);
@@ -133,7 +155,14 @@ function sessionFiles(dir, sessionId) {
   } catch {
     die(`no main transcript for session ${sessionId} in ${dir}`);
   }
-  return { main, subagents: jsonlUnder(path.join(dir, sessionId, "subagents")) };
+  const sessionDir = path.join(dir, sessionId);
+  let sessionDirExists = true;
+  try {
+    statSync(sessionDir);
+  } catch {
+    sessionDirExists = false;
+  }
+  return { main, subagents: jsonlUnder(sessionDir), sessionDirExists };
 }
 
 function listSessions(dir) {
@@ -158,19 +187,19 @@ const int = (value) => (typeof value === "number" && Number.isFinite(value) ? va
  * is never allowed to override it. That is not a preference, it is the rule
  * `readUsage` already documents — "the split is authoritative when present *and
  * consistent*; otherwise attribute the whole cache write to the 5-minute TTL" —
- * and that text predates every line of B19, so choosing it cannot be fitting.
+ * and that text predates every line of B20, so choosing it cannot be fitting.
  *
  * It matters because the two disagree. Fifteen records in this corpus carry a
  * top-level total of 0 against an `ephemeral_1h` of 2,452 to 4,911, and taking
  * the larger of the two — which an earlier draft of this file did — puts 42,558
  * tokens on the oracle's side of a comparison whose other side, once repaired to
- * require consistency, will report 0. B19 would then fall on a rule this file
+ * require consistency, will report 0. B20 would then fall on a rule this file
  * chose rather than on anything the meter did.
  *
  * The 15 records and their 42,558 split-only tokens are REPORTED, both as a
  * count and as a total, so the quantity is visible and unscored rather than
  * invisible and absorbed. Which reading Anthropic actually bills is not
- * decidable from these files and B19 says in terms that it does not score TTL
+ * decidable from these files and B20 says in terms that it does not score TTL
  * attribution; whoever wants that answer needs a premise of their own.
  */
 function classes(usage) {
@@ -314,7 +343,22 @@ function walkSession(dir, sessionId) {
   return {
     sessionId,
     claudeCodeVersions: [...versions].sort(),
-    files: { main: path.relative(dir, files.main), subagents: files.subagents.map((f) => path.relative(dir, f)), perFile },
+    // VOID, not a pass. A session with no admitted request satisfies "every
+    // class differs by exactly 0" trivially, on both sides, and would hand the
+    // premise a free session. Zero requests is a fact about the corpus, never a
+    // verdict about the meter.
+    void: seenUuid.size === 0,
+    files: {
+      main: path.relative(dir, files.main),
+      subagents: files.subagents.map((f) => path.relative(dir, f)),
+      // A zero here means something different depending on this flag, and the
+      // difference is the whole reason it is reported: no directory is a
+      // single-threaded session, a directory holding no request log is either a
+      // tool-results-only session or a layout this walk did not understand.
+      sessionDirExists: files.sessionDirExists,
+      sessionDirYieldedNoLogs: files.sessionDirExists && files.subagents.length === 0,
+      perFile,
+    },
     records: {
       admitted: seenUuid.size,
       main: inMain,
@@ -323,7 +367,7 @@ function walkSession(dir, sessionId) {
       excludedApiError,
       skippedUnparseable,
     },
-    // B19's invariant: |uuids(main) U uuids(sub)| == |main| + |sub|, i.e. no uuid
+    // B20's invariant: |uuids(main) U uuids(sub)| == |main| + |sub|, i.e. no uuid
     // occurs on both sides. Without it the union can pass by two errors
     // cancelling. `tests/session-token-walk.test.ts` holds a corpus where it
     // FAILS, because an invariant never shown to fail is not evidence.
@@ -417,12 +461,18 @@ function main() {
   const ttl = walked.reduce((n, s) => n + s.diagnostics.ttlSplitDisagreements, 0);
   const ttlTokens = walked.reduce((n, s) => n + s.diagnostics.ttlSplitOnlyTokens, 0);
   const shared = walked.reduce((n, s) => n + s.uuidDisjoint.sharedUuids, 0);
+  const voids = walked.filter((s) => s.void).map((s) => s.sessionId.slice(0, 8));
+  const opaque = walked.filter((s) => s.files.sessionDirYieldedNoLogs).map((s) => s.sessionId.slice(0, 8));
   console.log(
     `\noutput tokens a first-record-wins dedup would drop: ${lost.toLocaleString("en-US")}` +
       `\nrecords whose TTL split disagrees with its total: ${ttl}, carrying ${ttlTokens.toLocaleString("en-US")} ` +
       `tokens the split reports and the total does not` +
-      `\n  (counted, not resolved -- cacheWrite is the top-level total on BOTH sides; B19 does not score attribution)` +
-      `\nuuids occurring in both a main and a subagent file: ${shared}  (must be 0)`
+      `\n  (counted, not resolved -- cacheWrite is the top-level total on BOTH sides; B20 does not score attribution)` +
+      `\nuuids occurring in both a main and a subagent file: ${shared}  (must be 0)` +
+      `\nVOID sessions, no admitted request, excluded from any verdict: ` +
+      `${voids.length === 0 ? "none" : voids.join(", ")}` +
+      `\nsessions whose directory exists but yielded no request log: ` +
+      `${opaque.length === 0 ? "none" : `${opaque.join(", ")}  <- confirm the layout before scoring`}`
   );
 }
 
