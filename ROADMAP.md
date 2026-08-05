@@ -14,7 +14,7 @@ What may be built next, and the number that decides it.
 
 ---
 
-## G1 — cost meter · `open` (reopened)
+## G1 — cost meter · `closed` (again)
 
 - **Delivered:** `src/cost/{cli,rates,transcript,report}.ts`, `src/telemetry.ts`,
   `.local-coder/rates.json`.
@@ -27,8 +27,22 @@ What may be built next, and the number that decides it.
   meter-derived may be measured until it agrees.** That covers B12 and anything
   reading `savedFraction`. It does not cover B6 or B7, which come from `repair`'s
   own returned payload and never touch the meter.
-- **Closes again when: B20 holds.** The comparator is pre-registered there, and
-  it is not `/usage`. (B20 replaces B19, which replaced B17. Both are `moot` and
+- **CLOSED AGAIN by B20 holding** (`run 2026-08-05-win-11-b20`): the meter's
+  per-class token totals equal an independent enumeration's, **residual exactly 0
+  on 4 classes x 11 sessions**, artifacts under `evidence/`. The comparator was
+  pre-registered before any repair and it is not `/usage`.
+- **The measurement ban lifts with it.** B12 and anything reading `savedFraction`
+  may be measured again. **G-stop becomes evaluable**, which it has not been
+  since B1 fell.
+- **Three defects were repaired to get here, and each was found by writing the
+  check rather than by running it.** `listTranscripts` read one file where a
+  session is many (390 of 2,703 requests invisible); the dedup kept the FIRST
+  record of a `requestId` group where the last one carries the answer (655,570
+  output tokens, 19.27%, at the 5.0x rate); and `readUsage` used a TTL split that
+  contradicted its own total (42,558 tokens in the 2.0x class). Two of the three
+  undercounted, and B1's headline still ran 231% high — so none of them explains
+  that fall, and the fall's own diagnosis of it was right: `/usage` was measuring
+  a different quantity. (B20 replaces B19, which replaced B17. Both are `moot` and
   neither was ever measured: their VOID conditions froze the oracle's *code*
   before it was trustworthy, and four false-negative paths were found across two
   reviews. B20 freezes the *standard* instead. The outcome, the threshold and the
@@ -61,10 +75,15 @@ What may be built next, and the number that decides it.
   direction. Nothing here measures that, nothing can measure it from the data
   available, and it is currently doing silent work for the entire stopping
   criterion. Named here so it stops being silent.
-- **The repair may proceed, and `src/cost/` being "frozen" does not forbid it.**
+- **The repair proceeded, and `src/cost/` being "frozen" did not forbid it.**
   See `DECISIONS.md § the freeze forbids measuring, not repairing`. The short
   form: read as a blanket edit ban, the freeze makes this gate's own written
   closing condition unreachable by construction.
+- **The active-gate count returns to six**, without anyone having to resolve the
+  interpretive question the note at the foot of this file records. The board was
+  at seven because a *reopening* breached the ceiling; the reopening is over. The
+  ambiguity — whether `open (reopened)` counts as active — is untouched and stays
+  a decision for whoever needs it, which is nobody while the count is six.
 
 ## G2 — deterministic layer (PostToolUse hook) · `closed` (dead)
 

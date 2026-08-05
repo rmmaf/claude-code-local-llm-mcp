@@ -522,8 +522,31 @@ defect, and it pinned four of them in place.
   continue/stop decision is made on a stated non-metered basis. That is a real
   outcome this project is allowed to reach, and reaching it honestly beats a
   sixth renumber.
-- **Measured:** — (no run)
-- **Status:** open
+- **Measured: `run 2026-08-05-win-11-b20`. Residual EXACTLY 0 on every class of
+  every session — 4 classes x 11 sessions — and the request counts equal on all
+  eleven.** Artifacts: `evidence/2026-08-05-win-11-b20.{walk,meter,comparison}.json`,
+  machine-produced, carrying the four-class vector per session per side, the
+  `uuid` disjointness counts, the subagent share per session, the Claude Code
+  version and the three commit SHAs.
+  - **The set was fixed by the enumeration rule, not chosen:** every session
+    present at the pre-registration commit `db4874e`. Eleven scored, **none void,
+    none suspect, none dropped**, so there is no selection to argue about.
+  - **Both required arms are present.** Seven single-threaded sessions as the
+    negative control — the arm that shows the repair does not introduce error
+    where there was none — and `c9e2fe70` carrying `subagents/workflows/`
+    nesting. One Claude Code version throughout, `2.1.219`.
+  - **Read from a FROZEN SNAPSHOT of those files.** The live directory grows
+    while the session measuring it runs, so a comparison whose input changes
+    between its two halves cannot be repeated — which is the whole reason this
+    premise demands artifacts. Both sides read one fixed copy.
+  - **Conformance suite green at the run's commit:** `tests/session-token-walk.test.ts`,
+    14 tests, including the four negative controls this premise requires.
+- **What the repair recovered: 390 of 2,703 billed requests were invisible.**
+  The meter printed `(N main, 0 subagent)` on every session for four days. The
+  gap is not spread evenly — `514a829f` is 78% subagent by request count while
+  seven sessions have none at all — which is why it was never a constant and why
+  no scale factor could have corrected an old number.
+- **Status:** **holding**
 
 ## B2 — `hookSpecificOutput.updatedToolOutput` changes what is BILLED, not only what is displayed
 
