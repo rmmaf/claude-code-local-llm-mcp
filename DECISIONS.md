@@ -2091,3 +2091,43 @@ these labels. **Every one is a value written from expectation rather than read
 from the thing itself.** Not one was an error of arithmetic, of logic, or of the
 instrument. The instrument has been right the whole way; what kept being wrong is
 the sentence describing it.
+
+## A predicate written as conditions, repaired six times
+
+*2026-08-05. A judgment, recorded here rather than in `MEASUREMENTS.jsonl`,
+because nothing measured it.*
+
+`classifyRun` in `scripts/b12-run.mjs` decides whether an arm of B12 produced a
+sound observation. Stop-time review found a defect in it on six consecutive
+turns. What follows is a reading of why, and it is a reading — the alternative
+explanation, that a rule under six rounds of adversarial review simply gets six
+findings whatever its shape, is not excluded by anything here.
+
+The six fall into two families.
+
+**Fields the rule was never handed.** The exit status, the signal, and whether
+the budget was enforced at all. Each time, the field that decided the case was
+one the function could not see, so it answered confidently from what it had. The
+argument list turned out to be the real specification, and I had written it from
+what happened to be in scope at the call site rather than from what "this
+observation is sound" requires.
+
+**Fields it should never have used.** `wallMs`, twice, in consecutive repairs —
+duration standing in as evidence of *who ended the process*. The second time is
+the one worth keeping: fixing a clock proxy, I reached for another clock proxy
+one line away. A wrong instinct is not spent by being caught once.
+
+The sixth was `exitCode !== 0` where the intent was `exitCode === null`, which
+excluded the case it was written for and admitted one it was not.
+
+**What I changed, and what that does not prove.** The rule is now a case
+analysis over the triple `spawnSync` returns — `spawn_failed`, `censored`,
+`killed_by_signal`, `exited_nonzero`, `completed` — with no fall-through, and the
+outcome name is recorded per observation. The argument for the shape is that a
+condition true of the case in mind is easily also true of a case that is not, and
+a chain of `&&`s makes that invisible while an enumeration makes an unhandled
+combination a named branch instead of a default nobody chose.
+
+That argument is plausible and it is not evidence. The enumeration has survived
+zero turns of review. If it takes a seventh finding, the honest conclusion is
+that the shape was not the cause and this entry is what should be retracted.
