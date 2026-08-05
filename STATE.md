@@ -5,31 +5,30 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**G1 closed on `run 2026-08-05-win-14-b20`** — residual exactly 0 on 4 classes x
-11 sessions, both arms present, artifacts committed. **B12 then failed to start,
-for four measured reasons**, and one is now repaired: an `invocation_id` is CALL
-identity and the counterfactual read it as SESSION OWNERSHIP, crediting one
-`gate` call to four sessions (21 rows on disk, 24 attributed). Ownership now
-resolves across the session set, ambiguous rows are refused, and `savedFraction`
-is **withheld, not zeroed**, when only timestamps remain. G1: no drift.
+**B12 IS PRE-REGISTERED AND THE RUN HAS NOT STARTED.** The design is frozen
+verbatim in `evidence/2026-08-05-b12-preregistration.json` and named in the
+premise by sha256 — 3 designs, 12 adversarial passes, **120 findings, 38 fatal,
+none survived intact**. It killed the claim all three shared: the counterfactual
+is **not a floor**, so B12 scores a **bracket** and a fall is **conditional**.
+Two repairs to code shipped the same morning came out of it (`47b65f7`).
 
 ## Next action
 
-**B12 still cannot run, and the remaining three reasons are not code.**
-(1) `repair` has **zero telemetry rows ever** — G-stop demands each of the three
-deliveries pay for itself, so exercise it on real work. (2) Sessions are not
-disjoint samples: **535 of 1,904 billed requests (28.1%) live in two or more**,
-so a per-session total measures inherited history — B12 must define its unit.
-(3) 20 of 22 rows came from the session doing the measuring. Then pre-register
-B12 properly, then a small paired A/B. **Yours:** G7's threshold, B14 3.978 vs 3.5.
+**Seven instrument repairs are pre-conditions of the first scored observation**,
+all named in the frozen design: signed suppression, the client truncation cap,
+turn-collapse out of every scored number, `repair` crediting its gate once,
+`unmatched` given a magnitude, and a per-`requestId`-subset accessor on
+`SessionReport`. Then the pre-flight, then the 5-task pilot. **Yours:** whether
+G-stop still names the cost meter as a delivery that must pay — it structurally
+cannot be scored, having nothing to suppress; G7's threshold; B14 3.978 vs 3.5.
 
 ## Do not redo
 
 - **Read the value; never the one you expected** — clock for timestamps, fixture
-  for properties. A 0 residual agreed 4x by corpus, not by rule; fixtures found all.
-- **Prose reintroduces orderings a test cannot.** Four false universals about one
-  counter in three commits. Pin both directions instead of rewriting the sentence.
+  for properties. A 0 residual agreed 4x by corpus, not by rule.
 - **A key is only identity in the space it was minted for.** `uuid`, `requestId`,
   `invocation_id` — each was read as an identity it does not carry.
-- **The 7.1% saving the meter used to print was never evidence**, and it sat below
-  G-stop's 15%. Do not let any withheld number be read as a low one.
+- **An unknown summed as zero is a withheld number printed as a low one.** Same
+  error, one level down; it shipped twice in one day.
+- **B12's manifest is AUTHORED.** B20's "the set was fixed by enumeration" does
+  not transfer, and B3 measured the two verification modes 400x apart.
