@@ -252,6 +252,19 @@ Measured on a 30B coder at a 16,384-token window, the practical whole-file ceili
 
 Raise it where it is real — LM Studio's per-model default load context — rather than in `LOCAL_CODER_CONTEXT_TOKENS`. The setting only takes effect when `lms ps` cannot answer, and that is exactly when the model is *not* loaded and JIT will bring it up at the default anyway.
 
+**Why "the default" and not what you loaded:** LM Studio's `justInTimeModelLoading` (in `~/.lmstudio/.internal/http-server-config.json`, on by default) reloads a model the server is asked for but does not have — at the model's *default* context, not at whatever your last `lms load --context-length` requested. So an explicit 32,768 silently becomes 16,384 after any unload, with nothing reconfigured. Turning JIT off makes that loud: the server errors instead of serving a differently-configured model.
+
+**And when the window is wrong, LM Studio fails quietly by design.** Its `contextOverflowPolicy` defaults to `truncateMiddle`: when the context fills it keeps the system prompt and the first user message and drops the **middle**. A model copying a file out of the prompt therefore loses the middle of its own source, carries on, and closes the block — which is how a response comes back well-formed, `finish_reason: "stop"`, and short. Setting it to `stopAtLimit` turns that into an error instead. Read yours with:
+
+```js
+// node --input-type=module
+const { LMStudioClient } = await import("<path to @lmstudio/sdk>/dist/index.mjs");
+const m = (await new LMStudioClient().llm.listLoaded())[0];
+console.log((await m.getBasePredictionConfig()).contextOverflowPolicy);
+```
+
+It is not in `lms ps`, not in any file under `~/.lmstudio`, and not settable through the OpenAI-compatible endpoint — the SDK is the only way to see it.
+
 ## Model selection
 
 `local-coder` picks which local model to run from a **catalog** you define, weighing two things: **what each model is for** (its objective) and **whether it fits the free RAM** on the machine right now.

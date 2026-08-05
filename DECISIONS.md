@@ -1276,7 +1276,31 @@ now returns null, and `repair` no longer pins one window for the whole loop —
 that pin was justified by "a value that cannot change mid-loop", which is untrue
 the moment no model is named and each round re-selects.
 
-**The configured window is a belief and it loses to the observation.** The first
+### The window drift has a named cause, and it is a feature that is switched on
+
+`~/.lmstudio/.internal/http-server-config.json` on the measuring machine carries
+`"justInTimeModelLoading": true`. That is what brings a model back when the
+server is asked for one that is not loaded — **at the model's default context,
+not at whatever the last explicit `lms load` asked for.**
+
+It does not prove what happened on 2026-08-04: the crash that preceded the
+reload still has two candidate causes and the machine had two workloads on it.
+But it removes the mystery from the *shape* of the outcome. A window that was
+32,768 by explicit request and 16,384 afterwards is not the app behaving oddly;
+it is JIT loading doing exactly what it says, and it needs no crash to happen —
+an unload for any reason is enough.
+
+Two consequences worth having written down. **`LOCAL_CODER_CONTEXT_TOKENS` is at
+its most dangerous precisely when JIT is on**, because the setting is only
+consulted when `lms ps` cannot answer, which is the not-loaded state, which is
+when JIT is about to load at the default and contradict it. And **turning JIT
+off makes the failure loud**: the server errors instead of silently serving a
+differently-configured model. That is a change to the operator's machine rather
+than to this repository, so it is recorded here rather than made.
+
+### The configured window is a belief and it loses to the observation
+
+The first
 version had `LOCAL_CODER_CONTEXT_TOKENS` short-circuit the probe entirely, and
 justified it on cost: the probe is a ~120 ms shell-out. That ordering was
 backwards, and it took a measurement to see why. A model explicitly loaded at
@@ -1309,7 +1333,44 @@ property of a 30B coder loaded at 16,384 tokens. The model supports 262,144, and
 the honest remedy for both refused cases is `lms load --context-length` plus
 `LOCAL_CODER_CONTEXT_TOKENS` to match — not a looser estimate.
 
-### **(open point)** which context-overflow policy was in force
+### **(CLOSED)** the context-overflow policy is `truncateMiddle`
+
+Read from the machine, not inferred: `getBasePredictionConfig()` on the loaded
+model reports **`"contextOverflowPolicy": "truncateMiddle"`**. The section below
+records the hunt and the reasoning that predicted it; this is the answer.
+
+`truncateMiddle` keeps the system prompt and the first user message and removes
+the **middle** of the context when it fills. The model was copying a file *out of
+the prompt*; LM Studio deleted the middle of that prompt while generation
+continued; the model carried on from what it could still see and closed the block
+normally. One mechanism, and it accounts for four symptoms independently:
+
+| Observed | Explained by |
+|---|---|
+| `</file>` **properly closed** | nothing interrupted it — it finished normally |
+| 81 lines gone from the **middle**, not the end | that is literally what the policy removes |
+| `finish_reason: "stop"` | a natural stop, not a cap being hit |
+| retry reporting an identical `prompt_tokens` after ~6,000 tokens were appended | the middle was truncated to fit |
+
+**What this changes, and what it does not.** It does not change the pre-flight:
+refusing the request up front prevents the overflow from ever happening, and B16
+measured that working. What it establishes is that **when the pre-flight is
+wrong, the failure is silent by design** — the server is configured to quietly
+drop context rather than stop. That is the argument for the `Math.min`
+cross-check against `lms ps`, and for the operator to consider `stopAtLimit`:
+under it an overflow becomes an error instead of a shorter file. Defence in
+depth, on a machine setting this project cannot make for itself.
+
+**A second finding in the same dump: `"enableThinking": true`**, with
+`reasoningParsing` enabled on `<think>`/`</think>`. That is B14's "known
+unmodelled term" — reasoning tokens sharing the output budget — confirmed as
+switched on rather than suspected. It does not appear to be costing much: the
+measured output density is 4.22 B per token on the largest case, which leaves
+little room for substantial hidden reasoning. Recorded because B14 named thinking
+as the first suspect if the estimator ever fell, and the suspect is now known to
+be present rather than hypothetical.
+
+### how it was read, after six dead ends
 
 The section above says the model "stopped when the window filled". That is the
 obvious reading and it may be wrong, and one detail in it never fit: the response
@@ -1342,11 +1403,49 @@ It is one look at a settings panel. Until someone takes it, the causal claim
 above is a hypothesis and is labelled as one. B16 is unaffected either way — it
 counts the harm, not the mechanism, which is exactly why it was written that way.
 
-**Searched, and it is not reachable from the CLI or from disk.** `lms ps --json`
-reports `contextLength` and `maxContextLength` and nothing about the policy, and
-a recursive text search of `~/.lmstudio` turns up only the app's own bundled
-JavaScript and the `@lmstudio/sdk` type declarations — no user configuration file
-carries it. Combined with the open issue that the OpenAI-compatible endpoint
+**Searched, and it is not reachable from the CLI.** `lms ps --json` reports
+`contextLength` and `maxContextLength` and nothing about the policy, and `lms`
+has no configuration subcommand at all — `lms get` *downloads* models and
+presets, it does not read local settings. Searches of `~/.lmstudio` (including
+`.internal/ui-state`, `.internal/*.json` and `hub`, binaries included) find only
+the app's own bundled JavaScript and the `@lmstudio/sdk` type declarations.
+
+**An earlier version of this section said "no user configuration file carries
+it", and that was overstated.** The search behind it used `grep -I`, which skips
+binary files, and it never looked in `~/Library/Application Support/`.
+
+**Now enumerated rather than assumed. Six routes, all dead:**
+
+| Route | Result |
+|---|---|
+| `lms ps --json` | `contextLength` and `maxContextLength` only |
+| `lms` CLI | no configuration subcommand; `lms get` *downloads* models and presets |
+| `~/.lmstudio`, binaries included, incl. `.internal/ui-state` and `hub` | no match |
+| `~/Library/Application Support` | LM Studio keeps nothing there at all |
+| `lms log stream` | prompt in and output out; no prediction config |
+| OpenAI-compatible endpoint | rejects the field ([lmstudio-bug-tracker#532](https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/532)) |
+
+**The seventh route worked: the `@lmstudio/sdk`**, where `contextOverflowPolicy`
+is a declared type. It ships inside LM Studio's own plugin `node_modules`, so it
+needed no install — `new LMStudioClient().llm.listLoaded()` gives a model handle
+whose `getBasePredictionConfig()` returns the whole prediction config.
+
+**The lesson is about how the first six were searched.** Each looked for the
+policy where *configuration* lives — CLI flags, JSON files, app state, logs. The
+policy is not stored as user configuration at all; it is part of the prediction
+config the SDK models, and the only thing that exposes it is the SDK. Two of the
+six also failed for reasons that had nothing to do with LM Studio: `grep -I`
+skipped binaries, and zsh aborted a whole command line when one glob matched
+nothing, so a search silently never ran. **A negative result is only as good as
+the command that produced it**, and two of these were worth less than they
+looked.
+
+Also worth noting, since it cost a failed `lms load`: the model has two names.
+`getModelInfo()` reports `identifier`/`modelKey` as `qwen3-coder-30b-a3b-instruct-dwq-v2`
+and `path` as `mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2`. The
+project's `models.csv` uses the path and `resolveModel` matches both by its fuzzy
+id set, so nothing in the server was affected — but `lms load` wants the
+identifier, and given the path it answers "Model not found". Combined with the open issue that the OpenAI-compatible endpoint
 rejects it, that means **the policy is app state that this project can neither
 read nor set**. The GUI is the only place it exists, so this point cannot be
 closed by anything automatable, and any run whose conclusion depends on the
