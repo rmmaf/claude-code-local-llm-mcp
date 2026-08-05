@@ -109,20 +109,34 @@ function shareOf(units: CostUnits): Omit<CostUnits, "total"> {
  * Requests are already deduplicated by requestId upstream; every figure here
  * is a direct sum of billed quantities, with no estimation anywhere.
  */
-export function buildSessionReport(transcript: Transcript, rates: Rates): SessionReport {
+/**
+ * The billed cost of a SUBSET of a transcript's requests, named by `requestId`.
+ *
+ * `SessionReport.breakdown` is whole-session, and B12's unit of observation is a
+ * task window inside one. A window's own cost cannot be read off a session
+ * total: 28.1% of this project's billed requests live in two or more session
+ * files, and per session the inherited share runs 1% to 100%, so a session total
+ * is partly another conversation's cost (`ROADMAP.md` G1, narrowed 2026-08-05).
+ *
+ * Pass `requestIds` to restrict; omit it for the whole session. `buildSessionReport`
+ * calls this with nothing so that the subset and the whole are priced by ONE
+ * implementation -- pricing a window by a second copy of this arithmetic is how
+ * the two sides of B20 drifted apart four times.
+ */
+export function breakdownOfRequests(
+  requests: readonly BilledRequest[],
+  rates: Rates,
+  requestIds?: ReadonlySet<string>
+): CostBreakdown {
   const tokens = zeroUsage();
   const units: CostUnits = { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, total: 0 };
-  const models = new Set<string>();
-  const segments = new Set<string>();
   let usd: number | null = null;
   let allPriced = true;
   const unpricedKeys = new Set<string>();
 
-  for (const request of transcript.requests) {
-    models.add(request.model);
-    segments.add(`${request.thread}#${request.segment}`);
+  for (const request of requests) {
+    if (requestIds !== undefined && !requestIds.has(request.requestId)) continue;
     addUsage(tokens, request.usage);
-
     const key = rateKey(request.model, request.speed);
     const priced = priceUsage(request.usage, multipliersFor(rates, key));
     units.input += priced.input;
@@ -130,12 +144,6 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
     units.cacheRead += priced.cacheRead;
     units.output += priced.output;
     units.total += priced.total;
-
-    // EVERY request must be priced, not any. A session that mixes a priced main
-    // model with an unpriced subagent model would otherwise silently drop the
-    // subagent's cost and present the remainder as the session total. The key
-    // carries speed, so a fast-mode request is unpriced until fast is priced —
-    // never silently charged at the standard rate.
     const price = inputPriceFor(rates, key);
     if (price === null) {
       allPriced = false;
@@ -143,6 +151,22 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
     } else usd = (usd ?? 0) + (priced.total * price) / 1_000_000;
   }
   if (!allPriced) usd = null;
+  return { tokens, units, share: shareOf(units), usd, unpricedKeys: [...unpricedKeys].sort() };
+}
+
+export function buildSessionReport(transcript: Transcript, rates: Rates): SessionReport {
+  const models = new Set<string>();
+  const segments = new Set<string>();
+
+  for (const request of transcript.requests) {
+    models.add(request.model);
+    segments.add(`${request.thread}#${request.segment}`);
+  }
+  // EVERY request must be priced, not any -- a session mixing a priced main
+  // model with an unpriced subagent model would otherwise drop the subagent's
+  // cost and present the remainder as the total. That rule lives in
+  // `breakdownOfRequests` and is applied here by calling it, not by repeating it.
+  const breakdown = breakdownOfRequests(transcript.requests, rates);
 
   const growth: GrowthPoint[] = [];
   let cumulative = 0;
@@ -173,7 +197,7 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
     mainThreadRequests: transcript.requests.filter((r) => !r.isSidechain).length,
     sidechainRequests: transcript.requests.filter((r) => r.isSidechain).length,
     segments: segments.size,
-    breakdown: { tokens, units, share: shareOf(units), usd, unpricedKeys: [...unpricedKeys].sort() },
+    breakdown,
     growth,
     toolResultBytes: { total: totalBytes, byTool },
     skippedLines: transcript.skippedLines,
@@ -300,19 +324,52 @@ export function entryCostOfSegment(segment: readonly BilledRequest[], rates: Rat
   };
 }
 
+/**
+ * One quantity in the three forms a reader needs to tell a measurement from a
+ * modelling choice.
+ *
+ * `clampedUncapped` is what shipped: `max(0, raw - returned)` with no ceiling.
+ * It is kept for display and **B12 may not consume it**, because both of its
+ * adjustments push the same way. `signedUncapped` keeps a call that ADDED bytes
+ * as the negative it is — measured here: a `gate` returning 1,205 bytes against
+ * 431 raw, and `run 2026-08-04-mac-09` where tsc-gated `repair` was net negative
+ * 12 of 12. `signedCapped` also refuses to credit bytes that could never have
+ * entered a context in the counterfactual world, since Claude Code truncates a
+ * tool result at `clientTruncationCap` characters (B2, `run 2026-08-02-win-03`:
+ * 30,136 raw arrived as 30,000).
+ */
+export interface SuppressionVariants {
+  clampedUncapped: number;
+  signedUncapped: number;
+  signedCapped: number;
+}
+
 export interface ToolSaving {
   tool: string;
   calls: number;
-  bytesSuppressed: number;
+  /** Bytes, in all three forms. `clampedUncapped` is the shipped display figure. */
+  bytes: SuppressionVariants;
+  /** ESTIMATE — depends on rates.charsPerToken. Same three forms. */
+  unitsFromSuppression: SuppressionVariants;
   turnsCollapsed: number;
-  /** ESTIMATE — depends on rates.charsPerToken. */
-  unitsFromSuppression: number;
-  /** LOWER BOUND — counts only the re-read a collapsed turn would have caused. */
+  /**
+   * REPORTED, AND IN NO SCORED NUMBER. `turns_collapsed` is a caller argument --
+   * `gate` writes `selected.length - 1` where `selected` depends on the
+   * `category` the caller passed, and `repair` writes `rounds.length` whether or
+   * not it closed the failure. Worse, this term multiplies that self-declared
+   * count by the accumulated context while the denominator counts that same
+   * cache read once, so padding the context before a collapsing call raises the
+   * numerator faster than the denominator. A term set by a string in a tool call
+   * is not a measurement, so it sits beside the total rather than inside it.
+   */
   unitsFromTurnCollapse: number;
+  /** SCORED: `unitsFromSuppression.signedCapped`. Turn collapse is not in here. */
   unitsTotal: number;
   usd: number | null;
   /** Telemetry entries that no billed request could be matched to. */
   unmatched: number;
+  /** Calls that returned MORE bytes than the operation produced. */
+  rowsNetNegative: number;
 }
 
 /**
@@ -363,6 +420,15 @@ export interface CounterfactualReport {
   ambiguous: number;
   /** What those rows WOULD have added, so the refusal is visible rather than silent. */
   ambiguousUnits: RefusedMagnitude;
+  /**
+   * Rows whose id IS this transcript's but which no billed request follows in
+   * the calling thread. They deflate the numerator exactly like a refusal, so
+   * they belong in the ledger with the other three rather than only inside a
+   * per-tool counter. Their magnitude is `unsized` by construction: the missing
+   * request is precisely what a magnitude would have been computed from.
+   */
+  unmatched: number;
+  unmatchedUnits: RefusedMagnitude;
   /**
    * Refused rows whose magnitude could not be computed — no request matched, so
    * the amount withheld is UNKNOWN rather than zero. Reported apart from the
@@ -450,18 +516,81 @@ function isLocalToolResult(record: ToolResultRecord): boolean {
  * to be the SAME rule the join uses, and a second implementation of it is how
  * two consumers of one rule drift apart.
  */
-export function invocationOwners(transcripts: Iterable<Transcript>): Set<string> {
-  const owners = new Map<string, number>();
-  for (const transcript of transcripts) {
+export function lineagesOf(transcripts: readonly Transcript[]): number[] {
+  // A `requestId` names ONE API call, so it can appear in two files only when
+  // one inherited from the other. Sharing any admitted request is therefore
+  // proof of common descent, and a lineage is the connected component under
+  // that relation. No vendor field is needed, and none would serve: inherited
+  // records are rewritten to claim whichever session they sit in.
+  const parent = transcripts.map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) {
+      const grand = parent[parent[i]!]!;
+      parent[i] = grand;
+      i = grand;
+    }
+    return i;
+  };
+  const seenIn = new Map<string, number>();
+  for (let i = 0; i < transcripts.length; i++) {
+    for (const request of transcripts[i]!.requests) {
+      const first = seenIn.get(request.requestId);
+      if (first === undefined) seenIn.set(request.requestId, i);
+      else {
+        const ra = find(first);
+        const rb = find(i);
+        if (ra !== rb) parent[rb] = ra;
+      }
+    }
+  }
+  return transcripts.map((_, i) => find(i));
+}
+
+/**
+ * Invocation ids carried by more than one OBSERVATION, which therefore belong to
+ * none of them.
+ *
+ * This exists because an `invocation_id` is CALL identity and the join was using
+ * it as ownership. Claude Code writes a resumed or forked conversation's
+ * inherited records into the new session file, so one `gate` result is present
+ * in every descendant and every descendant's join matches it. Measured: one id
+ * in four transcripts, credited four times -- 21 rows on disk against 24 calls
+ * attributed, 1.076x on bytes.
+ *
+ * **`grouping` IS THE UNIT THE CALLER WILL REPORT AT, and it must be, because
+ * ambiguity is relative to that unit.** Defaulting to one group per transcript
+ * is right for a per-session report: four sessions that each print a total may
+ * not each print the same call. Passing `lineagesOf(...)` is right for B12,
+ * whose observation is a task window inside a lineage -- there, refusing a call
+ * because a compaction continuation also carries it would make every task long
+ * enough to auto-compact refuse its own tool use. Session `8da10c80` shares 97
+ * admitted billed requests with the session it continues, so this is the common
+ * case rather than a corner.
+ *
+ * Getting this backwards re-creates the defect it repairs: group by lineage
+ * while still reporting per session and all four sessions credit the call again.
+ */
+export function invocationOwners(
+  transcripts: Iterable<Transcript>,
+  grouping?: readonly number[]
+): Set<string> {
+  const all = [...transcripts];
+  const group = grouping ?? all.map((_, i) => i);
+  const owners = new Map<string, Set<number>>();
+  for (let i = 0; i < all.length; i++) {
     const here = new Set<string>();
-    for (const result of transcript.toolResults) {
+    for (const result of all[i]!.toolResults) {
       if (!isLocalToolResult(result)) continue;
       if (result.invocationId !== null) here.add(result.invocationId);
     }
-    for (const id of here) owners.set(id, (owners.get(id) ?? 0) + 1);
+    for (const id of here) {
+      const set = owners.get(id) ?? new Set<number>();
+      set.add(group[i] ?? i);
+      owners.set(id, set);
+    }
   }
   const ambiguous = new Set<string>();
-  for (const [id, count] of owners) if (count > 1) ambiguous.add(id);
+  for (const [id, groups] of owners) if (groups.size > 1) ambiguous.add(id);
   return ambiguous;
 }
 
@@ -551,6 +680,8 @@ export function buildCounterfactual(
   let unverifiable = 0;
   const unverifiableUnits: RefusedMagnitude = { units: 0, unsized: 0 };
   let ambiguous = 0;
+  let unmatched = 0;
+  const unmatchedUnits: RefusedMagnitude = { units: 0, unsized: 0 };
   const ambiguousUnits: RefusedMagnitude = { units: 0, unsized: 0 };
 
   /**
@@ -649,20 +780,26 @@ export function buildCounterfactual(
     const saving = byTool.get(entry.tool) ?? {
       tool: entry.tool,
       calls: 0,
-      bytesSuppressed: 0,
+      bytes: { clampedUncapped: 0, signedUncapped: 0, signedCapped: 0 },
+      unitsFromSuppression: { clampedUncapped: 0, signedUncapped: 0, signedCapped: 0 },
       turnsCollapsed: 0,
-      unitsFromSuppression: 0,
       unitsFromTurnCollapse: 0,
       unitsTotal: 0,
       usd: null,
       unmatched: 0,
+      rowsNetNegative: 0,
     };
     byTool.set(entry.tool, saving);
     saving.calls++;
 
     const request = requestAtOrAfter(transcript.requests, ts, thread);
     if (request === null) {
+      // Deflates the numerator exactly like a refusal, so it is counted as one.
+      // Its magnitude is unsized BY CONSTRUCTION: the request that is missing is
+      // the one a magnitude would have been priced against.
       saving.unmatched++;
+      unmatched++;
+      unmatchedUnits.unsized++;
       continue;
     }
 
@@ -671,13 +808,25 @@ export function buildCounterfactual(
     const ttl = request.usage.cacheWrite5m > request.usage.cacheWrite1h ? "5m" : "1h";
     const multiplier = positionalMultiplier(request.index, request.segmentSize, m, ttl);
 
-    const suppressed = Math.max(0, entry.bytes_raw - entry.bytes_returned);
-    saving.bytesSuppressed += suppressed;
-    saving.unitsFromSuppression += (suppressed / rates.charsPerToken) * multiplier;
+    // THREE FORMS, BECAUSE THE SHIPPED ONE ADJUSTS TWICE IN THE SAME DIRECTION.
+    // The clamp turns a call that ADDED bytes into a call that saved nothing,
+    // and no ceiling lets a row claim bytes that could not have reached a
+    // context in the counterfactual world -- Claude Code truncates a tool result
+    // at `clientTruncationCap`, so a 1.9 MB command arrives as 30,000 characters
+    // whether or not the tool summarised it.
+    const signed = entry.bytes_raw - entry.bytes_returned;
+    const capped = Math.min(entry.bytes_raw, rates.clientTruncationCap) - entry.bytes_returned;
+    if (signed < 0) saving.rowsNetNegative++;
+    saving.bytes.clampedUncapped += Math.max(0, signed);
+    saving.bytes.signedUncapped += signed;
+    saving.bytes.signedCapped += capped;
+    saving.unitsFromSuppression.clampedUncapped += (Math.max(0, signed) / rates.charsPerToken) * multiplier;
+    saving.unitsFromSuppression.signedUncapped += (signed / rates.charsPerToken) * multiplier;
+    saving.unitsFromSuppression.signedCapped += (capped / rates.charsPerToken) * multiplier;
 
-    // A turn that did not happen is a whole context re-read that did not happen.
-    // Counting only the re-read (not the output, nor the context the turn would
-    // itself have added) keeps this a floor.
+    // A turn that did not happen is a whole context re-read that did not happen
+    // -- but the COUNT is a caller argument, so this is reported and never
+    // scored. See `ToolSaving.unitsFromTurnCollapse`.
     saving.turnsCollapsed += entry.turns_collapsed;
     saving.unitsFromTurnCollapse += entry.turns_collapsed * request.usage.cacheRead * m.cacheRead;
 
@@ -685,9 +834,9 @@ export function buildCounterfactual(
     // against whichever model in the session happened to have a price. A
     // subagent's call is worth its own model's rate, and if that model has no
     // price the tool's dollar figure is unknown rather than approximated.
-    const entryUnits =
-      (suppressed / rates.charsPerToken) * multiplier +
-      entry.turns_collapsed * request.usage.cacheRead * m.cacheRead;
+    // Priced on the SCORED quantity, so the dollar figure and the unit figure
+    // describe the same thing. Turn collapse is excluded from both.
+    const entryUnits = (capped / rates.charsPerToken) * multiplier;
     const price = inputPriceFor(rates, requestKey);
     if (price === null) unpriced.add(entry.tool);
     else saving.usd = (saving.usd ?? 0) + (entryUnits * price) / 1_000_000;
@@ -695,7 +844,9 @@ export function buildCounterfactual(
 
   let unitsTotal = 0;
   for (const saving of byTool.values()) {
-    saving.unitsTotal = saving.unitsFromSuppression + saving.unitsFromTurnCollapse;
+    // SCORED = signed and capped suppression, and NOTHING ELSE. Turn collapse is
+    // reported beside it because its count comes from a tool-call argument.
+    saving.unitsTotal = saving.unitsFromSuppression.signedCapped;
     // One unpriced match makes the whole tool's dollar figure unknown; a partial
     // sum presented as a total is the same lie as a missing one.
     if (unpriced.has(saving.tool)) saving.usd = null;
@@ -735,7 +886,12 @@ export function buildCounterfactual(
     ambiguousUnits,
     unverifiable,
     unverifiableUnits,
-    refusedRows: excludedForeign + ambiguous + unverifiable,
+    unmatched,
+    unmatchedUnits,
+    // FOUR CLASSES, ONE CONSUMER, COUNTED IN ONE PLACE. `unmatched` was the
+    // fourth and it was missing -- the same defect as one class earlier, which
+    // is why the classes are now summed here rather than at each reader.
+    refusedRows: excludedForeign + ambiguous + unverifiable + unmatched,
     provenanceUnavailable,
   };
 }

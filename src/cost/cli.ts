@@ -385,7 +385,7 @@ ${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
         for (const saving of counterfactual.byTool) {
           process.stdout.write(
             `    ${pad(saving.tool, 12)}${padStart(int(saving.calls), 6)}` +
-              `${padStart(kib(saving.bytesSuppressed), 12)}${padStart(int(saving.turnsCollapsed), 7)}` +
+              `${padStart(kib(saving.bytes.clampedUncapped), 12)}${padStart(int(saving.turnsCollapsed), 7)}` +
               `${padStart(int(saving.unitsTotal), 14)}\n`
           );
         }

@@ -11,6 +11,7 @@ import {
   buildSessionReport,
   entryCostOfSegment,
   invocationOwners,
+  lineagesOf,
   positionalMultiplier,
   priceUsage,
   scopeTelemetry,
@@ -993,7 +994,7 @@ describe("telemetry and the counterfactual", () => {
     expect(result.unverifiable).toBe(0);
     expect(result.byTool[0]?.calls).toBe(1);
     expect(result.byTool[0]?.turnsCollapsed).toBe(0);
-    expect(result.byTool[0]?.bytesSuppressed).toBe(3700);
+    expect(result.byTool[0]?.bytes.clampedUncapped).toBe(3700);
   });
 
   it("refuses a call whose invocation id two sessions both carry, on both sides", async () => {
@@ -1046,6 +1047,15 @@ describe("telemetry and the counterfactual", () => {
     const ambiguous = invocationOwners([parent, child]);
     expect([...ambiguous]).toEqual([shared]);
     expect([...invocationOwners([parent])]).toEqual([]);
+
+    // AND THE UNIT MATTERS. These two share every requestId, so they are one
+    // lineage — a compaction continuation, not two conversations. Told to group
+    // by lineage, the same call is NOT ambiguous, because a task window inside a
+    // lineage owns it outright. Told nothing, it groups per transcript, which is
+    // what a per-session report needs: four sessions that each print a total may
+    // not each print the same call.
+    expect([...invocationOwners([parent, child], lineagesOf([parent, child]))]).toEqual([]);
+    expect(lineagesOf([parent, child])[0]).toBe(lineagesOf([parent, child])[1]);
 
     const row = {
       ts: at500,
@@ -1273,7 +1283,7 @@ describe("telemetry and the counterfactual", () => {
     // The row HAS an id — it is the transcript that carries none — so this is a
     // broken echo, not an unverifiable row, and it still counts.
     expect(result.unverifiable).toBe(0);
-    expect(result.byTool[0]?.bytesSuppressed).toBe(3700);
+    expect(result.byTool[0]?.bytes.clampedUncapped).toBe(3700);
   });
 
   it("prices a subagent's tool call against the subagent's own thread", async () => {
@@ -1575,7 +1585,13 @@ describe("telemetry and the counterfactual", () => {
     const gate = result.byTool[0];
     expect(gate?.tool).toBe("gate");
     expect(gate?.unmatched).toBe(0);
-    expect(gate?.unitsFromSuppression).toBeCloseTo(2000, 6);
+    expect(gate?.unitsFromSuppression.clampedUncapped).toBeCloseTo(2000, 6);
+    // 3,700 raw is under the 30,000 truncation ceiling, so capping changes nothing
+    // and the row is byte-positive, so signing changes nothing either. All three
+    // agree here ON PURPOSE: the variants must not move a case that has no reason
+    // to move.
+    expect(gate?.unitsFromSuppression.signedUncapped).toBeCloseTo(2000, 6);
+    expect(gate?.unitsFromSuppression.signedCapped).toBeCloseTo(2000, 6);
     expect(gate?.unitsFromTurnCollapse).toBe(0);
   });
 
@@ -1620,10 +1636,117 @@ describe("telemetry and the counterfactual", () => {
       session
     );
 
-    // 3 turns x 50,000 cached tokens x 0.1 = 15,000 units, and it is a floor.
+    // 3 turns x 50,000 cached tokens x 0.1 = 15,000 units -- REPORTED.
     expect(result.byTool[0]?.unitsFromTurnCollapse).toBeCloseTo(15_000, 6);
-    expect(result.savedFraction).toBeGreaterThan(0);
-    expect(result.savedFraction).toBeLessThan(1);
+    // AND IN NO SCORED NUMBER. `turns_collapsed` is a caller argument: `gate`
+    // derives it from the `category` the caller passed and `repair` writes
+    // `rounds.length` whether or not it closed the failure. Worse, the term
+    // multiplies that self-declared count by the accumulated context while the
+    // denominator counts the same cache read once, so padding the context before
+    // a collapsing call raises the numerator faster than the denominator.
+    //
+    // This row suppressed no bytes at all, so with turn collapse excluded there
+    // is nothing left to credit and the fraction is 0 -- which is the negative
+    // control for the exclusion: it fired.
+    expect(result.byTool[0]?.unitsTotal).toBe(0);
+    expect(result.savedFraction).toBe(0);
+  });
+
+  it("keeps a call that ADDED bytes as the negative it is", async () => {
+    // The shipped clamp records `max(0, raw - returned)`, so a tool call that
+    // returned more than the operation produced counts as having saved nothing
+    // rather than as having cost something. That is not rare here: a live gate
+    // row in this project ran 431 raw against 1,205 returned, and
+    // `run 2026-08-04-mac-09` measured tsc-gated `repair` net negative 12 of 12.
+    // B12 may not consume the clamped figure; both are reported.
+    clock = 0;
+    const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      // The real shape of the measured row: a single type error summarised into
+      // a larger structured payload than the raw output it described.
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 431, bytes_returned: 1_205, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const gate = result.byTool[0];
+    expect(gate?.rowsNetNegative).toBe(1);
+    expect(gate?.bytes.clampedUncapped).toBe(0);
+    expect(gate?.bytes.signedUncapped).toBe(-774);
+    expect(gate?.bytes.signedCapped).toBe(-774); // 431 is far under the ceiling
+    // The scored figure is the signed one, so the call is a COST here.
+    expect(gate?.unitsTotal).toBeLessThan(0);
+    expect(gate?.unitsFromSuppression.clampedUncapped).toBe(0);
+  });
+
+  it("refuses to credit bytes that could never have reached a context", async () => {
+    // The counterfactual world is "the agent ran this through Bash", and Claude
+    // Code truncates a tool result at `clientTruncationCap` characters before it
+    // enters the context -- B2 measured a 30,136-character result stored as
+    // 30,000. So a tool that summarised 1.9 MB did not save 1.9 MB of context;
+    // at most the ceiling could ever have arrived.
+    clock = 0;
+    const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    // B3's measured npm-test mode: 1,919,136 raw returned as 6,859.
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 1_919_136, bytes_returned: 6_859, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const gate = result.byTool[0];
+    expect(gate?.bytes.signedUncapped).toBe(1_919_136 - 6_859);
+    expect(gate?.bytes.signedCapped).toBe(DEFAULT_RATES.clientTruncationCap - 6_859);
+    // 82x apart on this row, which is the size of the modelling choice.
+    expect(gate!.bytes.signedUncapped / gate!.bytes.signedCapped).toBeGreaterThan(80);
+    expect(gate?.unitsTotal).toBeCloseTo(
+      ((DEFAULT_RATES.clientTruncationCap - 6_859) / DEFAULT_RATES.charsPerToken) * 2.0,
+      6
+    );
   });
 
   it("counts telemetry with no later request as unmatched rather than free saving", async () => {
