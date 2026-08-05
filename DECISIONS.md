@@ -2182,3 +2182,18 @@ bytes. `MEASUREMENTS.jsonl` promises a byte-identical committed prefix and
 `evidence/*.json` is frozen by sha256; both are invariants about exact bytes that
 a per-machine checkout rule can break on one machine and not the other. Pinned in
 `.gitattributes` rather than remembered.
+
+**Postscript, same day, one commit later.** The paragraph above calls "two
+implementations of one rule that never meet" this registry's oldest defect. In
+the same commit I added a third: a string compare asking whether LM Studio serves
+`$MODEL`. It refused a Mac where the model was loaded and answering, because the
+endpoint spells it `qwen3-coder-30b-a3b-instruct-dwq-v2` and the catalog spells it
+`mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2`. `matchModel` in
+`src/selection.ts` has resolved exactly that since long before I got here, and
+returns a `quality` so the fuzziness is visible rather than assumed. The check now
+imports it out of the `dist/` the script has just built.
+
+Naming a defect class in prose does not inoculate against it. What caught this one
+was the same thing that caught the argv bug: a script that RUNS the thing, on the
+machine that has it, and refuses out loud. The pre-flight has now paid for itself
+twice without ever reaching the assertion it was written to make.

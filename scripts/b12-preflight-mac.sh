@@ -279,61 +279,103 @@ npm run build --silent >/dev/null 2>&1 || refuse "npm run build failed — run i
 [ -f "dist/server.js" ] || refuse "dist/server.js is missing after a build that reported success"
 ok "built"
 
+# EXTENSIONS MATTER TO EVERY CONSUMER, and `mktemp -t` gives random ones.
+# `--mcp-config` takes "JSON files or strings", so a path that does not look
+# like a file is a candidate for being parsed as a literal string; and node
+# refuses a script whose extension it does not know outright --
+# ERR_UNKNOWN_FILE_EXTENSION, measured. One directory, named files inside it.
+# Created here rather than at step 5 because the model check below needs it.
+TMP_DIR=$(mktemp -d -t b12pre)
+[ -n "$TMP_DIR" ] || refuse "mktemp -d produced no directory"
+TMP_MINE=1
+
 # ---------------------------------------------------------------------------
 next "Local model"
 
 info "starting LM Studio's server (no-op if already up)"
 lms server start >/dev/null 2>&1 || true
 
-# CAPTURED, NOT PIPED INTO `grep -q`. `grep -q` closes the pipe on its first
-# match, and under `set -o pipefail` a producer still writing gets SIGPIPE and
-# turns the whole pipeline non-zero -- so a model that IS loaded reads as not
-# loaded (measured: rc 141 on a large producer). The script would then run
-# `lms load` on something already loaded and refuse on its complaint.
-LMS_PS=$(lms ps 2>/dev/null || true)
-case "$LMS_PS" in
-  *"$MODEL"*) : ;;
-  *)
-    info "loading $MODEL — this can take a while on first run"
-    lms load "$MODEL" >/dev/null 2>&1 || refuse \
-      "could not load $MODEL. Check \`lms ls\` for what is downloaded, then re-run with B12_MODEL=<id> to pick another."
-    ;;
-esac
+# THE ID YOU ASK FOR IS NOT THE ID THAT IS SERVED, and this project already
+# knows it. `src/selection.ts` matches a catalog name against what `/models`
+# answers with `matchModel`: normalized-exact first, then a conservative pass
+# over basenames and stripped quant/format suffixes, returning the QUALITY so a
+# fuzzy match is surfaced and never trusted silently.
+#
+# I wrote a second rule -- `case ",$REACHABLE," in *",$MODEL,"*` -- and it
+# refused a Mac where the model was loaded and answering, because LM Studio
+# serves `qwen3-coder-30b-a3b-instruct-dwq-v2` for
+# `mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2`. That is this
+# registry's oldest defect: two implementations of one rule that never meet.
+# This imports the real one out of the `dist/` just built.
+#
+# `lms ps` is gone with it. Its check was the same string compare, so it never
+# recognised a loaded model either -- and its answer ran `lms load` on something
+# already resident, which is why that Mac's endpoint listed the 30B TWICE
+# (`...-dwq-v2` and `...-dwq-v2:2`). A second copy of a 30B model changes how
+# much RAM is free, and free RAM is what `selectModelForMemory` selects on. The
+# endpoint lists exactly what is loaded, so it is asked directly and once.
+MODELS_JS="$TMP_DIR/models.mjs"
+cat > "$MODELS_JS" <<'JS'
+import { pathToFileURL } from "node:url";
+const { matchModel } = await import(pathToFileURL(process.argv[3]).href);
+let ids = null;
+try {
+  const r = await fetch("http://localhost:1234/v1/models");
+  ids = ((await r.json()).data || []).map((m) => m.id);
+} catch {
+  ids = null;
+}
+// `reachable` and `loaded` are separate answers. An endpoint that is up with
+// nothing loaded returns an empty list, and reading that as "not answering"
+// would send the operator to restart a server that is already running.
+if (ids === null) {
+  process.stdout.write("no\tnone\t\t\n");
+} else {
+  const m = matchModel(process.argv[2], ids);
+  process.stdout.write(`yes\t${m.quality}\t${m.value ?? ""}\t${ids.join(",")}\n`);
+}
+JS
+probe_models() {
+  MODEL_LINE=$(node "$MODELS_JS" "$MODEL" "$REPO/dist/selection.js" 2>/dev/null || true)
+  REACH_OK=$(printf '%s' "$MODEL_LINE" | cut -f1)
+  MATCH_Q=$(printf '%s' "$MODEL_LINE" | cut -f2)
+  MATCH_ID=$(printf '%s' "$MODEL_LINE" | cut -f3)
+  REACHABLE=$(printf '%s' "$MODEL_LINE" | cut -f4)
+}
 
-REACHABLE=$(node -e '
-fetch("http://localhost:1234/v1/models")
-  .then(r => r.json())
-  .then(d => console.log((d.data || []).map(m => m.id).join(",")))
-  .catch(() => console.log(""));
-' 2>/dev/null)
-[ -n "$REACHABLE" ] || refuse \
+probe_models
+[ -n "$MODEL_LINE" ] || refuse "could not run the model probe at all (node failed). An unasked endpoint must not read as a working one."
+[ "$REACH_OK" = "yes" ] || refuse \
   "LM Studio is not answering on http://localhost:1234/v1. \`repair\` cannot do work without it, and a pre-flight where \`repair\` aborts reports \`excludedForeign: 1\` and no repair row — it fails, correctly, but you will have spent the setup for nothing."
-ok "model endpoint answering: $REACHABLE"
 
-# WHAT LM STUDIO LOADS IS NOT WHAT THE SERVER USES. `$MODEL` reaches `lms load`
-# and nothing else: the MCP config below passes `"env":{}`, and the server picks
-# its own model in src/selection.ts -- the largest CATALOG entry that fits free
-# RAM, falling back to catalog[0]. The built-in catalog holds both the 30B and a
-# 14B, so on a machine where the 30B does not fit, `repair` runs on the 14B
-# while the artifact would have recorded the 30B as fact. This asserts the one
-# part that IS knowable here; the model actually used is read back after the
-# session and recorded separately.
+if [ "$MATCH_Q" = "none" ]; then
+  info "loading $MODEL — this can take a while on first run"
+  lms load "$MODEL" >/dev/null 2>&1 || refuse \
+    "could not load $MODEL. Check \`lms ls\` for what is downloaded, then re-run with B12_MODEL=<id> to pick another."
+  probe_models
+  [ "$MATCH_Q" = "none" ] && refuse \
+    "after \`lms load\` the endpoint still serves nothing matching $MODEL (it serves: $REACHABLE). Recording it as the model would be an assumption, not a measurement."
+fi
+ok "endpoint serves it as \"$MATCH_ID\" (match: $MATCH_Q)"
+[ "$MATCH_Q" = "fuzzy" ] && info "fuzzy means the served id differs from the catalog id; both go into the artifact"
+
+# A SECOND COPY IS NOT FREE. `id:2` is LM Studio's second instance of the same
+# model, and the RAM it holds is RAM `selectModelForMemory` will not count as
+# free -- which can push the server onto the 14B while everything here reports
+# the 30B as present.
 case ",$REACHABLE," in
-  *",$MODEL,"*) ok "$MODEL is among the ids the endpoint serves" ;;
-  *) refuse "$MODEL is not among the ids /v1/models serves ($REACHABLE). Recording it as the model would be an assumption, not a measurement." ;;
+  *",$MATCH_ID:"*) warn "the endpoint lists more than one instance of $MATCH_ID; \`lms unload\` the spare if RAM is tight" ;;
 esac
+
+# WHAT LM STUDIO SERVES IS STILL NOT WHAT THE MCP SERVER PICKS. The config below
+# passes `"env":{}`, and the server chooses in src/selection.ts: the largest
+# CATALOG entry that fits free RAM, falling back to catalog[0]. So none of the
+# above establishes which model `repair` ran on. That is read back out of the
+# session afterwards and recorded as its own field.
 
 # ---------------------------------------------------------------------------
 next "MCP server, scoped to this run"
 
-# EXTENSIONS MATTER TO BOTH CONSUMERS, and `mktemp -t` gives random ones.
-# `--mcp-config` takes "JSON files or strings", so a path that does not look
-# like a file is a candidate for being parsed as a literal string; and node
-# refuses a script whose extension it does not know outright --
-# ERR_UNKNOWN_FILE_EXTENSION, measured. One directory, named files inside it.
-TMP_DIR=$(mktemp -d -t b12pre)
-[ -n "$TMP_DIR" ] || refuse "mktemp -d produced no directory"
-TMP_MINE=1
 MCP_CFG="$TMP_DIR/mcp.json"
 cat > "$MCP_CFG" <<JSON
 {"mcpServers":{"local-coder":{"type":"stdio","command":"node","args":["$REPO/dist/server.js"],"env":{}}}}
@@ -589,6 +631,12 @@ o.context = {
   // NAMED FOR WHAT EACH ONE IS. `model` used to be written here as fact from a
   // variable that only ever reached `lms load`; the server selects its own.
   modelRequestedFromLmStudio: e.B12_MODEL,
+  // The id the endpoint actually answers to, and HOW it was matched. `fuzzy`
+  // means the served spelling differs from the catalog spelling -- recorded,
+  // not smoothed over, because a reader comparing two runs by model name would
+  // otherwise see two different models.
+  modelServedAs: e.B12_MATCH_ID || null,
+  modelMatchQuality: e.B12_MATCH_Q || null,
   modelsServedByLmStudio: (e.B12_REACHABLE || "").split(",").filter(Boolean),
   modelUsedByRepair: probe && probe.repairModel ? probe.repairModel : null,
   serverEnv: {},
@@ -620,6 +668,7 @@ JS
   [ -s "$MERGE_JS" ] || refuse "the temporary merge script is empty; the artifact would have been finalised with no provenance"
   MERGE_OUT=$(B12_SHA="$LOCAL_SHA" B12_BRANCH="$BRANCH" B12_CLAUDE_VER="$CLAUDE_VER" \
     B12_MODEL="$MODEL" B12_REACHABLE="$REACHABLE" B12_SESSION="$SESSION_ID" \
+    B12_MATCH_ID="$MATCH_ID" B12_MATCH_Q="$MATCH_Q" \
     B12_LEFTOVER="$LEFTOVER" B12_UNTRACKED="$UNTRACKED" B12_TREE_RC="$TREE_RC" \
     B12_CLAUDE_EXIT="$CLAUDE_EXIT" B12_CLAUDE_LOG="$CLAUDE_LOG_TAIL" B12_PROBE="$PROBE" \
     node "$MERGE_JS" "$ART" 2>&1)

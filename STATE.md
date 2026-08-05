@@ -26,10 +26,10 @@ G7's threshold; B14 3.978 vs 3.5.
 
 ## Do not redo
 
-- **A check that cannot run reports the good outcome** — and now its twin, a
-  check that cannot fail: `[ -n ]` on a concatenation, `DISABLE_AUTOUPDATER=1`
-  read back from the environment the caller set on that very command line.
+- **The project already had the rule.** My second model-id comparison refused a
+  Mac where the model WAS loaded; `matchModel` in `src/selection.ts` resolves it.
+- **A check that cannot run reports the good outcome** — and its twin, a check
+  that cannot fail: `[ -n ]` on a concatenation, `DISABLE_AUTOUPDATER=1`.
 - **A signal handler that returns does not stop the script.** Ctrl-C ran the
   cleanup and continued, and could leave `passed: true` at the deliverable path.
-- **The artifact path is a function of date and commit, so it repeats.** A
-  refused run's leftover was found by the next run and stamped as its own.
+- **The artifact path is a function of date and commit, so it repeats.**
