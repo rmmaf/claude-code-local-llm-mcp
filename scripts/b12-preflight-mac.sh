@@ -46,7 +46,7 @@ refuse() {
 next() { step=$((step + 1)); say "$step. $1"; }
 
 cleanup() {
-  if [ -n "${REPO:-}" ] && [ -f "$REPO/$SCRATCH_SRC" ]; then
+  if [ "${SCRATCH_MINE:-0}" = "1" ] && [ -n "${REPO:-}" ] && [ -f "$REPO/$SCRATCH_SRC" ]; then
     rm -f "$REPO/$SCRATCH_SRC"
     printf '    ..    removed %s\n' "$SCRATCH_SRC"
   fi
@@ -146,6 +146,13 @@ ok "wrote a temporary --mcp-config (your global Claude config is untouched)"
 # ---------------------------------------------------------------------------
 next "Work for repair to close"
 
+# NEVER CLOBBER. The clean-tree check above filters `^?? `, so it says nothing
+# about UNTRACKED files -- and a pre-existing src/b12-scratch.ts, yours or left
+# by an interrupted run, would be overwritten here and then DELETED by the trap.
+# The script would have destroyed work while reporting a clean run.
+if [ -e "$REPO/$SCRATCH_SRC" ]; then
+  refuse "$SCRATCH_SRC already exists. This script creates and deletes that exact path, so it will not touch a file it did not create. Move or remove it, then re-run."
+fi
 cat > "$REPO/$SCRATCH_SRC" <<'TS'
 // Created by scripts/b12-preflight-mac.sh and removed by its trap.
 // A deliberate type error, so `gate` is mechanically red and `repair` has
@@ -153,6 +160,7 @@ cat > "$REPO/$SCRATCH_SRC" <<'TS'
 // `repair` on a green tree reports "nothing to do" and exercises nothing.
 export const answer: number = "not a number";
 TS
+SCRATCH_MINE=1
 ok "created $SCRATCH_SRC"
 
 if npx tsc -p tsconfig.json --noEmit >/dev/null 2>&1; then
@@ -197,16 +205,39 @@ DISABLE_AUTOUPDATER=1 node scripts/b12-run.mjs preflight \
   --out "$ART"
 PRE_EXIT=$?
 
+# THE TREE VERDICT GOES INTO THE ARTIFACT, AND BEFORE IT IS COPIED.
+#
+# It used to be printed to the terminal only, and printed AFTER the artifact
+# had already been finalised and copied to the Desktop. So the one file that
+# gets sent back -- the whole point of this run -- carried no record of whether
+# `repair` had touched anything beyond the scratch file. A reader holding only
+# the artifact would have had incorrect evidence, and would not have known it.
+# Guarded like the trap is. Reaching here without having created the file is
+# not reachable by the linear flow -- and "not reachable" is the reasoning that
+# failed six times in this session's other rule, so it is checked instead.
+[ "${SCRATCH_MINE:-0}" = "1" ] && rm -f "$REPO/$SCRATCH_SRC"
+SCRATCH_MINE=0
+LEFTOVER=$(git status --porcelain 2>/dev/null | grep -v "^?? " || true)
+UNTRACKED=$(git status --porcelain 2>/dev/null | grep "^?? " || true)
+
 # The artifact is kept whether it passed or failed. A failed pre-flight is the
 # result the pre-flight exists to produce; hiding it would defeat the point.
 if [ -f "$ART" ]; then
   node -e '
     const fs = require("fs");
-    const [file, sha, branch, ver, model, session] = process.argv.slice(1);
+    const [file, sha, branch, ver, model, session, leftover, untracked] = process.argv.slice(1);
     const o = JSON.parse(fs.readFileSync(file, "utf8"));
-    o.context = { commit: sha, branch, claudeVersion: ver, model, sessionId: session, host: "mac" };
-    fs.writeFileSync(file, JSON.stringify(o, null, 2) + "\n");
-  ' "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID"
+    o.context = {
+      commit: sha, branch, claudeVersion: ver, model, sessionId: session, host: "mac",
+      treeAsFound: leftover.length === 0,
+      trackedChangesLeftBehind: leftover ? leftover.split("
+") : [],
+      untrackedFilesPresent: untracked ? untracked.split("
+") : [],
+    };
+    fs.writeFileSync(file, JSON.stringify(o, null, 2) + "
+");
+  ' "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID" "$LEFTOVER" "$UNTRACKED"
   cp "$ART" "$OUT_DIR/" 2>/dev/null && ok "copied to $OUT_DIR/$(basename "$ART")"
 fi
 
@@ -214,22 +245,18 @@ fi
 say "Result"
 
 if [ $PRE_EXIT -eq 0 ]; then
-  printf '    \033[1mPRE-FLIGHT PASSED\033[0m\n'
+  printf '    PRE-FLIGHT PASSED
+'
 else
-  printf '    \033[1mPRE-FLIGHT FAILED\033[0m — the artifact says which check, and that is a real answer\n'
+  printf '    PRE-FLIGHT FAILED — the artifact says which check, and that is a real answer
+'
 fi
-printf '\n    artifact: %s\n' "$ART"
-[ -f "$OUT_DIR/$(basename "$ART")" ] && printf '    also at: %s\n' "$OUT_DIR/$(basename "$ART")"
-# THE CLAIM AT THE TOP OF THIS FILE, CHECKED RATHER THAN ASSERTED. `repair`
-# edits files, and the trap removes only the one this script created. If
-# anything else moved, the reader has to know before trusting the artifact.
-rm -f "$REPO/$SCRATCH_SRC"
-LEFTOVER=$(git status --porcelain 2>/dev/null | grep -v "^?? " || true)
+
 if [ -n "$LEFTOVER" ]; then
   printf '
     THE TREE IS NOT AS IT WAS FOUND — repair touched more than the
 '
-  printf '    scratch file. Review before trusting this run:
+  printf '    scratch file. This is recorded in the artifact too:
 '
   printf '%s
 ' "$LEFTOVER" | sed 's/^/      /'
@@ -239,7 +266,29 @@ else
 '
 fi
 
-printf '\n    Send that one file back. It carries the seven checks, the commit,\n'
-printf '    the Claude Code version, the model, and the session id.\n\n'
+# Never name a path that is not there: a reported artifact that does not exist
+# is the same class of false statement this run exists to catch.
+if [ -f "$ART" ]; then
+  printf '
+    artifact: %s
+' "$ART"
+  [ -f "$OUT_DIR/$(basename "$ART")" ] && printf '    also at: %s
+' "$OUT_DIR/$(basename "$ART")"
+  printf '
+    Send that one file back. It carries the seven checks, the commit,
+'
+  printf '    the Claude Code version, the model, the session id, and whether the
+'
+  printf '    tree came back as it was found.
+
+'
+else
+  printf '
+    NO ARTIFACT WAS WRITTEN — the pre-flight did not get far enough to
+'
+  printf '    produce one. The output above is all there is.
+
+'
+fi
 
 exit $PRE_EXIT
