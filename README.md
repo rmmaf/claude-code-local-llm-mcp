@@ -236,6 +236,10 @@ Run `status` to see which happened: `context_window.source` is `config`, `lms`, 
 
 Measured on a 30B coder at a 16,384-token window, the practical whole-file ceiling is **~25 KB of editable source per call**. Above it, the model does not necessarily fail loudly: `evidence/2026-08-04-mac-12-variance.contract-stability.json` records a 35.6 KB file coming back as a properly closed `<file>` block, with `finish_reason: "stop"`, **missing 90 lines** — a response every automated check accepts. Reload with a larger context (`lms load --context-length`) and set `LOCAL_CODER_CONTEXT_TOKENS` to match, or send fewer files per call.
 
+**The reload is not a workaround, it is the fix, and it is measured.** The same 43.6 KB file that came back short at 16,384 returns **complete** at 32,768 (`evidence/2026-08-04-mac-20-32k.contract-stability.json`): it needs 10,321 output tokens and only ~5,835 were left after its prompt at the smaller window. At 32,768 the estimator's ceiling works out to roughly **~54 KB** of editable source per call, and the whole 13-case corpus returned 26 of 26 complete.
+
+**Verify the number rather than declaring it.** `LOCAL_CODER_CONTEXT_TOKENS` is believed, not checked: setting 32768 while the model is loaded at 16384 makes the pre-flight admit requests that cannot fit, which is exactly the failure it exists to prevent. Confirm with `lms ps` — or with `status`, whose `context_window.source` says where the number came from.
+
 ## Model selection
 
 `local-coder` picks which local model to run from a **catalog** you define, weighing two things: **what each model is for** (its objective) and **whether it fits the free RAM** on the machine right now.

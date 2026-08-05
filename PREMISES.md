@@ -974,6 +974,41 @@ pre-registered as its own premise before anything is measured against it.
     — so a response that arrived and was measured vanished whenever a
     post-generation failure fired. `runRepair` now owns the buffer and writes an
     `aborted` row from the catch, guarded so the two paths cannot both write.
+- **Measured, on the first run that verified its own window:**
+  `run 2026-08-04-mac-20-32k`, `LOCAL_CODER_CONTEXT_TOKENS=32768` with `lms ps`
+  confirming 32,768 before the run started. **26 admitted, 26 complete, 0 with
+  content missing.** Largest admitted request 20,870 actual tokens against a
+  29,491 usable budget — clearing the 70% non-void bar of 20,644, so the run
+  counts.
+- **IT DOES NOT FALL, AND IT DOES NOT YET HOLD.** 0 of 26 is far under the > 10%
+  fall line, but the hold condition asks for 0 over ≥ 20 admitted requests across
+  **≥ 2 non-void runs** and this is one. `mac-19` cannot be the second: it is
+  void for declaring a window the model did not have. One more verified run
+  settles it. Written this way deliberately — 0 of 26 reads like a pass, and
+  reading it as one is the slippage this file exists to prevent.
+- **The same request, at two real windows, and the elision turns out to be
+  arithmetic rather than model quality.** `src/tools/repair.ts` (43,594 B),
+  prompt 10,549 tokens both times:
+
+  | Real window | Completion | Sum | Verdict |
+  |---|---|---|---|
+  | 16,384 (`mac-19`) | 5,960 | 16,509 | `elided`, probe 0/1 |
+  | 32,768 (`mac-20`) | **10,321** | 20,870 | `complete`, probe 1/1 |
+
+  The file needs 10,321 output tokens and only ~5,835 were left after the prompt.
+  Same model, same temperature, same bytes — it returns complete once there is
+  room. **This also proves `mac-16`'s refusal of this request was correct**, by
+  measurement rather than by symptom: 20,870 needed in a 16,384-token window.
+- **What that run does NOT settle: the mechanism.** Nothing overflowed at 32,768,
+  so it cannot discriminate between the overflow policies, and the question the
+  elision actually raises — why a response that ran out of room came back with a
+  *properly closed* block missing 81 lines from the middle rather than cut off at
+  the end — is still open in `DECISIONS.md`.
+- **Estimator error on that case: +14.2%, in the safe direction.** Estimated
+  23,833 total against 20,870 actual (input +7.9%, output +20.7%; measured output
+  density 4.22 B/token here against the 3.978 pooled over `mac-12-variance`).
+  Recorded beside the unapplied re-derivation above: this is the run that shows
+  the pessimism is not obviously waste.
 - **Status:** open
 
 ---

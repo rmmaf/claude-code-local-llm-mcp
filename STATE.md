@@ -5,24 +5,24 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B14 is `moot`; B16 replaces it, and the pre-flight now has a negative
-control.** `run 2026-08-04-mac-19-32k` declared a 32,768 window while the model
-ran at **16,384**. Same corpus, same model, same real window as `mac-16`/`-17`;
-only the declaration differed. **Told the truth: 2 refused, 0 elided. Told
-double: 0 refused, 1 elided.** First causal evidence the check works. The run is
-VOID for B16 — a misinformed pre-flight is a misconfiguration under test — and
-that VOID condition was added after seeing it, and says so. Of the two honest
-refusals, G3 would have succeeded and L10 would have lost content: 1-1.
+**B16 has its first valid run and DOES NOT YET HOLD.**
+`run 2026-08-04-mac-20-32k`, window verified at 32,768 before starting: **26
+admitted, 26 complete, 0 lost content**, largest request 20,870 tokens clearing
+the 20,644 non-void bar. That is 0% against a 10% fall line — but the hold
+condition wants ≥ 2 non-void runs and this is one. `mac-19` is void.
+**The elision turned out to be arithmetic:** the same file needs 10,321 output
+tokens and had ~5,835 left at 16,384; at 32,768 it returns complete. That also
+proves `mac-16`'s refusal of it was right, by measurement.
 
 ## Next action
 
-**Run `contract-stability` at a VERIFIED 32,768** for the first valid B16 score
-— the Mac is already loaded there. The interesting case is L10 (43,594 B),
-which at 32k is admitted honestly instead of by mistake.
-`contextOverflowPolicy` is app state — not in `lms ps`, not in any file under
-`~/.lmstudio`, rejected by the OpenAI endpoint — but the token accounting now
-points at **pruning**: the retry reported an identical prompt count after ~6,000
-tokens were appended, and still generated ~5,900. Read the GUI to settle it.
+**One more verified run and B16 holds.** Same command, new `--run-id`; the
+window must be confirmed with `lms ps` before it starts, not declared.
+Still open: **why the loss had that SHAPE.** Running out of room cuts a response
+off at the end; this one came back properly closed with 81 lines gone from the
+middle, which only prompt pruning produces — `truncateMiddle` or `rollingWindow`,
+not `stopAtLimit`. Not readable from `lms ps` or any file under `~/.lmstudio`.
+Read it in the GUI.
 
 ## Do not redo
 

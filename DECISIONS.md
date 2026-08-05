@@ -1350,6 +1350,21 @@ conclusion. But it is the first evidence that discriminates between the policies
 at all, and it points the same way as the symptom that opened this question: a
 block that came back properly closed and 90 lines short.
 
+**`run 2026-08-04-mac-20-32k` narrowed what has to be explained, without
+explaining it.** The same request at a real 32,768-token window returns
+**complete**, emitting the 10,321 output tokens the file actually needs against
+the ~5,835 that were left at 16,384. So the *loss* was arithmetic: there was no
+room. What that does not explain is the SHAPE of the loss. A response that
+simply runs out of room is cut off at the end; this one came back with a
+properly closed `</file>` and a run of 81 lines gone from the **middle**. Only
+something that removed content from the prompt while generation continued
+produces that shape, which is `truncateMiddle` or `rollingWindow` and not
+`stopAtLimit`.
+
+Nothing overflowed at 32,768, so that run cannot discriminate between the
+policies — it removes the "maybe the model is just bad at long files" reading and
+leaves the mechanism question exactly where it was.
+
 **What the search DID settle is the neighbouring question.** `run
 2026-08-04-mac-19-32k` declared a 32,768-token window while `lms ps` reported the
 model loaded at **16,384**, and the pre-flight then admitted everything and let
