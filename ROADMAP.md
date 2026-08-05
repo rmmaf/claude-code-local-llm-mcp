@@ -245,6 +245,16 @@ What may be built next, and the number that decides it.
      that justification does not transfer to a constraint that counts the prompt
      too, and inheriting the numbers without recomputing it would be a threshold
      with no argument behind it.
+     - **HALF OF THAT IS NOW DONE. The base rate exists, and it is not one
+       number — it is a function of the window**, which is itself the finding.
+       Over this repository's 15 source+test pairs, estimated by the shipped
+       formula rather than by running anything: **33% (5 of 15) exceed a
+       16,384-token window, 7% (1 of 15) exceed 32,768.** Files alone: 7% and 0%.
+       So a threshold on `context_would_overflow` says nothing until the window
+       it was measured at is fixed — which is rule 3 arriving from the other
+       direction. **No threshold is set here**; setting one now, with the rate in
+       hand, is the move rule 4 exists to prevent. What rule 4 still needs is the
+       threshold and its argument, from whoever decides them.
   5. **The codes must not be merged, and the reason is not pedantry — they imply
      different fixes.** `output_would_truncate` says the answer is too big, which
      is what search/replace blocks are for. `context_would_overflow` says prompt

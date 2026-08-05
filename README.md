@@ -243,6 +243,15 @@ Measured on a 30B coder at a 16,384-token window, the practical whole-file ceili
 
 **And verifying once is not enough.** The drift above was observed *between* two checks, so the number you confirmed at the start of a long job can be wrong by the end. Give a benchmark the machine to itself: memory pressure from anything else running can take the model down and bring it back smaller.
 
+**What the window costs you, on this repository.** A file plus its test is the natural unit for `repair` and `fix`, and the per-call ceiling decides how many of those fit:
+
+| Loaded window | Ceiling per call | Source+test pairs refused | Single files refused |
+|---|---|---|---|
+| 16,384 | ~26.8 KB | **5 of 15 (33%)** | 2 of 30 (7%) |
+| 32,768 | ~54.0 KB | 1 of 15 (7%) | 0 of 30 |
+
+Raise it where it is real — LM Studio's per-model default load context — rather than in `LOCAL_CODER_CONTEXT_TOKENS`. The setting only takes effect when `lms ps` cannot answer, and that is exactly when the model is *not* loaded and JIT will bring it up at the default anyway.
+
 ## Model selection
 
 `local-coder` picks which local model to run from a **catalog** you define, weighing two things: **what each model is for** (its objective) and **whether it fits the free RAM** on the machine right now.
