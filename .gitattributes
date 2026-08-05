@@ -1,0 +1,31 @@
+# A SHELL SCRIPT THAT CROSSES MACHINES MUST KEEP ITS LINE ENDINGS.
+#
+# This clone runs on Windows with `core.autocrlf=true` and no .gitattributes, so
+# every checkout rewrote `scripts/b12-preflight-mac.sh` with CRLF in the working
+# tree while the committed blob stayed LF. Measured here: a `git stash` round
+# trip turned an LF file into 699 CR bytes. Git Bash tolerates that; bash on
+# macOS matches a heredoc terminator by exact string, so `JS\r` never closes a
+# `<<'JS'` block and the embedded merge/probe scripts run to end of file.
+#
+# The Mac script is copied out of a Windows working tree by hand — Google Drive,
+# not `git clone` — which is precisely the path that ships the working-tree bytes
+# rather than the committed ones. Pinning it here makes the hazard unreachable
+# instead of remembered.
+*.sh text eol=lf
+
+# Same reason, one step removed: this one is executed on the Mac by node, which
+# does not care about CR — but it is read alongside the shell script and diffed
+# against it, and a file that changes shape on checkout is a file whose sha256
+# means something different on each machine. B12 pins hashes.
+*.mjs text eol=lf
+
+# THE APPEND-ONLY FILE AND THE HASHED EVIDENCE. `MEASUREMENTS.jsonl` guarantees
+# that its committed prefix stays byte-identical, and `evidence/*.json` is frozen
+# by sha256 — `evidence/2026-08-05-b12-preregistration.json` is pinned at
+# 5d42b19a899d4cc4538fcdb4d7573d17cf8ca9d4cb557f148c1746e6181ea55e. A checkout
+# that rewrote either with CRLF would break the first invariant on the next
+# append and the second on the next verification, on one machine and not the
+# other. Both invariants are about exact bytes; so is this line.
+*.jsonl text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf

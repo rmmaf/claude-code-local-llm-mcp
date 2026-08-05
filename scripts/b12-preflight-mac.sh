@@ -15,8 +15,13 @@
 # assertion would leave an artifact indistinguishable from a clean one, which is
 # the failure this whole registry exists to prevent.
 #
-# It leaves the tree as it found it. The one file it creates is removed by a
-# trap, including on interrupt.
+# WHAT IT CHANGES IN YOUR CLONE, stated plainly rather than implied:
+#   - it runs `npm ci`, which rebuilds node_modules from the lockfile;
+#   - it CHECKS OUT $BRANCH and does NOT switch back — the branch you were on is
+#     printed at the end with the command to return to it;
+#   - it creates and removes one file, src/b12-scratch.ts;
+#   - it writes one artifact into evidence/.
+# Everything else it touches lives in a temp directory it made and removes.
 #
 # Bash 3.2 compatible (macOS default). No associative arrays, no `${x,,}`.
 
@@ -43,6 +48,7 @@ MODEL="${B12_MODEL:-mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2}"
 PERMISSION_MODE="${B12_PERMISSION_MODE:-acceptEdits}"
 SCRATCH_SRC="src/b12-scratch.ts"
 OUT_DIR="$HOME/Desktop"
+[ -d "$OUT_DIR" ] || OUT_DIR="$HOME"
 
 # NOTHING THE CLEANUP TOUCHES IS INHERITED FROM THE ENVIRONMENT.
 #
@@ -59,11 +65,17 @@ TMP_MINE=0
 SCRATCH_MINE=0
 CLAUDE_LOG=""
 MERGE_JS=""
+PROBE_JS=""
+CLEANED=0
+ART=""
+ART_FINALISED=0
+START_REF=""
 
 step=0
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 ok()   { printf '    ok    %s\n' "$1"; }
 info() { printf '    ..    %s\n' "$1"; }
+warn() { printf '    !!    %s\n' "$1"; }
 refuse() {
   printf '\n\033[1mREFUSED\033[0m — %s\n\n' "$1" >&2
   printf 'Nothing was scored. Fix the above and re-run; the script is idempotent.\n' >&2
@@ -80,28 +92,72 @@ next() { step=$((step + 1)); say "$step. $1"; }
 # wrote `treeAsFound: true` into the artifact. That is false safety evidence, in
 # a file whose whole job is to be trusted later.
 #
+# STDERR IS NOT FOLDED IN. It used to capture `2>&1`, and git writes warnings to
+# stderr while still exiting 0 -- so a warning line, which does not start with
+# `?? `, survived the filter and became a "tracked change". That refused a clean
+# tree at the start, and at the end reported `repair touched more than the
+# scratch file` about a file that does not exist. The porcelain shape is also
+# asserted, so nothing that is not a status line can reach the caller.
+#
 # Sets GIT_RC and GIT_TRACKED. Callers decide what to do; nobody guesses.
 git_tracked_changes() {
   GIT_TRACKED=""
   local raw
-  raw=$(git status --porcelain 2>&1)
+  raw=$(git status --porcelain 2>/dev/null)
   GIT_RC=$?
   [ $GIT_RC -ne 0 ] && return 0
   [ -z "$raw" ] && return 0
-  GIT_TRACKED=$(printf '%s
-' "$raw" | grep -v "^?? " || true)
+  GIT_TRACKED=$(printf '%s\n' "$raw" | grep -E '^[MADRCU!? ][MADRCU!? ] ' | grep -v '^?? ' || true)
   return 0
 }
 
 cleanup() {
+  # Runs from both the EXIT trap and the signal handlers. Idempotent by flag so
+  # the second pass does not print removals a second time.
+  [ "${CLEANED:-0}" = "1" ] && return 0
+  CLEANED=1
   if [ "${SCRATCH_MINE:-0}" = "1" ] && [ -n "${REPO:-}" ] && [ -f "$REPO/$SCRATCH_SRC" ]; then
     rm -f "$REPO/$SCRATCH_SRC"
     printf '    ..    removed %s\n' "$SCRATCH_SRC"
   fi
+  # AN ARTIFACT WITHOUT ITS PROVENANCE MUST NOT SURVIVE THIS RUN.
+  #
+  # `$ART` is a pure function of the UTC date and the pinned commit, so every
+  # run on a given day at the tip targets the SAME filename -- and the harness
+  # writes it only at the very end, after refusals that exit first. So an
+  # interrupted or refused run could leave a scored file at exactly the
+  # deliverable path, which the next run's `[ -f "$ART" ]` would find, stamp
+  # with TODAY's provenance and announce as today's result. The file that gets
+  # sent back would be a previous run's scoring wearing this run's commit.
+  if [ "${ART_FINALISED:-0}" = "0" ] && [ -n "${ART:-}" ] && [ -f "$ART" ]; then
+    rm -f "$ART"
+    printf '    ..    removed an artifact that never got its provenance block\n'
+  fi
   [ "${TMP_MINE:-0}" = "1" ] && [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"
   return 0
 }
-trap cleanup EXIT INT TERM
+
+# A SIGNAL HANDLER THAT RETURNS DOES NOT STOP THE SCRIPT.
+#
+# `trap cleanup EXIT INT TERM` with a handler ending in `return 0` was measured
+# to run the handler and then RESUME at the statement after the interrupted
+# command. So Ctrl-C during `claude --print` deleted the fixture and the
+# --mcp-config and then carried on into the pre-flight, scoring a session that
+# had been killed mid-flight -- and if the interrupt landed after both tool
+# calls, the file left behind said `passed: true`. The interrupt produced the
+# artifact instead of preventing it.
+#
+# These restore the default disposition and re-raise, so the shell dies of the
+# signal (130/143) exactly where it was interrupted.
+on_signal() {
+  printf '\n\033[1mINTERRUPTED\033[0m — stopping here. Nothing was scored.\n' >&2
+  cleanup
+  trap - INT TERM EXIT
+  kill -"$1" "$$"
+}
+trap cleanup EXIT
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
 
 # ---------------------------------------------------------------------------
 next "Tools this needs"
@@ -111,7 +167,10 @@ for bin in git node npm claude; do
 done
 ok "git, node, npm, claude present"
 
-NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
+NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null)
+case "$NODE_MAJOR" in
+  ''|*[!0-9]*) refuse "could not read node's major version (got \"$NODE_MAJOR\"). An unreadable version must not be compared as a number." ;;
+esac
 [ "$NODE_MAJOR" -ge 18 ] || refuse "node $NODE_MAJOR is too old; package.json requires >= 18"
 ok "node $(node -v)"
 
@@ -156,14 +215,25 @@ REPO_NAME=$(node -p "require('$REPO/package.json').name" 2>/dev/null)
 [ "$REPO_NAME" = "local-coder-mcp" ] || refuse "$REPO is not this project (package.json name is \"$REPO_NAME\", expected local-coder-mcp). Pass the right path as the first argument."
 ok "repository identified as local-coder-mcp"
 
+# THE CHEAPEST REFUSAL GOES FIRST. This is a plain filesystem test that depends
+# on nothing below it, and it used to sit after `npm ci`, the build and the
+# model load -- so the one guard protecting the operator's own file only fired
+# after several minutes of work that then had to be thrown away. It costs
+# nothing here and is checked again at the point of use.
+[ -e "$REPO/$SCRATCH_SRC" ] && refuse \
+  "$SCRATCH_SRC already exists. This script creates and deletes that exact path, so it will not touch a file it did not create. Move or remove it, then re-run."
+
 git_tracked_changes
 [ $GIT_RC -eq 0 ] || refuse "git status failed (exit $GIT_RC). The tree was never inspected, and an uninspected tree must not read as a clean one."
 if [ -n "$GIT_TRACKED" ]; then
-  printf '%s
-' "$GIT_TRACKED" | sed 's/^/      /'
+  printf '%s\n' "$GIT_TRACKED" | sed 's/^/      /'
   refuse "the working tree has tracked changes. Checking out over them would either fail or lose them, and neither belongs in a measurement run. Commit or stash, then re-run."
 fi
 ok "tree clean of tracked changes (git status ran, exit 0)"
+
+# REMEMBERED BEFORE IT IS CHANGED, so the closing report can hand back the exact
+# command to undo the one mutation this script does not undo itself.
+START_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse HEAD 2>/dev/null || true)
 
 info "fetching origin/$BRANCH"
 git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable?"
@@ -215,11 +285,20 @@ next "Local model"
 info "starting LM Studio's server (no-op if already up)"
 lms server start >/dev/null 2>&1 || true
 
-if ! lms ps 2>/dev/null | grep -q "$MODEL"; then
-  info "loading $MODEL — this can take a while on first run"
-  lms load "$MODEL" >/dev/null 2>&1 || refuse \
-    "could not load $MODEL. Check \`lms ls\` for what is downloaded, then re-run with B12_MODEL=<id> to pick another."
-fi
+# CAPTURED, NOT PIPED INTO `grep -q`. `grep -q` closes the pipe on its first
+# match, and under `set -o pipefail` a producer still writing gets SIGPIPE and
+# turns the whole pipeline non-zero -- so a model that IS loaded reads as not
+# loaded (measured: rc 141 on a large producer). The script would then run
+# `lms load` on something already loaded and refuse on its complaint.
+LMS_PS=$(lms ps 2>/dev/null || true)
+case "$LMS_PS" in
+  *"$MODEL"*) : ;;
+  *)
+    info "loading $MODEL — this can take a while on first run"
+    lms load "$MODEL" >/dev/null 2>&1 || refuse \
+      "could not load $MODEL. Check \`lms ls\` for what is downloaded, then re-run with B12_MODEL=<id> to pick another."
+    ;;
+esac
 
 REACHABLE=$(node -e '
 fetch("http://localhost:1234/v1/models")
@@ -231,6 +310,19 @@ fetch("http://localhost:1234/v1/models")
   "LM Studio is not answering on http://localhost:1234/v1. \`repair\` cannot do work without it, and a pre-flight where \`repair\` aborts reports \`excludedForeign: 1\` and no repair row — it fails, correctly, but you will have spent the setup for nothing."
 ok "model endpoint answering: $REACHABLE"
 
+# WHAT LM STUDIO LOADS IS NOT WHAT THE SERVER USES. `$MODEL` reaches `lms load`
+# and nothing else: the MCP config below passes `"env":{}`, and the server picks
+# its own model in src/selection.ts -- the largest CATALOG entry that fits free
+# RAM, falling back to catalog[0]. The built-in catalog holds both the 30B and a
+# 14B, so on a machine where the 30B does not fit, `repair` runs on the 14B
+# while the artifact would have recorded the 30B as fact. This asserts the one
+# part that IS knowable here; the model actually used is read back after the
+# session and recorded separately.
+case ",$REACHABLE," in
+  *",$MODEL,"*) ok "$MODEL is among the ids the endpoint serves" ;;
+  *) refuse "$MODEL is not among the ids /v1/models serves ($REACHABLE). Recording it as the model would be an assumption, not a measurement." ;;
+esac
+
 # ---------------------------------------------------------------------------
 next "MCP server, scoped to this run"
 
@@ -238,28 +330,36 @@ next "MCP server, scoped to this run"
 # `--mcp-config` takes "JSON files or strings", so a path that does not look
 # like a file is a candidate for being parsed as a literal string; and node
 # refuses a script whose extension it does not know outright --
-# ERR_UNKNOWN_FILE_EXTENSION, measured. One directory, two named files.
+# ERR_UNKNOWN_FILE_EXTENSION, measured. One directory, named files inside it.
 TMP_DIR=$(mktemp -d -t b12pre)
 [ -n "$TMP_DIR" ] || refuse "mktemp -d produced no directory"
 TMP_MINE=1
 MCP_CFG="$TMP_DIR/mcp.json"
-[ -n "$MCP_CFG" ] || refuse "mktemp produced no path for the temporary --mcp-config"
 cat > "$MCP_CFG" <<JSON
 {"mcpServers":{"local-coder":{"type":"stdio","command":"node","args":["$REPO/dist/server.js"],"env":{}}}}
 JSON
-[ -s "$MCP_CFG" ] || refuse "the temporary --mcp-config is empty; claude would start with no server and the treatment arm would be a control"
+# SIZE IS NOT VALIDITY. `$REPO` is interpolated into a JSON string literal with
+# no escaping, so a quote or a backslash anywhere in the checkout path produces
+# a syntactically invalid config -- with plenty of bytes in it. The guard this
+# replaces asked only `[ -s ]`, and the one before that tested a variable that
+# could not be empty while its refusal message named a `mktemp` it never called.
+node -e '
+const c = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+const s = c.mcpServers && c.mcpServers["local-coder"];
+if (!s || !Array.isArray(s.args) || !require("node:fs").existsSync(s.args[0])) process.exit(1);
+' "$MCP_CFG" 2>/dev/null || refuse "the temporary --mcp-config is not a usable config pointing at $REPO/dist/server.js (a quote or backslash in the checkout path will do this)"
 ok "wrote a temporary --mcp-config (your global Claude config is untouched)"
 
 # ---------------------------------------------------------------------------
 next "Work for repair to close"
 
-# NEVER CLOBBER. The clean-tree check above filters `^?? `, so it says nothing
-# about UNTRACKED files -- and a pre-existing src/b12-scratch.ts, yours or left
-# by an interrupted run, would be overwritten here and then DELETED by the trap.
-# The script would have destroyed work while reporting a clean run.
+# NEVER CLOBBER. Checked at step 2 as well; re-checked at the point of use
+# because the window between them contains `git checkout` and `npm ci`.
 if [ -e "$REPO/$SCRATCH_SRC" ]; then
   refuse "$SCRATCH_SRC already exists. This script creates and deletes that exact path, so it will not touch a file it did not create. Move or remove it, then re-run."
 fi
+# OWNED BEFORE IT IS WRITTEN, so a partial write is still removed by the trap.
+SCRATCH_MINE=1
 cat > "$REPO/$SCRATCH_SRC" <<'TS'
 // Created by scripts/b12-preflight-mac.sh and removed by its trap.
 // A deliberate type error, so `gate` is mechanically red and `repair` has
@@ -267,7 +367,11 @@ cat > "$REPO/$SCRATCH_SRC" <<'TS'
 // `repair` on a green tree reports "nothing to do" and exercises nothing.
 export const answer: number = "not a number";
 TS
-SCRATCH_MINE=1
+# A FAILED WRITE READS AS A PASSING FIXTURE. The heredoc's status was discarded,
+# so a read-only checkout or a full disk left no file, tsc then exited 0, and
+# the refusal that fired said "tsc still passes with the scratch error in
+# place" -- pointing the reader at a type error that was never written.
+[ -s "$REPO/$SCRATCH_SRC" ] || refuse "could not write $SCRATCH_SRC (is the checkout writable?)"
 ok "created $SCRATCH_SRC"
 
 # Exit 0 means the fixture is not doing its job. Exit 1 or 2 means type errors,
@@ -292,28 +396,127 @@ case "$SESSION_ID" in
 esac
 info "session $SESSION_ID"
 
-# ITS OUTPUT IS KEPT. The first real run exited 1 and wrote no transcript, and
-# the one thing that would have said why had been sent to /dev/null. A run that
-# discards the evidence for its own failure has to be repeated to learn nothing
-# new.
-CLAUDE_LOG=$(mktemp -t b12claude)
+# ITS OUTPUT IS KEPT, AND INSIDE THE DIRECTORY THE TRAP ALREADY REMOVES. The
+# first real run exited 1 and wrote no transcript, and the one thing that would
+# have said why had been sent to /dev/null. Its own `mktemp` was also the single
+# temp path with no guard: had it failed, the redirection would have failed, the
+# command would never have run, and `$?` would still have been 1 -- recorded as
+# "claude exited 1" about a claude that never started.
+CLAUDE_LOG="$TMP_DIR/claude.log"
+
+# THE PROMPT MUST NOT FOLLOW A VARIADIC OPTION.
+#
+# `claude --help` declares `--allowedTools, --allowed-tools <tools...>` and
+# `--mcp-config <configs...>`: both variadic, both consuming every following
+# argument until one starts with `-`. The prompt sat immediately after
+# `--allowed-tools`, so it was swallowed as another tool name and claude ran
+# with NO PROMPT. Measured, three invocations on the same machine:
+#
+#   --allowed-tools "Foo" "<prompt>"          -> Error: Input must be provided
+#                                                either through stdin or as a
+#                                                prompt argument when using --print
+#   --allowed-tools "Foo" --permission-mode X "<prompt>"  -> reached the API
+#   --allowed-tools "Foo" -- "<prompt>"                   -> reached the API
+#
+# That is exactly the Mac's `claude exited 1` with no transcript at all. Two
+# independent guards now: the last option before the prompt is non-variadic,
+# and `--` ends option parsing.
+#
+# `--strict-mcp-config` is new here. Without it Claude Code MERGES this file
+# with the machine's user/project-scoped servers, and a globally registered
+# `local-coder` would claim the same name -- so the tools called might have been
+# served by some other build, and the artifact would credit this commit for it.
 DISABLE_AUTOUPDATER=1 claude --print \
-  --session-id "$SESSION_ID" \
-  --permission-mode "$PERMISSION_MODE" \
+  --strict-mcp-config \
   --mcp-config "$MCP_CFG" \
   --allowed-tools "mcp__local-coder__gate,mcp__local-coder__repair" \
+  --session-id "$SESSION_ID" \
+  --permission-mode "$PERMISSION_MODE" \
+  -- \
   "Call mcp__local-coder__gate exactly once. It will be red: src/b12-scratch.ts has a type error. Then call mcp__local-coder__repair exactly once to fix that file. Do not edit any file yourself, do not use Bash, and do not call any other tool." \
   >"$CLAUDE_LOG" 2>&1
 CLAUDE_EXIT=$?
 
 if [ $CLAUDE_EXIT -ne 0 ]; then
   info "claude exited $CLAUDE_EXIT — its output is below and goes into the artifact"
-  sed 's/^/      /' "$CLAUDE_LOG" | tail -20
+  tail -20 "$CLAUDE_LOG" 2>/dev/null | sed 's/^/      /'
 else
   ok "scratch session finished"
 fi
 CLAUDE_LOG_TAIL=$(tail -c 4000 "$CLAUDE_LOG" 2>/dev/null || true)
-rm -f "$CLAUDE_LOG"
+
+# READ BACK WHAT ACTUALLY HAPPENED, rather than asserting it. Two things the
+# run cannot otherwise know: whether a transcript exists at all (the previous
+# failure mode, which surfaced only as an ENOENT deep inside the harness), and
+# WHICH MODEL served `repair` -- the server chooses its own, so `$MODEL` is a
+# request, not a measurement.
+PROBE_JS="$TMP_DIR/probe.cjs"
+cat > "$PROBE_JS" <<'JS'
+const { readdirSync, readFileSync, existsSync } = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+const sessionId = process.argv[2];
+const root = path.join(os.homedir(), ".claude", "projects");
+const out = { transcript: null, tools: [], repairModel: null };
+const walk = (d, depth) => {
+  if (depth > 3 || out.transcript !== null) return;
+  let entries;
+  try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    const p = path.join(d, e.name);
+    if (e.isDirectory()) walk(p, depth + 1);
+    else if (e.name === sessionId + ".jsonl") { out.transcript = p; return; }
+  }
+};
+if (existsSync(root)) walk(root, 0);
+// The repair result travels as JSON inside a text block, so the shape is dug
+// for rather than assumed: any object carrying both `rounds_used` and a string
+// `model` is repair's own return value. Not found stays null, never a guess.
+const dig = (v, depth) => {
+  if (depth > 8 || v === null || v === undefined) return;
+  if (typeof v === "string") {
+    if (v.length > 1 && (v[0] === "{" || v[0] === "[")) {
+      let p;
+      try { p = JSON.parse(v); } catch { return; }
+      dig(p, depth + 1);
+    }
+    return;
+  }
+  if (Array.isArray(v)) { for (const x of v) dig(x, depth + 1); return; }
+  if (typeof v === "object") {
+    if ("rounds_used" in v && typeof v.model === "string") out.repairModel = v.model;
+    for (const k of Object.keys(v)) dig(v[k], depth + 1);
+  }
+};
+if (out.transcript) {
+  for (const line of readFileSync(out.transcript, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    let rec;
+    try { rec = JSON.parse(line); } catch { continue; }
+    const content = rec && rec.message && rec.message.content;
+    if (Array.isArray(content)) {
+      for (const c of content) if (c && c.type === "tool_use" && typeof c.name === "string") out.tools.push(c.name);
+    }
+    dig(rec.toolUseResult, 0);
+  }
+}
+process.stdout.write(JSON.stringify(out));
+JS
+PROBE=$(node "$PROBE_JS" "$SESSION_ID" 2>/dev/null || true)
+case "$PROBE" in
+  '{'*) : ;;
+  *) PROBE=""; warn "could not read the session back; the artifact will record that as unknown rather than as absent" ;;
+esac
+if [ -n "$PROBE" ]; then
+  case "$PROBE" in
+    *'"transcript":null'*)
+      warn "CLAUDE WROTE NO TRANSCRIPT for $SESSION_ID. The pre-flight below will"
+      warn "fail on the harness, not on the instrument — read scratchSession.log"
+      warn "in the artifact before concluding anything about the meter."
+      ;;
+    *) ok "transcript found; tools called are recorded in the artifact" ;;
+  esac
+fi
 
 # ---------------------------------------------------------------------------
 next "Pre-flight"
@@ -322,7 +525,13 @@ STAMP=$(date -u +%Y-%m-%d)
 SHORT=$(printf '%s' "$LOCAL_SHA" | cut -c1-7)   # from the sha already validated above
 [ -n "$STAMP" ] && [ -n "$SHORT" ] || refuse "could not build the artifact filename (stamp=\"$STAMP\" short=\"$SHORT\")"
 ART="$REPO/evidence/$STAMP-mac-b12-$SHORT.preflight.json"
-mkdir -p "$REPO/evidence"
+mkdir -p "$REPO/evidence" || refuse "could not create $REPO/evidence"
+
+# THE ONLY FILE AT THIS PATH MUST BE THIS RUN'S. The name is a pure function of
+# the date and the pinned commit, and the harness writes it only after refusals
+# that exit first -- so without this a refused run's leftover would be found
+# below, stamped with today's provenance and shipped as today's result.
+rm -f "$ART"
 
 # NOT wrapped in `set -e`/`set +e`: errexit is never on in this script, and
 # turning it on here would abort before the result is printed, on the very
@@ -339,9 +548,6 @@ PRE_EXIT=$?
 # gets sent back -- the whole point of this run -- carried no record of whether
 # `repair` had touched anything beyond the scratch file. A reader holding only
 # the artifact would have had incorrect evidence, and would not have known it.
-# Guarded like the trap is. Reaching here without having created the file is
-# not reachable by the linear flow -- and "not reachable" is the reasoning that
-# failed six times in this session's other rule, so it is checked instead.
 [ "${SCRATCH_MINE:-0}" = "1" ] && rm -f "$REPO/$SCRATCH_SRC"
 SCRATCH_MINE=0
 git_tracked_changes
@@ -360,81 +566,134 @@ if [ -f "$ART" ]; then
   # and JS is where it broke. This crashed on the Mac and the artifact went out
   # with no commit, no version and no tree verdict: the provenance the run exists
   # to carry. A quoted heredoc is passed through verbatim by bash.
+  #
+  # VALUES ARRIVE BY NAME, NOT BY POSITION. Eleven positional arguments meant one
+  # missing value silently shifted every field after it -- the commit landing in
+  # `branch`, the branch in `claudeVersion`. Environment variables cannot shift.
   MERGE_JS="$TMP_DIR/merge.cjs"
   cat > "$MERGE_JS" <<'JS'
 const { readFileSync, writeFileSync } = require("node:fs");
-const [file, sha, branch, ver, model, session, leftover, untracked, rc, claudeExit, claudeLog] =
-  process.argv.slice(2);
+const e = process.env;
+const file = process.argv[2];
 const o = JSON.parse(readFileSync(file, "utf8"));
+const rc = e.B12_TREE_RC;
+const leftover = e.B12_LEFTOVER || "";
+const untracked = e.B12_UNTRACKED || "";
+let probe = null;
+try { probe = JSON.parse(e.B12_PROBE || "null"); } catch { probe = null; }
 o.context = {
-  commit: sha, branch, claudeVersion: ver, model, sessionId: session, host: "mac",
+  commit: e.B12_SHA,
+  branch: e.B12_BRANCH,
+  claudeVersion: e.B12_CLAUDE_VER,
+  host: "mac",
+  // NAMED FOR WHAT EACH ONE IS. `model` used to be written here as fact from a
+  // variable that only ever reached `lms load`; the server selects its own.
+  modelRequestedFromLmStudio: e.B12_MODEL,
+  modelsServedByLmStudio: (e.B12_REACHABLE || "").split(",").filter(Boolean),
+  modelUsedByRepair: probe && probe.repairModel ? probe.repairModel : null,
+  serverEnv: {},
+  strictMcpConfig: true,
+  sessionId: e.B12_SESSION,
   treeCheckRan: rc === "0",
   treeAsFound: rc === "0" ? leftover.length === 0 : null,
   trackedChangesLeftBehind: leftover ? leftover.split("\n") : [],
   untrackedFilesPresent: untracked ? untracked.split("\n") : [],
-  scratchSession: { exitCode: Number(claudeExit), log: claudeLog },
+  scratchSession: {
+    exitCode: Number(e.B12_CLAUDE_EXIT),
+    transcriptFound: probe ? probe.transcript !== null : null,
+    toolsCalled: probe ? probe.tools : null,
+    log: e.B12_CLAUDE_LOG || "",
+  },
 };
 writeFileSync(file, JSON.stringify(o, null, 2) + "\n");
+// READ BACK, THEN ANNOUNCE. A zero-byte merge.cjs -- an interrupted `cat`, a
+// full temp volume -- makes node exit 0 having done nothing, so success could
+// not be read from its status. The caller looks for this sentinel instead: an
+// assertion of what happened, not the absence of an error.
+const back = JSON.parse(readFileSync(file, "utf8"));
+if (!back.context || !back.context.commit) {
+  console.error("provenance did not land in " + file);
+  process.exit(1);
+}
+process.stdout.write("B12-PROVENANCE-OK checks=" + (Array.isArray(back.checks) ? back.checks.length : 0) + "\n");
 JS
-  node "$MERGE_JS" "$ART" "$LOCAL_SHA" "$BRANCH" "$CLAUDE_VER" "$MODEL" "$SESSION_ID" "$LEFTOVER" "$UNTRACKED" "$TREE_RC" "$CLAUDE_EXIT" "$CLAUDE_LOG_TAIL" || refuse "could not write provenance into $ART"
-  :
-  cp "$ART" "$OUT_DIR/" 2>/dev/null && ok "copied to $OUT_DIR/$(basename "$ART")"
+  [ -s "$MERGE_JS" ] || refuse "the temporary merge script is empty; the artifact would have been finalised with no provenance"
+  MERGE_OUT=$(B12_SHA="$LOCAL_SHA" B12_BRANCH="$BRANCH" B12_CLAUDE_VER="$CLAUDE_VER" \
+    B12_MODEL="$MODEL" B12_REACHABLE="$REACHABLE" B12_SESSION="$SESSION_ID" \
+    B12_LEFTOVER="$LEFTOVER" B12_UNTRACKED="$UNTRACKED" B12_TREE_RC="$TREE_RC" \
+    B12_CLAUDE_EXIT="$CLAUDE_EXIT" B12_CLAUDE_LOG="$CLAUDE_LOG_TAIL" B12_PROBE="$PROBE" \
+    node "$MERGE_JS" "$ART" 2>&1)
+  NCHECKS=""
+  case "$MERGE_OUT" in
+    *B12-PROVENANCE-OK*)
+      ART_FINALISED=1
+      NCHECKS=$(printf '%s\n' "$MERGE_OUT" | sed -n 's/.*B12-PROVENANCE-OK checks=\([0-9]*\).*/\1/p' | head -1)
+      ;;
+    *)
+      printf '%s\n' "$MERGE_OUT" | sed 's/^/      /' >&2
+      # The artifact is removed by the trap: un-provenanced, it is
+      # indistinguishable from a good one once it leaves this machine.
+      refuse "could not write provenance into the artifact, so it was removed rather than sent. The pre-flight itself exited $PRE_EXIT — re-run and it will be re-scored."
+      ;;
+  esac
+
+  # RECORDED, NOT RE-DERIVED. `cp` used to discard its reason and print nothing
+  # at all on failure, while the closing report separately tested whether a file
+  # of that NAME sat on the Desktop -- and the name is deterministic, so a
+  # previous run's copy answered yes for a copy that never happened.
+  COPIED=0
+  if cp "$ART" "$OUT_DIR/" 2>&1; then
+    COPIED=1
+    ok "copied to $OUT_DIR/$(basename "$ART")"
+  else
+    warn "could not copy to $OUT_DIR (reason above) — send the copy in evidence/ instead"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
 say "Result"
 
 if [ $PRE_EXIT -eq 0 ]; then
-  printf '    PRE-FLIGHT PASSED
-'
+  printf '    PRE-FLIGHT PASSED\n'
 else
-  printf '    PRE-FLIGHT FAILED — the artifact says which check, and that is a real answer
-'
+  printf '    PRE-FLIGHT FAILED — the artifact says which check, and that is a real answer\n'
 fi
 
 if [ $TREE_RC -ne 0 ]; then
-  printf '
-    TREE INTEGRITY UNKNOWN — git status failed (exit %s). The artifact
-' "$TREE_RC"
-  printf '    records this as unknown rather than as clean.
-'
+  printf '\n    TREE INTEGRITY UNKNOWN — git status failed (exit %s). The artifact\n' "$TREE_RC"
+  printf '    records this as unknown rather than as clean.\n'
 elif [ -n "$LEFTOVER" ]; then
-  printf '
-    THE TREE IS NOT AS IT WAS FOUND — repair touched more than the
-'
-  printf '    scratch file. This is recorded in the artifact too:
-'
-  printf '%s
-' "$LEFTOVER" | sed 's/^/      /'
+  printf '\n    THE TREE IS NOT AS IT WAS FOUND — repair touched more than the\n'
+  printf '    scratch file. This is recorded in the artifact too:\n'
+  printf '%s\n' "$LEFTOVER" | sed 's/^/      /'
 else
-  printf '
-    tree is as it was found
-'
+  printf '\n    tree is as it was found\n'
 fi
 
 # Never name a path that is not there: a reported artifact that does not exist
 # is the same class of false statement this run exists to catch.
 if [ -f "$ART" ]; then
-  printf '
-    artifact: %s
-' "$ART"
-  [ -f "$OUT_DIR/$(basename "$ART")" ] && printf '    also at: %s
-' "$OUT_DIR/$(basename "$ART")"
-  printf '
-    Send that one file back. It carries the seven checks, the commit,
-'
-  printf '    the Claude Code version, the model, the session id, and whether the
-'
-  printf '    tree came back as it was found.
-
-'
+  printf '\n    artifact: %s\n' "$ART"
+  [ "$COPIED" = "1" ] && printf '    also at: %s\n' "$OUT_DIR/$(basename "$ART")"
+  # The count is read back from the file rather than written from memory: the
+  # line used to promise "the seven checks" and the harness emits eleven, or
+  # five when it cannot reach the session.
+  printf '\n    Send that one file back. It carries %s checks, the commit, the\n' "${NCHECKS:-?}"
+  printf '    Claude Code version, which model LM Studio served and which one\n'
+  printf '    repair actually used, the session id, whether claude wrote a\n'
+  printf '    transcript at all, and whether the tree came back as it was found.\n\n'
 else
-  printf '
-    NO ARTIFACT WAS WRITTEN — the pre-flight did not get far enough to
-'
-  printf '    produce one. The output above is all there is.
+  printf '\n    NO ARTIFACT WAS WRITTEN — the pre-flight did not get far enough to\n'
+  printf '    produce one. The output above is all there is.\n\n'
+fi
 
-'
+# THE ONE MUTATION THIS SCRIPT DOES NOT UNDO. Restoring the branch automatically
+# would be a third checkout on a tree `repair` has just written to; naming it is
+# honest and costs nothing.
+NOW_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || true)
+if [ -n "$START_REF" ] && [ "$START_REF" != "$NOW_REF" ]; then
+  printf '    Your clone is now on %s. You were on %s:\n' "$NOW_REF" "$START_REF"
+  printf '        git -C %s checkout %s\n\n' "$REPO" "$START_REF"
 fi
 
 exit $PRE_EXIT

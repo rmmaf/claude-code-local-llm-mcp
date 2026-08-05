@@ -2131,3 +2131,54 @@ combination a named branch instead of a default nobody chose.
 That argument is plausible and it is not evidence. The enumeration has survived
 zero turns of review. If it takes a seventh finding, the honest conclusion is
 that the shape was not the cause and this entry is what should be retracted.
+
+## The instrument never ran, and only one arm would have said so
+
+`B12`'s treatment arm was never going to produce an observation. `claude --help`
+declares `--mcp-config <configs...>` and `--allowed-tools <tools...>` as variadic
+options, which consume every following argument until one starts with `-`. Both
+the Mac pre-flight and `observe()` in the harness put the positional prompt
+immediately after one of them, so the prompt was read as another value and
+`claude --print` ran with no prompt at all: it exits 1 before a session exists,
+which is exactly the Mac's `claude exited 1` with no transcript and the harness's
+subsequent `ENOENT` on the session jsonl.
+
+The part worth keeping is not the flag. It is that **the control arm was
+immune**. Control ends in `--strict-mcp-config`, a boolean, so the prompt reached
+it. Had this run at scale, every control arm would have produced an observation
+and every treatment arm would have died at argument parsing — and the harness
+classifies a null exit with no signal as `spawn_failed`, an honest name for a
+broken run, so the failure would have been visible. But a slower version of the
+same bug, one that only shortened the treatment prompt, would have produced a
+complete-looking dataset in which the treatment arm was systematically deprived
+of its instructions. The registry would have recorded that as evidence about
+tools.
+
+I built the pre-flight to catch instrument faults before spending forty-five
+sessions, and it caught this one — but not by asserting anything. It caught it
+because it happened to invoke `claude` the same wrong way and failed loudly on a
+Tuesday instead of quietly across an experiment. That is luck wearing the costume
+of a control.
+
+**What I changed.** Two independent guards in both places: a non-variadic option
+immediately before the prompt, and `--` to end option parsing. Either alone is
+sufficient; both are there because the failure mode is silent and the cost of the
+second guard is one argument.
+
+**What this does not establish.** I verified the argv handling of one Claude Code
+version on one machine, by running it. I did not verify that a future version
+keeps `--` meaningful, and there is no assertion anywhere that the prompt
+arrived — the run can still only observe that the session did something. A check
+that the transcript exists at all now runs in the pre-flight and is recorded in
+the artifact, which converts this class from a mystery into a named field. It
+does not prevent it.
+
+**A second thing the same day, from the same family.** This clone runs on Windows
+with `core.autocrlf=true` and had no `.gitattributes`, so a checkout rewrote the
+Mac shell script with CRLF while the committed blob stayed LF — measured, 699 CR
+bytes after a `git stash` round trip. The script is delivered by copying it out
+of the working tree by hand, which is precisely the path that ships working-tree
+bytes. `MEASUREMENTS.jsonl` promises a byte-identical committed prefix and
+`evidence/*.json` is frozen by sha256; both are invariants about exact bytes that
+a per-machine checkout rule can break on one machine and not the other. Pinned in
+`.gitattributes` rather than remembered.

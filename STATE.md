@@ -5,31 +5,31 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**ALL TEN OF B12's INSTRUMENT REPAIRS ARE IN** — the frozen design names ten, not
-the seven I miscounted here last session. Signed suppression; the 30,000-char
-truncation cap; turn collapse out of every scored number; `repair` crediting its
-gate once; thread-resolved nullable magnitudes; `unmatched` as the fourth refusal
-class; a per-`requestId` subset accessor; ownership grouped by the reporting
-unit; `unitsAddedByInstallation` (16,127 measured chars); `scripts/b12-run.mjs`.
-**Credited saving on this corpus fell 6.3x: 12.1M units to 1,924,485.**
+**B12'S TREATMENT ARM WAS NEVER GOING TO RUN.** `--mcp-config` and
+`--allowed-tools` are variadic and the positional prompt sat right after one, so
+`claude --print` got no prompt and exited 1 before a session existed — measured,
+three invocations. Control ends in a boolean flag and was immune: the arms would
+have differed by whether they ran. Fixed in `observe()` and in the Mac script
+with two guards, a non-variadic option before the prompt and `--`; it was also
+the whole of the Mac pre-flight failure. A 26-finding adversarial review closed
+the rest, and `.gitattributes` now pins LF under the append-only and hashed files.
 
 ## Next action
 
-**Pre-flight first** — `node scripts/b12-run.mjs preflight`, ten minutes, passes
-today. Then route this project's remaining mechanical work through `repair`,
-which has **never once been called**, so G-stop's third delivery has exposure the
-experiment did not manufacture. Only then seal the manifest. **Yours:** G-stop
-names the cost meter as a delivery that must pay for itself and it structurally
-cannot be scored that way; G7's threshold; B14 3.978 vs 3.5.
+**Run the Mac script; send back the one artifact.** It now records which model
+`repair` ACTUALLY used — the server picks its own, `$MODEL` only ever reached
+`lms load` — whether claude wrote a transcript at all, and it deletes an artifact
+that never got its provenance rather than shipping it. Then route real work
+through `repair`, which has still never been called once. **Yours:** G-stop names
+the cost meter as a delivery that must pay for itself and it structurally cannot;
+G7's threshold; B14 3.978 vs 3.5.
 
 ## Do not redo
 
-- **Read the value; never the one you expected.** A 0 residual agreed 4x by
-  corpus, not by rule. The snapshot cost I recorded was 40x low — one slug, not 56.
-- **A key is only identity in the space it was minted for**, and ambiguity is
-  relative to the unit that REPORTS. Lineage grouping under per-session reporting
-  would have re-broken the double-count it was meant to fix.
-- **An unknown summed as zero is a withheld number printed as a low one.** Twice
-  in one day, and the second fix invented 283,176 units from the wrong thread.
-- **Two implementations that never meet agree by corpus.** Harness and meter are
-  compared in a test, on fields the real corpus does not contain.
+- **A check that cannot run reports the good outcome** — and now its twin, a
+  check that cannot fail: `[ -n ]` on a concatenation, `DISABLE_AUTOUPDATER=1`
+  read back from the environment the caller set on that very command line.
+- **A signal handler that returns does not stop the script.** Ctrl-C ran the
+  cleanup and continued, and could leave `passed: true` at the deliverable path.
+- **The artifact path is a function of date and commit, so it repeats.** A
+  refused run's leftover was found by the next run and stamped as its own.

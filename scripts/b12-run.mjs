@@ -501,14 +501,33 @@ function observe(args) {
     arm === "treatment"
       ? ["--mcp-config", manifest.pinned?.mcpConfig ?? path.join(REPO, ".mcp.json")]
       : ["--strict-mcp-config"];
+  // THE PROMPT MUST NOT FOLLOW A VARIADIC OPTION, AND IT DID -- IN THE TREATMENT
+  // ARM ONLY.
+  //
+  // `claude --help` declares `--mcp-config <configs...>` and
+  // `--allowedTools, --allowed-tools <tools...>`: variadic, consuming every
+  // following argument until one starts with `-`. Treatment ended in
+  // `--mcp-config <path>` and then the prompt, so the prompt was swallowed as a
+  // second config path and claude ran with none: "Input must be provided either
+  // through stdin or as a prompt argument when using --print", exit 1, no
+  // transcript. Control ends in `--strict-mcp-config`, a boolean, so control was
+  // never affected. The arms would have differed by whether they ran at all.
+  //
+  // Measured on the same machine that found it, and it is the same defect that
+  // made the Mac pre-flight exit 1 with no session.
+  //
+  // Two independent guards: a NON-VARIADIC option immediately before the prompt,
+  // and `--` to end option parsing. `extraArgs` keeps its place ahead of both so
+  // a pinned argument can still override `--output-format`.
   const cliArgs = [
     "--print",
     "--session-id",
     sessionId,
-    "--output-format",
-    "json",
     ...mcpArgs,
     ...(manifest.pinned?.extraArgs ?? []),
+    "--output-format",
+    "json",
+    "--",
     task.prompt,
   ];
 
