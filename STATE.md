@@ -5,7 +5,7 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B20 HOLDS AND G1 IS CLOSED.** `run 2026-08-05-win-11-b20`: the meter's
+**B20 HOLDS AND G1 IS CLOSED.** `run 2026-08-05-win-12-b20`: the meter's
 per-class token totals equal an independent enumeration's, **residual exactly 0
 on 4 classes x 11 sessions**, artifacts under `evidence/`. The set was fixed by
 enumeration, not chosen — none void, none suspect, both arms present, one CLI

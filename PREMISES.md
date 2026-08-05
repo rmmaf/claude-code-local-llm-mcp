@@ -522,9 +522,9 @@ defect, and it pinned four of them in place.
   continue/stop decision is made on a stated non-metered basis. That is a real
   outcome this project is allowed to reach, and reaching it honestly beats a
   sixth renumber.
-- **Measured: `run 2026-08-05-win-11-b20`. Residual EXACTLY 0 on every class of
+- **Measured: `run 2026-08-05-win-12-b20`. Residual EXACTLY 0 on every class of
   every session — 4 classes x 11 sessions — and the request counts equal on all
-  eleven.** Artifacts: `evidence/2026-08-05-win-11-b20.{walk,meter,comparison}.json`,
+  eleven.** Artifacts: `evidence/2026-08-05-win-12-b20.{walk,meter,comparison}.json`,
   machine-produced, carrying the four-class vector per session per side, the
   `uuid` disjointness counts, the subagent share per session, the Claude Code
   version and the three commit SHAs.
@@ -541,6 +541,15 @@ defect, and it pinned four of them in place.
     premise demands artifacts. Both sides read one fixed copy.
   - **Conformance suite green at the run's commit:** `tests/session-token-walk.test.ts`,
     14 tests, including the four negative controls this premise requires.
+  - **RE-EMITTED, and the first attempt is superseded rather than deleted.**
+    `run 2026-08-05-win-11-b20` produced identical vectors from a meter that
+    identified a session by its first billable record, while the oracle required
+    `record.sessionId` to equal the id it was handed. **Two different rules
+    agreeing because filename and records match on all 11 files here — 0 of 11
+    disagree — is agreement by corpus, not by rule**, and that is the coincidence
+    this premise exists to exclude. The meter now honours the id. Both artifact
+    sets are committed; the earlier one is evidence of the instrument, not of the
+    result.
 - **What the repair recovered: 390 of 2,703 billed requests were invisible.**
   The meter printed `(N main, 0 subagent)` on every session for four days. The
   gap is not spread evenly — `514a829f` is 78% subagent by request count while

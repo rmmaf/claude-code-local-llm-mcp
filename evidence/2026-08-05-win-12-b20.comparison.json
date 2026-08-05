@@ -1,0 +1,661 @@
+{
+  "runId": "2026-08-05-win-12-b20",
+  "ts": "2026-08-05T15:15:29Z",
+  "premise": "B20",
+  "snapshot": {
+    "why": "the live transcript directory grows while this session runs; both sides must read one fixed input",
+    "path": "C:\\Users\\digom\\AppData\\Local\\Temp\\claude\\C--Users-digom-Documents-GitHub-claude-code-local-llm-mcp--claude-worktrees-multi-agent-plan-models-eval-75e2c4\\c9e2fe70-c679-4a02-986d-d894eb7e82e4\\scratchpad\\b20-snapshot",
+    "sessions": 11,
+    "files": 38
+  },
+  "commands": {
+    "oracle": "node scripts/session-token-walk.mjs walk --dir=C:\\Users\\digom\\AppData\\Local\\Temp\\claude\\C--Users-digom-Documents-GitHub-claude-code-local-llm-mcp--claude-worktrees-multi-agent-plan-models-eval-75e2c4\\c9e2fe70-c679-4a02-986d-d894eb7e82e4\\scratchpad\\b20-snapshot --json",
+    "meter": "node dist/cost/cli.js --dir C:\\Users\\digom\\AppData\\Local\\Temp\\claude\\C--Users-digom-Documents-GitHub-claude-code-local-llm-mcp--claude-worktrees-multi-agent-plan-models-eval-75e2c4\\c9e2fe70-c679-4a02-986d-d894eb7e82e4\\scratchpad\\b20-snapshot --all --json"
+  },
+  "commits": {
+    "preRegistration": "db4874e88e26a5fd159037332012f5a569b28640",
+    "oracle": "a43c0512d989b911b3dafb819e23f1361e9f3385",
+    "repair": "353129c74f7df2f3fb322769ac4cd823abdc23aa",
+    "head": "353129c74f7df2f3fb322769ac4cd823abdc23aa"
+  },
+  "conformanceSuite": {
+    "file": "tests/session-token-walk.test.ts",
+    "passed": true,
+    "tests": 14
+  },
+  "side": "comparison",
+  "verdict": {
+    "runId": "2026-08-05-win-12-b20",
+    "ts": "2026-08-05T15:15:29Z",
+    "sessionsScored": 11,
+    "allResidualsZero": true,
+    "requestCountsEqual": true,
+    "hasSingleThreadedArm": true,
+    "hasNestedAgentArm": true,
+    "atLeastFiveSessions": true,
+    "claudeCodeVersions": [
+      "2.1.219"
+    ],
+    "singleVersion": true,
+    "excludedFromSet": [],
+    "holds": true
+  },
+  "perSession": [
+    {
+      "sessionId": "1705b026-e3c6-40c6-88c9-add75fad647a",
+      "files": 1,
+      "requests": {
+        "meter": 156,
+        "oracle": 156
+      },
+      "subagentShare": 0,
+      "singleThreaded": true,
+      "nestedAgents": false,
+      "meter": {
+        "input": 306,
+        "cacheRead": 36074329,
+        "cacheWrite": 1279438,
+        "output": 227816
+      },
+      "oracle": {
+        "input": 306,
+        "cacheRead": 36074329,
+        "cacheWrite": 1279438,
+        "output": 227816
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 329,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 329,
+          "main": 329,
+          "subagent": 0,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "514a829f-3579-4a44-85ea-2894d46f356b",
+      "files": 15,
+      "requests": {
+        "meter": 253,
+        "oracle": 253
+      },
+      "subagentShare": 0.7787,
+      "singleThreaded": false,
+      "nestedAgents": false,
+      "meter": {
+        "input": 32879,
+        "cacheRead": 35454847,
+        "cacheWrite": 2807456,
+        "output": 586776
+      },
+      "oracle": {
+        "input": 32879,
+        "cacheRead": 35454847,
+        "cacheWrite": 2807456,
+        "output": 586776
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 113,
+        "subagentUuids": 684,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 797,
+          "main": 113,
+          "subagent": 684,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "5fe28335-5fb0-41bc-bdaa-23c84011ec1e",
+      "files": 4,
+      "requests": {
+        "meter": 106,
+        "oracle": 106
+      },
+      "subagentShare": 0.5849,
+      "singleThreaded": false,
+      "nestedAgents": false,
+      "meter": {
+        "input": 1025,
+        "cacheRead": 13120969,
+        "cacheWrite": 684601,
+        "output": 190556
+      },
+      "oracle": {
+        "input": 1025,
+        "cacheRead": 13120969,
+        "cacheWrite": 684601,
+        "output": 190556
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 113,
+        "subagentUuids": 172,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 4,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 285,
+          "main": 113,
+          "subagent": 172,
+          "uuidDuplicatesDropped": 1,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "61ede066-f399-4871-b670-639d78dc4d3e",
+      "files": 1,
+      "requests": {
+        "meter": 272,
+        "oracle": 272
+      },
+      "subagentShare": 0,
+      "singleThreaded": true,
+      "nestedAgents": false,
+      "meter": {
+        "input": 500,
+        "cacheRead": 96145824,
+        "cacheWrite": 1820108,
+        "output": 357490
+      },
+      "oracle": {
+        "input": 500,
+        "cacheRead": 96145824,
+        "cacheWrite": 1820108,
+        "output": 357490
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 581,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 581,
+          "main": 581,
+          "subagent": 0,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "723e03c0-1140-400d-910e-96fa789c977f",
+      "files": 1,
+      "requests": {
+        "meter": 126,
+        "oracle": 126
+      },
+      "subagentShare": 0,
+      "singleThreaded": true,
+      "nestedAgents": false,
+      "meter": {
+        "input": 249,
+        "cacheRead": 29175841,
+        "cacheWrite": 852029,
+        "output": 181813
+      },
+      "oracle": {
+        "input": 249,
+        "cacheRead": 29175841,
+        "cacheWrite": 852029,
+        "output": 181813
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 260,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 260,
+          "main": 260,
+          "subagent": 0,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "b5063f62-97f4-4a3d-9f9f-1e5e74a4a91b",
+      "files": 1,
+      "requests": {
+        "meter": 69,
+        "oracle": 69
+      },
+      "subagentShare": 0,
+      "singleThreaded": true,
+      "nestedAgents": false,
+      "meter": {
+        "input": 19858,
+        "cacheRead": 19576034,
+        "cacheWrite": 1317580,
+        "output": 174478
+      },
+      "oracle": {
+        "input": 19858,
+        "cacheRead": 19576034,
+        "cacheWrite": 1317580,
+        "output": 174478
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 155,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 155,
+          "main": 155,
+          "subagent": 0,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "b64f8638-6338-4e81-acfe-2575a59a8b84",
+      "files": 1,
+      "requests": {
+        "meter": 239,
+        "oracle": 239
+      },
+      "subagentShare": 0,
+      "singleThreaded": true,
+      "nestedAgents": false,
+      "meter": {
+        "input": 445,
+        "cacheRead": 102923475,
+        "cacheWrite": 6321793,
+        "output": 231823
+      },
+      "oracle": {
+        "input": 445,
+        "cacheRead": 102923475,
+        "cacheWrite": 6321793,
+        "output": 231823
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 441,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 441,
+          "main": 441,
+          "subagent": 0,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "c9e2fe70-c679-4a02-986d-d894eb7e82e4",
+      "files": 10,
+      "requests": {
+        "meter": 411,
+        "oracle": 411
+      },
+      "subagentShare": 0.3114,
+      "singleThreaded": false,
+      "nestedAgents": true,
+      "meter": {
+        "input": 7159,
+        "cacheRead": 128582373,
+        "cacheWrite": 2483175,
+        "output": 570983
+      },
+      "oracle": {
+        "input": 7159,
+        "cacheRead": 128582373,
+        "cacheWrite": 2483175,
+        "output": 570983
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 540,
+        "subagentUuids": 333,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 873,
+          "main": 540,
+          "subagent": 333,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "d013cac5-afe5-4fca-9452-4981915c5736",
+      "files": 1,
+      "requests": {
+        "meter": 227,
+        "oracle": 227
+      },
+      "subagentShare": 0,
+      "singleThreaded": true,
+      "nestedAgents": false,
+      "meter": {
+        "input": 422,
+        "cacheRead": 92526406,
+        "cacheWrite": 4729527,
+        "output": 247298
+      },
+      "oracle": {
+        "input": 422,
+        "cacheRead": 92526406,
+        "cacheWrite": 4729527,
+        "output": 247298
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 444,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 444,
+          "main": 444,
+          "subagent": 0,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "f5c8c483-1129-4afc-ba77-82675ec5af25",
+      "files": 1,
+      "requests": {
+        "meter": 381,
+        "oracle": 381
+      },
+      "subagentShare": 0,
+      "singleThreaded": true,
+      "nestedAgents": false,
+      "meter": {
+        "input": 709,
+        "cacheRead": 115764169,
+        "cacheWrite": 8658793,
+        "output": 418955
+      },
+      "oracle": {
+        "input": 709,
+        "cacheRead": 115764169,
+        "cacheWrite": 8658793,
+        "output": 418955
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 715,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 715,
+          "main": 715,
+          "subagent": 0,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    },
+    {
+      "sessionId": "fc31cbdb-3912-4d73-9558-038b35884276",
+      "files": 2,
+      "requests": {
+        "meter": 463,
+        "oracle": 463
+      },
+      "subagentShare": 0.0065,
+      "singleThreaded": false,
+      "nestedAgents": false,
+      "meter": {
+        "input": 859,
+        "cacheRead": 166530566,
+        "cacheWrite": 4616473,
+        "output": 486314
+      },
+      "oracle": {
+        "input": 859,
+        "cacheRead": 166530566,
+        "cacheWrite": 4616473,
+        "output": 486314
+      },
+      "residual": {
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "output": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 881,
+        "subagentUuids": 7,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "excluded": {
+        "meter": {
+          "duplicateUuid": 0,
+          "apiError": 0,
+          "foreignSession": 0,
+          "noSessionId": 0
+        },
+        "oracle": {
+          "admitted": 888,
+          "main": 881,
+          "subagent": 7,
+          "uuidDuplicatesDropped": 0,
+          "excludedApiError": 0,
+          "excludedForeignSession": 0,
+          "excludedNoSessionId": 0,
+          "skippedUnparseable": 0
+        }
+      },
+      "claudeCodeVersions": [
+        "2.1.219"
+      ]
+    }
+  ]
+}
