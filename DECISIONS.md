@@ -2052,3 +2052,42 @@ write time. The retraction row is the first one written that way.
 hardcoded path segment, the monotonicity claim, and this: every one is a value
 asserted where a value could have been read or measured. The instrument was never
 the problem. *Writing down what I expected instead of what was there* was.
+
+### a unit is a join key, not a label
+
+**Found by stop-time review 2026-08-05**, auditing every row this session wrote
+against the vocabulary already in the file.
+
+Two rows name one quantity and carry another:
+
+| row | value · unit | how it scans | what it is |
+|---|---|---|---|
+| `subagent_request_silently_dropped_by_the_collision` | 70 `tokens` | 70 requests dropped | **one** request, whose output was 70 tokens |
+| `foreign_session_record_counted_as_this_sessions` | 4242 `tokens` | 4,242 foreign records | **one** record, carrying 4,242 tokens |
+
+Wrong by factors of 70 and 4,242 to anyone reading `metric` + `value`, which is
+how a JSONL file gets read. The honest names were
+`output_tokens_lost_to_the_uuid_collision` and
+`output_tokens_from_one_foreign_record`. **The findings themselves are
+unaffected** — both are stated correctly in their own `method` strings — which is
+exactly what makes this the dangerous kind of error: the row is right where
+somebody looks closely and wrong where they skim.
+
+**Three unit terms were invented** — `files`, `rows`, `sessions` — in a file that
+already had nineteen, including `count` as the generic and `records` and
+`requests` as domain-specific ones. That is not a style complaint. **A unit is a
+join key.** Anyone aggregating this file by unit now finds six different terms
+meaning "a number of things", and the fragmentation is invisible until the moment
+someone tries to group, at which point it silently splits one series into six.
+Reuse the existing term; a new one needs a reason stated where it is introduced.
+
+**Retracted rather than rewritten**, per the rule this file follows, and for the
+same reason the fabricated timestamps were: the rows stand, and
+`run 2026-08-05-win-10-unit-retraction` is what a reader finds next to them.
+
+**Five for five now**, and the shape has not varied once: the vacuous invariant,
+the hardcoded path segment, the monotonicity claim, the invented timestamps, and
+these labels. **Every one is a value written from expectation rather than read
+from the thing itself.** Not one was an error of arithmetic, of logic, or of the
+instrument. The instrument has been right the whole way; what kept being wrong is
+the sentence describing it.

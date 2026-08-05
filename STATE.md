@@ -25,7 +25,8 @@ threshold, and B14's 3.978 vs 3.5.
 ## Do not redo
 
 - **Read the value; never write down the one you expected.** Timestamps from the
-  clock, properties from a fixture. That covers most of the eleven.
+  clock, properties from a fixture, units from the vocabulary already in the file.
+  That is every one of the thirteen defects this session found.
 - **If the oracle needs another correction, G1 cannot close in this venue** —
   say so and decide on a stated non-metered basis. That is a permitted ending.
 - **B16's `> 10%` and 20-request denominator are INHERITED from B14.** Rederiving
