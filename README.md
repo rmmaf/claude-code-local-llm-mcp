@@ -218,7 +218,7 @@ All environment variables are optional, with sane defaults:
 | `LOCAL_CODER_TIMEOUT_MS` | `300000` | per-request timeout (local models are slow on big generations) |
 | `LOCAL_CODER_MAX_FILE_KB` | `256` | per-file size cap |
 | `LOCAL_CODER_MAX_CONTEXT_KB` | `512` | total assembled-context cap |
-| `LOCAL_CODER_CONTEXT_TOKENS` | *(probed from `lms ps`)* | the loaded model's context window, shared by prompt **and** answer — see below |
+| `LOCAL_CODER_CONTEXT_TOKENS` | *(probed from `lms ps`)* | the loaded model's context window, shared by prompt **and** answer. Cross-checked against `lms ps`, and the smaller wins — see below |
 | `LOCAL_CODER_INPUT_BYTES_PER_TOKEN` | `3.9` | bytes of prompt per input token, for the context pre-flight |
 | `LOCAL_CODER_AUTO_CLAUDE_MD` | `1` | write the delegation policy into the project's `CLAUDE.md` at startup (see below); `0` to leave the file alone |
 
@@ -226,15 +226,31 @@ All environment variables are optional, with sane defaults:
 
 `LOCAL_CODER_MAX_OUTPUT_TOKENS` bounds the answer. It does **not** bound the request, because the prompt and the answer share one context window — and the whole-file output contract sends every editable file in *and* gets every one back, so a request costs roughly **twice** the bytes it touches.
 
-A pre-flight refuses requests that cannot fit, with `context_would_overflow`. It needs to know the window, and it finds out in this order:
+A pre-flight refuses requests that cannot fit, with `context_would_overflow`. It needs to know the window, and it asks both sources:
 
 1. `LOCAL_CODER_CONTEXT_TOKENS`, if set.
 2. `lms ps`, when exactly one model is loaded (or the one you named is).
-3. Otherwise **the check is skipped** — it refuses requests, so it will not act on a guess.
+3. **When both answer, the smaller wins**, and a disagreement is logged.
+4. When neither does, **the check is skipped** — it refuses requests, so it will not act on a guess.
 
-Run `status` to see which happened: `context_window.source` is `config`, `lms`, or `unknown`. If it says `unknown`, nothing is enforcing the window.
+Rule 3 is there because a model explicitly loaded at 32,768 was later found loaded at 16,384 — the default — with nothing reconfigured. The setting is a belief; `lms ps` is an observation. Too small costs a refusal you can retry; too large costs content nobody notices is gone.
+
+Run `status` to see which happened: `context_window.source` is `config`, `lms`, `disagreement`, or `unknown`, and `configured_tokens` / `probed_tokens` show both sides. `unknown` means nothing is enforcing the window; `disagreement` means one of your two numbers is stale.
 
 Measured on a 30B coder at a 16,384-token window, the practical whole-file ceiling is **~25 KB of editable source per call**. Above it, the model does not necessarily fail loudly: `evidence/2026-08-04-mac-12-variance.contract-stability.json` records a 35.6 KB file coming back as a properly closed `<file>` block, with `finish_reason: "stop"`, **missing 90 lines** — a response every automated check accepts. Reload with a larger context (`lms load --context-length`) and set `LOCAL_CODER_CONTEXT_TOKENS` to match, or send fewer files per call.
+
+**The reload is not a workaround, it is the fix, and it is measured.** The same 43.6 KB file that came back short at 16,384 returns **complete** at 32,768 (`evidence/2026-08-04-mac-20-32k.contract-stability.json`): it needs 10,321 output tokens and only ~5,835 were left after its prompt at the smaller window. At 32,768 the estimator's ceiling works out to roughly **~54 KB** of editable source per call, and the whole 13-case corpus returned 26 of 26 complete.
+
+**And verifying once is not enough.** The drift above was observed *between* two checks, so the number you confirmed at the start of a long job can be wrong by the end. Give a benchmark the machine to itself: memory pressure from anything else running can take the model down and bring it back smaller.
+
+**What the window costs you, on this repository.** A file plus its test is the natural unit for `repair` and `fix`, and the per-call ceiling decides how many of those fit:
+
+| Loaded window | Ceiling per call | Source+test pairs refused | Single files refused |
+|---|---|---|---|
+| 16,384 | ~26.8 KB | **5 of 15 (33%)** | 2 of 30 (7%) |
+| 32,768 | ~54.0 KB | 1 of 15 (7%) | 0 of 30 |
+
+Raise it where it is real — LM Studio's per-model default load context — rather than in `LOCAL_CODER_CONTEXT_TOKENS`. The setting only takes effect when `lms ps` cannot answer, and that is exactly when the model is *not* loaded and JIT will bring it up at the default anyway.
 
 ## Model selection
 

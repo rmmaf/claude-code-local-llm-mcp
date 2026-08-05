@@ -1276,6 +1276,29 @@ now returns null, and `repair` no longer pins one window for the whole loop —
 that pin was justified by "a value that cannot change mid-loop", which is untrue
 the moment no model is named and each round re-selects.
 
+**The configured window is a belief and it loses to the observation.** The first
+version had `LOCAL_CODER_CONTEXT_TOKENS` short-circuit the probe entirely, and
+justified it on cost: the probe is a ~120 ms shell-out. That ordering was
+backwards, and it took a measurement to see why. A model explicitly loaded at
+32,768 and confirmed by `lms ps` was found loaded at **16,384** — the default —
+minutes later, with the server still answering and nobody having touched the
+configuration. Short-circuiting meant the person who set the value was precisely
+the one guaranteed never to find out it had gone stale.
+
+`resolveContextTokens` now takes `Math.min` of the two whenever both are
+knowable. The failure is asymmetric and that is the whole argument: a window too
+small costs a refusal the caller can retry, a window too large costs content
+nobody notices is gone. The disagreement is warned about rather than silently
+resolved, because either number could be the stale one — the config could be old,
+or `lms ps` could be reporting a model that is about to be replaced. And
+`status.context_window` now carries `configured_tokens`, `probed_tokens` and a
+`disagreement` source, so the state is readable instead of inferable.
+
+What this does not do is make one verification enough. The drift was observed
+*between* two checks, so a run that probes once at startup can still be wrong by
+the end — which is why the operational rule is a diagnostic gets the machine to
+itself.
+
 **`status` reports the window, including when it does not know it.**
 `context_window.source` is `config`, `lms` or `unknown`, and `unknown` is the
 case worth surfacing loudest: it means the check is switched off, silently. A
@@ -1328,6 +1351,42 @@ rejects it, that means **the policy is app state that this project can neither
 read nor set**. The GUI is the only place it exists, so this point cannot be
 closed by anything automatable, and any run whose conclusion depends on the
 mechanism has to record the setting by hand.
+
+**The token accounting discriminates between the policies, and it points at
+pruning.** `run 2026-08-04-mac-19-32k`, case L10, both attempts of one case:
+
+| | prompt | completion | sum | window |
+|---|---|---|---|---|
+| attempt 1 | 10,549 | 5,960 | 16,509 | 16,384 |
+| attempt 2 | **10,549** | 5,947 | 16,496 | 16,384 |
+
+The diagnostic appends the whole 5,960-token bad response *plus* a corrective
+message before attempt 2, so its message list is roughly 6,000 tokens larger —
+and the server reported **the same prompt count**, then generated another ~5,900
+tokens on top. Under `stopAtLimit` a prompt that alone exceeds the window cannot
+produce a six-thousand-token answer. Under `truncateMiddle` or `rollingWindow`
+LM Studio prunes the prompt and keeps going, which fits both numbers.
+
+This is not proof — the server could be reporting a cached-prefix figure rather
+than what it actually processed — and it is recorded as an observation, not a
+conclusion. But it is the first evidence that discriminates between the policies
+at all, and it points the same way as the symptom that opened this question: a
+block that came back properly closed and 90 lines short.
+
+**`run 2026-08-04-mac-20-32k` narrowed what has to be explained, without
+explaining it.** The same request at a real 32,768-token window returns
+**complete**, emitting the 10,321 output tokens the file actually needs against
+the ~5,835 that were left at 16,384. So the *loss* was arithmetic: there was no
+room. What that does not explain is the SHAPE of the loss. A response that
+simply runs out of room is cut off at the end; this one came back with a
+properly closed `</file>` and a run of 81 lines gone from the **middle**. Only
+something that removed content from the prompt while generation continued
+produces that shape, which is `truncateMiddle` or `rollingWindow` and not
+`stopAtLimit`.
+
+Nothing overflowed at 32,768, so that run cannot discriminate between the
+policies — it removes the "maybe the model is just bad at long files" reading and
+leaves the mechanism question exactly where it was.
 
 **What the search DID settle is the neighbouring question.** `run
 2026-08-04-mac-19-32k` declared a 32,768-token window while `lms ps` reported the

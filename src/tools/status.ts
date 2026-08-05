@@ -48,8 +48,16 @@ export interface StatusResult {
    * `LOCAL_CODER_CONTEXT_TOKENS` is set.
    */
   context_window: {
+    /** The one the pre-flight will use: the smaller of the two below. */
     tokens: number | null;
-    source: "config" | "lms" | "unknown";
+    /**
+     * `disagreement` is the case worth reading first: the configured value and
+     * the loaded one differ, which is what a crashed-and-reloaded model looks
+     * like. `unknown` means the check is off entirely.
+     */
+    source: "config" | "lms" | "disagreement" | "unknown";
+    configured_tokens: number | null;
+    probed_tokens: number | null;
     /** How much larger a reload could make it, when `lms` says. */
     max_tokens: number | null;
   };
@@ -125,15 +133,25 @@ export async function runStatus(config: Config, deps: ToolDeps = {}): Promise<St
     auto_selection: autoSelection,
     context_window: (() => {
       const probed = pickLoadedContextTokens(loaded, autoSelection.model);
-      const tokens = config.contextTokens ?? probed;
+      const configured = config.contextTokens;
+      // The SMALLER of the two, matching `resolveContextTokens`. A crash reloads
+      // a model at its default context, so a configured value can be stale while
+      // nobody touched it.
+      const tokens =
+        configured === null ? probed : probed === null ? configured : Math.min(configured, probed);
       return {
         tokens,
         source:
-          config.contextTokens !== null
-            ? ("config" as const)
-            : probed !== null
-              ? ("lms" as const)
-              : ("unknown" as const),
+          configured !== null && probed !== null && configured !== probed
+            ? ("disagreement" as const)
+            : configured !== null
+              ? ("config" as const)
+              : probed !== null
+                ? ("lms" as const)
+                : ("unknown" as const),
+        /** Both sides, so a disagreement can be read rather than inferred. */
+        configured_tokens: configured,
+        probed_tokens: probed,
         max_tokens:
           loaded?.find((m) => m.ids.some((id) => id === autoSelection.model))?.maxContextLength ??
           null,

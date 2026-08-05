@@ -5,22 +5,24 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B14 is `moot`; B16 replaces it, and the pre-flight now has a negative
-control.** `run 2026-08-04-mac-19-32k` declared a 32,768 window while the model
-ran at **16,384**. Same corpus, same model, same real window as `mac-16`/`-17`;
-only the declaration differed. **Told the truth: 2 refused, 0 elided. Told
-double: 0 refused, 1 elided.** First causal evidence the check works. The run is
-VOID for B16 — a misinformed pre-flight is a misconfiguration under test — and
-that VOID condition was added after seeing it, and says so. Of the two honest
-refusals, G3 would have succeeded and L10 would have lost content: 1-1.
+**B16 HOLDS.** `mac-20` and `mac-23`, both non-void, both with the window
+verified at 32,768 — `mac-23` after the run as well as before, the check
+`mac-21` lacked and was discarded for. **0 of 52 admitted requests lost
+content**, against a >10% fall line and a hold condition of 0 over ≥ 20 across
+≥ 2 runs, all pre-registered. **Read the caveats with it:** the two runs share a
+corpus at temperature 0.1 where 12 of 13 cases reproduce byte-identically, so 52
+is nearer n=1 replicated than n=2; and neither run refused anything, so nothing
+here speaks to the refusal side. Not tightened after the fact, on purpose.
 
 ## Next action
 
-**Reload at 32,768 with the key `qwen3-coder-30b-a3b-instruct-dwq-v2`** (no
-`mlx-community/` prefix — that key does not exist locally), verify `lms ps` says
-32768, then run `contract-stability` for a valid B16 score. `contextOverflowPolicy`
-is app state: not in `lms ps`, not in any file under `~/.lmstudio`, and rejected
-by the OpenAI endpoint. GUI only, recorded by hand.
+**Nothing is blocked on B16 any more; pick from what it left open.** G7's
+inflation risk is untouched — its two runs refused nothing, and the observed
+over-refusal (`mac-16`) still carries no threshold, deliberately. Or settle the
+oldest open point: **why the loss had that SHAPE.** Running out of room cuts a
+response off at the end; that one came back properly closed with 81 lines gone
+from the middle, which only prompt pruning produces — `truncateMiddle` or
+`rollingWindow`, not `stopAtLimit`. GUI only.
 
 ## Do not redo
 

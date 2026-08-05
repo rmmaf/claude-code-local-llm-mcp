@@ -187,6 +187,14 @@ What may be built next, and the number that decides it.
 - **Blocked on B16 too** (B14 until it went `moot`)**, in one direction only:**
   if the pre-flight turns out to be too strict, its refusal count is inflated and
   would open this gate on an artefact. Read B16's result before reading this one.
+- **B16 now holds, and it does NOT clear that block.** Its two non-void runs
+  (`mac-20`, `mac-23`) refused **nothing** — at 32,768 every request was
+  admitted — so they establish that admitted requests succeed and say nothing at
+  all about the refusal side. The over-refusal that *was* observed
+  (`run 2026-08-04-mac-16-preflight`, a 26,889 B pair that measured 11,237 actual
+  tokens and later returned complete 2 of 2) is still carried by B16 **without a
+  threshold**, deliberately. So this gate's inflation risk is exactly as open as
+  it was.
 - **A number now exists, and this gate does NOT move on it.**
   `run 2026-08-04-mac-17-preflight` ran the full `D8` corpus with both pre-flights
   enforcing: **`output_would_truncate` refused 0 of 13**;
@@ -237,6 +245,16 @@ What may be built next, and the number that decides it.
      that justification does not transfer to a constraint that counts the prompt
      too, and inheriting the numbers without recomputing it would be a threshold
      with no argument behind it.
+     - **HALF OF THAT IS NOW DONE. The base rate exists, and it is not one
+       number — it is a function of the window**, which is itself the finding.
+       Over this repository's 15 source+test pairs, estimated by the shipped
+       formula rather than by running anything: **33% (5 of 15) exceed a
+       16,384-token window, 7% (1 of 15) exceed 32,768.** Files alone: 7% and 0%.
+       So a threshold on `context_would_overflow` says nothing until the window
+       it was measured at is fixed — which is rule 3 arriving from the other
+       direction. **No threshold is set here**; setting one now, with the rate in
+       hand, is the move rule 4 exists to prevent. What rule 4 still needs is the
+       threshold and its argument, from whoever decides them.
   5. **The codes must not be merged, and the reason is not pedantry — they imply
      different fixes.** `output_would_truncate` says the answer is too big, which
      is what search/replace blocks are for. `context_would_overflow` says prompt

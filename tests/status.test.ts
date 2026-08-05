@@ -46,7 +46,20 @@ describe("status context window", () => {
     expect(result.context_window.max_tokens).toBe(262_144);
   });
 
-  it("prefers the explicit setting over the probe", async () => {
+  /**
+   * The explicit setting used to WIN, and that was the dangerous way round.
+   * `LOCAL_CODER_CONTEXT_TOKENS` is a belief; `lms ps` is an observation. A
+   * model explicitly loaded at 32,768 was found loaded at 16,384 — the default —
+   * with the server up and nobody having touched the configuration, so a
+   * declared window can go stale on its own. Believing it then admits requests
+   * the model cannot honour, which come back closed, well-formed and short.
+   *
+   * The smaller wins because the failure is asymmetric: too small costs a
+   * refusal the caller can retry, too large costs content nobody notices is
+   * gone. And the disagreement is REPORTED rather than quietly resolved, because
+   * either number could be the stale one.
+   */
+  it("takes the smaller window and reports the disagreement", async () => {
     const { fetchImpl } = queuedFetch([{ data: [{ id: "test-solo-model" }] }]);
     const result = await runStatus(testConfig(makeTempRoot(), { contextTokens: 32_768 }), {
       fetchImpl,
@@ -54,9 +67,38 @@ describe("status context window", () => {
       runner: lmsSubcommandRunner({ ls: lmsListBody([]), ps: psBody }),
     });
 
+    expect(result.context_window.tokens).toBe(16_384);
+    expect(result.context_window.source).toBe("disagreement");
+    expect(result.context_window.configured_tokens).toBe(32_768);
+    expect(result.context_window.probed_tokens).toBe(16_384);
+    // The raw setting is still reported as configured, unchanged.
+    expect(result.config.context_tokens).toBe(32_768);
+  });
+
+  it("reports source 'config' when the two agree, with no disagreement flag", async () => {
+    const { fetchImpl } = queuedFetch([{ data: [{ id: "test-solo-model" }] }]);
+    const result = await runStatus(testConfig(makeTempRoot(), { contextTokens: 16_384 }), {
+      fetchImpl,
+      platform: "linux",
+      runner: lmsSubcommandRunner({ ls: lmsListBody([]), ps: psBody }),
+    });
+
+    expect(result.context_window.tokens).toBe(16_384);
+    expect(result.context_window.source).toBe("config");
+  });
+
+  /** Nothing loaded to contradict it, so the configured value stands alone. */
+  it("uses the explicit setting when the probe cannot answer", async () => {
+    const { fetchImpl } = queuedFetch([{ data: [] }]);
+    const result = await runStatus(testConfig(makeTempRoot(), { contextTokens: 32_768 }), {
+      fetchImpl,
+      platform: "linux",
+      runner: noLmsRunner(),
+    });
+
     expect(result.context_window.tokens).toBe(32_768);
     expect(result.context_window.source).toBe("config");
-    expect(result.config.context_tokens).toBe(32_768);
+    expect(result.context_window.probed_tokens).toBeNull();
   });
 
   /**

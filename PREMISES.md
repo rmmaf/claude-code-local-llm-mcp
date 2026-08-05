@@ -888,6 +888,11 @@ pre-registered as its own premise before anything is measured against it.
   model that served it and show it equal to the declared value. Like the rule
   above, this makes the premise harder to satisfy — the alternative was reading
   1 of 25 as a 4% pass on a run where the pre-flight was actively misinformed.
+  **The numbers are now measured, not inferred:** that response was
+  10,549 prompt + 5,960 completion = **16,509 against a real 16,384** — over by
+  **125 tokens**. `contextExhausted` catches it against the real window and calls
+  it a fit against the declared one. The margin is the point: the failure needs
+  no dramatic overshoot, so a declared window is worth nothing unverified.
 - **Falls if:** > 10% of the admitted requests come back with content missing.
   **This number is inherited verbatim from B14** and that is the point — it
   predates the data, so it cannot have been chosen by its answer. Only the
@@ -969,11 +974,76 @@ pre-registered as its own premise before anything is measured against it.
     — so a response that arrived and was measured vanished whenever a
     post-generation failure fired. `runRepair` now owns the buffer and writes an
     `aborted` row from the catch, guarded so the two paths cannot both write.
-- **Status:** open
+- **Measured, on the first run that verified its own window:**
+  `run 2026-08-04-mac-20-32k`, `LOCAL_CODER_CONTEXT_TOKENS=32768` with `lms ps`
+  confirming 32,768 before the run started. **26 admitted, 26 complete, 0 with
+  content missing.** Largest admitted request 20,870 actual tokens against a
+  29,491 usable budget — clearing the 70% non-void bar of 20,644, so the run
+  counts.
+- **The second non-void run: `run 2026-08-04-mac-23-32k`.** Same shape, and this
+  time the window was checked **after** the run as well as before — 32,768 both
+  times, so it cannot have drifted mid-run the way `mac-21` did. 26 admitted, 26
+  complete, 0 with content missing, largest request 20,870 again.
+- **HOLDS: 0 of 52 admitted requests across 2 non-void runs**, against a fall
+  line of > 10% and a hold condition of 0 over ≥ 20 across ≥ 2. Every condition
+  was pre-registered before either run.
+- **What that does NOT establish, stated because the threshold turned out weaker
+  than it looked.** (a) **The two runs are barely independent**: same corpus,
+  same model, temperature 0.1, and `D8` already measured 12 of 13 cases returning
+  byte-identical output across repeats — `mac-23`'s L10 reproduces `mac-20`'s to
+  the token. This is closer to n=1 replicated than n=2. The condition is **not**
+  retroactively tightened, because raising a bar after seeing the result is the
+  mirror image of lowering it; it is recorded so nobody reads 52 as 52
+  independent observations. (b) **Neither run refused anything.** At 32,768 the
+  pre-flight admitted all 26 both times, so these runs confirm *admitted requests
+  succeed* and say nothing about whether it refuses what it should. (c) One
+  model, one window, one repository.
+- **The same request, at two real windows, and the elision turns out to be
+  arithmetic rather than model quality.** `src/tools/repair.ts` (43,594 B),
+  prompt 10,549 tokens both times:
 
----
+  | Real window | Completion | Sum | Verdict |
+  |---|---|---|---|
+  | 16,384 (`mac-19`) | 5,960 | 16,509 | `elided`, probe 0/1 |
+  | 32,768 (`mac-20`) | **10,321** | 20,870 | `complete`, probe 1/1 |
 
-## Measured facts (not premises)
+  The file needs 10,321 output tokens and only ~5,835 were left after the prompt.
+  Same model, same temperature, same bytes — it returns complete once there is
+  room. **This also proves `mac-16`'s refusal of this request was correct**, by
+  measurement rather than by symptom: 20,870 needed in a 16,384-token window.
+- **What that run does NOT settle: the mechanism.** Nothing overflowed at 32,768,
+  so it cannot discriminate between the overflow policies, and the question the
+  elision actually raises — why a response that ran out of room came back with a
+  *properly closed* block missing 81 lines from the middle rather than cut off at
+  the end — is still open in `DECISIONS.md`.
+- **Estimator error on that case: +14.2%, in the safe direction.** Estimated
+  23,833 total against 20,870 actual (input +7.9%, output +20.7%; measured output
+  density 4.22 B/token here against the 3.978 pooled over `mac-12-variance`).
+  Recorded beside the unapplied re-derivation above: this is the run that shows
+  the pessimism is not obviously waste.
+- **The VOID condition above now has a mechanical guard, because verifying once
+  is not enough.** `run 2026-08-04-mac-22-window-drift`: a model explicitly
+  loaded at 32,768 and confirmed by `lms ps` was found at **16,384** minutes
+  later, server still up, nobody having reconfigured anything. So
+  `resolveContextTokens` no longer lets `LOCAL_CODER_CONTEXT_TOKENS`
+  short-circuit the probe — it takes the **smaller** of configured and loaded and
+  warns on disagreement, and `status.context_window` reports both sides plus a
+  `disagreement` source. The setting is a belief; `lms ps` is an observation.
+- **`run 2026-08-04-mac-21-32k` was discarded before scoring**, not counted. It
+  was the intended second non-void run: the guard confirmed 32,768 at launch, but
+  the window fell mid-run while an oversized probe request shared the machine.
+  A start-of-run probe cannot see that, so its artifact would have claimed 32,768
+  for requests possibly served at half. **B16 therefore still has one non-void
+  run and still needs a second** — and a run scoring it must not share the
+  machine with anything else, because memory pressure changes what is measured.
+  **`mac-23` is that clean run** — window verified before and after, nothing else
+  on the box.
+- **Status:** **holding** — 0 of 52 admitted requests lost content across
+  `run 2026-08-04-mac-20-32k` and `run 2026-08-04-mac-23-32k`, both non-void.
+  **Reopens if** a run with a new `run_id` puts the rate over 10%, and the
+  limitations above are the places to look first: a different model, a different
+  window, a corpus this one did not reach, or the refusal side, which neither run
+  exercised at all.
 
 These are observations, not bets — nothing here has a threshold or can "fall".
 All from `run 2026-08-02-win-01`, machine `win-01`, recorded retroactively and
@@ -1000,12 +1070,12 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 335 passing** (339 total,
+`npm test` reports **4 failures / 337 passing** (341 total,
 `run 2026-08-04-win-02`). The same four, and the same causes, as when this was
 first recorded at 4/202 in `run 2026-08-02-win-03` — re-confirmed by a fresh
 `git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, again
 after importing the Mac's `D8` work (**+38 tests, no new failure**), and again
-adding B16 and the fixes its three adversarial reviews forced (**+15**). The four,
+adding B16 and the fixes its three adversarial reviews forced, plus the window cross-check (**+17**). The four,
 by name, so the count is checkable rather than trusted:
 `tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
 `tests/regression.test.ts:117`.
