@@ -93,10 +93,19 @@ command -v lms >/dev/null 2>&1 || refuse \
   "the \`lms\` CLI is missing. Without it there is no local model, and \`repair\` is exactly what this pre-flight exists to exercise. Install LM Studio's CLI, then re-run."
 ok "lms present"
 
-# Recorded in the artifact, so it may not be silently empty. A blank version
-# there would read as "not applicable" rather than as "we never asked".
-CLAUDE_VER=$(claude --version 2>&1 | head -1)
-[ -n "$CLAUDE_VER" ] || refuse "claude --version produced nothing. The version is part of the evidence, and an empty one is a gap that looks like a value."
+# EXIT CODE FIRST, THEN SHAPE. The previous version captured `2>&1` and only
+# checked for emptiness -- so a failing `claude --version` filled the variable
+# with its own error text, passed the non-empty test, and was written into the
+# artifact as `claudeVersion: "Error: cannot read config"`. Widening the capture
+# to stderr is what made the check unable to fail.
+CLAUDE_VER=$(claude --version 2>/dev/null)
+CV_RC=$?
+[ $CV_RC -eq 0 ] || refuse "claude --version exited $CV_RC. The version is part of the evidence and may not be guessed at."
+CLAUDE_VER=$(printf '%s' "$CLAUDE_VER" | head -1)
+case "$CLAUDE_VER" in
+  *[0-9].[0-9]*) : ;;
+  *) refuse "claude --version returned \"$CLAUDE_VER\", which does not look like a version. Recording it would put a sentence where a number belongs." ;;
+esac
 ok "claude $CLAUDE_VER"
 
 # ---------------------------------------------------------------------------
@@ -107,6 +116,7 @@ cd "$REPO" || refuse "cannot enter $REPO"
 # ABSOLUTE from here on. A relative path would be written into the temporary
 # --mcp-config, and Claude Code resolves that against ITS cwd, not this one.
 REPO=$(pwd -P)
+[ -n "$REPO" ] || refuse "pwd -P returned nothing; every path below would be built from an empty string"
 
 git_tracked_changes
 [ $GIT_RC -eq 0 ] || refuse "git status failed (exit $GIT_RC). The tree was never inspected, and an uninspected tree must not read as a clean one."
@@ -123,8 +133,20 @@ git checkout -q "$BRANCH" 2>/dev/null || git checkout -q -b "$BRANCH" "origin/$B
   || refuse "could not check out $BRANCH"
 git merge --ff-only "origin/$BRANCH" --quiet 2>/dev/null || true
 
-LOCAL_SHA=$(git rev-parse HEAD)
-REMOTE_SHA=$(git rev-parse "origin/$BRANCH")
+# TWO EMPTY STRINGS ARE EQUAL. With `git rev-parse` failing on both sides this
+# read as "at the tip" and let the run proceed against an unknown commit -- the
+# same false-safe shape as the git-status and tsc checks, wearing a comparison
+# instead of a grep.
+LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
+REMOTE_SHA=$(git rev-parse "origin/$BRANCH" 2>/dev/null)
+case "$LOCAL_SHA" in
+  ????????????????????????????????????????) : ;;
+  *) refuse "could not read HEAD as a commit sha (got \"$LOCAL_SHA\")" ;;
+esac
+case "$REMOTE_SHA" in
+  ????????????????????????????????????????) : ;;
+  *) refuse "could not read origin/$BRANCH as a commit sha (got \"$REMOTE_SHA\")" ;;
+esac
 [ "$LOCAL_SHA" = "$REMOTE_SHA" ] || refuse \
   "HEAD is $(git rev-parse --short HEAD) but origin/$BRANCH is $(git rev-parse --short origin/$BRANCH). The Mac is not at the tip, and a pre-flight of the wrong instrument says nothing about the right one."
 ok "at the tip of $BRANCH — $(git rev-parse --short HEAD)"
@@ -165,9 +187,11 @@ ok "model endpoint answering: $REACHABLE"
 next "MCP server, scoped to this run"
 
 MCP_CFG=$(mktemp -t b12mcp)
+[ -n "$MCP_CFG" ] || refuse "mktemp produced no path for the temporary --mcp-config"
 cat > "$MCP_CFG" <<JSON
 {"mcpServers":{"local-coder":{"type":"stdio","command":"node","args":["$REPO/dist/server.js"],"env":{}}}}
 JSON
+[ -s "$MCP_CFG" ] || refuse "the temporary --mcp-config is empty; claude would start with no server and the treatment arm would be a control"
 ok "wrote a temporary --mcp-config (your global Claude config is untouched)"
 
 # ---------------------------------------------------------------------------
@@ -206,6 +230,10 @@ esac
 next "Scratch session: one gate call, one repair call"
 
 SESSION_ID=$(uuidgen | tr 'A-Z' 'a-z')
+case "$SESSION_ID" in
+  ????????-????-????-????-????????????) : ;;
+  *) refuse "uuidgen did not produce a uuid (got \"$SESSION_ID\"). The pre-flight reads the session back by this id, so an empty one would read somebody else's session or none." ;;
+esac
 info "session $SESSION_ID"
 
 DISABLE_AUTOUPDATER=1 claude --print \
@@ -227,7 +255,8 @@ fi
 next "Pre-flight"
 
 STAMP=$(date -u +%Y-%m-%d)
-SHORT=$(git rev-parse --short HEAD)
+SHORT=$(printf '%s' "$LOCAL_SHA" | cut -c1-7)   # from the sha already validated above
+[ -n "$STAMP" ] && [ -n "$SHORT" ] || refuse "could not build the artifact filename (stamp=\"$STAMP\" short=\"$SHORT\")"
 ART="$REPO/evidence/$STAMP-mac-b12-$SHORT.preflight.json"
 mkdir -p "$REPO/evidence"
 
