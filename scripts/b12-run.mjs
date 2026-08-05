@@ -228,14 +228,26 @@ function loadManifest(file) {
  */
 function preflight(args) {
   const out = { ts: stamp(), checks: [] };
+  let refusals = 0;
   const check = (name, ok, detail) => {
     out.checks.push({ name, ok, detail });
+    if (!ok) refusals++;
     process.stdout.write(`  ${ok ? "ok  " : "FAIL"}  ${name}${detail ? `  ${detail}` : ""}\n`);
   };
 
   const binary = claudeBinary();
   check("claude on PATH", true, `${binary.version} ${binary.sha256.slice(0, 12)}`);
   out.binary = binary;
+
+  // RUN-LEVEL, NOT MANIFEST-CONDITIONAL. This first shipped inside the
+  // `if (args.manifest)` branch, so a preflight without one never checked it and
+  // reported PASSED while an auto-update could land mid-run and split the
+  // observation set across two transcript layouts.
+  check(
+    "DISABLE_AUTOUPDATER=1",
+    process.env.DISABLE_AUTOUPDATER === "1",
+    process.env.DISABLE_AUTOUPDATER ?? "(unset)"
+  );
 
   if (args.manifest) {
     const { manifest, sha256 } = loadManifest(args.manifest);
@@ -246,43 +258,69 @@ function preflight(args) {
 
   const snap = takeSnapshot(args.root);
   out.snapshot = { slugsWalked: snap.slugsWalked, files: snap.files, ids: snap.requestIds.length };
-  check("snapshot covers every project slug", snap.slugsWalked > 0, `${snap.slugsWalked} slugs, ${snap.files} files, ${snap.requestIds.length} ids`);
-
-  const telemetry = path.join(REPO, ".local-coder", "telemetry.jsonl");
-  check("telemetry log is where the meter will look", existsSync(telemetry), telemetry);
+  check(
+    "snapshot covers every project slug",
+    snap.slugsWalked > 0 && snap.requestIds.length > 0,
+    `${snap.slugsWalked} slugs, ${snap.files} files, ${snap.requestIds.length} ids`
+  );
 
   const dist = path.join(REPO, "dist", "cost", "cli.js");
-  if (!existsSync(dist)) {
-    check("cost meter is built", false, "run npm run build");
+  check("cost meter is built", existsSync(dist), dist);
+
+  // THE FIVE ASSERTIONS, ON A FRESH CALL, WHICH IS THE ONLY PLACE THEY MEAN
+  // ANYTHING.
+  //
+  // This first shipped asserting none of them, and reported PASSED on a machine
+  // where the design's own list fails outright: 12 ambiguous rows, 4 foreign, 6
+  // sessions withholding. Those come from continuation lineages accumulated over
+  // days -- facts about the corpus, not about whether the join works now. A
+  // preflight scoped to history therefore either always fails or means nothing.
+  //
+  // So it is scoped to ONE SCRATCH SESSION that calls `gate` and `repair` and is
+  // then read back by id. If the echo of `invocation_id` into `toolUseResult`
+  // ever stops surviving a Claude Code release, this is where it surfaces -- for
+  // the price of ten minutes instead of forty-five sessions and an attempt.
+  if (!args.session) {
+    check(
+      "fresh-call assertions ran",
+      false,
+      "pass --session <id> from a scratch run that called gate and repair once each; " +
+        "without it this preflight cannot say the join works, only that files exist"
+    );
+  } else if (!existsSync(dist)) {
+    check("fresh-call assertions ran", false, "cost meter is not built");
   } else {
-    const r = run(process.execPath, [dist, "--all", "--json"], { cwd: REPO });
-    let payloads = null;
+    const r = run(process.execPath, [dist, "--session", args.session, "--json"], { cwd: REPO });
+    let payload = null;
     try {
-      payloads = JSON.parse(r.out);
+      payload = JSON.parse(r.out);
     } catch {
-      /* handled below */
+      /* reported below */
     }
-    if (payloads === null) {
-      check("cost meter emits parseable JSON", false, r.err.slice(0, 200));
+    if (payload === null || payload.length === 0) {
+      check("scratch session is readable by the meter", false, r.err.slice(0, 200) || "no payload");
     } else {
-      check("cost meter emits parseable JSON", true, `${payloads.length} session(s)`);
-      const withheld = payloads.filter((p) => p.counterfactual?.savedFraction === null).length;
-      const zero = payloads.filter((p) => p.counterfactual?.savedFraction === 0).length;
-      // A confident zero across the board is the scoping error, not a result.
-      check(
-        "not every session reports a confident zero",
-        !(payloads.length > 0 && zero === payloads.length),
-        `${zero} zero, ${withheld} withheld, of ${payloads.length}`
-      );
+      const c = payload[0].counterfactual;
+      const tools = c.byTool.map((t) => t.tool);
+      out.scratch = { sessionId: args.session, counterfactual: c };
+      check("provenanceUnavailable === false", c.provenanceUnavailable === false, String(c.provenanceUnavailable));
+      check("ambiguous === 0", c.ambiguous === 0, String(c.ambiguous));
+      check("unmatched === 0", c.unmatched === 0, String(c.unmatched));
+      check("excludedForeign === 0", c.excludedForeign === 0, String(c.excludedForeign));
+      check("savedFraction !== null", c.savedFraction !== null, String(c.savedFraction));
+      // Without both tools exercised, the five above can pass on a session that
+      // called nothing -- the vacuous-check shape this project keeps hitting.
+      check("gate produced a credited row", tools.includes("gate"), tools.join(",") || "(none)");
+      check("repair produced a credited row", tools.includes("repair"), tools.join(",") || "(none)");
     }
   }
 
-  out.passed = out.checks.every((c) => c.ok);
+  out.passed = refusals === 0;
   if (args.out) {
     writeFileSync(args.out, JSON.stringify(out, null, 2) + "\n", "utf8");
     process.stdout.write(`  wrote ${args.out}\n`);
   }
-  process.stdout.write(`\n  preflight ${out.passed ? "PASSED" : "FAILED"}\n`);
+  process.stdout.write(`\n  preflight ${out.passed ? "PASSED" : "FAILED"} (${refusals} failing check(s))\n`);
   process.exit(out.passed ? 0 : 1);
 }
 
@@ -374,7 +412,29 @@ function observe(args) {
   }
 
   const endCommit = git(["rev-parse", "HEAD"], treeDir);
+
+  // AN OBSERVATION THAT RECORDED NOTHING IS NOT AN OBSERVATION, and archiving it
+  // as if it were is how a run ends up with a denominator that is not its own.
+  // `originated` is the whole unit: no ids means the arm never reached the API,
+  // or the snapshot did not cover the slug it wrote to -- and the second is
+  // indistinguishable from the first at this layer, which is exactly why both
+  // have to be refused rather than one of them assumed.
+  //
+  // The artifact is still written. Refusing to write would hide the failure from
+  // the very record that is supposed to make a run re-adjudicable; what is
+  // refused is calling it valid, and the exit code stops a driver.
+  const invalid = [];
+  if (originated.length === 0) {
+    invalid.push("no requestId was originated: the arm produced no billed request, or its slug was outside the snapshot");
+  }
+  if (after.slugsWalked < before.slugsWalked) {
+    invalid.push(`snapshot scope shrank mid-observation, ${before.slugsWalked} slugs to ${after.slugsWalked}`);
+  }
+  if (result.failed) invalid.push("the CLI could not be spawned at all");
+
   const observation = {
+    valid: invalid.length === 0,
+    invalidReasons: invalid,
     ts: stamp(),
     runId: manifest.runId ?? null,
     manifestSha256: manifestSha,
@@ -412,10 +472,15 @@ function observe(args) {
   writeFileSync(path.join(dir, "cli-stdout.json"), result.out, "utf8");
 
   process.stdout.write(
-    `  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  originated ${originated.length} request(s)  ` +
-      `accepted ${observation.accepted}  ${censored ? "CENSORED  " : ""}${wallMs}ms\n  wrote ${dir}\n`
+    `  ${observation.valid ? "ok  " : "INVALID"}  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  ` +
+      `originated ${originated.length} request(s)  accepted ${observation.accepted}  ` +
+      `${censored ? "CENSORED  " : ""}${wallMs}ms\n  wrote ${dir}\n`
   );
   if (!args.keep) git(["worktree", "remove", "--force", treeDir]);
+  if (!observation.valid) {
+    for (const reason of invalid) process.stderr.write(`  INVALID: ${reason}` + String.fromCharCode(10));
+    process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------------------

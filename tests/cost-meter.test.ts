@@ -2154,6 +2154,49 @@ describe("the B12 harness", () => {
     expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
   });
 
+  it("cannot report a passing pre-flight without a fresh call to check", async () => {
+    // The first version asserted NONE of the five conditions the frozen design
+    // names and printed PASSED on a machine where all of them fail: 12 ambiguous
+    // rows, 4 foreign, 6 sessions withholding. The design's own cost of that is
+    // stated -- "the difference between losing ten minutes and losing forty-five
+    // sessions plus an attempt" -- so a pre-flight that cannot check must say so
+    // rather than pass.
+    //
+    // Scoping matters as much as the assertions: those 12 ambiguous rows are
+    // facts about accumulated continuation lineages, not about whether the join
+    // works now. Checked against history the list either always fails or means
+    // nothing, so it is checked against ONE scratch session that called the
+    // tools -- and with no session id there is nothing to check.
+    // Pointed at a fixture, not at this machine's 56 slugs: a check whose cost
+    // and result depend on unrelated history is not a check.
+    const root = tempRoot();
+    const slug = path.join(root, "slug-one");
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(
+      path.join(slug, "sess-1.jsonl"),
+      JSON.stringify({
+        type: "assistant",
+        uuid: "u1",
+        requestId: "req-1",
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 10 } },
+      }) + "\n",
+      "utf8"
+    );
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const failure = await runNode(process.execPath, [script, "preflight", "--root", root], {
+      cwd: process.cwd(),
+    }).catch((e: { code: number; stdout: string }) => e);
+
+    // Exit 1, and it names the check it could not make rather than failing opaquely.
+    expect((failure as { code: number }).code).toBe(1);
+    expect((failure as { stdout: string }).stdout).toMatch(/FAIL {2}fresh-call assertions ran/);
+    // The parts it CAN check still report, so a real failure is distinguishable
+    // from "could not look".
+    expect((failure as { stdout: string }).stdout).toMatch(/ok {4}snapshot covers every project slug/);
+  }, 30_000);
+
   it("refuses a snapshot that found nothing rather than reporting an empty machine", async () => {
     // A snapshot returning zero ids is a scoping error -- four worktrees mean
     // four slugs, and a run scored against the wrong tree returns a confident
