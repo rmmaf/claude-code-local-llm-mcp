@@ -1009,6 +1009,21 @@ pre-registered as its own premise before anything is measured against it.
   density 4.22 B/token here against the 3.978 pooled over `mac-12-variance`).
   Recorded beside the unapplied re-derivation above: this is the run that shows
   the pessimism is not obviously waste.
+- **The VOID condition above now has a mechanical guard, because verifying once
+  is not enough.** `run 2026-08-04-mac-22-window-drift`: a model explicitly
+  loaded at 32,768 and confirmed by `lms ps` was found at **16,384** minutes
+  later, server still up, nobody having reconfigured anything. So
+  `resolveContextTokens` no longer lets `LOCAL_CODER_CONTEXT_TOKENS`
+  short-circuit the probe — it takes the **smaller** of configured and loaded and
+  warns on disagreement, and `status.context_window` reports both sides plus a
+  `disagreement` source. The setting is a belief; `lms ps` is an observation.
+- **`run 2026-08-04-mac-21-32k` was discarded before scoring**, not counted. It
+  was the intended second non-void run: the guard confirmed 32,768 at launch, but
+  the window fell mid-run while an oversized probe request shared the machine.
+  A start-of-run probe cannot see that, so its artifact would have claimed 32,768
+  for requests possibly served at half. **B16 therefore still has one non-void
+  run and still needs a second** — and a run scoring it must not share the
+  machine with anything else, because memory pressure changes what is measured.
 - **Status:** open
 
 ---
@@ -1040,12 +1055,12 @@ inferred one.
 
 ## Known-broken, recorded so it is not rediscovered
 
-`npm test` reports **4 failures / 335 passing** (339 total,
+`npm test` reports **4 failures / 337 passing** (341 total,
 `run 2026-08-04-win-02`). The same four, and the same causes, as when this was
 first recorded at 4/202 in `run 2026-08-02-win-03` — re-confirmed by a fresh
 `git stash -u` baseline while adding `coverage` and `src/claude-md.ts`, again
 after importing the Mac's `D8` work (**+38 tests, no new failure**), and again
-adding B16 and the fixes its three adversarial reviews forced (**+15**). The four,
+adding B16 and the fixes its three adversarial reviews forced, plus the window cross-check (**+17**). The four,
 by name, so the count is checkable rather than trusted:
 `tests/config.test.ts:46`, `tests/implement.test.ts:65` and `:98`, and
 `tests/regression.test.ts:117`.

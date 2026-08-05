@@ -20,13 +20,29 @@ import { resolveModel } from "../selection.js";
 export { normalizeRel };
 
 /**
- * Resolve the context window the pre-flight will judge against: the explicit
- * setting when there is one, otherwise whatever `lms ps` can tell us, otherwise
- * null so the check is skipped.
+ * Resolve the context window the pre-flight will judge against: the SMALLER of
+ * what was configured and what `lms ps` reports, or whichever one is knowable,
+ * or null so the check is skipped.
  *
- * The explicit value short-circuits the probe entirely, which is what makes this
- * free for anyone who sets `LOCAL_CODER_CONTEXT_TOKENS` — and the probe costs
- * ~120 ms measured, against generations that run for seconds to minutes.
+ * THE EXPLICIT SETTING NO LONGER SHORT-CIRCUITS THE PROBE, and the reason is
+ * observed. `LOCAL_CODER_CONTEXT_TOKENS` is a belief; `lms ps` is an
+ * observation. On 2026-08-04 a model explicitly loaded at 32,768 was found
+ * loaded at 16,384 — the default — with the server still up and nobody having
+ * touched the configuration. (What triggered the reload is NOT established: two
+ * workloads were competing for memory at the time. The reload itself is the
+ * fact, and it is enough.) A declared window can go stale on its own, which is
+ * exactly the state that admits a request the model cannot honour and returns a
+ * closed, well-formed, shorter file. Short-circuiting meant the person who
+ * configured the value was the one guaranteed never to find out.
+ *
+ * `Math.min` because the failure is asymmetric: too small costs a refusal the
+ * caller can retry, too large costs content nobody notices is gone. A
+ * disagreement is warned about rather than silently resolved, because either
+ * number could be the stale one.
+ *
+ * The probe costs ~120 ms measured, against generations that run for seconds to
+ * minutes. `deps.contextTokens` still short-circuits entirely — that is the
+ * suite's injection point, not a user-facing setting.
  */
 export async function resolveContextTokens(
   config: Config,
@@ -37,14 +53,26 @@ export async function resolveContextTokens(
   // `typeof`, not `!== null`: a Config literal built without the field (nothing
   // type-checks those) arrives as undefined, and returning that would hand
   // `enforceOutputCap` a NaN budget.
-  if (typeof config.contextTokens === "number") return config.contextTokens;
+  const configured = typeof config.contextTokens === "number" ? config.contextTokens : null;
   // Probe only with a runner we were actually handed, or the real one when the
   // caller injected no fetch either. Same rule `selection.ts` applies to its
   // `/models` probe and for the same reason: a suite that injected a fake fetch
   // must not reach out to the real machine, or the offline tests turn green only
   // where LM Studio happens to be running.
-  if (deps.runner === undefined && deps.fetchImpl !== undefined) return null;
-  return pickLoadedContextTokens(await getLoadedLmsModels(deps.runner), wanted);
+  const canProbe = !(deps.runner === undefined && deps.fetchImpl !== undefined);
+  const probed = canProbe
+    ? pickLoadedContextTokens(await getLoadedLmsModels(deps.runner), wanted)
+    : null;
+  if (configured === null) return probed;
+  if (probed === null) return configured;
+  if (probed !== configured) {
+    log.warn(
+      `context window disagreement: LOCAL_CODER_CONTEXT_TOKENS=${configured} but \`lms ps\` reports ` +
+        `${probed} loaded. Using ${Math.min(configured, probed)}. A runtime crash reloads a model at ` +
+        `its default context, so the configured value can be stale without anyone changing it.`
+    );
+  }
+  return Math.min(configured, probed);
 }
 
 /** Bytes of everything that enters the prompt — every file sent, plus the spec. */

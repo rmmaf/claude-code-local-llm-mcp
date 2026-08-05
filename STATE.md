@@ -8,21 +8,21 @@ Ceiling: 25 lines below this header.
 **B16 has its first valid run and DOES NOT YET HOLD.**
 `run 2026-08-04-mac-20-32k`, window verified at 32,768 before starting: **26
 admitted, 26 complete, 0 lost content**, largest request 20,870 tokens clearing
-the 20,644 non-void bar. That is 0% against a 10% fall line — but the hold
-condition wants ≥ 2 non-void runs and this is one. `mac-19` is void.
-**The elision turned out to be arithmetic:** the same file needs 10,321 output
-tokens and had ~5,835 left at 16,384; at 32,768 it returns complete. That also
-proves `mac-16`'s refusal of it was right, by measurement.
+the 20,644 non-void bar. 0% against a 10% fall line — but the hold condition
+wants ≥ 2 non-void runs and this is one; `mac-19` is void.
+**The elision was arithmetic:** the file needs 10,321 output tokens and had
+~5,835 left at 16,384. That also proves `mac-16` refused it correctly.
 
 ## Next action
 
-**One more verified run and B16 holds.** Same command, new `--run-id`; the
-window must be confirmed with `lms ps` before it starts, not declared.
+**One more verified run and B16 holds**, on a machine running nothing else —
+`mac-21` was discarded because the window fell to 16,384 MID-RUN while an
+oversized probe shared the box, and a start-of-run probe cannot see that. The
+setting no longer short-circuits `lms ps`: the smaller wins, disagreement warns.
 Still open: **why the loss had that SHAPE.** Running out of room cuts a response
 off at the end; this one came back properly closed with 81 lines gone from the
 middle, which only prompt pruning produces — `truncateMiddle` or `rollingWindow`,
-not `stopAtLimit`. Not readable from `lms ps` or any file under `~/.lmstudio`.
-Read it in the GUI.
+not `stopAtLimit`. GUI only.
 
 ## Do not redo
 

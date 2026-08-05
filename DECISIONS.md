@@ -1276,6 +1276,29 @@ now returns null, and `repair` no longer pins one window for the whole loop —
 that pin was justified by "a value that cannot change mid-loop", which is untrue
 the moment no model is named and each round re-selects.
 
+**The configured window is a belief and it loses to the observation.** The first
+version had `LOCAL_CODER_CONTEXT_TOKENS` short-circuit the probe entirely, and
+justified it on cost: the probe is a ~120 ms shell-out. That ordering was
+backwards, and it took a measurement to see why. A model explicitly loaded at
+32,768 and confirmed by `lms ps` was found loaded at **16,384** — the default —
+minutes later, with the server still answering and nobody having touched the
+configuration. Short-circuiting meant the person who set the value was precisely
+the one guaranteed never to find out it had gone stale.
+
+`resolveContextTokens` now takes `Math.min` of the two whenever both are
+knowable. The failure is asymmetric and that is the whole argument: a window too
+small costs a refusal the caller can retry, a window too large costs content
+nobody notices is gone. The disagreement is warned about rather than silently
+resolved, because either number could be the stale one — the config could be old,
+or `lms ps` could be reporting a model that is about to be replaced. And
+`status.context_window` now carries `configured_tokens`, `probed_tokens` and a
+`disagreement` source, so the state is readable instead of inferable.
+
+What this does not do is make one verification enough. The drift was observed
+*between* two checks, so a run that probes once at startup can still be wrong by
+the end — which is why the operational rule is a diagnostic gets the machine to
+itself.
+
 **`status` reports the window, including when it does not know it.**
 `context_window.source` is `config`, `lms` or `unknown`, and `unknown` is the
 case worth surfacing loudest: it means the check is switched off, silently. A
