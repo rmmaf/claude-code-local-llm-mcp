@@ -1070,6 +1070,14 @@ describe("telemetry and the counterfactual", () => {
       // Refused, not vanished: the magnitude is reported so the exclusion is
       // visible rather than reading as a session that simply saved nothing.
       expect(result.ambiguousUnits).toBeGreaterThan(0);
+      // AND THE FRACTION IS WITHHELD, NOT ZERO. This session's only telemetry
+      // was a real saving whose owner is unknown, so 0 would assert it saved
+      // nothing -- a different false claim, and the dangerous one, since G-stop
+      // stops the project on a low number. It reported 0.0000 before this.
+      expect(result.savedFraction).toBeNull();
+      // Every refusal class in ONE number, so a consumer deciding whether there
+      // is anything to report cannot miss a class that was added later.
+      expect(result.refusedRows).toBe(1);
     }
 
     // Without the set it is still credited once -- which is the pre-fix

@@ -358,7 +358,10 @@ ${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
     // including it made a session with zero rows announce that every row had been
     // withheld. Only rows that actually exist decide whether there is a report.
     const counted = counterfactual.byTool.length > 0;
-    const withheldRows = counterfactual.excludedForeign + counterfactual.unverifiable;
+    // ASKS FOR THE TOTAL, never re-sums the parts. Summing them here missed
+    // `ambiguous` when it was added, and a session whose only telemetry was
+    // refused that way printed nothing at all.
+    const withheldRows = counterfactual.refusedRows;
 
     if (counted || withheldRows > 0) {
       process.stdout.write(`\n  ${BOLD}estimated savings from local tools${RESET}\n`);
@@ -385,9 +388,14 @@ ${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
       process.stdout.write(
         `    ${DIM}${"─".repeat(51)}${RESET}\n` +
           (counterfactual.savedFraction === null
-            ? `    ${BOLD}saving WITHHELD — the exact join is unavailable${RESET}\n` +
-              `    ${DIM}rows carry an invocation id but no result in this transcript echoes one, ` +
-              `so only timestamps remain and those cannot tell two sessions apart${RESET}\n`
+            ? `    ${BOLD}saving WITHHELD — it can only be stated as a lower bound${RESET}\n` +
+              `    ${DIM}${
+                counterfactual.provenanceUnavailable
+                  ? "rows carry an invocation id but no result in this transcript echoes one, " +
+                    "so only timestamps remain and those cannot tell two sessions apart"
+                  : "a real saving here belongs to no single session, so it can be neither " +
+                    "credited nor called zero"
+              }${RESET}\n`
             : `    ${BOLD}${pct(counterfactual.savedFraction)} of what this session would have cost${RESET}\n` +
               `    ${DIM}suppression term is an estimate (charsPerToken=${rates.charsPerToken}); ` +
               `turn-collapse term is a floor${RESET}\n`)

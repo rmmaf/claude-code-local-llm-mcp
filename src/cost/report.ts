@@ -350,6 +350,18 @@ export interface CounterfactualReport {
   /** What those rows WOULD have added, so the refusal is visible rather than silent. */
   ambiguousUnits: number;
   /**
+   * EVERY row the join refused, in one number. It exists because `ambiguous` was
+   * added as a third refusal class and wired into only one of the three places
+   * that reason about refusals: the line that prints it. The gate deciding
+   * whether to print anything still summed the original two, so a session whose
+   * only telemetry was refused as ambiguous printed NOTHING, and the fraction
+   * still summarised as a confident 0.
+   *
+   * Counting a set in each consumer is how a fourth class will be missed too.
+   * Consumers ask this, never the parts.
+   */
+  refusedRows: number;
+  /**
    * Rows carrying no invocation id. They are NOT counted: a tool that cannot
    * point at the transcript entry it produced cannot show its output ever
    * reached the context. The hook is the reason this rule exists — it claimed
@@ -655,16 +667,28 @@ export function buildCounterfactual(
     unitsTotal,
     usdTotal,
     sessionUnits,
-    // WITHHELD, not zero, when the exact join is unavailable: everything counted
-    // then came from the timestamp fallback, which cannot tell two overlapping
-    // sessions apart. A number produced that way, compared against `G-stop`'s
-    // 15%, is a decision to stop the project taken on a guess.
-    savedFraction: provenanceUnavailable ? null : denominator === 0 ? 0 : unitsTotal / denominator,
+    // WITHHELD, not zero, in two cases.
+    //
+    // The exact join being unavailable: everything counted then came from the
+    // timestamp fallback, which cannot tell two overlapping sessions apart.
+    //
+    // And any AMBIGUOUS row, which is the subtler one. That saving is real --
+    // the call happened and its output reached a context -- and only its OWNER
+    // is unknown. Crediting it here would double-count; reporting 0 asserts the
+    // session saved nothing, which is a different false claim and the dangerous
+    // one, since `G-stop` stops this project on a low number. The honest value
+    // is a lower bound, and a bound published as a point value is how a bound
+    // gets compared to a threshold. `unverifiable` does NOT withhold: those rows
+    // cannot be shown to have reached the context at all, so excluding them is a
+    // finding rather than an unknown.
+    savedFraction:
+      provenanceUnavailable || ambiguous > 0 ? null : denominator === 0 ? 0 : unitsTotal / denominator,
     excludedForeign,
     ambiguous,
     ambiguousUnits,
     unverifiable,
     unverifiableUnits,
+    refusedRows: excludedForeign + ambiguous + unverifiable,
     provenanceUnavailable,
   };
 }
