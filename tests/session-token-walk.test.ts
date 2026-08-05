@@ -220,6 +220,34 @@ describe("session-token-walk", () => {
     });
   });
 
+  it("emits a rule string that describes what it actually does", async () => {
+    // The artifact is the record. For one commit the emitted `rule` still said
+    // `<sessionId>/subagents/** recursive` after the walk had been broadened to
+    // the whole session directory, so an evidence file would have carried a
+    // false account of the rule that produced it. This is a rot-guard, not a
+    // style check: the string is the only thing a later reader has.
+    const dir = await corpus([record(U(1), "req-1", { output_tokens: 5 })], {
+      [path.join("..", "agents", "agent-x.jsonl")]: [record(U(2), "req-2", { output_tokens: 7 })],
+    });
+    const { stdout } = await execFileAsync(process.execPath, [
+      ORACLE,
+      "walk",
+      `--dir=${dir}`,
+      `--session=${SID}`,
+      "--json",
+    ]);
+    const { rule, sessions } = JSON.parse(stdout);
+
+    // It must not claim the segment it no longer hardcodes...
+    expect(rule).not.toMatch(/<sessionId>\/subagents\/\*\* recursive/);
+    // ...and the run it describes must be the run that happened: agents outside
+    // subagents/ were counted, which is only true of the broadened rule.
+    expect(sessions[0].tokens.output).toBe(12);
+    expect(rule).toMatch(/under <sessionId>\/ recursive/);
+    expect(rule).toMatch(/LAST record in file order/);
+    expect(rule).toMatch(/top-level cache_creation_input_tokens/);
+  });
+
   it("admits nothing from a workflows journal, without matching its filename", async () => {
     const dir = await corpus([record(U(1), "req-1", { output_tokens: 11 })], {
       [path.join("workflows", "wf_abc", "agent-1.jsonl")]: [record(U(2), "req-2", { output_tokens: 22 })],

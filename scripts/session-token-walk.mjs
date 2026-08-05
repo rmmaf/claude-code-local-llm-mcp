@@ -396,9 +396,19 @@ function walkSession(dir, sessionId) {
   };
 }
 
+/**
+ * Emitted into every artifact as `rule`, and it must describe what this file
+ * ACTUALLY does. It said `<sessionId>/subagents/** recursive` for one commit
+ * after the walk had been broadened to the whole session directory — so an
+ * evidence artifact would have carried a false account of the rule that produced
+ * it, which in this repository is the worst available error: the artifact is the
+ * record. `tests/session-token-walk.test.ts` now pins it.
+ */
 const RULE =
-  "main *.jsonl + <sessionId>/subagents/** recursive; admit type=assistant with message.usage, " +
-  "excluding isApiErrorMessage/synthetic; dedup by uuid; group by requestId; take the LAST record in file order";
+  "main *.jsonl + every *.jsonl under <sessionId>/ recursive (NOT a hardcoded subagents/); " +
+  "admit type=assistant with message.usage, excluding isApiErrorMessage/synthetic; " +
+  "dedup by uuid; group by requestId; take the LAST record in file order; " +
+  "cacheWrite is the top-level cache_creation_input_tokens";
 
 function main() {
   const root = flags.get("root") ?? process.cwd();
