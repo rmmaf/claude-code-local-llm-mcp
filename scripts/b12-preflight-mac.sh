@@ -23,7 +23,17 @@
 set -u
 set -o pipefail
 
-REPO="${1:-$HOME/Documents/GitHub/claude-code-local-llm-mcp}"
+# RUNNABLE FROM ANYWHERE. With an argument -- absolute or relative -- the `cd`
+# plus `pwd -P` below resolves it. WITHOUT one, prefer the repository the caller
+# is standing in: falling straight to a hardcoded default refuses for anyone
+# whose clone lives elsewhere, and "cd into the repo and run it" is the most
+# natural way to use this.
+if [ "${1:-}" != "" ]; then
+  REPO="$1"
+else
+  REPO=$(git rev-parse --show-toplevel 2>/dev/null)
+  [ -n "$REPO" ] || REPO="$HOME/Documents/GitHub/claude-code-local-llm-mcp"
+fi
 BRANCH="claude/project-status-pdf-d726eb"
 MODEL="${B12_MODEL:-mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2}"
 # `acceptEdits` covers file edits; whether an MCP tool call still prompts in
@@ -117,6 +127,13 @@ cd "$REPO" || refuse "cannot enter $REPO"
 # --mcp-config, and Claude Code resolves that against ITS cwd, not this one.
 REPO=$(pwd -P)
 [ -n "$REPO" ] || refuse "pwd -P returned nothing; every path below would be built from an empty string"
+
+# IDENTITY, not just "a git repo". Auto-detection could land on whatever clone
+# the caller happened to be inside, and a mistyped argument on some neighbour --
+# either way the next steps would fetch a branch into a stranger and build it.
+REPO_NAME=$(node -p "require('$REPO/package.json').name" 2>/dev/null)
+[ "$REPO_NAME" = "local-coder-mcp" ] || refuse "$REPO is not this project (package.json name is \"$REPO_NAME\", expected local-coder-mcp). Pass the right path as the first argument."
+ok "repository identified as local-coder-mcp"
 
 git_tracked_changes
 [ $GIT_RC -eq 0 ] || refuse "git status failed (exit $GIT_RC). The tree was never inspected, and an uninspected tree must not read as a clean one."
