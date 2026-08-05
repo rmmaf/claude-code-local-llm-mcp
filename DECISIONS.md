@@ -1623,3 +1623,74 @@ the class carrying the 2.0x multiplier, the most expensive of the five.
 Found by adversarial review of B17's design, before B17 ran. Repaired in its own
 commit, ahead of the discovery fix, because a known signed defect inside a scored
 class would make a zero-residual result mean less than it says.
+
+### usage repeats verbatim, except for the field that costs the most
+
+**Measured 2026-08-05, `run 2026-08-05-win-03-dedup`, before the oracle was
+written and before anything was compared.**
+
+`src/cost/transcript.ts:239-243` is the correctness core of the meter — Claude
+Code writes one billed request as several `assistant` records, and summing them
+naively overcounts `cache_read` by 2.3x, which the dedup by `requestId` exists to
+prevent. The rule it implements is **first record wins**: later records
+contribute their `tool_use` blocks and their usage is discarded.
+
+The justification for discarding it is recorded at `MEASUREMENTS.jsonl:9` —
+*"usage repeats verbatim on every content block of one request"* — and checked at
+`:54`, where 251 duplicate groups all carried identical usage and none differed.
+Both rows stand. What does not survive is the generalisation they licensed.
+
+Over every transcript in this project, **2,482 `requestId` groups, 1,647 of them
+holding more than one record**:
+
+| | groups |
+|---|---|
+| usage identical across the group | 1,320 |
+| **usage differs** | **327** |
+| …where the differing field is `output_tokens` | 327 |
+| …where the differing field is anything else | **0** |
+| …where the FIRST record holds the smaller value | **327 of 327** |
+
+Only `output_tokens` varies. `input_tokens`, `cache_read_input_tokens`,
+`cache_creation_input_tokens` and both TTL splits are identical in 2,482 of
+2,482. Intermediate records carry a partial completion count; the terminal record
+carries the whole answer.
+
+```
+req_011CdcbHwVuWCQpRakCQmKDa
+  a274a76d  stop=null       out=5     cr=30034  cw=16667
+  bbfeb04d  stop=null       out=5     cr=30034  cw=16667
+  cb7af054  stop=null       out=5     cr=30034  cw=16667
+  9edf7817  stop=null       out=5     cr=30034  cw=16667
+  25972d21  stop=tool_use   out=695   cr=30034  cw=16667
+```
+
+**The meter keeps the 5 and discards the 695.** Project-wide the rule drops
+**655,570 output tokens — 19.27% of all output** — in the class carrying the
+**5.0x** multiplier, the highest per token of the five.
+
+**Three things make this worth writing down rather than just fixing.**
+
+1. **The defect is signed.** First-wins can only undercount output, never
+   overcount it: 327 of 327, no counterexample. That matters because B1's
+   headline ran the *other* way — the meter reported $119.11 against `/usage`'s
+   $35.96 — so this error and that one are independent, and neither explains the
+   other. Two of the meter's three known defects undercount and the reported
+   dollar figure was still too high.
+2. **`stop_reason` is not the selector, and the obvious rule would have been
+   wrong.** It reads like the terminal marker, but 27 groups carry none at all
+   and 1,300 carry more than one. **Last-in-file-order agrees with the maximum on
+   2,482 of 2,482 groups**, needs no tie-break, and is what B17's admission rule
+   now specifies. The rule that looks principled and the rule that works are not
+   the same rule here.
+3. **A verified claim about one session became a rule about all of them.** The
+   check at `MEASUREMENTS.jsonl:54` was real, careful, and reported honestly. It
+   was also n=1, and the row that carried it into the code said "repeats
+   verbatim" without the qualifier. The transferable form: **a dedup rule is a
+   claim about every group it will ever see**, and confirming it on the groups in
+   front of you is confirming the weaker statement.
+
+Found by writing B17's oracle, before the oracle existed — which is the argument
+for pre-registering an admission rule in prose. Specifying what a billed request
+*is*, precisely enough for a second implementation, is what forced the question
+that the first implementation had answered by assumption.

@@ -121,16 +121,57 @@ limitation declared and a limitation found later.
   `sessionId`'s whole history, **measured at 13.3% apart on output**; it is
   ephemeral; and reading it costs a live session and a hand transcription. A
   comparator whose existence is not decidable by inspection cannot gate anything.
-- **Admission rule, fixed here and frozen:** a billed request is a record with
-  `type: "assistant"` carrying `message.usage`, deduplicated by `uuid`,
-  **excluding** records with `isApiErrorMessage: true` — which carry a real
-  `requestId`, `model: "<synthetic>"` and all-zero usage, so they must be
-  excluded by those fields and **never** by usage reading zero, since a
-  legitimate record can also read zero at the top level. **Excluding files that
-  are not request logs:** `subagents/workflows/wf_*/journal.jsonl` ends in
-  `.jsonl`, holds records keyed `{type, key, agentId}`, and carries agent return
-  values in which the string `usage` appears — a naive `**/*.jsonl` glob double
-  counts. Both implementations are written to this paragraph.
+- **Admission rule, AMENDED 2026-08-05 — see the amendment note directly below,
+  which is the only thing that makes the edit legitimate.** A billed request is a
+  **`requestId` group**, formed in three steps that are separate on purpose:
+  1. **Admit** every record with `type: "assistant"` carrying `message.usage`,
+     **excluding** records with `isApiErrorMessage: true` — which carry a real
+     `requestId`, `model: "<synthetic>"` and all-zero usage, so they must be
+     excluded by those fields and **never** by usage reading zero, since a
+     legitimate record can also read zero at the top level. **Excluding files
+     that are not request logs:** `subagents/workflows/wf_*/journal.jsonl` ends
+     in `.jsonl`, holds records keyed `{type, key, agentId}`, and carries agent
+     return values in which the string `usage` appears — a naive `**/*.jsonl`
+     glob double counts.
+  2. **De-duplicate by `uuid`.** That is *record* identity across the file union
+     — the vendor's rule, and a guard against reading one record twice — and it
+     is **not** request identity.
+  3. **Group by `requestId`, and take the group's usage from its LAST record in
+     file order.** Records with no `requestId` form their own group of one; there
+     are none in this corpus, and that is measured rather than assumed.
+  Both implementations are written to this paragraph and to nothing else.
+- **THE AMENDMENT, AND WHY IT IS LEGITIMATE.** As first written this rule said "a
+  billed request is a record … deduplicated by `uuid`", and that is not
+  implementable as worded: Claude Code writes one billed request as several
+  `assistant` records, one per content block, each carrying a copy of
+  `message.usage`. Over this corpus **5,364 `uuid`-distinct records collapse to
+  2,478 `requestId` groups**, so summing usage per record inflates by **2.165x**.
+  The rule as written scored an arithmetic artefact, not the meter.
+  **What licenses the edit is timing and direction.** It is made **before
+  `scripts/session-token-walk.mjs` exists, before the meter is touched, and
+  before any residual has been seen** — the same claim G7's amendment rests on,
+  and the difference is the timing and nothing else. It is also the direction the
+  premise's own **Method, not threshold** clause anticipates: a method found
+  blind is corrected and the premise stands. And it makes the rule **more
+  specified, never more permissive** — step 3 did not exist at all before.
+  **VOID condition 2's clock therefore runs from this amendment**, not from the
+  pre-registration commit. That is not a loophole and the reason is checkable:
+  nothing has been measured against either version, so there is no residual the
+  new wording could have been chosen to accommodate.
+- **Step 3 is not a detail, it is the third defect this premise found before
+  running.** `src/cost/transcript.ts:239-243` keeps the **first** record of a
+  `requestId` group and discards every later record's usage. Measured over this
+  corpus: **only `output_tokens` ever differs within a group — 327 of 1,647
+  multi-record groups — and in 327 of 327 the first record is the SMALLER one.**
+  Intermediate records carry a partial count; the terminal one carries the whole
+  answer. Taking the last record agrees with taking the maximum on **2,482 of
+  2,482** groups, while `stop_reason` does not identify the terminal record — 27
+  groups have none and 1,300 have more than one — so **last-in-file-order is the
+  rule, not `stop_reason`**. First-wins drops **655,570 output tokens, 19.27% of
+  all output in this project**, in the class carrying the 5.0x multiplier.
+  `MEASUREMENTS.jsonl:9` and `:54` stand as recorded; what is falsified is the
+  generalisation they licensed — usage repeats verbatim except for
+  `output_tokens`, and that exception is the expensive one.
 - **Metric, exact:** per class `c ∈ {input, cacheRead, cacheWrite, output}`,
   `meter_c − oracle_c`, **in integers**. `cacheWrite` is compared as
   `cacheWrite1h + cacheWrite5m` summed, stated rather than discovered. Plus one
@@ -184,9 +225,10 @@ limitation declared and a limitation found later.
      nowhere but inside free-text `method` strings, which is why its fall cannot
      be re-adjudicated today.
   2. **VOID if `scripts/session-token-walk.mjs` or the admission rule above
-     changed after the pre-registration commit.** What is frozen is the standard,
-     not the instrument — the meter may be iterated freely against it, and must
-     be, since repairing it is the point.
+     changed after the amendment commit of 2026-08-05** — the clock moved once,
+     for the reason given in the amendment note, and it may not move again. What
+     is frozen is the standard, not the instrument: the meter may be iterated
+     freely against it, and must be, since repairing it is the point.
   3. **VOID if the Claude Code version that wrote any session in the set differs
      from the version recorded at pre-registration.** 2.1.219 is running and
      2.1.220 is already on disk; an auto-update silently changes the layout being
@@ -199,11 +241,12 @@ limitation declared and a limitation found later.
   non-metered basis. The cap exists because "the comparator was wrong, not the
   meter" is infinitely available — the same hazard G2 names for implementations
   and B15 for strings.
-- **If it falls:** the residual is not file discovery and the defect is in the
-  arithmetic. Next suspect is the dedup by `requestId` — first record wins, later
-  usage discarded — which is correct only while Claude Code repeats usage verbatim
-  per content block. **Do not compensate by widening the tolerance**; a tolerance
-  is what this premise removed.
+- **If it falls:** the residual is neither file discovery nor per-request
+  selection, since both are now located and specified above. The remaining
+  surface is per-record extraction — `readUsage`'s TTL split, and whether
+  `usage.iterations` still sums to the top level on every record rather than on
+  the ones that were spot-checked. **Do not compensate by widening the
+  tolerance**; a tolerance is what this premise removed.
 - **What a hold does NOT establish**, stated so it cannot be cited for more
   later: that Anthropic billed these records; that the transcript writer wrote
   every record it should have; that tokens map to the right rate key — 1h/5m TTL
