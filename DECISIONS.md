@@ -1794,3 +1794,100 @@ not score TTL attribution and B19 inherits that, so the honest disposition is a
 named open question rather than a rule chosen by whoever happened to write the
 second implementation. **Anyone who wants that answer needs a premise of their
 own**, and it will need a comparator this venue does not currently have.
+
+### the oracle hardcoded where to look, which is the bug it was built to find
+
+**Second stop-time review, 2026-08-05, still before anything had been scored.**
+
+`src/cost/transcript.ts:319-331` does a **non-recursive `readdir`** and therefore
+cannot see `<sessionId>/subagents/**`. That is B1's scope failure, the finding
+this whole line of work exists to fix, and the oracle written to detect it
+contained the same assumption in a different costume:
+
+```js
+return { main, subagents: jsonlUnder(path.join(dir, sessionId, "subagents")) };
+//                                                       ^^^^^^^^^^^ a literal
+function jsonlUnder(dir) {
+  try { entries = readdirSync(dir, ...); } catch { return []; }
+  //                                        ^^^^^^^^^^^^^^^ every error is "empty"
+}
+```
+
+Given a corpus with two main records and two subagent records placed one
+directory over — `<sessionId>/agents/`, or nested a level deeper — it returned:
+
+| | truth | oracle |
+|---|---|---|
+| billed requests | 4 | **2** |
+| subagent requests | 2 | **0** |
+| output tokens | 1,550 | **110** |
+| `uuidDisjoint.holds` | — | **true** |
+
+A clean, single-threaded, invariant-passing session, with 1,440 output tokens on
+disk that nothing counted. **If the layout drifts again, the oracle and the meter
+agree on a false zero and the premise HOLDS, certifying a meter that cannot see
+half its traffic.**
+
+**The layout has already changed once. That change is the entire finding.** A
+literal path segment was the one assumption with no business being in a file
+written to catch literal-path-segment assumptions.
+
+Fixed both ways: the enumeration is now the session's directory recursively — a
+strict superset, so it can only find more — and `jsonlUnder` swallows **only**
+`ENOENT`. A missing directory is a fact about the corpus. `EACCES`, `ENOTDIR`,
+`EPERM` and `EIO` are facts about the *process*, and reporting "no subagent
+traffic" for one of those certifies a session nobody could read.
+
+Two zeros that were previously the same zero are now distinguishable, and the
+distinction fired on its first run: **`723e03c0` and `b5063f62` have session
+directories that exist and hold no request log.** Benign — both carry only
+externalised tool payloads, a `.txt` and two `.pdf` — but that was established by
+*looking*, which is the only reason it is a fact rather than a hope.
+
+### freeze the standard, not the code that implements it
+
+**Three premises have now been retired without ever being measured**, and not one
+of them died of tuning:
+
+| | why it died |
+|---|---|
+| **B1** | measured, `fallen` — the comparator was wrong on two independent counts |
+| **B17** | its VOID condition froze `session-token-walk.mjs` at a commit; fixing a vacuous invariant and a contradictory cache-write rule tripped it |
+| **B19** | same clause, same file, after the two defects above |
+
+The pattern is not the oracle being bad. It is that **B17 and B19 both froze the
+implementation before anyone had shown the implementation was trustworthy.** Four
+false-negative paths were found across two reviews. The freeze stopped none of
+them; what it did was make each fix cost a premise, and — much worse in
+principle — it would have **pinned every one of those defects in place** had
+nobody looked.
+
+A freeze exists to stop a standard being chosen by its answer. **You cannot
+choose by an answer that does not exist yet.** Before the first scored run there
+is no residual to fit; after it there is, and that is the moment the freeze
+should bite. B17 and B19 bit years early and let go a moment late.
+
+**B20's disposition, and the trade stated plainly.**
+
+- The **standard** is frozen: the admission rule, the extraction rule, the
+  metric, the thresholds, the holds/falls conditions. Byte-identical to the
+  pre-registration commit across all three premises, which is checkable and has
+  been checked.
+- The **implementation** is free until the first scored run. After it, any change
+  voids that run.
+- This **is** a loosening of B19's letter, and the compensating tightening is
+  named rather than implied: `tests/session-token-walk.test.ts` must pass, and it
+  must contain four **negative** controls — the invariant returning false on a
+  collision, agent logs found outside `subagents/`, a read error throwing instead
+  of reporting empty, and a recordless session coming back void.
+
+**Trust moved from a hash to a suite.** A hash says the file has not changed. A
+suite says the file still fails the things it is supposed to fail — which is the
+property anyone actually wanted, and the one a hash cannot express. That should
+have been the shape from the start, and the three-premise detour is the cost of
+finding it out.
+
+**One thing is now fixed and will not move again:** if the oracle needs another
+correction, the recorded conclusion is that **G1 cannot be closed in this venue**
+and the continue/stop decision is made on a stated non-metered basis. Reaching
+that honestly is a permitted outcome. A sixth renumber is not.

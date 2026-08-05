@@ -296,11 +296,28 @@ limitation declared and a limitation found later.
 - **Experiment:** one headless run with nested subagents, both vectors archived.
 - **Measured:** — (no run)
 - **Falls if:** nothing. A disagreement here is a finding about the venue and
-  produces a new premise; it does not touch B19's status. Recorded without a
+  produces a new premise; it does not touch B20's status. Recorded without a
   threshold, deliberately, for the reason above.
 - **Status:** open
 
 ## B19 — the cost meter counts every billed token a session incurred
+
+> ### ⚠ `moot` — superseded by B20, and killed by the same freeze that killed B17.
+>
+> A second stop-time review found two more false-negative paths in the oracle,
+> both of them **this project's own bug wearing a different costume**:
+> `sessionFiles` hardcoded the path segment `subagents`, and `jsonlUnder` caught
+> every error and returned `[]`. A corpus whose agent logs sat one directory over
+> came back as a clean single-threaded session — 2 requests, 0 subagent, a
+> passing invariant, 1,500 output tokens uncounted. See
+> `DECISIONS.md § the oracle hardcoded where to look, which is the bug it was built to find`.
+>
+> **The churn is not the oracle. It is that this premise and B17 both froze the
+> IMPLEMENTATION before it was trustworthy, instead of freezing the STANDARD.**
+> Three premises have now died to that, none of them for tuning, and a freeze
+> that pins a defect in place is not protecting anything. **B20 changes what the
+> freeze attaches to**, which is why it is a replacement rather than a fourth
+> repetition — and it is the last one this line gets.
 
 **Replaces B17, which is `moot`.** B17 was never measured and nothing about it
 was wrong except its instrument: its oracle carried a disjointness invariant that
@@ -353,6 +370,75 @@ is the precedent, including that the outcome did not change.
   honest reading is that the method is not converging, and the remedy is to say
   so rather than to renumber again. **One more replacement, total** — the same
   cap B17 put on restating G1's comparator, applied to the instrument.
+- **Measured:** — (no run)
+- **Status:** **moot** — superseded by B20, see the box above. Never measured, so
+  `moot` and not `fallen`. **The clause directly above was right about the
+  symptom and wrong about the cause:** a third correction did arrive, and it did
+  not mean the method was failing to converge. It meant the freeze was pointed at
+  the wrong object. B20 spends the replacement this clause allowed, on that.
+
+## B20 — the cost meter counts every billed token a session incurred
+
+**Replaces B19, which replaced B17. Both are `moot`, neither was ever measured,
+and neither died of tuning** — they died because their VOID conditions froze
+`scripts/session-token-walk.mjs` at a commit before anyone had shown the file was
+trustworthy, and it was not: four false-negative paths were found across two
+reviews, every one of which would have made the premise HOLD on a broken meter.
+
+**What changes here is the object of the freeze, and that is the whole point of
+the renumber.** The thing that must not be tuned is the **standard**, not the
+code that implements it. Freezing the code was over-tight in the direction that
+matters least and useless in the direction that matters most: it never stopped a
+defect, and it pinned four of them in place.
+
+- **FROZEN, and inherited VERBATIM from B17 via B19:** the outcome, the threshold
+  of **exactly 0**, the **Holds if** and **Falls if** conditions, the **admission
+  rule** and its three steps, the **Experiment**, the **Method, not threshold**
+  clause, the **disclosure** of what was known when the threshold was fixed, and
+  the statement of **what a hold does NOT establish**. Read them in B17. Nothing
+  has been re-derived across three premises, and that is checkable: the numbers
+  and the rule text are byte-identical to the pre-registration commit.
+- **Also frozen, inherited from B19:** the **extraction rule** — `cacheWrite` is
+  the top-level `cache_creation_input_tokens` on both sides, per `readUsage`'s own
+  documented fallback, with the 15 disagreeing records counted and totalled
+  rather than resolved.
+- **NOT FROZEN: the oracle's implementation, until the first scored run.** It may
+  be repaired freely up to that point, and after it any change to
+  `scripts/session-token-walk.mjs` **voids that run** and requires a new one.
+  **The argument is that this is precisely the anti-tuning rule, stated
+  correctly:** tuning means choosing the standard by its answer, and *there is no
+  answer to tune toward until a residual exists*. Before the first comparison
+  there is nothing to fit; after it there is, and the freeze bites exactly then.
+  B17's and B19's version bit a year too early and let go a moment too late.
+- **This IS a loosening of B19's letter, and the compensating tightening is named
+  rather than implied.** The oracle must pass `tests/session-token-walk.test.ts`,
+  and that file must contain, as *negative* controls: the disjointness invariant
+  returning **false** on a collision corpus; the walk finding agent logs that sit
+  **outside** `subagents/`; the walk **throwing** rather than reporting an empty
+  session when a directory cannot be read; and a session with no admitted request
+  coming back **void**. A repair that breaks one of those is caught by a check,
+  not by whoever is reading the diff that day. **Trust moved from a hash to a
+  suite, which is the direction it should have run in from the start.**
+- **VOID conditions.** B17's three, with the second re-pointed as above:
+  1. **VOID** unless `evidence/<run_id>.meter.json` and
+     `evidence/<run_id>.walk.json` are both committed, machine-produced, with the
+     four-class vector per session per side.
+  2. **VOID** if the oracle changed after the run it scores, or if the frozen
+     rules above changed at all, or if the conformance suite was not passing at
+     the commit the run was produced from.
+  3. **VOID** if the Claude Code version that wrote any session in the set
+     differs from the version recorded at that run.
+  4. **VOID sessions do not count toward the set.** A session with no admitted
+     request satisfies "every class differs by exactly 0" on both sides
+     trivially; the oracle now marks those `void` and they are excluded from the
+     ≥ 5. Zero requests is a fact about the corpus, never a verdict about the
+     meter.
+- **NO MORE REPLACEMENTS. This line ends here.** B19 permitted one and this is
+  it. If the oracle needs a fifth correction, the recorded conclusion is that
+  **G1 cannot be closed in this venue**, G-stop is not evaluable, and the
+  continue/stop decision is made on a stated non-metered basis. That is a real
+  outcome this project is allowed to reach, and reaching it honestly beats a
+  sixth renumber.
 - **Measured:** — (no run)
 - **Status:** open
 
