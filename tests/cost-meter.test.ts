@@ -2090,6 +2090,8 @@ describe("the B12 harness", () => {
   const classify = async (over: Record<string, unknown>): Promise<{ censored: boolean; valid: boolean; reasons: string[] }> => {
     const mod = await import("../scripts/b12-run.mjs");
     return (mod as { classifyRun: (o: unknown) => { censored: boolean; valid: boolean; reasons: string[] } }).classifyRun({
+      exitCode: 0,
+      signal: null,
       errorCode: null,
       wallMs: 1_000,
       budgetMs: BUDGET,
@@ -2112,24 +2114,24 @@ describe("the B12 harness", () => {
     // ones, having no gate to answer in a single call. Invalidating them biases
     // toward a hold, which is the error that keeps a project running on a
     // premise that stopped being true.
-    const timedOut = await classify({ errorCode: "ETIMEDOUT" });
+    const timedOut = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" });
     expect(timedOut.censored).toBe(true);
     expect(timedOut.valid).toBe(true);
     expect(timedOut.reasons).toEqual([]);
 
     // Same for hitting the wall clock without an error code.
-    const overBudget = await classify({ wallMs: BUDGET });
+    const overBudget = await classify({ exitCode: null, signal: "SIGTERM", wallMs: BUDGET });
     expect(overBudget.censored).toBe(true);
     expect(overBudget.valid).toBe(true);
 
     // A censored arm need not have originated anything: killed before its first
     // billed request, it still measures "did not finish inside the budget".
-    const killedEarly = await classify({ errorCode: "ETIMEDOUT", originatedCount: 0 });
+    const killedEarly = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT", originatedCount: 0 });
     expect(killedEarly.censored).toBe(true);
     expect(killedEarly.valid).toBe(true);
 
     // But a broken run is still broken, and says which.
-    const noBinary = await classify({ errorCode: "ENOENT" });
+    const noBinary = await classify({ exitCode: null, errorCode: "ENOENT" });
     expect(noBinary.censored).toBe(false);
     expect(noBinary.valid).toBe(false);
     expect(noBinary.reasons[0]).toContain("ENOENT");
@@ -2139,6 +2141,37 @@ describe("the B12 harness", () => {
     expect(emptyButFinished.censored).toBe(false);
     expect(emptyButFinished.valid).toBe(false);
     expect(emptyButFinished.reasons[0]).toContain("no requestId was originated");
+  });
+
+  it("refuses an arm the CLI abandoned partway, however much it had already done", async () => {
+    // The exit code was not passed into the rule AT ALL, so an execution failure
+    // reached the archive as a complete observation. Measured:
+    // `claude --definitely-not-a-flag` returns status 1 with NO spawn error, so
+    // `errorCode` stayed null and `spawnFailed` stayed false. An arm that had
+    // originated a few requests before an expired credential or a context
+    // overflow killed it came back valid, and its truncated cost would have been
+    // scored as a whole task.
+    //
+    // A non-zero exit is the CLI failing. It is NOT the same as the agent
+    // failing the task: `claude --print` exits 0 either way, and a genuine
+    // failure to solve the task is caught by the acceptance predicate as
+    // `accepted: false` -- which is data, and is kept.
+    const crashedLate = await classify({ exitCode: 1, originatedCount: 7 });
+    expect(crashedLate.valid).toBe(false);
+    expect(crashedLate.censored).toBe(false);
+    expect(crashedLate.reasons.join(" ")).toContain("exited 1");
+
+    // Killed by something that is not our budget is also not censored.
+    const outsideSignal = await classify({ exitCode: null, signal: "SIGKILL", originatedCount: 7 });
+    expect(outsideSignal.valid).toBe(false);
+    expect(outsideSignal.censored).toBe(false);
+    expect(outsideSignal.reasons.join(" ")).toContain("SIGKILL");
+
+    // And one cause gives one reason: a missing binary is not also reported as
+    // an abandoned run.
+    const noBinary = await classify({ exitCode: null, errorCode: "ENOENT", originatedCount: 7 });
+    expect(noBinary.reasons).toHaveLength(1);
+    expect(noBinary.reasons[0]).toContain("ENOENT");
   });
 
   it("admits exactly what the meter admits, on records that vary one field at a time", async () => {

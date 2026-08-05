@@ -195,11 +195,44 @@ function takeSnapshot(rootOverride) {
  * also excused from having originated anything: killed before its first billed
  * request, it still measures "this task did not finish inside the budget".
  */
-export function classifyRun({ errorCode, wallMs, budgetMs, originatedCount, slugsBefore, slugsAfter }) {
+export function classifyRun({
+  exitCode,
+  signal,
+  errorCode,
+  wallMs,
+  budgetMs,
+  originatedCount,
+  slugsBefore,
+  slugsAfter,
+}) {
   const spawnFailed = errorCode !== null && errorCode !== undefined && errorCode !== "ETIMEDOUT";
-  const censored = !spawnFailed && (errorCode === "ETIMEDOUT" || wallMs >= budgetMs);
+  // Censored means WE stopped it at the budget. Nothing else is censored.
+  const censored =
+    !spawnFailed && (errorCode === "ETIMEDOUT" || (exitCode !== 0 && wallMs >= budgetMs));
+
   const reasons = [];
   if (spawnFailed) reasons.push(`the CLI could not be run: ${errorCode}`);
+
+  // AN EXECUTION FAILURE IS NOT AN OBSERVATION, and it is not the same thing as
+  // a task the agent failed. `claude --print` exits 0 whether or not the agent
+  // succeeded — an agent that tried and got nowhere still exits 0 and is caught
+  // by the acceptance predicate as `accepted: false`, which IS data. A non-zero
+  // exit is the CLI itself failing: a bad flag, an expired credential, a context
+  // overflow, a crash partway through.
+  //
+  // This was missed because the exit code was never passed in at all. Measured:
+  // `claude --definitely-not-a-flag` returns status 1 with NO spawn error, so
+  // `errorCode` stayed null, `spawnFailed` stayed false, and an arm that had
+  // already originated a few requests before dying came back `valid: true` — a
+  // truncated fragment archived as a complete task.
+  // Not when the spawn itself failed: that is one cause, and reporting it twice
+  // reads as two things having gone wrong.
+  if (!censored && !spawnFailed && exitCode !== 0) {
+    reasons.push(
+      `the CLI exited ${exitCode === null ? `on signal ${signal ?? "(unknown)"}` : exitCode} without finishing`
+    );
+  }
+
   if (originatedCount === 0 && !censored) {
     reasons.push("no requestId was originated: the arm produced no billed request, or its slug was outside the snapshot");
   }
@@ -475,6 +508,8 @@ function observe(args) {
   // the very record that is supposed to make a run re-adjudicable; what is
   // refused is calling it valid, and the exit code stops a driver.
   const verdict = classifyRun({
+    exitCode: result.code,
+    signal: result.signal,
     errorCode: result.errorCode,
     wallMs,
     budgetMs,
