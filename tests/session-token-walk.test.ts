@@ -220,6 +220,53 @@ describe("session-token-walk", () => {
     });
   });
 
+  it("does NOT count more just because the file set grew — broadening is not monotonic", async () => {
+    // The refutation of a claim an earlier draft of B20 made in its own text.
+    // Step 3 is last-write-wins per requestId, not a sum, so a stray .jsonl
+    // holding an EARLY PARTIAL copy of a group replaces the winning record and
+    // the session counts LESS: 695 -> 5, measured. That is the direction that
+    // drives a residual toward zero and can hold the premise on a broken meter.
+    // The oracle cannot know which record is authoritative here, so it refuses
+    // to score rather than guessing.
+    const dir = await corpus([
+      record(U(1), "req-1", { output_tokens: 5 }),
+      record(U(2), "req-1", { output_tokens: 5 }),
+      record(U(3), "req-1", { output_tokens: 695 }),
+    ]);
+    const stray = path.join(dir, SID, "tool-results");
+    await fs.mkdir(stray, { recursive: true });
+    await fs.writeFile(path.join(stray, "cache.jsonl"), `${record(U(4), "req-1", { output_tokens: 5 })}\n`, "utf8");
+
+    const session = await walk(dir);
+    expect(session.diagnostics.groupsSpanningFiles).toBe(1);
+    expect(session.suspect).toBe(true);
+  });
+
+  it("admits a record only if its own sessionId matches, whatever directory it sits in", async () => {
+    // A .jsonl under this session's directory is not automatically a billed
+    // request OF this session. Unguarded this read 695 -> 4,937 output tokens.
+    const dir = await corpus([record(U(1), "req-1", { output_tokens: 695 })]);
+    const stray = path.join(dir, SID, "tool-results");
+    await fs.mkdir(stray, { recursive: true });
+    await fs.writeFile(
+      path.join(stray, "other.jsonl"),
+      `${JSON.stringify({
+        type: "assistant",
+        uuid: U(5),
+        requestId: "req-9",
+        sessionId: "99999999-8888-7777-6666-555555555555",
+        message: { model: "claude-opus-5", usage: { output_tokens: 4242 } },
+      })}\n`,
+      "utf8"
+    );
+
+    const session = await walk(dir);
+    expect(session.tokens.output).toBe(695);
+    expect(session.requests.total).toBe(1);
+    expect(session.records.excludedForeignSession).toBe(1);
+    expect(session.suspect).toBe(false);
+  });
+
   it("emits a rule string that describes what it actually does", async () => {
     // The artifact is the record. For one commit the emitted `rule` still said
     // `<sessionId>/subagents/** recursive` after the walk had been broadened to
@@ -245,6 +292,7 @@ describe("session-token-walk", () => {
     expect(sessions[0].tokens.output).toBe(12);
     expect(rule).toMatch(/under <sessionId>\/ recursive/);
     expect(rule).toMatch(/LAST record in file order/);
+    expect(rule).toMatch(/only records whose own sessionId matches/);
     expect(rule).toMatch(/top-level cache_creation_input_tokens/);
   });
 

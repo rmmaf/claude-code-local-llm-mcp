@@ -142,8 +142,17 @@ function jsonlUnder(dir) {
  * layout has already changed once, and that change is this project's entire
  * finding.** A literal path segment is the same class of assumption
  * `listTranscripts` made with its non-recursive `readdir`, so the rule is the
- * session's directory, not a magic name inside it. Strictly broader: it can only
- * find more, and `journal.jsonl` is still excluded by the record predicate.
+ * session's directory, not a magic name inside it.
+ *
+ * **BROADENING IS NOT AUTOMATICALLY SAFE, AND AN EARLIER DRAFT SAID IT WAS.** A
+ * superset of FILES is not a superset of COUNTED TOKENS, because step 3 is
+ * last-write-wins per `requestId` rather than a sum: a stray `.jsonl` holding an
+ * early partial copy of a group REPLACES the winning record and the session
+ * counts LESS. Measured, 695 -> 5 output tokens on a fixture. That is the
+ * direction that can drive a residual toward zero and hold the premise on a
+ * meter that is wrong. Two guards, both on signals this file already computed and
+ * ignored: records are admitted only if their own `sessionId` matches, and a
+ * `requestId` group spanning more than one file marks the session `suspect`.
  *
  * Order is load-bearing — step 3 takes the LAST record in file order — so the
  * main file comes first and the rest are sorted, deterministically.
@@ -241,7 +250,7 @@ function walkSession(dir, sessionId) {
   let skippedUnparseable = 0;
   let splitDisagreements = 0;
   let splitOnlyTokens = 0;
-  let sessionIdMismatch = 0;
+  let excludedForeignSession = 0;
 
   for (const { file, isSubagent } of ordered) {
     let admitted = 0;
@@ -268,6 +277,15 @@ function walkSession(dir, sessionId) {
         excludedApiError += 1;
         continue;
       }
+      // A record found under this session's directory is not automatically a
+      // billed request OF this session. Walking the whole directory picks up any
+      // `.jsonl` under it, and a stray one holding another session's records
+      // would be counted here: measured at 695 -> 4,937 output tokens on a
+      // fixture. The record says whose it is; believe the record, not the path.
+      if (typeof record.sessionId === "string" && record.sessionId !== sessionId) {
+        excludedForeignSession += 1;
+        continue;
+      }
 
       // Step 2 — de-duplicate by uuid, which is RECORD identity.
       const uuid = record.uuid;
@@ -283,7 +301,6 @@ function walkSession(dir, sessionId) {
       admitted += 1;
 
       if (typeof record.version === "string") versions.add(record.version);
-      if (typeof record.sessionId === "string" && record.sessionId !== sessionId) sessionIdMismatch += 1;
 
       // Step 3 — group by requestId; the LAST write wins because files and lines
       // are walked in order. A record with no requestId is its own group.
@@ -365,6 +382,7 @@ function walkSession(dir, sessionId) {
       subagent: inSub,
       uuidDuplicatesDropped: uuidDuplicates,
       excludedApiError,
+      excludedForeignSession,
       skippedUnparseable,
     },
     // B20's invariant: |uuids(main) U uuids(sub)| == |main| + |sub|, i.e. no uuid
@@ -391,8 +409,15 @@ function walkSession(dir, sessionId) {
       groupsSpanningFiles,
       ttlSplitDisagreements: splitDisagreements,
       ttlSplitOnlyTokens: splitOnlyTokens,
-      sessionIdMismatch,
     },
+    // A `requestId` group must live in exactly one file. Step 3 takes the LAST
+    // record in file order, so a group split across files means an added file
+    // can REPLACE the winning record -- measured at 695 -> 5 output tokens on a
+    // fixture holding an early partial copy. That is broadening the file set
+    // making the oracle count LESS, which is the direction that can drive a
+    // residual to zero on a meter that is wrong. Zero across the real corpus, so
+    // any non-zero is corruption or a layout this walk does not understand.
+    suspect: groupsSpanningFiles > 0,
   };
 }
 
@@ -407,7 +432,8 @@ function walkSession(dir, sessionId) {
 const RULE =
   "main *.jsonl + every *.jsonl under <sessionId>/ recursive (NOT a hardcoded subagents/); " +
   "admit type=assistant with message.usage, excluding isApiErrorMessage/synthetic; " +
-  "dedup by uuid; group by requestId; take the LAST record in file order; " +
+  "admitting only records whose own sessionId matches; dedup by uuid; " +
+  "group by requestId; take the LAST record in file order; " +
   "cacheWrite is the top-level cache_creation_input_tokens";
 
 function main() {
@@ -472,6 +498,8 @@ function main() {
   const ttlTokens = walked.reduce((n, s) => n + s.diagnostics.ttlSplitOnlyTokens, 0);
   const shared = walked.reduce((n, s) => n + s.uuidDisjoint.sharedUuids, 0);
   const voids = walked.filter((s) => s.void).map((s) => s.sessionId.slice(0, 8));
+  const suspect = walked.filter((s) => s.suspect).map((s) => s.sessionId.slice(0, 8));
+  const foreign = walked.reduce((n, s) => n + s.records.excludedForeignSession, 0);
   const opaque = walked.filter((s) => s.files.sessionDirYieldedNoLogs).map((s) => s.sessionId.slice(0, 8));
   console.log(
     `\noutput tokens a first-record-wins dedup would drop: ${lost.toLocaleString("en-US")}` +
@@ -482,7 +510,12 @@ function main() {
       `\nVOID sessions, no admitted request, excluded from any verdict: ` +
       `${voids.length === 0 ? "none" : voids.join(", ")}` +
       `\nsessions whose directory exists but yielded no request log: ` +
-      `${opaque.length === 0 ? "none" : `${opaque.join(", ")}  <- confirm the layout before scoring`}`
+      `${opaque.length === 0 ? "none" : `${opaque.join(", ")}  <- confirm the layout before scoring`}` +
+      `
+records under a session directory belonging to another session: ${foreign}  (excluded)` +
+      `
+SUSPECT sessions, a requestId group spanning files: ` +
+      `${suspect.length === 0 ? "none" : `${suspect.join(", ")}  <- last-write-wins is undefined here, do not score`}`
   );
 }
 
