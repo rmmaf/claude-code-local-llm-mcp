@@ -187,6 +187,14 @@ What may be built next, and the number that decides it.
 - **Blocked on B16 too** (B14 until it went `moot`)**, in one direction only:**
   if the pre-flight turns out to be too strict, its refusal count is inflated and
   would open this gate on an artefact. Read B16's result before reading this one.
+- **B16 now holds, and it does NOT clear that block.** Its two non-void runs
+  (`mac-20`, `mac-23`) refused **nothing** — at 32,768 every request was
+  admitted — so they establish that admitted requests succeed and say nothing at
+  all about the refusal side. The over-refusal that *was* observed
+  (`run 2026-08-04-mac-16-preflight`, a 26,889 B pair that measured 11,237 actual
+  tokens and later returned complete 2 of 2) is still carried by B16 **without a
+  threshold**, deliberately. So this gate's inflation risk is exactly as open as
+  it was.
 - **A number now exists, and this gate does NOT move on it.**
   `run 2026-08-04-mac-17-preflight` ran the full `D8` corpus with both pre-flights
   enforcing: **`output_would_truncate` refused 0 of 13**;

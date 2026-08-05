@@ -5,24 +5,24 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B16 has its first valid run and DOES NOT YET HOLD.**
-`run 2026-08-04-mac-20-32k`, window verified at 32,768 before starting: **26
-admitted, 26 complete, 0 lost content**, largest request 20,870 tokens clearing
-the 20,644 non-void bar. 0% against a 10% fall line — but the hold condition
-wants ≥ 2 non-void runs and this is one; `mac-19` is void.
-**The elision was arithmetic:** the file needs 10,321 output tokens and had
-~5,835 left at 16,384. That also proves `mac-16` refused it correctly.
+**B16 HOLDS.** `mac-20` and `mac-23`, both non-void, both with the window
+verified at 32,768 — `mac-23` after the run as well as before, the check
+`mac-21` lacked and was discarded for. **0 of 52 admitted requests lost
+content**, against a >10% fall line and a hold condition of 0 over ≥ 20 across
+≥ 2 runs, all pre-registered. **Read the caveats with it:** the two runs share a
+corpus at temperature 0.1 where 12 of 13 cases reproduce byte-identically, so 52
+is nearer n=1 replicated than n=2; and neither run refused anything, so nothing
+here speaks to the refusal side. Not tightened after the fact, on purpose.
 
 ## Next action
 
-**One more verified run and B16 holds**, on a machine running nothing else —
-`mac-21` was discarded because the window fell to 16,384 MID-RUN while an
-oversized probe shared the box, and a start-of-run probe cannot see that. The
-setting no longer short-circuits `lms ps`: the smaller wins, disagreement warns.
-Still open: **why the loss had that SHAPE.** Running out of room cuts a response
-off at the end; this one came back properly closed with 81 lines gone from the
-middle, which only prompt pruning produces — `truncateMiddle` or `rollingWindow`,
-not `stopAtLimit`. GUI only.
+**Nothing is blocked on B16 any more; pick from what it left open.** G7's
+inflation risk is untouched — its two runs refused nothing, and the observed
+over-refusal (`mac-16`) still carries no threshold, deliberately. Or settle the
+oldest open point: **why the loss had that SHAPE.** Running out of room cuts a
+response off at the end; that one came back properly closed with 81 lines gone
+from the middle, which only prompt pruning produces — `truncateMiddle` or
+`rollingWindow`, not `stopAtLimit`. GUI only.
 
 ## Do not redo
 

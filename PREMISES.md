@@ -980,12 +980,24 @@ pre-registered as its own premise before anything is measured against it.
   content missing.** Largest admitted request 20,870 actual tokens against a
   29,491 usable budget — clearing the 70% non-void bar of 20,644, so the run
   counts.
-- **IT DOES NOT FALL, AND IT DOES NOT YET HOLD.** 0 of 26 is far under the > 10%
-  fall line, but the hold condition asks for 0 over ≥ 20 admitted requests across
-  **≥ 2 non-void runs** and this is one. `mac-19` cannot be the second: it is
-  void for declaring a window the model did not have. One more verified run
-  settles it. Written this way deliberately — 0 of 26 reads like a pass, and
-  reading it as one is the slippage this file exists to prevent.
+- **The second non-void run: `run 2026-08-04-mac-23-32k`.** Same shape, and this
+  time the window was checked **after** the run as well as before — 32,768 both
+  times, so it cannot have drifted mid-run the way `mac-21` did. 26 admitted, 26
+  complete, 0 with content missing, largest request 20,870 again.
+- **HOLDS: 0 of 52 admitted requests across 2 non-void runs**, against a fall
+  line of > 10% and a hold condition of 0 over ≥ 20 across ≥ 2. Every condition
+  was pre-registered before either run.
+- **What that does NOT establish, stated because the threshold turned out weaker
+  than it looked.** (a) **The two runs are barely independent**: same corpus,
+  same model, temperature 0.1, and `D8` already measured 12 of 13 cases returning
+  byte-identical output across repeats — `mac-23`'s L10 reproduces `mac-20`'s to
+  the token. This is closer to n=1 replicated than n=2. The condition is **not**
+  retroactively tightened, because raising a bar after seeing the result is the
+  mirror image of lowering it; it is recorded so nobody reads 52 as 52
+  independent observations. (b) **Neither run refused anything.** At 32,768 the
+  pre-flight admitted all 26 both times, so these runs confirm *admitted requests
+  succeed* and say nothing about whether it refuses what it should. (c) One
+  model, one window, one repository.
 - **The same request, at two real windows, and the elision turns out to be
   arithmetic rather than model quality.** `src/tools/repair.ts` (43,594 B),
   prompt 10,549 tokens both times:
@@ -1024,11 +1036,14 @@ pre-registered as its own premise before anything is measured against it.
   for requests possibly served at half. **B16 therefore still has one non-void
   run and still needs a second** — and a run scoring it must not share the
   machine with anything else, because memory pressure changes what is measured.
-- **Status:** open
-
----
-
-## Measured facts (not premises)
+  **`mac-23` is that clean run** — window verified before and after, nothing else
+  on the box.
+- **Status:** **holding** — 0 of 52 admitted requests lost content across
+  `run 2026-08-04-mac-20-32k` and `run 2026-08-04-mac-23-32k`, both non-void.
+  **Reopens if** a run with a new `run_id` puts the rate over 10%, and the
+  limitations above are the places to look first: a different model, a different
+  window, a corpus this one did not reach, or the refusal side, which neither run
+  exercised at all.
 
 These are observations, not bets — nothing here has a threshold or can "fall".
 All from `run 2026-08-02-win-01`, machine `win-01`, recorded retroactively and
