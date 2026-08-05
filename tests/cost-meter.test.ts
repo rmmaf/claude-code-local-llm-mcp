@@ -197,6 +197,35 @@ describe("transcript parsing", () => {
     expect(transcript.excluded.duplicateUuid).toBe(1);
   });
 
+  it("counts a tool result once when its record appears in two files, not just billed requests", async () => {
+    // The admission rule was applied to the billed-request loop and not to the
+    // one over tool results, which iterates the SAME records. On this project
+    // that double-counted 3 records and 60,439 bytes. Applying the rule per
+    // consumer is how consumers drift apart, so it is applied once, before both.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    const result = JSON.stringify({
+      type: "user",
+      uuid: "tool-result-1",
+      sessionId: sid,
+      timestamp: new Date(1_700_000_000_000).toISOString(),
+      message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+      toolUseResult: { stdout: "x".repeat(1000), stderr: "", interrupted: false, isImage: false },
+    });
+    await fs.writeFile(
+      path.join(dir, `${sid}.jsonl`),
+      `${assistantRecord("req-1", { write1h: 100 })}\n${result}\n`,
+      "utf8"
+    );
+    await fs.mkdir(path.join(dir, sid, "subagents"), { recursive: true });
+    await fs.writeFile(path.join(dir, sid, "subagents", "agent-x.jsonl"), `${result}\n`, "utf8");
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.toolResults).toHaveLength(1);
+    expect(transcript.excluded.duplicateUuid).toBe(1);
+  });
+
   it("excludes a record that sits under the session directory but belongs to another session", async () => {
     // A file under a directory is not thereby a request OF that session. The
     // record says whose it is; believe the record, not the path.

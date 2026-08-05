@@ -241,20 +241,63 @@ export async function readTranscript(
 ): Promise<Transcript> {
   const files = typeof file === "string" ? [file] : [...file];
   if (files.length === 0) throw new Error("readTranscript needs at least one file");
-  let anchor = sessionId;
 
-  const records: RawRecord[] = [];
+  const raw: RawRecord[] = [];
   let skippedLines = 0;
   for (const one of files) {
     const text = await fs.readFile(one, "utf8");
     for (const line of text.split("\n")) {
       if (line.trim() === "") continue;
       try {
-        records.push(JSON.parse(line) as RawRecord);
+        raw.push(JSON.parse(line) as RawRecord);
       } catch {
         skippedLines++;
       }
     }
+  }
+
+  // PASS 0 — RECORD-LEVEL ADMISSION, APPLIED ONCE.
+  //
+  // Everything downstream iterates the result, because there is more than one
+  // loop over these records and the previous version guarded only one of them.
+  // Billed requests were de-duplicated and session-checked; `toolUseResult`
+  // records were not, so a record present in two files of one session had its
+  // bytes counted twice -- 3 records and 60,611 bytes on this corpus -- and a
+  // foreign record's bytes would have been attributed here outright. Applying
+  // the rule per consumer is how consumers drift apart; applying it once is why
+  // they cannot.
+  //
+  // Only the two record-level concerns live here. `uuid` is RECORD identity
+  // across the file union, and a `sessionId` that positively disagrees is
+  // somebody else's record whatever kind it is. "Cannot tell whose" is a
+  // different question and stays in the billed-request loop, where it is the
+  // only place it can change a number.
+  let anchor = sessionId;
+  if (anchor === undefined) {
+    for (const record of raw) {
+      if (record.type === "assistant" && typeof record.sessionId === "string") {
+        anchor = record.sessionId;
+        break;
+      }
+    }
+  }
+
+  const records: RawRecord[] = [];
+  const seenUuid = new Set<string>();
+  const excluded = { duplicateUuid: 0, apiError: 0, foreignSession: 0, noSessionId: 0 };
+  for (const record of raw) {
+    if (typeof record.uuid === "string") {
+      if (seenUuid.has(record.uuid)) {
+        excluded.duplicateUuid++;
+        continue;
+      }
+      seenUuid.add(record.uuid);
+    }
+    if (anchor !== undefined && typeof record.sessionId === "string" && record.sessionId !== anchor) {
+      excluded.foreignSession++;
+      continue;
+    }
+    records.push(record);
   }
 
   const parents = new Map<string, string | null>();
@@ -269,9 +312,6 @@ export async function readTranscript(
   // record of that request — the usage repeats, the content blocks do not.
   const byRequest = new Map<string, BilledRequest>();
   const toolNames = new Map<string, string>();
-  /** RECORD identity across the file union — not request identity. */
-  const seenUuid = new Set<string>();
-  const excluded = { duplicateUuid: 0, apiError: 0, foreignSession: 0, noSessionId: 0 };
   /**
    * Compaction boundaries PER THREAD. A compaction resets one conversation's
    * context; main and each subagent have independent contexts. Pooling the
@@ -299,23 +339,11 @@ export async function readTranscript(
       excluded.apiError++;
       continue;
     }
-    if (anchor === undefined && typeof record.sessionId === "string") anchor = record.sessionId;
-    if (anchor !== undefined) {
-      if (typeof record.sessionId !== "string") {
-        excluded.noSessionId++;
-        continue;
-      }
-      if (record.sessionId !== anchor) {
-        excluded.foreignSession++;
-        continue;
-      }
-    }
-    if (typeof record.uuid === "string") {
-      if (seenUuid.has(record.uuid)) {
-        excluded.duplicateUuid++;
-        continue;
-      }
-      seenUuid.add(record.uuid);
+    // "Cannot tell whose it is" only changes a number here, so it is refused
+    // here. Pass 0 already removed everything that positively belongs elsewhere.
+    if (anchor !== undefined && typeof record.sessionId !== "string") {
+      excluded.noSessionId++;
+      continue;
     }
 
     const toolUses = readToolUses(record.message?.content);
