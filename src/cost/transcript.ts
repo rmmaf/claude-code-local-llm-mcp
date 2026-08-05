@@ -117,13 +117,27 @@ function readUsage(raw: Record<string, unknown> | undefined): TokenUsage {
   // The split is authoritative when present and consistent; otherwise attribute
   // the whole cache write to the 5-minute TTL, which is the cheaper class and
   // therefore the conservative guess (it never inflates a claimed saving).
+  //
+  // THE CONSISTENCY HALF WAS NEVER WRITTEN. The guard read `splitTotal > 0`, so
+  // a split that disagreed with its own total was used anyway and
+  // `Math.max(0, total - splitTotal)` silently swallowed the difference. Over
+  // this project 15 records carry `cache_creation_input_tokens: 0` against an
+  // `ephemeral_1h` of 2,452 to 4,911: the meter booked 42,558 cacheWrite-1h
+  // tokens that the top-level field calls zero, in the class carrying the 2.0x
+  // multiplier. 5,634 records are consistent and **none** has a split BELOW its
+  // total, so the `Math.max` branch never fired in this corpus — it was covering
+  // a case that does not occur while admitting the one that does.
+  //
+  // Now: equal or nothing. Either way the two classes sum to the top-level
+  // total, which is what `scripts/session-token-walk.mjs` counts, so the two
+  // sides of B20 agree on this record by construction rather than by luck.
   const splitTotal = oneHour + fiveMin;
-  const useSplit = split !== undefined && splitTotal > 0;
+  const useSplit = split !== undefined && splitTotal === total;
 
   return {
     input: num(raw.input_tokens),
     cacheWrite1h: useSplit ? oneHour : 0,
-    cacheWrite5m: useSplit ? fiveMin + Math.max(0, total - splitTotal) : total,
+    cacheWrite5m: useSplit ? fiveMin : total,
     cacheRead: num(raw.cache_read_input_tokens),
     output: num(raw.output_tokens),
   };

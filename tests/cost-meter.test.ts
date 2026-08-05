@@ -157,6 +157,77 @@ describe("transcript parsing", () => {
     expect(transcript.requests[0]?.usage.cacheWrite1h).toBe(0);
   });
 
+  it("refuses a TTL split that disagrees with its own total, per the rule the comment always stated", async () => {
+    // 15 records in this project carry exactly this: a top-level total of 0
+    // against an ephemeral_1h between 2,452 and 4,911. The guard read
+    // `splitTotal > 0`, so the split was used anyway and the meter booked 42,558
+    // cacheWrite-1h tokens the top-level field calls zero — in the class carrying
+    // the 2.0x multiplier, the most expensive of the five.
+    const root = tempRoot();
+    const file = await writeTranscript(root, [
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-1",
+        sessionId: "s",
+        uuid: "u1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: {
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 0,
+            cache_creation: { ephemeral_1h_input_tokens: 2452, ephemeral_5m_input_tokens: 0 },
+          },
+        },
+      }),
+    ]);
+
+    const usage = (await readTranscript(file)).requests[0]?.usage;
+    expect(usage?.cacheWrite1h).toBe(0);
+    expect(usage?.cacheWrite5m).toBe(0);
+  });
+
+  it("keeps the two cache-write classes summing to the top-level total, split or not", async () => {
+    // The property that makes this side agree with scripts/session-token-walk.mjs
+    // by construction rather than by luck: whatever the split says, the classes
+    // sum to cache_creation_input_tokens.
+    const root = tempRoot();
+    const usageFor = (total: number, h: number, m: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        requestId: `req-${total}-${h}-${m}`,
+        sessionId: "s",
+        uuid: `u-${total}-${h}-${m}`,
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: {
+            cache_creation_input_tokens: total,
+            cache_read_input_tokens: 0,
+            output_tokens: 0,
+            cache_creation: { ephemeral_1h_input_tokens: h, ephemeral_5m_input_tokens: m },
+          },
+        },
+      });
+    const cases: Array<[number, number, number]> = [
+      [1000, 1000, 0], // consistent, all 1h
+      [1000, 400, 600], // consistent, split
+      [0, 2452, 0], // split exceeds total — the real shape
+      [900, 400, 100], // split below total — never seen here, still must balance
+    ];
+    const file = await writeTranscript(root, cases.map(([t, h, m]) => usageFor(t, h, m)));
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(4);
+    for (const [i, [total]] of cases.entries()) {
+      const u = transcript.requests[i]?.usage;
+      expect(u!.cacheWrite1h + u!.cacheWrite5m).toBe(total);
+    }
+  });
+
   it("gives each subagent thread its own index and segment size", async () => {
     clock = 0;
     const root = tempRoot();
