@@ -1297,6 +1297,35 @@ describe("the cost-meter CLI", () => {
     expect(stdout).toContain("mis-read");
   }, 30_000);
 
+  it("keeps --json parseable, and the admitted-nothing session inside the payload", async () => {
+    // The zero-request branch wrote its human line unconditionally, so --json
+    // emitted ANSI prose and then the array: unparseable, and B20 requires these
+    // artifacts to be machine-produced. It also skipped before pushing, so the
+    // session was missing from the payload entirely — the same invisibility one
+    // layer out, this time inside the evidence file.
+    clock = 0;
+    const root = tempRoot();
+    const transcripts = tempRoot();
+    await fs.writeFile(
+      path.join(transcripts, "sess-1.jsonl"),
+      `${[
+        assistantRecord("req-a", {}, { isApiErrorMessage: true }),
+        assistantRecord("req-b", {}, { isApiErrorMessage: true }),
+      ].join("\n")}\n`,
+      "utf8"
+    );
+
+    const cli = path.join(import.meta.dirname, "..", "dist", "cost", "cli.js");
+    const { stdout } = await execFileAsync(process.execPath, [cli, "--dir", transcripts, "--root", root, "--json"]);
+
+    const payload = JSON.parse(stdout) as Array<{ session: { requests: number; excluded: Record<string, number> } }>;
+    expect(payload).toHaveLength(1);
+    expect(payload[0]?.session.requests).toBe(0);
+    expect(payload[0]?.session.excluded.apiError).toBe(2);
+    // Not one byte of prose: a consumer parses stdout whole.
+    expect(stdout.trimStart().startsWith("[")).toBe(true);
+  }, 30_000);
+
   it("shows withheld rows even when nothing at all was counted", async () => {
     clock = 0;
     const root = tempRoot();
