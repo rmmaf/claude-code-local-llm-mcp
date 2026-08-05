@@ -10,9 +10,8 @@ Ceiling: 25 lines below this header.
 for four measured reasons**, and one is now repaired: an `invocation_id` is CALL
 identity and the counterfactual read it as SESSION OWNERSHIP, crediting one
 `gate` call to four sessions (21 rows on disk, 24 attributed). Ownership now
-resolves across the session set, ambiguous rows are refused with their magnitude
-shown, and `savedFraction` is **withheld, not zeroed**, when only timestamps
-remain. G1's vectors re-checked after: no drift.
+resolves across the session set, ambiguous rows are refused, and `savedFraction`
+is **withheld, not zeroed**, when only timestamps remain. G1: no drift.
 
 ## Next action
 
