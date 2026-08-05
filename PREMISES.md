@@ -581,13 +581,21 @@ defect, and it pinned four of them in place.
     re-emit.
     - **RETRACTED from the sentence above as first written: "it could therefore
       exceed the number of requests admitted."** That was offered as a symptom of
-      the defect and it is not one — the counter exceeds the request count by
-      design, because it counts **records** while a request is a `requestId`
-      **group**. Three admitted records of one group with no uuid is 3 against 1,
-      and 3 is the honest number, since each could reappear in a second file
-      undetected. The false version was also **pinned as an assertion in
-      `tests/cost-meter.test.ts`**, where it passed only because that fixture's
-      counter is 0. A fixture refuted it; the test now pins the true behaviour.
+      the defect and it is not one. The counter is over **records** while a
+      request is a `requestId` **group**, and **neither number bounds the other**:
+      measured 3 against 1 request where one group holds three uuid-less records,
+      and 2 against 4 where two of them share a group and three others carry
+      uuids. Counting per record is deliberate — each could reappear in a second
+      file undetected, so a per-group count can understate the risk, equalling it
+      when a group holds one such record and falling below when it holds several.
+      **Three statements about this field were wrong in three consecutive
+      commits, each an existential dressed as a universal.** "It can never
+      exceed the request count", pinned as a test assertion that passed only
+      because the fixture's counter was 0. "It exceeds by design", which reads as
+      always. "It does exceed whenever one group has several such records", a
+      sufficient condition that is not one — case B above satisfies it and does
+      not exceed. Each was refuted by a fixture, and the test now pins **both
+      directions**, which is the only form that cannot rot back into an ordering.
       Nothing scored changes: `win-14`'s artifacts carry 0 for all eleven
       sessions, and the oracle marks any session with a non-zero count `suspect`,
       which drops it from the set before it can be compared.
