@@ -1834,7 +1834,15 @@ written to catch literal-path-segment assumptions.
 
 Fixed both ways: the enumeration is now the session's directory recursively — a
 strict superset, so it can only find more — and `jsonlUnder` swallows **only**
-`ENOENT`. A missing directory is a fact about the corpus. `EACCES`, `ENOTDIR`,
+`ENOENT`.
+
+> **⚠ RETRACTED, same day — "a strict superset, so it can only find more" is
+> true of FILES and false of TOKENS.** The aggregation is last-write-wins per
+> `requestId`, not summation, so an added file can *replace* a winning record
+> and the session counts LESS: measured 695 → 5. See
+> *§ a superset of files is not a superset of tokens*. The enumeration change
+> itself stands; the safety argument for it does not, and the guards that
+> replace it are in `PREMISES.md` B20's admission rule. A missing directory is a fact about the corpus. `EACCES`, `ENOTDIR`,
 `EPERM` and `EIO` are facts about the *process*, and reporting "no subagent
 traffic" for one of those certifies a session nobody could read.
 
@@ -1921,6 +1929,16 @@ arguable.** The new enumeration is a strict superset of the old: it can only
 admit more records, therefore only make the meter look worse, never better.
 **Broadening is repair. Narrowing is how a gap gets hidden, and it voids
 everything, at any time, before or after a run.**
+
+> **⚠ RETRACTED, same day, and this paragraph is the reason the next entry
+> exists.** Direction is NOT a safety proxy. Broadening the file set made the
+> oracle count 690 tokens LESS on a fixture, because step 4 is last-write-wins
+> rather than a sum — the direction that drives a residual toward zero and holds
+> the premise on a broken meter. The two-rule-classes distinction above survives
+> and is right; only its *bound* was wrong. What bounds the latitude is stated in
+> B20: frozen thresholds, a green conformance suite, and mandatory re-emission of
+> every `evidence/` artifact on any enumeration change after the first scored
+> run. See *§ a superset of files is not a superset of tokens*.
 
 **The second finding is smaller and sharper.** The oracle emits its rule as a
 string into every artifact, and B20 requires those artifacts as evidence. For one

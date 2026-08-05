@@ -438,14 +438,38 @@ defect, and it pinned four of them in place.
     a change in counted tokens appears as a diff rather than being absorbed.
     Today that costs nothing because no artifact exists — which is exactly why
     the correction is being made now rather than argued about later.
-  - **Two structural guards, both on signals the oracle already computed and
-    ignored.** A record is admitted only if its own `sessionId` matches the
-    session — a file under a directory is not thereby a request *of* that session.
-    And a `requestId` group spanning more than one file marks the session
-    **`suspect`**: last-write-wins is undefined there, the oracle cannot know
-    which record is authoritative, so it refuses to score rather than guessing.
-    Both are zero across the real corpus, and both are now shown failing in
-    `tests/session-token-walk.test.ts`.
+- **THE ADMISSION RULE, STATED HERE IN FULL AND IN ONE PLACE.** B17 wrote it as
+  three steps. The oracle now performs four, and for a while the extra one lived
+  only in a separate bullet of this premise while B17's three-step text and the
+  oracle's own header both still said three. **Two descriptions of one rule,
+  disagreeing, is worse than either being wrong** — a reader following "the
+  admission rule" got a rule nothing implemented. This supersedes B17's wording
+  for B20; B17's stands as history.
+  1. **Admit** records with `type: "assistant"` carrying `message.usage`,
+     excluding `isApiErrorMessage: true` and `model: "<synthetic>"` — they carry
+     a real `requestId` and all-zero usage, so they are excluded **by those
+     fields and never by usage reading zero**, since a legitimate record can read
+     zero at the top level.
+  2. **Require `record.sessionId` to equal this session, unconditionally.** A
+     file under a session's directory is not thereby a request *of* that session:
+     unguarded, a stray record read **695 → 4,937** output tokens on a fixture.
+     **A record with no `sessionId` at all is excluded AND marks the session
+     `suspect`** — counted separately, never quietly dropped, because dropping
+     them silently is how a session with real traffic comes back empty. That is
+     not hypothetical here: this oracle has produced a false empty twice.
+     Measured: **0 of 5,595 records in this corpus lack the field**, so requiring
+     it costs nothing today and a non-zero count means the layout moved.
+  3. **De-duplicate by `uuid`** — RECORD identity across the file union, not
+     request identity.
+  4. **Group by `requestId`, take the group's usage from its LAST record in file
+     order.** A group spanning more than one file marks the session **`suspect`**
+     and it is not scored: last-write-wins is undefined there, the oracle cannot
+     know which record is authoritative, and guessing is what produced the
+     **695 → 5** reading that started this.
+  **An earlier draft's guard was conditional on the field being present**, so it
+  admitted any record that omitted `sessionId` and did not implement the rule it
+  declared one paragraph above. Both guards are zero across the real corpus and
+  both are now shown *firing* in `tests/session-token-walk.test.ts`.
 - **The emitted artifact must describe the rule that produced it.** For one
   commit the oracle's `rule` string still named `subagents/**` after the walk had
   been broadened, so an `evidence/` file would have carried a false account of

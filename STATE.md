@@ -5,14 +5,14 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B20 FREEZES THE THRESHOLDS; THE ENUMERATION IS REPAIRABLE AND MUST BE EXACT.**
-Seven oracle defects across three reviews, all before anything was scored, all
-false negatives or false artifacts. The last refuted a claim B20 made in its own
-text — *broadening can only make the oracle count more*. **False**: step 3 is
-last-write-wins, not a sum, so a stray `.jsonl` with an early partial copy read
-**695 → 5**, the direction that HOLDS the premise on a broken meter. Guarded by
-matching `sessionId`, and a `requestId` group spanning files marks the session
-`suspect` and refuses to score. B17/B19 `moot`; thresholds verified untouched.
+**B20 STATES THE ADMISSION RULE IN FULL — FOUR STEPS, IN ONE PLACE.** Nine
+oracle defects across four reviews, all before anything was scored. The last
+two: the `sessionId` guard fired only when the field was present, so it admitted
+any record omitting it and did not implement the rule printed above it; and the
+refutation of *broadening is safe* had landed in `PREMISES.md` while
+`DECISIONS.md` still asserted it — both retracted in place now. Missing
+`sessionId` is excluded **and** marks the session `suspect`: 0 of 5,595 records
+lack it, so non-zero means the layout moved.
 
 ## Next action
 
@@ -25,8 +25,8 @@ threshold, and B14's 3.978 vs 3.5.
 
 ## Do not redo
 
-- **Assert nothing about the instrument — build the fixture.** Five of the seven
-  defects were properties I claimed instead of measured.
+- **Build the fixture; assert nothing about the instrument.** And a refutation
+  must reach every file carrying the claim, not just the one it was written in.
 - **If the oracle needs another correction, G1 cannot close in this venue** —
   say so and decide on a stated non-metered basis. That is a permitted ending.
 - **B16's `> 10%` and 20-request denominator are INHERITED from B14.** Rederiving
