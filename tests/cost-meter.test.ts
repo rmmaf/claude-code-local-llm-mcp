@@ -2201,14 +2201,35 @@ describe("the B12 harness", () => {
     expect(killed.censored).toBe(true);
     expect(killed.valid).toBe(true);
 
-    // And an arm that outlived its budget WITHOUT being killed says so, because
-    // that is a broken harness rather than a slow agent: the spawn timeout and
-    // the classifier's budget came apart, and every arm between them would
-    // otherwise be misclassified in silence.
-    const unenforced = await classify({ exitCode: 0, wallMs: BUDGET });
+    // Whether the budget was enforced is a FACT the harness holds, not something
+    // to read off the clock. This check first asked `wallMs >= budgetMs`, which
+    // is the same duration-as-evidence mistake one line up: with a timeout
+    // actually set, `spawnSync` raises ETIMEDOUT the moment the wall crosses, so
+    // the question could essentially only be answered "yes" on a legitimate
+    // completion whose measured wall included spawn overhead.
+    const unenforced = await classify({ exitCode: 0, budgetEnforced: false });
     expect(unenforced.censored).toBe(false);
     expect(unenforced.valid).toBe(false);
-    expect(unenforced.reasons.join(" ")).toContain("spawn timeout did not match the budget");
+    expect(unenforced.reasons.join(" ")).toContain("never enforced");
+  });
+
+  it("does not censor a child that finished, whatever the timer says", async () => {
+    // `spawnSync` times the WHOLE call, so node's startup and teardown count
+    // toward the budget. Measured: a child sleeping 330ms under a 400ms timeout
+    // returns `status: 0` AND `ETIMEDOUT` at 405ms of wall clock.
+    //
+    // That child completed. Censoring it files a finished task as a lower bound
+    // and discards the observation it actually produced -- and near the boundary
+    // this is not rare, it is what every long-but-successful arm looks like.
+    const boundary = await classify({ exitCode: 0, errorCode: "ETIMEDOUT", wallMs: 405, budgetMs: 400 });
+    expect(boundary.censored).toBe(false);
+    expect(boundary.valid).toBe(true);
+    expect(boundary.reasons).toEqual([]);
+
+    // A child that was actually killed has no exit status of its own.
+    const killed = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT", wallMs: 416, budgetMs: 400 });
+    expect(killed.censored).toBe(true);
+    expect(killed.valid).toBe(true);
   });
 
   it("admits exactly what the meter admits, on records that vary one field at a time", async () => {

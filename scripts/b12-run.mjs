@@ -201,6 +201,7 @@ export function classifyRun({
   errorCode,
   wallMs,
   budgetMs,
+  budgetEnforced = true,
   originatedCount,
   slugsBefore,
   slugsAfter,
@@ -218,13 +219,23 @@ export function classifyRun({
   // late, so an arm that hung on a network call for the whole budget and then
   // died of an expired credential was archived as a legitimate budget-exhausted
   // observation. It did not even need to have originated anything.
-  const censored = !spawnFailed && errorCode === "ETIMEDOUT";
+  //
+  // AND THE CHILD MUST NOT HAVE FINISHED. `ETIMEDOUT` alone is not enough:
+  // `spawnSync` measures the whole call, so node's own startup and teardown
+  // count toward the timer. Measured -- a child sleeping 330ms under a 400ms
+  // timeout returns `status: 0` AND `ETIMEDOUT` at 405ms wall. That child
+  // completed. Recording it as censored files a finished task as a lower bound
+  // and throws away the observation it actually produced.
+  const censored = !spawnFailed && errorCode === "ETIMEDOUT" && exitCode !== 0;
 
-  // A run that outlived its budget without us killing it means the budget was
-  // never enforced -- the spawn timeout and the classifier's budget came apart.
-  // That is a verdict about the HARNESS rather than about the arm, and it must
-  // not pass quietly in either direction.
-  const budgetNotEnforced = !censored && !spawnFailed && wallMs >= budgetMs;
+  // WHETHER THE BUDGET WAS ENFORCED IS A FACT THE HARNESS KNOWS, NOT SOMETHING
+  // TO INFER FROM THE CLOCK. The first version of this check read
+  // `wallMs >= budgetMs`, which is the same duration-as-evidence mistake one
+  // line up: with a timeout actually set, `spawnSync` raises `ETIMEDOUT` the
+  // moment the wall crosses, so the check could essentially only fire on a
+  // legitimate completion whose measured wall included spawn overhead. It could
+  // produce false positives and almost nothing else.
+  const budgetNotEnforced = budgetEnforced === false;
 
   const reasons = [];
   if (spawnFailed) reasons.push(`the CLI could not be run: ${errorCode}`);
@@ -256,9 +267,7 @@ export function classifyRun({
     reasons.push(`snapshot scope shrank mid-observation, ${slugsBefore} slugs to ${slugsAfter}`);
   }
   if (budgetNotEnforced) {
-    reasons.push(
-      `ran ${wallMs}ms against a ${budgetMs}ms budget without being killed: the spawn timeout did not match the budget`
-    );
+    reasons.push(`no timeout was passed to the child, so the ${budgetMs}ms budget was never enforced`);
   }
   return { censored, valid: reasons.length === 0, reasons };
 }
@@ -531,6 +540,8 @@ function observe(args) {
   // the very record that is supposed to make a run re-adjudicable; what is
   // refused is calling it valid, and the exit code stops a driver.
   const verdict = classifyRun({
+    // A fact, not an inference: this is the same `budgetMs` handed to spawnSync.
+    budgetEnforced: Number.isFinite(budgetMs) && budgetMs > 0,
     exitCode: result.code,
     signal: result.signal,
     errorCode: result.errorCode,
