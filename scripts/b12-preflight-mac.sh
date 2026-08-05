@@ -121,7 +121,12 @@ ok "claude $CLAUDE_VER"
 # ---------------------------------------------------------------------------
 next "Repository"
 
-[ -d "$REPO/.git" ] || refuse "no git repository at $REPO (pass the path as the first argument)"
+# ASK GIT, NOT THE FILESYSTEM. In a linked worktree `.git` is a FILE containing
+# `gitdir: ...`, not a directory, so `[ -d "$REPO/.git" ]` refused a perfectly
+# valid checkout -- and the no-argument path made that a self-contradiction: it
+# detected the repository with `git rev-parse --show-toplevel` and then rejected
+# it with a test git had nothing to do with.
+git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || refuse "no git work tree at $REPO (pass the path as the first argument)"
 cd "$REPO" || refuse "cannot enter $REPO"
 # ABSOLUTE from here on. A relative path would be written into the temporary
 # --mcp-config, and Claude Code resolves that against ITS cwd, not this one.
@@ -146,8 +151,18 @@ ok "tree clean of tracked changes (git status ran, exit 0)"
 
 info "fetching origin/$BRANCH"
 git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable?"
-git checkout -q "$BRANCH" 2>/dev/null || git checkout -q -b "$BRANCH" "origin/$BRANCH" \
-  || refuse "could not check out $BRANCH"
+if ! git checkout -q "$BRANCH" 2>/dev/null; then
+  if ! git checkout -q -b "$BRANCH" "origin/$BRANCH" 2>/dev/null; then
+    # The likeliest cause in a repository that uses worktrees, and git's own
+    # message is swallowed above, so name it rather than leave the reader
+    # guessing at "could not check out".
+    HOLDER=$(git worktree list 2>/dev/null | grep "\[$BRANCH\]" | head -1 || true)
+    if [ -n "$HOLDER" ]; then
+      refuse "$BRANCH is already checked out in another worktree: $HOLDER. Run this from that directory, or remove that worktree."
+    fi
+    refuse "could not check out $BRANCH"
+  fi
+fi
 git merge --ff-only "origin/$BRANCH" --quiet 2>/dev/null || true
 
 # TWO EMPTY STRINGS ARE EQUAL. With `git rev-parse` failing on both sides this
