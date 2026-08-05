@@ -333,9 +333,13 @@ export async function readTranscript(
         continue;
       }
       seenUuid.add(record.uuid);
-    } else if (record.type === "assistant" && record.message?.usage !== undefined) {
-      admittedWithoutUuid++;
     }
+    // A record with no uuid is simply not de-duplicable. Whether it is ADMITTED
+    // is not this pass's question, and answering it here meant re-implementing
+    // half the admission predicate -- assistant plus usage, without the api-error
+    // or session checks -- so an api-error record with no uuid was counted as
+    // admittedWithoutUuid AND as excluded.apiError. The same record, both ways.
+    // The count now happens where admission actually happens, once.
     if (anchor !== undefined && typeof record.sessionId === "string" && record.sessionId !== anchor) {
       excluded.foreignSession++;
       continue;
@@ -396,6 +400,11 @@ export async function readTranscript(
 
     const toolUses = readToolUses(record.message?.content);
     for (const use of toolUses) toolNames.set(use.id, use.name);
+
+    // Admitted, and undedupable. Counted HERE -- past every exclusion -- so the
+    // number cannot contradict the one beside it, and so it means what the
+    // oracle's field of the same name means.
+    if (typeof record.uuid !== "string") admittedWithoutUuid++;
 
     // A record with no `requestId` cannot be grouped with anything, so it is its
     // own group of one — which is what step 4 already implies and what the

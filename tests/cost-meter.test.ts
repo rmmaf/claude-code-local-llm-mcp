@@ -213,6 +213,37 @@ describe("transcript parsing", () => {
     expect(transcript.admittedWithoutUuid).toBe(1);
   });
 
+  it("never counts a REJECTED record as one it admitted", async () => {
+    // The counter used to be incremented in the record-level pass, which knows
+    // only "assistant plus usage" — half the admission predicate, missing the
+    // api-error and session checks. So an api-error record with no uuid was
+    // reported as admittedWithoutUuid: 1 AND excluded.apiError: 1. The same
+    // record, counted both ways, in one payload: a reader would believe an
+    // undedupable record had been billed when it had been thrown out.
+    //
+    // Two numbers computed from one rule drift apart the moment two places
+    // compute them. The count now happens where admission happens.
+    clock = 0;
+    const root = tempRoot();
+    const rejected = JSON.stringify({
+      type: "assistant",
+      sessionId: "sess-1",
+      isApiErrorMessage: true,
+      requestId: "req-2", // a real requestId, and no uuid
+      timestamp: new Date(1_700_000_000_000).toISOString(),
+      message: { model: "<synthetic>", content: [], usage: { output_tokens: 999 } },
+    });
+    const file = await writeTranscript(root, [assistantRecord("req-1", { output: 100 }), rejected]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.apiError).toBe(1);
+    expect(transcript.admittedWithoutUuid).toBe(0);
+    // The general form, and the one that survives a future edit: the counter can
+    // never exceed the number of records actually admitted.
+    expect(transcript.admittedWithoutUuid).toBeLessThanOrEqual(transcript.requests.length);
+  });
+
   it("counts a record once when the same uuid appears in two files of one session", async () => {
     // RECORD identity across the union. Without it the union double-counts, and
     // the invariant `|uuids(main) U uuids(sub)| == |main| + |sub|` is what B20's
