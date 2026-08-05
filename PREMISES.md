@@ -1011,11 +1011,19 @@ pre-registered as its own premise before anything is measured against it.
   Same model, same temperature, same bytes — it returns complete once there is
   room. **This also proves `mac-16`'s refusal of this request was correct**, by
   measurement rather than by symptom: 20,870 needed in a 16,384-token window.
-- **What that run does NOT settle: the mechanism.** Nothing overflowed at 32,768,
-  so it cannot discriminate between the overflow policies, and the question the
-  elision actually raises — why a response that ran out of room came back with a
-  *properly closed* block missing 81 lines from the middle rather than cut off at
-  the end — is still open in `DECISIONS.md`.
+- **The mechanism is now settled, and it was not settled by that run.** LM
+  Studio's `contextOverflowPolicy` on the measuring machine reads
+  **`truncateMiddle`** (`getBasePredictionConfig()` via the SDK,
+  `run 2026-08-05-mac-25-policy`). It keeps the system prompt and the first user
+  message and removes the **middle** of the context — so the model, copying a
+  file out of the prompt, lost the middle of its own source and closed the block
+  normally. That accounts for the properly closed tag, the 81 lines gone from the
+  middle rather than the end, the `finish_reason: "stop"`, and the retry
+  reporting an identical prompt count after ~6,000 tokens were appended.
+  **It does not change this premise**, which counts the harm and was written not
+  to depend on the mechanism — but it does mean that **when the pre-flight is
+  wrong, the failure is silent by design**, which is what the `Math.min`
+  cross-check exists for.
 - **Estimator error on that case: +14.2%, in the safe direction.** Estimated
   23,833 total against 20,870 actual (input +7.9%, output +20.7%; measured output
   density 4.22 B/token here against the 3.978 pooled over `mac-12-variance`).

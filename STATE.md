@@ -15,14 +15,14 @@ refused anything, so nothing here speaks to the refusal side.
 
 ## Next action
 
-**Nothing is blocked on B16; pick from what it left open.** G7's inflation risk
-is untouched — its two runs refused nothing, and `mac-16`'s over-refusal still
-carries no threshold, deliberately. The window drift has a named cause:
-`justInTimeModelLoading: true` reloads a model at its DEFAULT context, so an
-explicit 32,768 becomes 16,384 after any unload. Still open: **why the loss had
-that SHAPE** — running out of room cuts a response off at the end, that one came
-back closed with 81 lines gone from the middle. Not in the CLI, not in
-`~/.lmstudio`. `lms log stream` is the next thing to try.
+**The oldest open point is CLOSED: the policy is `truncateMiddle`**, read via
+the `@lmstudio/sdk` after six dead ends. It drops the MIDDLE of the context, so a
+model copying a file out of the prompt loses its own source and closes the block
+normally — the properly closed tag, the 81 middle lines, `stop`, and the
+identical retry prompt count, all one mechanism. The pre-flight already prevents
+it; what this establishes is that **a wrong window fails silently by design**.
+**Left open, and both are yours:** G7's threshold on `context_would_overflow`
+(base rate now known, 33% at 16k / 7% at 32k), and B14's 3.978 vs 3.5.
 
 ## Do not redo
 
