@@ -2119,10 +2119,14 @@ describe("the B12 harness", () => {
     expect(timedOut.valid).toBe(true);
     expect(timedOut.reasons).toEqual([]);
 
-    // Same for hitting the wall clock without an error code.
-    const overBudget = await classify({ exitCode: null, signal: "SIGTERM", wallMs: BUDGET });
-    expect(overBudget.censored).toBe(true);
-    expect(overBudget.valid).toBe(true);
+    // A SIGTERM WITHOUT `ETIMEDOUT` IS NOT OUR BUDGET. This assertion originally
+    // read `censored: true` and encoded the defect it was meant to guard:
+    // `spawnSync` sets ETIMEDOUT exactly when IT does the killing, so a SIGTERM
+    // without one means something else ended the process, and calling that
+    // censored accepts an outside kill as a budget exhaustion.
+    const otherKill = await classify({ exitCode: null, signal: "SIGTERM", wallMs: BUDGET });
+    expect(otherKill.censored).toBe(false);
+    expect(otherKill.valid).toBe(false);
 
     // A censored arm need not have originated anything: killed before its first
     // billed request, it still measures "did not finish inside the budget".
@@ -2172,6 +2176,39 @@ describe("the B12 harness", () => {
     const noBinary = await classify({ exitCode: null, errorCode: "ENOENT", originatedCount: 7 });
     expect(noBinary.reasons).toHaveLength(1);
     expect(noBinary.reasons[0]).toContain("ENOENT");
+  });
+
+  it("gives a failure the same verdict however late it happened", async () => {
+    // Censoring was `ETIMEDOUT || (exitCode !== 0 && wallMs >= budgetMs)`, and
+    // the second half used DURATION as evidence that WE stopped the process.
+    // Duration says how long something took, not who ended it — so the same
+    // failure, exit 1, came back invalid when early and censored-and-valid when
+    // late. An arm that hung on a network call for the whole budget and then
+    // died of an expired credential was archived as a legitimate
+    // budget-exhausted observation, and it did not even need to have originated
+    // anything to qualify.
+    //
+    // Only `ETIMEDOUT` is positive evidence: `spawnSync` sets it exactly when it
+    // kills a child at the timeout it was given.
+    const early = await classify({ exitCode: 1, wallMs: 1_000 });
+    const late = await classify({ exitCode: 1, wallMs: BUDGET });
+    expect(late.censored).toBe(false);
+    expect(late.valid).toBe(false);
+    expect(late.reasons[0]).toBe(early.reasons[0]);
+
+    // A real budget kill still is one.
+    const killed = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT", wallMs: BUDGET });
+    expect(killed.censored).toBe(true);
+    expect(killed.valid).toBe(true);
+
+    // And an arm that outlived its budget WITHOUT being killed says so, because
+    // that is a broken harness rather than a slow agent: the spawn timeout and
+    // the classifier's budget came apart, and every arm between them would
+    // otherwise be misclassified in silence.
+    const unenforced = await classify({ exitCode: 0, wallMs: BUDGET });
+    expect(unenforced.censored).toBe(false);
+    expect(unenforced.valid).toBe(false);
+    expect(unenforced.reasons.join(" ")).toContain("spawn timeout did not match the budget");
   });
 
   it("admits exactly what the meter admits, on records that vary one field at a time", async () => {

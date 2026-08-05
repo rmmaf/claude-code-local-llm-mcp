@@ -206,9 +206,25 @@ export function classifyRun({
   slugsAfter,
 }) {
   const spawnFailed = errorCode !== null && errorCode !== undefined && errorCode !== "ETIMEDOUT";
-  // Censored means WE stopped it at the budget. Nothing else is censored.
-  const censored =
-    !spawnFailed && (errorCode === "ETIMEDOUT" || (exitCode !== 0 && wallMs >= budgetMs));
+
+  // CENSORED MEANS WE STOPPED IT, AND ONLY `ETIMEDOUT` SAYS SO. `spawnSync` sets
+  // that code exactly when it kills a child at the timeout it was given, so it
+  // is positive evidence. Duration is not: it says how long something took, not
+  // who ended it.
+  //
+  // This shipped as `ETIMEDOUT || (exitCode !== 0 && wallMs >= budgetMs)`, and
+  // the second half laundered late failures. The SAME failure -- exit 1 -- came
+  // back invalid when it happened early and censored-and-valid when it happened
+  // late, so an arm that hung on a network call for the whole budget and then
+  // died of an expired credential was archived as a legitimate budget-exhausted
+  // observation. It did not even need to have originated anything.
+  const censored = !spawnFailed && errorCode === "ETIMEDOUT";
+
+  // A run that outlived its budget without us killing it means the budget was
+  // never enforced -- the spawn timeout and the classifier's budget came apart.
+  // That is a verdict about the HARNESS rather than about the arm, and it must
+  // not pass quietly in either direction.
+  const budgetNotEnforced = !censored && !spawnFailed && wallMs >= budgetMs;
 
   const reasons = [];
   if (spawnFailed) reasons.push(`the CLI could not be run: ${errorCode}`);
@@ -238,6 +254,11 @@ export function classifyRun({
   }
   if (slugsAfter < slugsBefore) {
     reasons.push(`snapshot scope shrank mid-observation, ${slugsBefore} slugs to ${slugsAfter}`);
+  }
+  if (budgetNotEnforced) {
+    reasons.push(
+      `ran ${wallMs}ms against a ${budgetMs}ms budget without being killed: the spawn timeout did not match the budget`
+    );
   }
   return { censored, valid: reasons.length === 0, reasons };
 }
@@ -462,9 +483,12 @@ function observe(args) {
     task.prompt,
   ];
 
+  // ONE budget, used both to ENFORCE and to JUDGE. Computed twice, the two could
+  // drift, and every arm between them would be misclassified in silence.
+  const budgetMs = manifest.pinned?.perArmTimeoutMs ?? 45 * 60 * 1000;
   const started = stamp();
   const startedMs = Date.now();
-  const result = run(binary.path, cliArgs, { cwd: treeDir, timeout: (manifest.pinned?.perArmTimeoutMs ?? 45 * 60 * 1000) });
+  const result = run(binary.path, cliArgs, { cwd: treeDir, timeout: budgetMs });
   const wallMs = Date.now() - startedMs;
   // A budget overrun is a CENSORED observation carrying the budget as a lower
   // bound, never a silent drop: dropping budget-exhausted control arms removes
@@ -478,7 +502,6 @@ function observe(args) {
   // This first shipped treating any null exit as censored AND any spawn error as
   // invalid, which caught the timeout twice and named it "could not be spawned
   // at all". ETIMEDOUT is the budget; ENOENT is a broken run.
-  const budgetMs = manifest.pinned?.perArmTimeoutMs ?? 45 * 60 * 1000;
 
   const after = takeSnapshot();
   const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
