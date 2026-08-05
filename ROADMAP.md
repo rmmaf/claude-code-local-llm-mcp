@@ -27,7 +27,7 @@ What may be built next, and the number that decides it.
   meter-derived may be measured until it agrees.** That covers B12 and anything
   reading `savedFraction`. It does not cover B6 or B7, which come from `repair`'s
   own returned payload and never touch the meter.
-- **CLOSED AGAIN by B20 holding** (`run 2026-08-05-win-12-b20`): the meter's
+- **CLOSED AGAIN by B20 holding** (`run 2026-08-05-win-13-b20`): the meter's
   per-class token totals equal an independent enumeration's, **residual exactly 0
   on 4 classes x 11 sessions**, artifacts under `evidence/`. The comparator was
   pre-registered before any repair and it is not `/usage`.

@@ -522,9 +522,9 @@ defect, and it pinned four of them in place.
   continue/stop decision is made on a stated non-metered basis. That is a real
   outcome this project is allowed to reach, and reaching it honestly beats a
   sixth renumber.
-- **Measured: `run 2026-08-05-win-12-b20`. Residual EXACTLY 0 on every class of
+- **Measured: `run 2026-08-05-win-13-b20`. Residual EXACTLY 0 on every class of
   every session — 4 classes x 11 sessions — and the request counts equal on all
-  eleven.** Artifacts: `evidence/2026-08-05-win-12-b20.{walk,meter,comparison}.json`,
+  eleven.** Artifacts: `evidence/2026-08-05-win-13-b20.{walk,meter,comparison}.json`,
   machine-produced, carrying the four-class vector per session per side, the
   `uuid` disjointness counts, the subagent share per session, the Claude Code
   version and the three commit SHAs.
@@ -549,7 +549,14 @@ defect, and it pinned four of them in place.
     disagree — is agreement by corpus, not by rule**, and that is the coincidence
     this premise exists to exclude. The meter now honours the id. Both artifact
     sets are committed; the earlier one is evidence of the instrument, not of the
-    result.
+    result. **A third emission followed**, because each side had also promoted
+    the key IT needed — `requestId` for the meter, `uuid` for the oracle — into
+    an admission condition step 1 does not state, in opposite directions and
+    both silently. **All three runs return identical vectors**, because every one
+    of this corpus's 5,669 assistant records carries both keys. Three times now
+    the residual was 0 for a reason that was a property of the corpus rather than
+    of the rules, and each time a fixture varying one field found what reading
+    the two implementations side by side did not.
 - **What the repair recovered: 390 of 2,703 billed requests were invisible.**
   The meter printed `(N main, 0 subagent)` on every session for four days. The
   gap is not spread evenly — `514a829f` is 78% subagent by request count while
