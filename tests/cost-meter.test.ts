@@ -157,6 +157,71 @@ describe("transcript parsing", () => {
     expect(transcript.requests[0]?.usage.cacheWrite1h).toBe(0);
   });
 
+  it("takes the LAST record's usage in a requestId group, because the first one is partial", async () => {
+    // The real shape: intermediate records carry a partial completion count and
+    // the terminal record carries the whole answer. Over this project 327 of
+    // 1,647 multi-record groups differ, and in 327 of 327 the first is smaller.
+    // Keeping the first dropped 655,570 output tokens, 19.27% of all output, in
+    // the class carrying the 5.0x multiplier.
+    clock = 0;
+    const root = tempRoot();
+    const partial = (output: number, tool: string): string =>
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-1",
+        sessionId: "s",
+        uuid: `u-${output}`,
+        timestamp: new Date(1_700_000_000_000 + output).toISOString(),
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: `tu-${output}`, name: tool }],
+          usage: {
+            input_tokens: 2,
+            cache_creation_input_tokens: 16_667,
+            cache_read_input_tokens: 30_034,
+            output_tokens: output,
+            cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 16_667 },
+          },
+        },
+      });
+    const file = await writeTranscript(root, [partial(5, "Bash"), partial(5, "Read"), partial(695, "Edit")]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(1);
+    const [request] = transcript.requests;
+    expect(request?.usage.output).toBe(695);
+    // The repeated fields are unchanged — usage repeats, it does not accumulate.
+    expect(request?.usage.cacheRead).toBe(30_034);
+    expect(request?.usage.cacheWrite5m).toBe(16_667);
+    // Every tool_use block is still collected, from every record of the group.
+    expect(request?.toolUses.map((t) => t.name)).toEqual(["Bash", "Read", "Edit"]);
+  });
+
+  it("places a request where it started even though its usage comes from the last record", async () => {
+    // timestampMs, thread and segment stay with the FIRST record: a request is
+    // placed in the conversation where it began, and only the counts move.
+    clock = 0;
+    const root = tempRoot();
+    const at = (ms: number, output: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-1",
+        sessionId: "s",
+        uuid: `u-${ms}`,
+        timestamp: new Date(ms).toISOString(),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 0, output_tokens: output },
+        },
+      });
+    const file = await writeTranscript(root, [at(1_700_000_000_000, 1), at(1_700_000_900_000, 900)]);
+
+    const [request] = (await readTranscript(file)).requests;
+    expect(request?.usage.output).toBe(900);
+    expect(request?.timestampMs).toBe(1_700_000_000_000);
+  });
+
   it("refuses a TTL split that disagrees with its own total, per the rule the comment always stated", async () => {
     // 15 records in this project carry exactly this: a top-level total of 0
     // against an ephemeral_1h between 2,452 and 4,911. The guard read

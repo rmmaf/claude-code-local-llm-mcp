@@ -253,6 +253,28 @@ export async function readTranscript(file: string): Promise<Transcript> {
     const existing = byRequest.get(record.requestId);
     if (existing !== undefined) {
       existing.toolUses.push(...toolUses);
+      // THE LAST RECORD OF A GROUP CARRIES THE USAGE, NOT THE FIRST.
+      //
+      // This kept the first and discarded every later one, on the recorded
+      // ground that "usage repeats verbatim on every content block of one
+      // request" (`MEASUREMENTS.jsonl:9`, checked on one session at `:54`). It
+      // repeats — except for `output_tokens`. Over this project 327 of 1,647
+      // multi-record groups differ, and in 327 of 327 the FIRST record holds the
+      // SMALLER value: intermediate records carry a partial completion count and
+      // the terminal one carries the whole answer. Keeping the first dropped
+      // 655,570 output tokens, 19.27% of all output, at the 5.0x multiplier.
+      //
+      // Last in file order, not `stop_reason`, which looks like the terminal
+      // marker and is not one: 27 groups carry none at all and 1,300 carry more
+      // than one, while last-in-order agrees with the maximum on 2,482 of 2,482.
+      //
+      // Usage and speed move together because they come from the same object —
+      // taking the count from one record and its speed from another would price
+      // a request at a rate it never ran at. Everything else stays with the
+      // first record on purpose: `timestampMs`, `thread` and `segment` place the
+      // request in the conversation, and a request is placed where it started.
+      existing.usage = readUsage(record.message?.usage);
+      existing.speed = readSpeed(record.message?.usage);
       continue;
     }
 
