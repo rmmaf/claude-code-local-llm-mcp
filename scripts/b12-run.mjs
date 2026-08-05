@@ -26,6 +26,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import path from "node:path";
 
 const REPO = process.cwd();
@@ -38,7 +39,18 @@ function refuse(why) {
 
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { encoding: "utf8", maxBuffer: 1 << 28, ...opts });
-  return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "", failed: r.error !== undefined };
+  // `errorCode` and `signal` are carried SEPARATELY and never collapsed into a
+  // boolean. `spawnSync` reports a timeout as status null / SIGTERM / ETIMEDOUT
+  // and a missing binary as status null / no signal / ENOENT — the first is an
+  // anticipated outcome the design requires kept as data, the second is a broken
+  // run. A single `failed` flag made them the same thing.
+  return {
+    code: r.status,
+    signal: r.signal ?? null,
+    errorCode: r.error?.code ?? null,
+    out: r.stdout ?? "",
+    err: r.stderr ?? "",
+  };
 }
 
 function git(args, cwd = REPO) {
@@ -165,6 +177,36 @@ function takeSnapshot(rootOverride) {
     billableRecords: records,
     requestIds: [...ids].sort(),
   };
+}
+
+/**
+ * Whether an arm's exit is an OUTCOME or a broken run — one rule, one place,
+ * exported so it can be tested without spending a session.
+ *
+ * The distinction is not cosmetic and it has a direction. `spawnSync` reports a
+ * budget timeout as `ETIMEDOUT` and a missing binary as `ENOENT`, both with a
+ * null exit status. Collapsing them marks a timed-out arm INVALID — and the
+ * design says exactly why that is the wrong way to be wrong: "dropping
+ * budget-exhausted control arms removes exactly the evidence that favours the
+ * tools." Control arms are the long ones; they have no gate to answer in a
+ * single call. Invalidating them biases toward a hold.
+ *
+ * A censored arm is kept, marked, and carries the budget as a LOWER BOUND. It is
+ * also excused from having originated anything: killed before its first billed
+ * request, it still measures "this task did not finish inside the budget".
+ */
+export function classifyRun({ errorCode, wallMs, budgetMs, originatedCount, slugsBefore, slugsAfter }) {
+  const spawnFailed = errorCode !== null && errorCode !== undefined && errorCode !== "ETIMEDOUT";
+  const censored = !spawnFailed && (errorCode === "ETIMEDOUT" || wallMs >= budgetMs);
+  const reasons = [];
+  if (spawnFailed) reasons.push(`the CLI could not be run: ${errorCode}`);
+  if (originatedCount === 0 && !censored) {
+    reasons.push("no requestId was originated: the arm produced no billed request, or its slug was outside the snapshot");
+  }
+  if (slugsAfter < slugsBefore) {
+    reasons.push(`snapshot scope shrank mid-observation, ${slugsBefore} slugs to ${slugsAfter}`);
+  }
+  return { censored, valid: reasons.length === 0, reasons };
 }
 
 // ---------------------------------------------------------------------------
@@ -394,7 +436,16 @@ function observe(args) {
   // A budget overrun is a CENSORED observation carrying the budget as a lower
   // bound, never a silent drop: dropping budget-exhausted control arms removes
   // exactly the evidence that favours the tools.
-  const censored = result.code === null || wallMs >= (manifest.pinned?.perArmTimeoutMs ?? 45 * 60 * 1000);
+  // CENSORED IS AN OUTCOME, NOT A FAILURE. The design is explicit: exceeding the
+  // budget is a censored observation carrying the budget as a LOWER BOUND, never
+  // a silent drop, "because dropping budget-exhausted control arms removes
+  // exactly the evidence that favours the tools". Control arms are the ones that
+  // run long — no tools, more turns — so invalidating them biases toward a hold.
+  //
+  // This first shipped treating any null exit as censored AND any spawn error as
+  // invalid, which caught the timeout twice and named it "could not be spawned
+  // at all". ETIMEDOUT is the budget; ENOENT is a broken run.
+  const budgetMs = manifest.pinned?.perArmTimeoutMs ?? 45 * 60 * 1000;
 
   const after = takeSnapshot();
   const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
@@ -423,14 +474,16 @@ function observe(args) {
   // The artifact is still written. Refusing to write would hide the failure from
   // the very record that is supposed to make a run re-adjudicable; what is
   // refused is calling it valid, and the exit code stops a driver.
-  const invalid = [];
-  if (originated.length === 0) {
-    invalid.push("no requestId was originated: the arm produced no billed request, or its slug was outside the snapshot");
-  }
-  if (after.slugsWalked < before.slugsWalked) {
-    invalid.push(`snapshot scope shrank mid-observation, ${before.slugsWalked} slugs to ${after.slugsWalked}`);
-  }
-  if (result.failed) invalid.push("the CLI could not be spawned at all");
+  const verdict = classifyRun({
+    errorCode: result.errorCode,
+    wallMs,
+    budgetMs,
+    originatedCount: originated.length,
+    slugsBefore: before.slugsWalked,
+    slugsAfter: after.slugsWalked,
+  });
+  const censored = verdict.censored;
+  const invalid = verdict.reasons;
 
   const observation = {
     valid: invalid.length === 0,
@@ -444,7 +497,13 @@ function observe(args) {
     started,
     wallClockMs: wallMs,
     censored,
+    // What the scorer needs to treat a censored arm as a bound rather than a
+    // point: the budget it hit, and the fact that its cost is a floor.
+    budgetMs,
+    costIsLowerBound: censored,
     cliExitCode: result.code,
+    cliSignal: result.signal,
+    cliErrorCode: result.errorCode,
     binary,
     ratesSha256: ratesSha,
     baseCommit: task.baseCommit,
@@ -498,11 +557,17 @@ function parseArgs(argv) {
   return args;
 }
 
+// Imported by tests for `classifyRun`; only the direct invocation runs a command.
+const invokedDirectly =
+  process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url;
+
 const argv = process.argv.slice(2);
 const command = argv[0];
 const args = parseArgs(argv.slice(1));
 
-switch (command) {
+if (!invokedDirectly) {
+  // nothing to do: this file was imported
+} else switch (command) {
   case "preflight":
     preflight(args);
     break;

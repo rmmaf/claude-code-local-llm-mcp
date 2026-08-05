@@ -2086,6 +2086,60 @@ describe("the cost-meter CLI", () => {
 
 describe("the B12 harness", () => {
   const runNode = promisify(execFile);
+  const BUDGET = 45 * 60 * 1000;
+  const classify = async (over: Record<string, unknown>): Promise<{ censored: boolean; valid: boolean; reasons: string[] }> => {
+    const mod = await import("../scripts/b12-run.mjs");
+    return (mod as { classifyRun: (o: unknown) => { censored: boolean; valid: boolean; reasons: string[] } }).classifyRun({
+      errorCode: null,
+      wallMs: 1_000,
+      budgetMs: BUDGET,
+      originatedCount: 12,
+      slugsBefore: 3,
+      slugsAfter: 3,
+      ...over,
+    });
+  };
+
+  it("keeps a budget timeout as a censored observation, not an invalid one", async () => {
+    // `spawnSync` reports a timeout as ETIMEDOUT with a null exit status, and a
+    // missing binary the same way but with ENOENT. Collapsing them into one
+    // `failed` flag marked a timed-out arm INVALID and told the reader "the CLI
+    // could not be spawned at all", which is not what happened.
+    //
+    // The direction is the point. The design keeps a censored arm as a LOWER
+    // BOUND precisely "because dropping budget-exhausted control arms removes
+    // exactly the evidence that favours the tools" — control arms are the long
+    // ones, having no gate to answer in a single call. Invalidating them biases
+    // toward a hold, which is the error that keeps a project running on a
+    // premise that stopped being true.
+    const timedOut = await classify({ errorCode: "ETIMEDOUT" });
+    expect(timedOut.censored).toBe(true);
+    expect(timedOut.valid).toBe(true);
+    expect(timedOut.reasons).toEqual([]);
+
+    // Same for hitting the wall clock without an error code.
+    const overBudget = await classify({ wallMs: BUDGET });
+    expect(overBudget.censored).toBe(true);
+    expect(overBudget.valid).toBe(true);
+
+    // A censored arm need not have originated anything: killed before its first
+    // billed request, it still measures "did not finish inside the budget".
+    const killedEarly = await classify({ errorCode: "ETIMEDOUT", originatedCount: 0 });
+    expect(killedEarly.censored).toBe(true);
+    expect(killedEarly.valid).toBe(true);
+
+    // But a broken run is still broken, and says which.
+    const noBinary = await classify({ errorCode: "ENOENT" });
+    expect(noBinary.censored).toBe(false);
+    expect(noBinary.valid).toBe(false);
+    expect(noBinary.reasons[0]).toContain("ENOENT");
+
+    // And an arm that ran to completion recording nothing is not an observation.
+    const emptyButFinished = await classify({ originatedCount: 0 });
+    expect(emptyButFinished.censored).toBe(false);
+    expect(emptyButFinished.valid).toBe(false);
+    expect(emptyButFinished.reasons[0]).toContain("no requestId was originated");
+  });
 
   it("admits exactly what the meter admits, on records that vary one field at a time", async () => {
     // `scripts/b12-run.mjs` re-implements B20's admission rule because it must
