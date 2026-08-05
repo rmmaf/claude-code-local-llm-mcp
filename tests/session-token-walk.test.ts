@@ -240,6 +240,7 @@ describe("session-token-walk", () => {
     const session = await walk(dir);
     expect(session.diagnostics.groupsSpanningFiles).toBe(1);
     expect(session.suspect).toBe(true);
+    expect(session.suspectReasons).toEqual(["requestId group spanning 1 file(s)"]);
   });
 
   it("admits a record only if its own sessionId matches, whatever directory it sits in", async () => {
@@ -291,6 +292,12 @@ describe("session-token-walk", () => {
     expect(session.tokens.output).toBe(695);
     expect(session.records.excludedNoSessionId).toBe(1);
     expect(session.suspect).toBe(true);
+    // And it must say WHY. `suspect` grew a second cause while the CLI went on
+    // labelling every one of them "a requestId group spanning files", so an
+    // operator would have hunted for a group that does not exist. A flag whose
+    // printed reason can be wrong is worse than a flag with no reason.
+    expect(session.suspectReasons).toEqual(["1 record(s) with no sessionId"]);
+    expect(session.diagnostics.groupsSpanningFiles).toBe(0);
   });
 
   it("emits a rule string that describes what it actually does", async () => {

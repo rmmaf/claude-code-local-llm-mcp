@@ -436,7 +436,15 @@ function walkSession(dir, sessionId) {
     // making the oracle count LESS, which is the direction that can drive a
     // residual to zero on a meter that is wrong. Zero across the real corpus, so
     // any non-zero is corruption or a layout this walk does not understand.
+    // Reported WITH ITS REASON. `suspect` grew a second cause and the CLI went on
+    // labelling every one of them "a requestId group spanning files", so an
+    // operator would have hunted for a group that does not exist. A flag whose
+    // printed reason can be wrong is worse than a flag with no reason.
     suspect: groupsSpanningFiles > 0 || excludedNoSessionId > 0,
+    suspectReasons: [
+      ...(groupsSpanningFiles > 0 ? [`requestId group spanning ${groupsSpanningFiles} file(s)`] : []),
+      ...(excludedNoSessionId > 0 ? [`${excludedNoSessionId} record(s) with no sessionId`] : []),
+    ],
   };
 }
 
@@ -517,8 +525,11 @@ function main() {
   const ttlTokens = walked.reduce((n, s) => n + s.diagnostics.ttlSplitOnlyTokens, 0);
   const shared = walked.reduce((n, s) => n + s.uuidDisjoint.sharedUuids, 0);
   const voids = walked.filter((s) => s.void).map((s) => s.sessionId.slice(0, 8));
-  const suspect = walked.filter((s) => s.suspect).map((s) => s.sessionId.slice(0, 8));
+  const suspect = walked
+    .filter((s) => s.suspect)
+    .map((s) => `${s.sessionId.slice(0, 8)} (${s.suspectReasons.join(", ")})`);
   const foreign = walked.reduce((n, s) => n + s.records.excludedForeignSession, 0);
+  const noSid = walked.reduce((n, s) => n + s.records.excludedNoSessionId, 0);
   const opaque = walked.filter((s) => s.files.sessionDirYieldedNoLogs).map((s) => s.sessionId.slice(0, 8));
   console.log(
     `\noutput tokens a first-record-wins dedup would drop: ${lost.toLocaleString("en-US")}` +
@@ -531,10 +542,11 @@ function main() {
       `\nsessions whose directory exists but yielded no request log: ` +
       `${opaque.length === 0 ? "none" : `${opaque.join(", ")}  <- confirm the layout before scoring`}` +
       `
-records under a session directory belonging to another session: ${foreign}  (excluded)` +
+records excluded: ${foreign} belonging to another session, ` +
+      `${noSid} carrying no sessionId at all` +
       `
-SUSPECT sessions, a requestId group spanning files: ` +
-      `${suspect.length === 0 ? "none" : `${suspect.join(", ")}  <- last-write-wins is undefined here, do not score`}`
+SUSPECT sessions, not scored in either direction: ` +
+      `${suspect.length === 0 ? "none" : suspect.join("; ")}`
   );
 }
 
