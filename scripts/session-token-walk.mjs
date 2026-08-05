@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * B17's oracle: what a session's billed token vector is, counted independently
+ * B19's oracle: what a session's billed token vector is, counted independently
  * of `src/cost/`.
  *
  * WHY THIS EXISTS. B1 fell at +231% and its record could name only one half of
@@ -18,11 +18,11 @@
  * way. Sharing a helper would silently re-import the bug.
  *
  * THE RULE IS NOT MINE. It is Claude Code 2.1.219's own shipped enumerator, and
- * B17 quotes it so that both implementations answer to the premise text rather
+ * B19 quotes it so that both implementations answer to the premise text rather
  * than to each other: the main directory's `*.jsonl` files, plus
  * `<sessionId>/subagents/**` recursively, de-duplicated by record `uuid`.
  *
- * ADMISSION, in the three steps `PREMISES.md` B17 fixes and freezes:
+ * ADMISSION, in the three steps `PREMISES.md` B19 fixes and freezes:
  *
  *   1. Admit records with `type: "assistant"` carrying `message.usage`.
  *      Exclude `isApiErrorMessage: true` and `model: "<synthetic>"` — they carry
@@ -48,12 +48,22 @@
  * rather than by matching its name — a name pattern rots, and the per-file
  * admitted counts below make the exclusion observable instead of assumed.
  *
- * WHAT THIS DELIBERATELY DOES NOT DECIDE. `cacheWrite` is reported as a single
- * total, `max(cache_creation_input_tokens, ephemeral_1h + ephemeral_5m)`, which
- * is what the meter's two classes sum to. The 1h/5m ATTRIBUTION is not scored
- * here and B17 says so: one record in this corpus carries a top-level 0 against
- * an `ephemeral_1h` of 278, and that disagreement is COUNTED and reported rather
- * than resolved. Nor is `usage.iterations` summed — it rolls up to the top level.
+ * WHAT THIS DELIBERATELY DOES NOT DECIDE. `cacheWrite` is the TOP-LEVEL
+ * `cache_creation_input_tokens` and the TTL split never overrides it — see
+ * `classes()` for why, and for the 42,558 tokens that ride on the choice. The
+ * 1h/5m ATTRIBUTION is not scored here and B19 says so; the disagreeing records
+ * are COUNTED and their tokens TOTALLED rather than resolved. Nor is
+ * `usage.iterations` summed — it rolls up to the top level.
+ *
+ * WHAT AN EARLIER DRAFT GOT WRONG, kept here because the shape recurs. Its
+ * disjointness invariant could not fail: per-source uuid sets were populated
+ * after the de-duplication guard, so a uuid present in both a main and a
+ * subagent file was recorded against main alone and the subagent occurrence was
+ * dropped. It reported `sharedUuids: 0` on a corpus built to violate it, while
+ * silently discarding that subagent's request. **A check that cannot fail reads
+ * as verification and is not one** — the same failure as the meter printing
+ * `(N main, 0 subagent)`. `tests/session-token-walk.test.ts` now holds a corpus
+ * where the invariant FAILS, so the claim cannot rot back.
  *
  *   node scripts/session-token-walk.mjs walk
  *   node scripts/session-token-walk.mjs walk --session 5fe28335-5fb0-41bc-bdaa-23c84011ec1e
@@ -142,22 +152,40 @@ function listSessions(dir) {
 const int = (value) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 
 /**
- * One record's four classes. `cacheWrite` takes the larger of the top-level
- * total and the TTL split rather than trusting either: they disagree in this
- * corpus, the disagreement is counted by the caller, and picking the larger is
- * the reading that cannot silently drop a token that was written.
+ * One record's four classes.
+ *
+ * `cacheWrite` is the TOP-LEVEL `cache_creation_input_tokens`, and the TTL split
+ * is never allowed to override it. That is not a preference, it is the rule
+ * `readUsage` already documents — "the split is authoritative when present *and
+ * consistent*; otherwise attribute the whole cache write to the 5-minute TTL" —
+ * and that text predates every line of B19, so choosing it cannot be fitting.
+ *
+ * It matters because the two disagree. Fifteen records in this corpus carry a
+ * top-level total of 0 against an `ephemeral_1h` of 2,452 to 4,911, and taking
+ * the larger of the two — which an earlier draft of this file did — puts 42,558
+ * tokens on the oracle's side of a comparison whose other side, once repaired to
+ * require consistency, will report 0. B19 would then fall on a rule this file
+ * chose rather than on anything the meter did.
+ *
+ * The 15 records and their 42,558 split-only tokens are REPORTED, both as a
+ * count and as a total, so the quantity is visible and unscored rather than
+ * invisible and absorbed. Which reading Anthropic actually bills is not
+ * decidable from these files and B19 says in terms that it does not score TTL
+ * attribution; whoever wants that answer needs a premise of their own.
  */
 function classes(usage) {
   const split = usage.cache_creation;
-  const oneHour = split && typeof split === "object" ? int(split.ephemeral_1h_input_tokens) : 0;
-  const fiveMin = split && typeof split === "object" ? int(split.ephemeral_5m_input_tokens) : 0;
+  const hasSplit = split !== undefined && split !== null && typeof split === "object";
+  const oneHour = hasSplit ? int(split.ephemeral_1h_input_tokens) : 0;
+  const fiveMin = hasSplit ? int(split.ephemeral_5m_input_tokens) : 0;
   const total = int(usage.cache_creation_input_tokens);
   return {
     input: int(usage.input_tokens),
     cacheRead: int(usage.cache_read_input_tokens),
-    cacheWrite: Math.max(total, oneHour + fiveMin),
+    cacheWrite: total,
     output: int(usage.output_tokens),
-    splitDisagrees: split !== undefined && split !== null && oneHour + fiveMin !== total,
+    splitDisagrees: hasSplit && oneHour + fiveMin !== total,
+    splitOnlyTokens: hasSplit ? Math.max(0, oneHour + fiveMin - total) : 0,
   };
 }
 
@@ -166,8 +194,15 @@ function walkSession(dir, sessionId) {
   const ordered = [{ file: files.main, isSubagent: false }, ...files.subagents.map((f) => ({ file: f, isSubagent: true }))];
 
   const seenUuid = new Set();
-  const mainUuids = new Set();
-  const subUuids = new Set();
+  // uuid -> bitmask, 1 = seen in the main file, 2 = seen in a subagent file.
+  // Recorded for EVERY admitted record, BEFORE the de-duplication decision. An
+  // earlier draft populated per-source sets after the `seenUuid` guard, which
+  // made the disjointness invariant below unable to fail: main is walked first,
+  // so a uuid present in both files was only ever added to the main set and the
+  // subagent occurrence was dropped as a duplicate. The check reported
+  // sharedUuids 0 by construction while silently discarding the subagent's
+  // request. A check that cannot fail reads as verification and is not one.
+  const uuidSources = new Map();
   const groups = new Map(); // requestId -> { last, isSubagent, records, files:Set, firstOutput }
 
   const perFile = [];
@@ -176,6 +211,7 @@ function walkSession(dir, sessionId) {
   let excludedApiError = 0;
   let skippedUnparseable = 0;
   let splitDisagreements = 0;
+  let splitOnlyTokens = 0;
   let sessionIdMismatch = 0;
 
   for (const { file, isSubagent } of ordered) {
@@ -207,12 +243,14 @@ function walkSession(dir, sessionId) {
       // Step 2 — de-duplicate by uuid, which is RECORD identity.
       const uuid = record.uuid;
       if (typeof uuid !== "string") continue;
+      // Source is recorded first, so the invariant sees the occurrence even when
+      // the accounting drops it as a duplicate.
+      uuidSources.set(uuid, (uuidSources.get(uuid) ?? 0) | (isSubagent ? 2 : 1));
       if (seenUuid.has(uuid)) {
         uuidDuplicates += 1;
         continue;
       }
       seenUuid.add(uuid);
-      (isSubagent ? subUuids : mainUuids).add(uuid);
       admitted += 1;
 
       if (typeof record.version === "string") versions.add(record.version);
@@ -223,6 +261,7 @@ function walkSession(dir, sessionId) {
       const rid = typeof record.requestId === "string" ? record.requestId : `__norid__${uuid}`;
       const c = classes(usage);
       if (c.splitDisagrees) splitDisagreements += 1;
+      splitOnlyTokens += c.splitOnlyTokens;
       const existing = groups.get(rid);
       if (existing === undefined) {
         groups.set(rid, { last: c, isSubagent, records: 1, files: new Set([file]), firstOutput: c.output });
@@ -259,8 +298,18 @@ function walkSession(dir, sessionId) {
   }
 
   const requests = mainRequests + subagentRequests;
-  let unionSize = 0;
-  for (const u of mainUuids) if (subUuids.has(u)) unionSize += 1;
+
+  // Counted from uuidSources, which saw every occurrence, not from the
+  // de-duplicated accounting sets. These three can and do disagree, and that is
+  // the whole point of the invariant.
+  let inMain = 0;
+  let inSub = 0;
+  let inBoth = 0;
+  for (const mask of uuidSources.values()) {
+    if (mask & 1) inMain += 1;
+    if (mask & 2) inSub += 1;
+    if (mask === 3) inBoth += 1;
+  }
 
   return {
     sessionId,
@@ -268,19 +317,21 @@ function walkSession(dir, sessionId) {
     files: { main: path.relative(dir, files.main), subagents: files.subagents.map((f) => path.relative(dir, f)), perFile },
     records: {
       admitted: seenUuid.size,
-      main: mainUuids.size,
-      subagent: subUuids.size,
+      main: inMain,
+      subagent: inSub,
       uuidDuplicatesDropped: uuidDuplicates,
       excludedApiError,
       skippedUnparseable,
     },
-    // B17's invariant: |uuids(main) U uuids(sub)| == |main| + |sub|. Without it
-    // the union can pass by two errors cancelling.
+    // B19's invariant: |uuids(main) U uuids(sub)| == |main| + |sub|, i.e. no uuid
+    // occurs on both sides. Without it the union can pass by two errors
+    // cancelling. `tests/session-token-walk.test.ts` holds a corpus where it
+    // FAILS, because an invariant never shown to fail is not evidence.
     uuidDisjoint: {
-      mainUuids: mainUuids.size,
-      subagentUuids: subUuids.size,
-      sharedUuids: unionSize,
-      holds: unionSize === 0,
+      mainUuids: inMain,
+      subagentUuids: inSub,
+      sharedUuids: inBoth,
+      holds: inBoth === 0,
     },
     requests: {
       total: requests,
@@ -295,6 +346,7 @@ function walkSession(dir, sessionId) {
       outputLostByFirstWins,
       groupsSpanningFiles,
       ttlSplitDisagreements: splitDisagreements,
+      ttlSplitOnlyTokens: splitOnlyTokens,
       sessionIdMismatch,
     },
   };
@@ -363,9 +415,14 @@ function main() {
   );
   const lost = walked.reduce((n, s) => n + s.diagnostics.outputLostByFirstWins, 0);
   const ttl = walked.reduce((n, s) => n + s.diagnostics.ttlSplitDisagreements, 0);
+  const ttlTokens = walked.reduce((n, s) => n + s.diagnostics.ttlSplitOnlyTokens, 0);
+  const shared = walked.reduce((n, s) => n + s.uuidDisjoint.sharedUuids, 0);
   console.log(
     `\noutput tokens a first-record-wins dedup would drop: ${lost.toLocaleString("en-US")}` +
-      `\nrecords whose TTL split disagrees with its total: ${ttl}  (counted, not resolved -- B17 does not score attribution)`
+      `\nrecords whose TTL split disagrees with its total: ${ttl}, carrying ${ttlTokens.toLocaleString("en-US")} ` +
+      `tokens the split reports and the total does not` +
+      `\n  (counted, not resolved -- cacheWrite is the top-level total on BOTH sides; B19 does not score attribution)` +
+      `\nuuids occurring in both a main and a subagent file: ${shared}  (must be 0)`
   );
 }
 
