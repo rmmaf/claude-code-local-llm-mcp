@@ -51,8 +51,9 @@ export interface SessionReport {
   files: string[];
   /**
    * RECORDS admitted carrying no uuid, so nothing could de-duplicate them. The
-   * unit is records, not `requestId` groups, so this may exceed `requests` — and
-   * does, whenever one group has several such records. See `Transcript`.
+   * unit is records; `requests` are `requestId` groups. **Neither bounds the
+   * other** — 3 against 1 request on one fixture, 2 against 4 on another — so
+   * the two are not comparable. See `Transcript` for why it counts records.
    */
   admittedWithoutUuid: number;
   /** What the admission rule threw away. A zero here is never ambiguous. */

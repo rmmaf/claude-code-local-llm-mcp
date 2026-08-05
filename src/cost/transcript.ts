@@ -79,12 +79,19 @@ export interface Transcript {
    * them — what it KEPT and cannot vouch for, not what it threw away.
    *
    * The unit is records, like every `excluded` count below and unlike
-   * `requests`, which are `requestId` GROUPS. **It may therefore exceed
-   * `requests.length`**, and legitimately: three records of one group is 3, and
-   * the risk being stated is per record, since any one of them could reappear in
-   * a second file with nothing able to catch it. B20's oracle counts the same
-   * way and additionally marks such a session `suspect`, dropping it from the
-   * scored set. All eleven sessions in that set report 0.
+   * `requests`, which are `requestId` GROUPS. **Neither number bounds the
+   * other, in either direction** — measured 3 against 1 request on a session
+   * that is one group of three uuid-less records, and 2 against 4 on a session
+   * where those two share a group and three others carry uuids. Comparing them
+   * is meaningless; the bound that does hold is the count of admitted RECORDS,
+   * which is not reported here.
+   *
+   * Counting per record rather than per group is the point: the risk is that any
+   * ONE of them reappears in a second file with nothing able to catch it, so a
+   * per-group count can understate it — equal when a group holds one such
+   * record, lower when it holds several. B20's oracle counts the same way and
+   * additionally marks such a session `suspect`, dropping it from the scored
+   * set. All eleven sessions in that set report 0.
    */
   admittedWithoutUuid: number;
   /**
