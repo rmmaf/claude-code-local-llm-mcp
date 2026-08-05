@@ -350,6 +350,12 @@ export interface CounterfactualReport {
   /** What those rows WOULD have added, so the refusal is visible rather than silent. */
   ambiguousUnits: number;
   /**
+   * Refused rows whose magnitude could not be computed — no request matched, so
+   * the amount withheld is UNKNOWN rather than zero. Reported apart from the
+   * unit totals because a sum cannot say "and some unknown amount besides".
+   */
+  refusedMagnitudeUnknown: number;
+  /**
    * EVERY row the join refused, in one number. It exists because `ambiguous` was
    * added as a third refusal class and wired into only one of the three places
    * that reason about refusals: the line that prints it. The gate deciding
@@ -537,10 +543,27 @@ export function buildCounterfactual(
    * What a row WOULD have added had it been creditable. Both refusal paths
    * report their magnitude, and they must report it the same way — computing it
    * twice is how two numbers derived from one rule drift apart.
+   *
+   * **`null` is not 0.** No matchable request means the magnitude is UNKNOWN, and
+   * summing an unknown as zero is the same error as printing a withheld fraction
+   * as a low one — the thing this file was just repaired to stop doing.
+   *
+   * THE THREAD IS RESOLVED, NOT ASSUMED. This first shipped hardcoding `"main"`,
+   * which is the crediting path's own bug inverted: a tool called by a subagent
+   * is cached into that subagent's context, so on a subagent-heavy session no
+   * main-thread request matches and the refused magnitude came back 0. A refusal
+   * that reports "nothing was refused" is exactly the silent exclusion the
+   * counter exists to make visible. Sessions here run to 78% subagent.
    */
-  const wouldHaveAdded = (entry: TelemetryRecord): number => {
-    const would = requestAtOrAfter(transcript.requests, Date.parse(entry.ts), "main");
-    if (would === null) return 0;
+  const wouldHaveAdded = (entry: TelemetryRecord): number | null => {
+    const source =
+      entry.invocation_id !== undefined ? byInvocation.get(entry.invocation_id) : undefined;
+    const at = source?.timestampMs ?? Date.parse(entry.ts);
+    const thread = source?.thread ?? "main";
+    const would =
+      requestAtOrAfter(transcript.requests, at, thread) ??
+      (thread === "main" ? null : requestAtOrAfter(transcript.requests, at, "main"));
+    if (would === null) return null;
     const wm = multipliersFor(rates, rateKey(would.model, would.speed));
     const wttl = would.usage.cacheWrite5m > would.usage.cacheWrite1h ? "5m" : "1h";
     const wmult = positionalMultiplier(would.index, would.segmentSize, wm, wttl);
@@ -548,6 +571,20 @@ export function buildCounterfactual(
       (Math.max(0, entry.bytes_raw - entry.bytes_returned) / rates.charsPerToken) * wmult +
       entry.turns_collapsed * would.usage.cacheRead * wm.cacheRead
     );
+  };
+  /**
+   * Refusals whose magnitude could not be computed at all. Counted separately so
+   * a reader can tell "we refused ~500k units" from "we refused an unknown
+   * amount", which a single summed number cannot express.
+   */
+  let refusedMagnitudeUnknown = 0;
+  const addRefused = (entry: TelemetryRecord): number => {
+    const units = wouldHaveAdded(entry);
+    if (units === null) {
+      refusedMagnitudeUnknown++;
+      return 0;
+    }
+    return units;
   };
   /** Tools that matched at least one request whose model has no configured price. */
   const unpriced = new Set<string>();
@@ -564,7 +601,7 @@ export function buildCounterfactual(
     // Reported, with its magnitude, so the exclusion is visible and not silent.
     if (entry.invocation_id === undefined) {
       unverifiable++;
-      unverifiableUnits += wouldHaveAdded(entry);
+      unverifiableUnits += addRefused(entry);
       continue;
     }
 
@@ -576,7 +613,7 @@ export function buildCounterfactual(
     // it is refused here rather than guessed, and its magnitude is reported.
     if (ambiguousIds.has(entry.invocation_id)) {
       ambiguous++;
-      ambiguousUnits += wouldHaveAdded(entry);
+      ambiguousUnits += addRefused(entry);
       continue;
     }
 
@@ -686,6 +723,7 @@ export function buildCounterfactual(
     excludedForeign,
     ambiguous,
     ambiguousUnits,
+    refusedMagnitudeUnknown,
     unverifiable,
     unverifiableUnits,
     refusedRows: excludedForeign + ambiguous + unverifiable,

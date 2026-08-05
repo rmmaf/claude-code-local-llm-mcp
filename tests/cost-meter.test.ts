@@ -1343,6 +1343,116 @@ describe("telemetry and the counterfactual", () => {
     expect(result.byTool[0]?.unitsFromTurnCollapse).toBeCloseTo(400 * 0.1, 6);
   });
 
+  it("reports the magnitude of a refusal on a subagent thread, instead of zero", async () => {
+    // The crediting path resolves the calling thread; the REFUSAL path shipped
+    // hardcoding "main" -- the same bug inverted. On this fixture the only
+    // main-thread request is at t=0, before the call at t=600, so no main
+    // request matches and the refused magnitude came back 0. A refusal that
+    // reports "nothing was refused" is precisely the silent exclusion the
+    // counter was added to prevent, and sessions here run to 78% subagent.
+    clock = 0;
+    const id = "33333333-3333-4333-8333-333333333333";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-main-1", { write1h: 100, read: 50_000 }), // t = 0, main, BEFORE the call
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub-1",
+        sessionId: "sess-1",
+        uuid: "s1",
+        parentUuid: null,
+        isSidechain: true,
+        timestamp: at(500),
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-x", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: "s1",
+        sessionId: "sess-1",
+        isSidechain: true,
+        timestamp: at(600),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-x" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub-2",
+        sessionId: "sess-1",
+        uuid: "s2",
+        parentUuid: "s1",
+        isSidechain: true,
+        timestamp: at(900),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 400, output_tokens: 0 },
+        },
+      }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(600), invocation_id: id, tool: "gate", bytes_raw: 40_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id]) // another session carries it too, so it is refused
+    );
+
+    expect(result.ambiguous).toBe(1);
+    expect(result.byTool).toEqual([]);
+    // The point of the test: refused, and the magnitude is KNOWN and non-zero.
+    expect(result.ambiguousUnits).toBeGreaterThan(0);
+    expect(result.refusedMagnitudeUnknown).toBe(0);
+  });
+
+  it("counts a refusal it cannot size instead of summing the unknown as zero", async () => {
+    // No request follows the call in any thread, so there is nothing to price
+    // the refusal against. The amount withheld is UNKNOWN, and a sum cannot say
+    // "plus some unknown amount" -- so it is counted separately rather than
+    // folded in as 0, which would read as "we refused nothing worth having".
+    clock = 0;
+    const id = "55555555-5555-4555-8555-555555555555";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      // and nothing after it: the session ends here.
+    ]);
+
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(9_000), invocation_id: id, tool: "gate", bytes_raw: 40_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id])
+    );
+
+    expect(result.ambiguous).toBe(1);
+    expect(result.ambiguousUnits).toBe(0);
+    expect(result.refusedMagnitudeUnknown).toBe(1);
+  });
+
   it("values suppressed bytes with the multiplier of the request that would have cached them", async () => {
     clock = 0;
     const root = tempRoot();
