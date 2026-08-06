@@ -1,0 +1,182 @@
+{
+  "ts": "2026-08-06T00:14:24Z",
+  "checks": [
+    {
+      "name": "claude on PATH",
+      "ok": true,
+      "detail": "2.1.221 (Claude Code) 7a181f36ed0f"
+    },
+    {
+      "name": "DISABLE_AUTOUPDATER=1",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "snapshot covers every project slug",
+      "ok": true,
+      "detail": "16 slugs, 52 files, 1740 ids"
+    },
+    {
+      "name": "cost meter is built",
+      "ok": true,
+      "detail": "/Users/rodrigomonteiro/Documents/GitHub/claude-code-local-llm-mcp/dist/cost/cli.js"
+    },
+    {
+      "name": "provenanceUnavailable === false",
+      "ok": true,
+      "detail": "false"
+    },
+    {
+      "name": "ambiguous === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "unmatched === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "excludedForeign === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "savedFraction !== null",
+      "ok": true,
+      "detail": "0.2851484573564414"
+    },
+    {
+      "name": "gate produced a row that did work",
+      "ok": true,
+      "detail": "1 call(s)"
+    },
+    {
+      "name": "repair produced a row that did work",
+      "ok": true,
+      "detail": "1 call(s)"
+    }
+  ],
+  "binary": {
+    "path": "/Users/rodrigomonteiro/.local/bin/claude",
+    "version": "2.1.221 (Claude Code)",
+    "sha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380"
+  },
+  "snapshot": {
+    "slugsWalked": 16,
+    "files": 52,
+    "ids": 1740
+  },
+  "scratch": {
+    "sessionId": "5c9458b4-cd96-4517-a52c-7e83093a011d",
+    "counterfactual": {
+      "byTool": [
+        {
+          "tool": "repair",
+          "calls": 1,
+          "bytes": {
+            "clampedUncapped": 195678,
+            "signedUncapped": 195678,
+            "signedCapped": 29050
+          },
+          "unitsFromSuppression": {
+            "clampedUncapped": 105771.8918918919,
+            "signedUncapped": 105771.8918918919,
+            "signedCapped": 15702.702702702702
+          },
+          "turnsCollapsed": 1,
+          "unitsFromTurnCollapse": 2487.5,
+          "unitsTotal": 15702.702702702702,
+          "usd": 0.0785135135135135,
+          "unmatched": 0,
+          "rowsNetNegative": 0
+        },
+        {
+          "tool": "gate",
+          "calls": 1,
+          "bytes": {
+            "clampedUncapped": 0,
+            "signedUncapped": -823,
+            "signedCapped": -823
+          },
+          "unitsFromSuppression": {
+            "clampedUncapped": 0,
+            "signedUncapped": -467.1081081081081,
+            "signedCapped": -467.1081081081081
+          },
+          "turnsCollapsed": 1,
+          "unitsFromTurnCollapse": 2414.4,
+          "unitsTotal": -467.1081081081081,
+          "usd": -0.002335540540540541,
+          "unmatched": 0,
+          "rowsNetNegative": 1
+        }
+      ],
+      "unitsTotal": 15235.594594594593,
+      "usdTotal": 0.07617797297297296,
+      "sessionUnits": 38194.8,
+      "savedFraction": 0.2851484573564414,
+      "excludedForeign": 0,
+      "ambiguous": 0,
+      "ambiguousUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "unverifiable": 0,
+      "unverifiableUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "unmatched": 0,
+      "unmatchedUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "refusedRows": 0,
+      "provenanceUnavailable": false
+    }
+  },
+  "passed": true,
+  "context": {
+    "commit": "2eab63d2bc06c39d2a33061cd1410bac7f94c384",
+    "branch": "claude/project-status-pdf-d726eb",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "host": "mac",
+    "modelRequestedFromLmStudio": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2",
+    "modelServedAs": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+    "modelMatchQuality": "fuzzy",
+    "modelsServedByLmStudio": [
+      "qwen3-coder-30b-a3b-instruct-dwq-v2",
+      "qwen3-coder-30b-a3b-instruct-dwq-v2:2",
+      "moonshotai_kimi-linear-48b-a3b-instruct",
+      "gemma-4-12b-coder-fable5-composer2.5-v1",
+      "microsoft/phi-4-reasoning-plus",
+      "mlx-qwen3.5-35b-a3b-claude-4.6-opus-reasoning-distilled",
+      "qwen3.5-27b-claude-4.6-opus-distilled-mlx",
+      "qwen2.5-coder-14b-instruct-mlx@8bit",
+      "qwen2.5-coder-14b-instruct-mlx@4bit",
+      "text-embedding-nomic-embed-text-v1.5"
+    ],
+    "modelUsedByRepair": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+    "serverEnv": {},
+    "strictMcpConfig": true,
+    "sessionId": "5c9458b4-cd96-4517-a52c-7e83093a011d",
+    "treeCheckRan": true,
+    "treeAsFound": true,
+    "trackedChangesLeftBehind": [],
+    "untrackedFilesPresent": [
+      "?? evidence/2026-08-05-mac-b12-6d5c4ee.preflight.json",
+      "?? evidence/2026-08-06-mac-b12-2eab63d.preflight.json"
+    ],
+    "scratchSession": {
+      "exitCode": 0,
+      "transcriptFound": true,
+      "toolsCalled": [
+        "ToolSearch",
+        "mcp__local-coder__gate",
+        "mcp__local-coder__repair"
+      ],
+      "log": "Both calls done, one each, no edits of my own.\n\n**Gate (1 call):** red with a single root cause — `src/b12-scratch.ts:5:14`, `TS2322: Type 'string' is not assignable to type 'number'`. It surfaced twice because `npm test` runs `tsc` too, so the test check reported the same error as `exit-2`.\n\n**Repair (1 call):** green in 1 round, diff applied:\n\n```diff\n-export const answer: number = \"not a number\";\n+export const answer: number = 42;\n```\n\nHonesty fields are all clean: `applied: true`, `remaining_failures: []`, `unverified: []`, `restore_failed: []`, `restore_conflicts: []`, and `check_side_effects: []` (an actual empty list, not `null` — so no formatter or codegen rewrote anything behind the diff). Model was `qwen3-coder-30b-a3b-instruct-dwq-v2`, ~60s total.\n\nOne thing to be aware of before you rely on this: the file's own comment says the error was planted deliberately so the pre-flight would have exactly one mechanical failure to close. The value `42` is therefore arbitrary — it satisfies `number`, and nothing in the tree consumes `answer`, so no check can attest that it's the *right* number. If this scratch file is meant to carry a real value, that's a decision for you; if it exists only to exercise the gate/repair path, it's now green and has served its purpose. It's still untracked (`?? src/b12-scratch.ts`), along with `evidence/2026-08-05-mac-b12-6d5c4ee.preflight.json`."
+    }
+  }
+}

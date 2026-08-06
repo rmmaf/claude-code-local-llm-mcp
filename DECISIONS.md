@@ -2197,3 +2197,43 @@ Naming a defect class in prose does not inoculate against it. What caught this o
 was the same thing that caught the argv bug: a script that RUNS the thing, on the
 machine that has it, and refuses out loud. The pre-flight has now paid for itself
 twice without ever reaching the assertion it was written to make.
+
+## The term the design promised, and the one nobody charged for
+
+B12's pre-registration is explicit that installing the server is not free: the
+tool descriptions sit "in the very system prompt of every thread and segment —
+B15 measured 114 tokens for a 688→1,110-character description edit alone — and
+those units sit in the denominator on both sides of a one-sided model.
+`unitsAddedByInstallation` is therefore **a term in the metric, not a
+paragraph**."
+
+In the implementation it is a paragraph. `src/cost/report.ts:616` defines it and
+`tests/cost-meter.test.ts:1670` calls it. Nothing else does — not
+`buildSessionReport`, not `scripts/b12-run.mjs`, not the pre-flight that just
+passed. Its four siblings in the same module have 3, 5, 8 and 28 call sites. An
+observation scored today charges the treatment arm nothing for the context that
+installing the server costs, which is exactly the one-sidedness the design names
+and claims to have corrected.
+
+I wrote that function, wrote the sentence calling it a term rather than a
+paragraph, measured 16,127 chars for it, and never wired it in. It has a passing
+test, which is what made it look finished. This is the same shape as everything
+else this week — a thing that exists reported as a thing that works — and it is
+the most expensive instance yet, because it would not have failed. It would have
+returned a number.
+
+**And the assumption underneath it is now in question.** The Mac scratch session
+called `ToolSearch` before `gate` and `repair`, in a session given exactly two
+allowed MCP tools. That is evidence that on Claude Code 2.1.221 the MCP schemas
+are DEFERRED — fetched on demand — rather than resident in every request's system
+prompt, which is the premise the whole term is built on. If that holds, the
+correct charge is not 16,127 chars at position 0; it is whatever a `ToolSearch`
+round trip costs, on the requests that make one.
+
+**This is the owner's call and I am not making it.** Three things are separable
+and only the first is established: (a) the term is not computed — measured,
+`2026-08-06-win-19-b12-installation-term`; (b) whether its magnitude is right,
+which the deferral observation puts in doubt; (c) whether fixing either is a
+repair to the instrument or a change to a design frozen by hash, in which case
+the rule is retract and re-register, not edit. Sealing the manifest before (a)
+is decided would produce observations that are one-sided by construction.
