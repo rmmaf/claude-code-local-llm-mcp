@@ -16,7 +16,10 @@
 #   - writes implementation bodies into src/cost/b12/{strata,terms,aggregate}.ts
 #     in that dependency order, skipping any unit whose tests are already green
 #     (the local model does this through `repair`, not this script)
-#   - runs `npm ci` and `npm run build`, so node_modules/ and dist/ are rebuilt
+#   - runs `npm ci` and `npm run build`, so node_modules/ and dist/ are rebuilt.
+#     NOTE: `npm ci` triggers `prepare`, which runs the build -- so the install
+#     COMPILES src/cost/b12/*.ts before any unit is attempted, and a leftover
+#     body that does not typecheck takes the whole step down.
 #   - appends to .local-coder/telemetry.jsonl and .local-coder/corpus/ (both
 #     gitignored) as a side effect of calling the tools
 #   - writes ONE new file under evidence/ and ONE .tgz under ~/lc-results/
@@ -119,6 +122,32 @@ refuse() {
 }
 step=0
 next() { step=$((step + 1)); say "$step. $1"; }
+
+# A LEFTOVER BODY CAN BRICK THE INSTALL, not merely fail a test, and it took
+# three round trips to find that out. Appended to step 4's refusals when the log
+# names a file under src/cost/b12/. Not auto-reset: it is the operator's
+# evidence and discarding it is not this script's call to make silently.
+leftover_hint() {
+  grep -q 'src/cost/b12/' "$1" 2>/dev/null || return 0
+  cat <<'HINT'
+
+THE BUILD IS COMPILING A LEFTOVER BODY, which is why this is an install failure
+and not a test failure. `npm ci` runs `prepare`, `prepare` runs `npm run build`,
+so src/cost/b12/*.ts is compiled BEFORE any unit is attempted -- a partial body
+from a run that died mid-unit takes down step 4 for EVERY unit, including the
+ones that would have worked. The resumption rule lets earlier bodies through on
+purpose; it did not consider one that does not compile.
+
+A file with type errors was never a closed unit: repair closes on the gate and
+the gate runs tsc. So resetting it discards nothing this run could have counted.
+Keep the diff first anyway -- what the local model wrote is information this
+project has already lost once:
+
+  mkdir -p ~/lc-results
+  git diff src/cost/b12/ > ~/lc-results/leftover-bodies.diff
+  git checkout -- src/cost/b12/<the file tsc named above>
+HINT
+}
 
 # The frozen inputs. A run that cannot prove it started from these proves nothing.
 RATES_FROZEN_AT="3541625"
@@ -309,9 +338,8 @@ if [ $? -ne 0 ]; then
     refuse "npm ci AND npm install both failed. Last 25 lines:
 
 $(tail -25 "$NPM_LOG" 2>/dev/null)
-
-Two causes fit a machine that just took a kernel panic and an OS update. Check
-them in this order:
+$(leftover_hint "$NPM_LOG")
+Other causes worth checking, in this order:
   xcode-select -p && xcrun --version   # an OS update can leave the CLT stale
   npm cache verify                     # a panic mid-write corrupts ~/.npm/_cacache"
   warn "npm ci failed and npm install succeeded — node_modules may not match the lockfile, and the artifact cannot tell"
@@ -320,7 +348,8 @@ npm run build >"$TMP_DIR/build.log" 2>&1
 BUILD_RC=$?
 [ $BUILD_RC -eq 0 ] || refuse "npm run build exited $BUILD_RC. Last 25 lines:
 
-$(tail -25 "$TMP_DIR/build.log" 2>/dev/null)"
+$(tail -25 "$TMP_DIR/build.log" 2>/dev/null)
+$(leftover_hint "$TMP_DIR/build.log")"
 # The MCP server loads dist/ at startup. Trusting the build is how a stale dist
 # has already fooled this project; check for the symbol the run depends on.
 grep -q "excludedForeignUnits" "$REPO/dist/cost/report.js" ||
