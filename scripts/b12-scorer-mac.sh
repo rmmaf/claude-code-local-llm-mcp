@@ -286,22 +286,46 @@ for f in \
 done
 ok "contract present: 3 stubs, 3 specs, 3 per-unit oracles, 1 type module"
 
+# Created BEFORE the install rather than after it: the npm and build logs live
+# in here, and a refusal that cannot write its log is a refusal with nothing to
+# say. The trap already handles TMP_DIR being empty, so moving it earlier is
+# strictly safer than the failure it prevents.
+TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/b12scorer.XXXXXX") || refuse "could not create a temp dir"
+TMP_MINE=1
+
 # ---------------------------------------------------------------------------
 next "Install, build, and verify the build BY SYMBOL"
 # ---------------------------------------------------------------------------
-npm ci --no-audit --no-fund >/dev/null 2>&1 || npm install --no-audit --no-fund >/dev/null 2>&1 ||
-  refuse "npm ci and npm install both failed"
-npm run build >/dev/null 2>&1
+# THE OUTPUT IS KEPT. This shipped as `>/dev/null 2>&1 || refuse "both failed"`,
+# which is the defect a3e9a8f already fixed once in the window refusal: it names
+# the symptom and withholds the cure. `npm ci` fails for a dozen unrelated
+# reasons and none of them are guessable from "both failed". The tail goes INTO
+# the refusal string, because the temp dir holding the log is removed by the
+# trap on the way out.
+NPM_LOG="$TMP_DIR/npm.log"
+npm ci --no-audit --no-fund >"$NPM_LOG" 2>&1
+if [ $? -ne 0 ]; then
+  npm install --no-audit --no-fund >>"$NPM_LOG" 2>&1 ||
+    refuse "npm ci AND npm install both failed. Last 25 lines:
+
+$(tail -25 "$NPM_LOG" 2>/dev/null)
+
+Two causes fit a machine that just took a kernel panic and an OS update. Check
+them in this order:
+  xcode-select -p && xcrun --version   # an OS update can leave the CLT stale
+  npm cache verify                     # a panic mid-write corrupts ~/.npm/_cacache"
+  warn "npm ci failed and npm install succeeded — node_modules may not match the lockfile, and the artifact cannot tell"
+fi
+npm run build >"$TMP_DIR/build.log" 2>&1
 BUILD_RC=$?
-[ $BUILD_RC -eq 0 ] || refuse "npm run build exited $BUILD_RC"
+[ $BUILD_RC -eq 0 ] || refuse "npm run build exited $BUILD_RC. Last 25 lines:
+
+$(tail -25 "$TMP_DIR/build.log" 2>/dev/null)"
 # The MCP server loads dist/ at startup. Trusting the build is how a stale dist
 # has already fooled this project; check for the symbol the run depends on.
 grep -q "excludedForeignUnits" "$REPO/dist/cost/report.js" ||
   refuse "dist/cost/report.js has no excludedForeignUnits — the build did not land the instrument repair this run scores against"
 ok "dist/ carries excludedForeignUnits"
-
-TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/b12scorer.XXXXXX") || refuse "could not create a temp dir"
-TMP_MINE=1
 
 # ---------------------------------------------------------------------------
 next "The local model, and the context window it is actually loaded with"
