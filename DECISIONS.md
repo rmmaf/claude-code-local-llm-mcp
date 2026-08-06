@@ -2284,3 +2284,61 @@ metric it is evaluated by, `R_ab`, exists in the frozen design and in no `.ts`,
 `.mjs` or `.md` file in this repository. Deciding a criterion is cheaper than
 building the thing that reads it, and doing the cheap one first is worth naming
 as what it was.
+
+## A fourth decision, same day, same condition — the project has two value axes
+
+The three above were taken while their answers were unknowable. This one is taken
+under the identical condition and on the same afternoon, and it is recorded
+separately because it is larger: it changes what a fall *means*.
+
+**G-stop's 15% governs the context-economy axis only.** `gate` and `repair` are
+cost levers and B12 is the right instrument for them. The output and context
+pre-flights are not cost levers at all — they were on no roadmap, they fell out
+of `D8`, and what they bought is **output integrity**: a whole-file answer that
+arrives intact.
+
+**The first draft of this claimed more than it could support, and an adversarial
+read caught it.** It said B16 judges that axis. B16 judges **one of its two
+halves** — admission, "no request the pre-flight admits comes back with content
+missing", holding at 0 of 52. The **refusal** half, whether the pre-flights turn
+away work that would have fit, is carried by B16 **"WITHOUT a threshold,
+deliberately"**, because `run 2026-08-04-mac-16-preflight` observed exactly that
+over-refusal and setting a threshold after seeing it would be the error B16
+exists to correct. § G7 says the same from its side. So the amendment now states
+the consequence outright: **nothing in this registry can return the verdict
+"these pre-flights refuse too much."** Left unsaid, "B16 is holding" would have
+become a citation for a soundness the registry never established — which is the
+escape hatch in its most likely form, wearing a measurement.
+
+**Why the rest is not an escape hatch either.** If the second axis merely
+*survived* a fall, "the other axis is fine" becomes a standing reason to keep
+going, and the stopping criterion has been dissolved while appearing to be
+clarified. So the amendment says the opposite: it is a **delivered result**,
+surviving as a finding and **not as a mandate**, and no new work may be started
+on it either. To build further, someone must open a gate with a number, under a
+ceiling of six that is full today — the same bar everything else on the board
+faces, which is the point.
+
+**And it is not B4's question.** B4 asks whether suppression reduces task success
+and is `moot`; this asks whether a whole-file answer arrives intact. The English
+word "correctness" would have merged two different premises, so the axis is named
+for what it measures instead.
+
+**What licenses it, and it is not my judgement.** The frozen design pre-authorised
+this branch by name: `whatAHoldDoesNotEstablish` item 2 fixes in advance that
+G-stop is *either* amended to name the deliveries it can be evaluated on *or*
+B12's hold is recorded as partial — and that deciding it after seeing `R` is the
+outcome switching the premise exists to forbid. There is no
+retract-and-re-register clause anywhere in that document, and `ROADMAP.md` is not
+a VOID-4 frozen item. VOID 4 freezes numbers and definitions; the amendment moves
+none of them.
+
+**And one seam is now on the record instead of waiting in a table.** The frozen
+JSON's `instrumentPrecedence` still describes a three-delivery world — "NOT
+closable overall (the meter has no `R_d`)" — because it was sealed before this
+morning's first amendment cut the deliveries to two. The ROADMAP and the sealed
+design therefore disagree about how many deliveries G-stop names. The JSON is
+frozen by sha256 and stays untouched; which document governs is left open, in
+writing, for whoever needs it to answer *before* the verdict rather than during
+it. Naming a contradiction one owns is cheaper than discovering it under a
+number.

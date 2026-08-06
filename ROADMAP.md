@@ -444,6 +444,84 @@ continuing to build on a premise that quietly stopped being true.
   consistently — and G1 remains `open (reopened)`. What changes is that its
   verdict no longer gates this criterion.
 
+- **AMENDED 2026-08-06, second amendment of that date — this criterion's 15%
+  governs ONE OF THE PROJECT'S TWO VALUE AXES, and this names the other one so
+  that a fall stops what it should and stops nothing else.** Nothing above this
+  line has been edited, the first amendment of today's date included; it stands
+  exactly as written, and so does the pre-amendment text it left standing.
+
+  **The owner made this call, and the timing is the whole of its legitimacy.**
+  The condition the first amendment rests on holds here and is the only thing
+  that makes this legitimate: B12 has not run, there is no `R`, and the scorer
+  that could produce one does not exist. The frozen design pre-authorised this
+  exact branch — `whatAHoldDoesNotEstablish` item 2 says G-stop is *either*
+  amended to name the deliveries it can be evaluated on *or* B12's hold is
+  recorded as a partial answer, and that "deciding that after seeing `R` would be
+  the outcome switching this premise exists to forbid." There is no
+  retract-and-re-register clause in that design and this needs none: `ROADMAP.md`
+  is a governance document, not a VOID-4 frozen item. What VOID 4 freezes is
+  numbers and definitions, and none is touched below.
+
+  **The argument, in the owner's words:** two different things were built here
+  and only one of them is a cost lever. `gate` and `repair` move billed context,
+  and B12 is the right instrument for them. The output and context pre-flights
+  are not cost levers at all — they were on no roadmap, they fell out of `D8`,
+  and what they bought is **output integrity**: `run 2026-08-04-mac-12-variance`
+  returned a properly closed `<file>` block carrying `finish_reason: "stop"` and
+  missing 90 lines, with every signal in the pipeline reporting a healthy
+  response. Judging that by a context-economy ratio would be measuring a seatbelt
+  by its fuel consumption.
+
+  **THE SECOND AXIS IS JUDGED ON ONE OF ITS TWO HALVES, AND THE OTHER HALF HAS
+  NO JUDGE. This is the sentence that keeps the amendment from being an escape
+  hatch, so it is stated before anything favourable.** B16 covers the ADMISSION
+  half — "no request the pre-flight admits comes back with content missing" — and
+  is **holding, 0 of 52 admitted requests**, across two non-void runs. It says
+  nothing whatever about the REFUSAL half: whether the pre-flights refuse work
+  that would have fit. B16's own text carries that mode **"WITHOUT a threshold,
+  deliberately"** (`PREMISES.md`), because `run 2026-08-04-mac-16-preflight`
+  observed it — a 26,345 B pair measuring 11,237 actual tokens, refused — and
+  giving it a threshold after seeing it would be the identical error B16 exists
+  to correct. § G7 above says the same from the other side: its two non-void runs
+  refused nothing, so they "say nothing at all about the refusal side."
+  **Consequence, written here rather than discovered later: after this amendment
+  nothing in this registry can return the verdict "these pre-flights refuse too
+  much."** Acquiring a judge for it means a new premise with its number written
+  before its next data — never an inference from this page, and never from B16's
+  holding half. **And this axis is NOT B4's question.** B4 asks whether
+  suppression reduces task success and is `moot`; this asks whether a whole-file
+  answer arrives intact. Two different things that the English word "correctness"
+  would have merged.
+
+  **What this does NOT do, and this paragraph is the whole of the amendment's
+  honesty.** It does not lower the bar for `gate` or `repair`: each must still
+  individually pay for itself, at the same 15%, on the same instrument, and the
+  only live reading there is has `gate` at **−467.1 units**. It does not move
+  15%, 30%, `Holds if`, `Falls if`, the outcome, the unit definition, the
+  admission rule or the metric arithmetic — every one of those is a VOID-4
+  absolutely-frozen item and this amendment touches none of them. And above all
+  **it is not a licence to keep building.** The output-integrity axis is a
+  DELIVERED result, already paid for and measured on the half that has a judge.
+  It survives a fall as a **finding**, not as a mandate. If B12 falls, what stops
+  is the context-economy programme — G3, G4, and any further investment in `gate`
+  or `repair` as cost levers — and **that axis stops too, in the only sense that
+  is actionable: no new work may be started on it either.** Anyone wanting to build
+  further on it needs a new gate with its own pre-registered number, under the
+  ceiling of six active gates, which is full today (G3, G4, G5, G6, G7, G-stop).
+  **"The other axis is fine" is not a reason to continue and may not be cited as
+  one.**
+
+  **A seam is named here rather than left for the verdict session to improvise.**
+  The frozen design's `instrumentPrecedence` table still carries "NOT closable
+  overall (the meter has no `R_d`)" in the cell where every other condition
+  passes — a THREE-delivery world, written before this morning's first amendment
+  reduced the deliveries to two. So the ROADMAP and the sealed JSON now disagree
+  about how many deliveries this criterion names. The JSON is frozen by sha256
+  and is not being edited. The disagreement is recorded here, in the governance
+  document, because that is where a reader will look. **Which of the two governs
+  is NOT decided by this amendment** — it is a real question, and whoever needs
+  the answer should write it here *before* the verdict rather than inside it.
+
 ---
 
 ## Not on the roadmap, and why

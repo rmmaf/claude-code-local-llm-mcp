@@ -5,32 +5,25 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**The pre-flight passed on the Mac** (`2eab63d`, 11/11, artifact in `evidence/`)
-and **three decisions that had outlived every technical blocker are closed**, all
-while their answers were still unknowable — the only condition that makes closing
-them mean anything. G-stop no longer names the meter as a delivery that must pay:
-**two now, `gate` and `repair`**. G7 gets no threshold on
-`context_would_overflow`, ever. B14 stays at **3.5**. Live warning from the
-pre-flight: `gate` scored **−467.1 units** — it cost more than it suppressed.
+**G-stop amended a second time: two value axes, and the 15% governs one.** The
+second is **output integrity**. B16 judges its ADMISSION half only; the REFUSAL
+half is carried without a threshold on purpose, so **nothing here can return
+"these pre-flights refuse too much."** An adversarial read caught that overclaim.
+
+**The instrument is repaired** (`4a7eaac`). `wouldHaveAdded` priced refused rows
+by three adjustments the numerator never makes — clamped, uncapped, carrying a
+turn-collapse term a caller argument inflates — and it sets `R_hi⁺`, the FALL
+side. Five controls, each seen failing; the fifth unplanned — deleting
+`breakdownOfRequests`' subset filter, the `A_o` seam, left all 93 tests green.
 
 ## Next action, in this order
 
-1. **Write the scorer.** `R_ab` exists in the frozen design and in NO `.ts`,
-   `.mjs` or `.md` file. `observe()` writes observations; nothing reads them.
-   45 sessions would finish with no number. It must compute **subagent share per
-   arm** (G-stop requires it; `observe()` records no such field, but it is
-   derivable from `originatedRequestIds` + `isSidechain`, `report.ts:198`).
-2. **Then one paired observation**, smallest real task, both arms, ~2 sessions.
-   Score it with the scorer written in 1. Only then seal and run the rest.
-3. **Author the scorer through `repair`** — its mechanical parts are exactly what
-   it is for, and G-stop's second delivery has one call of exposure in its life.
+1. **`src/cost/b12/` types + stubs + `tests/b12-scorer.test.ts`**, golden vectors
+   by hand, so the 30B authors bodies against tests, not prose.
+2. **`docs/b12-scorer/UNIT-1..3.md`** — the specs `repair` is handed verbatim.
+3. **`scripts/b12-scorer-mac.sh`**, pinned `eol=lf` or its heredocs die on macOS.
 
-Not blocking B12: the meter's `savedFraction` credits suppression and never
-charges installation, and `unitsAddedByInstallation` is written, tested, called
-from nothing. Magnitude in doubt too — the scratch session called `ToolSearch`.
+## Decide BEFORE the Mac runs
 
-## Do not redo
-
-- **Test the good values, not one bad one.** `[ "$X" = "none" ]` passed when the
-  probe failed and `X` was `""`, and printed `ok` for an empty answer.
-- **A passing test makes an unwired function look finished.** Twice now.
+Does Phase 3 carry a pre-registered question, or emit facts only? Unregistered
+numbers make any threshold chosen later outcome switching, by this file's rule.
