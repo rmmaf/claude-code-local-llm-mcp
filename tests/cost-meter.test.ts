@@ -2381,6 +2381,55 @@ describe("the B12 harness", () => {
     expect((failure as { stdout: string }).stdout).toMatch(/ok {4}snapshot covers every project slug/);
   }, 30_000);
 
+  it("reports a missing claude as a failed check rather than exiting with nothing said", async () => {
+    // Every precondition the preflight has is a `check()` that can come back
+    // red. The binary was the one that called `process.exit` instead -- so on a
+    // machine without `claude` the preflight wrote no checks, no artifact and an
+    // EMPTY stdout, withholding the one fact it existed to state. CI is exactly
+    // that machine, and it is where this was found: the run that should have
+    // said `FAIL  claude on PATH` said nothing.
+    //
+    // PATH is emptied rather than the lookup stubbed, so this asserts observable
+    // behaviour on a machine without the binary instead of behaviour against a
+    // seam invented for the test. It is deterministic on a machine that HAS
+    // claude, which the CI failure was not.
+    const root = tempRoot();
+    const slug = path.join(root, "slug-one");
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(
+      path.join(slug, "sess-1.jsonl"),
+      JSON.stringify({
+        type: "assistant",
+        uuid: "u1",
+        requestId: "req-1",
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 10 } },
+      }) + "\n",
+      "utf8"
+    );
+    const emptyDir = tempRoot();
+    await fs.mkdir(emptyDir, { recursive: true });
+    // Every spelling of PATH is dropped, not just the uppercase one: Windows
+    // carries `Path`, and leaving it in place would spread the real PATH back in
+    // beside the empty one and let the lookup succeed on some platforms only.
+    const env: NodeJS.ProcessEnv = {};
+    for (const [k, v] of Object.entries(process.env)) if (!/^path$/i.test(k)) env[k] = v;
+    env.PATH = emptyDir;
+
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const failure = await runNode(process.execPath, [script, "preflight", "--root", root], {
+      cwd: process.cwd(),
+      env,
+    }).catch((e: { code: number; stdout: string }) => e);
+
+    expect((failure as { code: number }).code).toBe(1);
+    expect((failure as { stdout: string }).stdout).toMatch(/FAIL {2}claude on PATH/);
+    // And the rest of the preflight still runs, so the artifact names what is
+    // wrong instead of being absent.
+    expect((failure as { stdout: string }).stdout).toMatch(/ok {4}snapshot covers every project slug/);
+  }, 30_000);
+
   it("refuses a snapshot that found nothing rather than reporting an empty machine", async () => {
     // A snapshot returning zero ids is a scoping error -- four worktrees mean
     // four slugs, and a run scored against the wrong tree returns a confident

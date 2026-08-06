@@ -274,14 +274,35 @@ export function classifyRun({
 // Preconditions. Each is asserted per observation and recorded.
 // ---------------------------------------------------------------------------
 
-function claudeBinary() {
+/**
+ * Locate the binary, or say why not. ONE lookup rule with TWO callers that need
+ * different things from it.
+ *
+ * `observe()` cannot run an arm without `claude` and must refuse. `preflight()`
+ * must REPORT: every other precondition it has is a `check()` that can come back
+ * red, and the binary was the single one that called `process.exit` — so on a
+ * machine without `claude` the preflight produced no checks, no artifact and an
+ * empty stdout, withholding the one fact it existed to state. CI found it: a
+ * runner has no `claude`, and the run that should have said `FAIL  claude on
+ * PATH` said nothing at all.
+ *
+ * Split rather than duplicated: `claudeBinary()` is this function plus a refusal,
+ * so the two callers cannot drift on what "found" means.
+ */
+function findClaudeBinary() {
   const which = run(process.platform === "win32" ? "where" : "which", ["claude"]);
-  if (which.code !== 0) refuse("`claude` is not on PATH");
+  if (which.code !== 0) return { binary: null, why: "`claude` is not on PATH" };
   const bin = which.out.split(/\r?\n/).find((l) => l.trim().length > 0)?.trim();
-  if (!bin || !existsSync(bin)) refuse(`resolved claude to ${bin ?? "(nothing)"}, which does not exist`);
+  if (!bin || !existsSync(bin)) return { binary: null, why: `resolved claude to ${bin ?? "(nothing)"}, which does not exist` };
   const v = run(bin, ["--version"]);
-  if (v.code !== 0) refuse(`claude --version failed: ${v.err.trim()}`);
-  return { path: bin, version: v.out.trim(), sha256: sha256File(bin) };
+  if (v.code !== 0) return { binary: null, why: `claude --version failed: ${v.err.trim()}` };
+  return { binary: { path: bin, version: v.out.trim(), sha256: sha256File(bin) }, why: null };
+}
+
+function claudeBinary() {
+  const { binary, why } = findClaudeBinary();
+  if (binary === null) refuse(why);
+  return binary;
 }
 
 function assertPinned(manifest, binary) {
@@ -338,9 +359,16 @@ function preflight(args) {
     process.stdout.write(`  ${ok ? "ok  " : "FAIL"}  ${name}${detail ? `  ${detail}` : ""}\n`);
   };
 
-  const binary = claudeBinary();
-  check("claude on PATH", true, `${binary.version} ${binary.sha256.slice(0, 12)}`);
-  out.binary = binary;
+  // REPORTED, NOT REFUSED. See `findClaudeBinary`. `check(..., true, ...)` here
+  // was a check that could not come back red: the only path to a false answer
+  // exited before this line ran.
+  const { binary, why: binaryWhy } = findClaudeBinary();
+  check(
+    "claude on PATH",
+    binary !== null,
+    binary === null ? binaryWhy : `${binary.version} ${binary.sha256.slice(0, 12)}`
+  );
+  if (binary !== null) out.binary = binary;
 
   // RUN-LEVEL, NOT MANIFEST-CONDITIONAL. This first shipped inside the
   // `if (args.manifest)` branch, so a preflight without one never checked it and
@@ -355,8 +383,15 @@ function preflight(args) {
   if (args.manifest) {
     const { manifest, sha256 } = loadManifest(args.manifest);
     out.manifestSha256 = sha256;
-    assertPinned(manifest, binary);
-    check("binary matches the manifest pin", true, manifest.pinned?.claudeCodeVersion ?? "(unpinned)");
+    // NOTHING TO COMPARE IS NOT A MATCH. With no binary, `assertPinned` would
+    // read `.version` off null; asserting the pin against nothing and calling it
+    // green would be worse.
+    if (binary === null) {
+      check("binary matches the manifest pin", false, "no claude binary to compare against the pin");
+    } else {
+      assertPinned(manifest, binary);
+      check("binary matches the manifest pin", true, manifest.pinned?.claudeCodeVersion ?? "(unpinned)");
+    }
   }
 
   const snap = takeSnapshot(args.root);
