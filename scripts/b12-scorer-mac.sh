@@ -825,7 +825,14 @@ else
   ARCHIVE="$OUT"
 fi
 
-printf '\n\033[1mDONE\033[0m — %s of %s units closed.\n' "$CLOSED" "$ATTEMPTED"
+# "%s of %s" with CLOSED over ATTEMPTED read "1 of 2" on a run that closed
+# NOTHING: the 1 was `strata`, inherited and skipped, so it was never one of the
+# 2. The artifact had it right the whole time (unitsClosedThisRun: 0) and the
+# terminal line -- the only number most readings will ever see -- presented
+# inherited work as this run's. The denominator of the pre-registered rule is
+# THREE, and the split has to be on its face.
+printf '\n\033[1mDONE\033[0m — %s of 3 units closed: %s by THIS run, %s inherited from an earlier attempt. %s attempted here.\n' \
+  "$CLOSED" "$((CLOSED - INHERITED))" "$INHERITED" "$ATTEMPTED"
 printf '\nSend back exactly this one file:\n  %s\n' "$ARCHIVE"
 printf '\nIt carries: the run artifact with provenance, the git bundle and diff of\n'
 printf 'what the local model wrote, the telemetry slice, the corpus captures, and\n'
