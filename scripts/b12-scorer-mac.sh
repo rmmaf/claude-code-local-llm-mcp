@@ -378,6 +378,37 @@ UNITS_JSON="$TMP_DIR/units.json"
 : > "$UNITS_JSON"
 
 # ---------------------------------------------------------------------------
+# THE MACHINE ITSELF, READ BEFORE ANY UNIT RUNS.
+# Two attempts died to kernel panics in `com.apple.iokit.IOGPUFamily` --
+# "completeMemory() prepare count underflow" @IOGPUMemory.cpp:550 and "pending
+# memory object unexpectedly found in non pending hash" @IOGPUGroupMemory.cpp:528.
+# Those are GPU buffer-lifecycle invariants, NOT memory: the kernel's own
+# `Compressor Info` read 2% and 1% of limit with swap OK at each one. So the OS
+# build and the inference runtime are load-bearing on this premise's evidence,
+# and until now the artifact recorded NEITHER. A run that changes the machine in
+# order to stop crashing has to be able to say which machine it was.
+# ---------------------------------------------------------------------------
+OS_PRODUCT=$(sw_vers -productVersion 2>/dev/null); [ -n "$OS_PRODUCT" ] || OS_PRODUCT="unknown"
+OS_BUILD=$(sw_vers -buildVersion 2>/dev/null);     [ -n "$OS_BUILD" ]   || OS_BUILD="unknown"
+KERNEL=$(uname -r 2>/dev/null);                    [ -n "$KERNEL" ]     || KERNEL="unknown"
+"$LMS_BIN" runtime ls >"$OUT/lms-runtime.txt" 2>&1
+MLX_RUNTIME=$(grep -i mlx "$OUT/lms-runtime.txt" 2>/dev/null | head -1 | tr -s ' \011' ' ')
+[ -n "$MLX_RUNTIME" ] || MLX_RUNTIME="unknown"
+# THE KERNEL'S OWN CRASH RECORD, and it is read BEFORE rather than after on
+# purpose: a panic kills this script outright, so there is no after-reading to
+# take. The NEXT attempt's before-reading is what shows the new file -- which is
+# how a crash gets attributed to a run instead of guessed at. `2026-08-06` cost
+# two runs and an hour of arguing about a voltage stabiliser for want of this.
+PANIC_DIR="/Library/Logs/DiagnosticReports"
+PANIC_N=$(ls "$PANIC_DIR"/*.panic 2>/dev/null | wc -l | tr -d ' ')
+[ -n "$PANIC_N" ] || PANIC_N="unknown"
+PANIC_LAST=$(ls -t "$PANIC_DIR"/*.panic 2>/dev/null | head -1)
+PANIC_LAST=$(basename "${PANIC_LAST:-none}")
+ok "macOS $OS_PRODUCT ($OS_BUILD), kernel $KERNEL"
+ok "runtime $MLX_RUNTIME"
+info "kernel panics already on this machine: $PANIC_N (newest $PANIC_LAST)"
+
+# ---------------------------------------------------------------------------
 next "Three units, one claude session each"
 # ---------------------------------------------------------------------------
 SPENT="0"
@@ -617,6 +648,16 @@ const o = {
     localModel: e.B12_LOCAL_MODEL,
     ratesSha256: e.B12_RATES,
     host: "mac",
+    // Recorded because they are suspects, not decoration. Two attempts on
+    // 2026-08-06 died to IOGPUFamily panics, and the fix being tried is an OS
+    // update plus a runtime update -- a change to the machine that must not be
+    // invisible in the evidence a later reader compares across attempts.
+    os: e.B12_OS,
+    osBuild: e.B12_OS_BUILD,
+    kernel: e.B12_KERNEL,
+    inferenceRuntime: e.B12_RUNTIME,
+    kernelPanicsBeforeRun: e.B12_PANIC_N,
+    newestPanicBeforeRun: e.B12_PANIC_LAST,
   },
   caveat:
     "Three units, one repository, one local model. This is EXPOSURE, not a rate. " +
@@ -635,6 +676,8 @@ MERGE_OUT=$(B12_RUN_ID="$RUN_ID" B12_UNITS="$UNITS_JSON" B12_SPENT="$SPENT" B12_
   B12_SHA="$LOCAL_SHA" B12_BRANCH="$BRANCH" B12_CLAUDE_VER="$CLAUDE_VER" B12_CLAUDE_SHA="$CLAUDE_SHA" \
   B12_MODEL="$MODEL_CLAUDE" B12_LOCAL_MODEL="$MODEL_LOCAL" B12_RATES="$RATES_NOW" \
   B12_CORPUS_NEW="$CORPUS_NEW" B12_CORPUS_PRE="$CORPUS_PRE" B12_INHERITED="$INHERITED" \
+  B12_OS="$OS_PRODUCT" B12_OS_BUILD="$OS_BUILD" B12_KERNEL="$KERNEL" B12_RUNTIME="$MLX_RUNTIME" \
+  B12_PANIC_N="$PANIC_N" B12_PANIC_LAST="$PANIC_LAST" \
   node "$MERGE_JS" "$ART" 2>&1)
 case "$MERGE_OUT" in
   *B12-SCORER-OK*) ART_FINALISED=1; ok "$MERGE_OUT" ;;
