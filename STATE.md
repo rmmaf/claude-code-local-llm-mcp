@@ -5,25 +5,25 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**G-stop amended a second time: two value axes, and the 15% governs one.** The
-second is **output integrity**. B16 judges its ADMISSION half only; the REFUSAL
-half is carried without a threshold on purpose, so **nothing here can return
-"these pre-flights refuse too much."** An adversarial read caught that overclaim.
+**Everything the Mac needs is committed, and the Mac has not run.** G-stop
+amended a second time (two axes, the 15% governs one); instrument repaired
+(`4a7eaac`); contract and oracle in (`cb436ed` — 13 tests, 13 red, every one on
+`not implemented`); specs and runner in (`dab8db9`). Phase 3's threshold was
+pre-registered (`efbe17a`) **before a single unit was attempted**.
 
-**The instrument is repaired** (`4a7eaac`). `wouldHaveAdded` priced refused rows
-by three adjustments the numerator never makes — clamped, uncapped, carrying a
-turn-collapse term a caller argument inflates — and it sets `R_hi⁺`, the FALL
-side. Five controls, each seen failing; the fifth unplanned — deleting
-`breakdownOfRequests`' subset filter, the `A_o` seam, left all 93 tests green.
+## Next action
 
-## Next action, in this order
+**Run `bash scripts/b12-scorer-mac.sh` on the Mac**, clean tree, nothing else on
+the box. It refuses on a dirty tree, on `rates.json` that is not byte-identical
+to `3541625`, on a context window under 32768, and on a missing spec; it reads
+the window before AND after. Send back the one `.tgz` it names.
 
-1. **`src/cost/b12/` types + stubs + `tests/b12-scorer.test.ts`**, golden vectors
-   by hand, so the 30B authors bodies against tests, not prose.
-2. **`docs/b12-scorer/UNIT-1..3.md`** — the specs `repair` is handed verbatim.
-3. **`scripts/b12-scorer-mac.sh`**, pinned `eol=lf` or its heredocs die on macOS.
+Then apply the bundle, review every body the local model wrote **before** it
+reaches main, and write the `MEASUREMENTS.jsonl` row against the pre-registered
+reading: ≥2 of 3 reachable · 0 of 3 amends B12's text before Phase 4 · exactly
+1 of 3 is inconclusive and the manifest may not be sealed on it.
 
-## Decide BEFORE the Mac runs
+## Do not redo
 
-Does Phase 3 carry a pre-registered question, or emit facts only? Unregistered
-numbers make any threshold chosen later outcome switching, by this file's rule.
+A control never seen failing is not a control. Two of mine could not fail: one
+reverted the wrong of two functions sharing a line; one asserted `> 0`, not a value.
