@@ -1228,7 +1228,60 @@ defect, and it pinned four of them in place.
     bracket, nothing about whether B12 holds or falls. Three units, one
     repository, one local model is **exposure, not a rate** — the caveat B6
     carries, for the same reason.
-- **Measured:** — (no run)
+- **ATTEMPT 1 IS VOID, and the cause is named: the criterion was unsatisfiable
+  by construction.** `run 2026-08-06-mac-b12-phase3-efe5806` returned 0 of 3, and
+  that number measures the harness rather than `repair`. Nothing above this line
+  is edited; the rule stands and is re-registered below with the same thresholds.
+  - **The defect.** All three units shared ONE oracle, `tests/b12-scorer.test.ts`,
+    and `repair` closes when the PROJECT's gate goes green — the whole suite. So
+    a unit could only return `passed: true` once every OTHER unit was implemented
+    too, and `repair` rolls back when it does not close, so each unit began from
+    all-stubs. No unit could be first. **The rule's own words say "the harness's
+    own `vitest` run of THAT UNIT'S tests"; the harness handed it everyone's.**
+    The rule was right and the implementation did not match it.
+  - **It is void rather than a fall because the argument is structural and
+    predates the result.** A shared oracle plus rollback makes `passed: true`
+    unreachable for units 1 and 2 whatever the model produced. That was derivable
+    before the run, by me, and was not derived.
+  - **WHAT IT DID MEASURE, and it is not nothing.** `repair` was called six times
+    and every call produced well-formed output.
+    - **`strata.ts` was implemented CORRECTLY in round 1** — 13 failures to 11,
+      exactly the two `subagentShare` tests — then held byte-identical across
+      rounds 2 and 3 (959 completion tokens each). Not a model failing to
+      improve: a model finished with its file, being told the gate is still red
+      for reasons outside it.
+    - **No round after the first ever improved anything**, across four calls.
+      This reproduces B6's earlier finding on different work.
+    - **The model stops emitting `<file>` blocks on the corrective retry** —
+      `envelope: "no_blocks"` in 3 of 6 calls at a 32,768 window, with
+      `finish_reason: "stop"`. Not truncation. Unexplained, and it is the
+      likeliest single cause of a unit not closing.
+    - Cost **US$ 0.88** against a US$ 40 ceiling; net suppression **+599,359
+      bytes** over six calls, 3 positive and 3 negative.
+  - **A second defect, recorded because it cost information:** `repair` returns
+    its best attempt as an unapplied diff and the harness did not keep it, so
+    whether the two `13 -> 1` calls were near misses or nonsense is unknown. The
+    re-run captures it.
+- **PHASE 3 READING RULE, ATTEMPT 2 — RE-REGISTERED 2026-08-06, after attempt 1
+  was voided and BEFORE the corrected harness ran.** Thresholds unchanged and
+  deliberately so: what failed was satisfiability, not the numbers, and moving a
+  number after a run is the move this file exists to forbid.
+  - **One oracle per unit** — `tests/b12-{strata,terms,aggregate}.test.ts` — and
+    the harness holds the other two outside `tests/` for the duration of a unit's
+    `repair` call, so the gate that unit must close contains only its own tests.
+  - **Units run in dependency order: `strata`, then `terms`, then `aggregate`.**
+    `terms` calls `subagentShare` and `aggregate` calls `partitionByStrata`, so a
+    unit is attempted against real dependencies rather than stubs. **A unit whose
+    dependency did not close is `blocked`, not `failed`**, and counts toward
+    neither side.
+  - **≥ 2 of 3 closed** — reachable. **0 of 3** — B12's text says it measures
+    `gate` alone, amended before Phase 4. **Exactly 1 of 3** — inconclusive, and
+    the manifest may not be sealed on it. A unit is CLOSED only when `repair`
+    returns `passed: true` AND the harness's own `vitest` run **of that unit's
+    file** exits 0.
+  - **This is attempt 2 of the Phase-3 exposure, not of B12.** B12's own
+    two-attempt cap is untouched; it has not run.
+- **Measured:** — (no scored run; Phase-3 attempt 1 void, see above)
 - **Status:** open · **pre-registered**, run not started
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp

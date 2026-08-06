@@ -46,10 +46,48 @@ ART_FINALISED=0
 CLEANED=0
 REPO=""
 OUT=""
+STAGED=""
+
+# Hold every unit's oracle except the current one outside `tests/` for the
+# duration of that unit's `repair` call, and put them back before anything is
+# measured or committed.
+#
+# WHY THIS EXISTS. `repair` closes when the PROJECT's gate goes green, and the
+# project's gate runs the whole suite. With all three oracles present a unit can
+# only return `passed: true` once every OTHER unit is implemented too -- and
+# `repair` rolls back on failure, so each unit started from all-stubs and none
+# could ever be first. `run 2026-08-06-mac-b12-phase3-efe5806` measured exactly
+# that: `strata.ts` was implemented correctly in round 1, the suite stayed red
+# for reasons outside that file, and the harness recorded a failure to close.
+# The criterion was unsatisfiable by construction; the run is void on that cause.
+unstage() {
+  for u in $STAGED; do
+    if [ -f "$TMP_DIR/b12-$u.test.ts" ] && [ -n "${REPO:-}" ]; then
+      mv "$TMP_DIR/b12-$u.test.ts" "$REPO/tests/b12-$u.test.ts" 2>/dev/null
+    fi
+  done
+  STAGED=""
+  return 0
+}
+stage_only() {
+  unstage
+  for u in strata terms aggregate; do
+    [ "$u" = "$1" ] && continue
+    if [ -f "$REPO/tests/b12-$u.test.ts" ]; then
+      mv "$REPO/tests/b12-$u.test.ts" "$TMP_DIR/b12-$u.test.ts" ||
+        refuse "could not hold tests/b12-$u.test.ts aside; the gate would have judged this unit on another unit's tests"
+      STAGED="$STAGED $u"
+    fi
+  done
+  return 0
+}
 
 cleanup() {
   [ "${CLEANED:-0}" = "1" ] && return 0
   CLEANED=1
+  # BEFORE the temp dir goes: a staged oracle lives in there, and losing it
+  # leaves the checkout missing a committed file.
+  unstage
   # An artifact with no provenance is evidence that hides its own origin.
   if [ "${ART_FINALISED:-0}" != "1" ] && [ -n "${ART:-}" ] && [ -f "$ART" ]; then
     rm -f "$ART"
@@ -194,13 +232,16 @@ for f in \
   "src/cost/b12/terms.ts" \
   "src/cost/b12/strata.ts" \
   "src/cost/b12/aggregate.ts" \
-  "tests/b12-scorer.test.ts" \
+  "tests/b12-fixtures.ts" \
+  "tests/b12-strata.test.ts" \
+  "tests/b12-terms.test.ts" \
+  "tests/b12-aggregate.test.ts" \
   "docs/b12-scorer/UNIT-1.md" \
   "docs/b12-scorer/UNIT-2.md" \
   "docs/b12-scorer/UNIT-3.md" ; do
-  [ -s "$REPO/$f" ] || refuse "$f is missing or empty. The specs and the oracle are authored on the other machine and arrive by \`git pull\`; this script will not invent them."
+  [ -s "$REPO/$f" ] || refuse "$f is missing or empty. The specs and the oracles are authored on the other machine and arrive by \`git pull\`; this script will not invent them."
 done
-ok "contract present: 3 stubs, 3 specs, 1 oracle, 1 type module"
+ok "contract present: 3 stubs, 3 specs, 3 per-unit oracles, 1 type module"
 
 # ---------------------------------------------------------------------------
 next "Install, build, and verify the build BY SYMBOL"
@@ -318,14 +359,20 @@ SPENT="0"
 CLOSED=0
 ATTEMPTED=0
 
+# DEPENDENCY ORDER, not alphabetical. `strata` depends on nothing; `terms` calls
+# `subagentShare` from it; `aggregate` calls `partitionByStrata`. A unit that
+# closes stays applied, so each one is attempted against a tree where its
+# dependencies are real rather than stubs.
 for N in 1 2 3; do
   case $N in
-    1) UNIT="terms" ;;
-    2) UNIT="strata" ;;
+    1) UNIT="strata" ;;
+    2) UNIT="terms" ;;
     3) UNIT="aggregate" ;;
   esac
   SRC="src/cost/b12/$UNIT.ts"
   SPEC="docs/b12-scorer/UNIT-$N.md"
+  TESTFILE="tests/b12-$UNIT.test.ts"
+  [ -f "$REPO/$TESTFILE" ] || refuse "$TESTFILE is missing; this unit has no oracle"
 
   # THE BUDGET GATE. Between units and never inside one: 2.1.220 has no
   # --max-turns, so a runaway session is bounded by the clock alone. One unit per
@@ -350,21 +397,30 @@ for N in 1 2 3; do
 Then call mcp__local-coder__repair EXACTLY ONCE, with these arguments:
   files:         [\"$SRC\"]
   spec:          the full text of $SPEC, verbatim
-  checks:        \"test\"
+  checks:        \"all\"
   max_rounds:    3
   context_files: [\"src/cost/b12/types.ts\", \"src/cost/rates.ts\"]
 
 Then report, verbatim, the returned passed, rounds_used, stopped_because and
-invocation_id, and STOP.
+invocation_id.
+
+ALSO report the returned \`diff\` field verbatim inside a fenced code block,
+truncated to its first 400 lines if it is longer. When repair does not close, it
+rolls the tree back and that diff is the ONLY surviving record of what the local
+model actually wrote — without it nobody can tell a near miss from nonsense.
 
 You MUST NOT write, edit or patch any file yourself. You MUST NOT use Bash, Glob,
-Grep, Task or any search tool. You MUST NOT read tests/b12-scorer.test.ts: it is
-the oracle, and reading it into context is the cost this project exists to avoid.
+Grep, Task or any search tool. You MUST NOT read $TESTFILE: it is the oracle, and
+reading it into context is the cost this project exists to avoid.
 
 If repair returns passed:false, call it a SECOND time with the same arguments and
 the remaining_failures appended to the spec text. If the second call also returns
 passed:false, STOP and report that. Do not implement it yourself — a body you
 write closes the gate and destroys the measurement this run exists to produce."
+
+  # Only this unit's oracle is in the gate `repair` has to close.
+  stage_only "$UNIT"
+  info "staged aside:$STAGED"
 
   UNIT_LOG="$OUT/unit-$N-$UNIT.claude.json"
   # TWO GUARDS, BOTH REQUIRED. --allowed-tools and --mcp-config are variadic and
@@ -381,6 +437,9 @@ write closes the gate and destroys the measurement this run exists to produce."
     "$PROMPT" >"$UNIT_LOG" 2>"$OUT/unit-$N-$UNIT.stderr"
   CLAUDE_RC=$?
   info "claude exited $CLAUDE_RC"
+  # Restore before ANYTHING is measured, so the number below is taken against
+  # the tree as committed and not against the staged one.
+  unstage
 
   # Cost, read off the envelope. AN ABSENT FIELD REFUSES; nothing in this
   # repository parses this envelope yet, so it gets no benefit of the doubt.
@@ -402,7 +461,9 @@ write closes the gate and destroys the measurement this run exists to produce."
   info "unit cost \$$UNIT_USD  (running total \$$SPENT)"
 
   # THE MEASUREMENT, TAKEN BY THIS SCRIPT AND NOT READ OFF CLAUDE'S NARRATION.
-  npx vitest run tests/b12-scorer.test.ts >"$OUT/unit-$N-$UNIT.vitest.txt" 2>&1
+  # This unit's oracle alone — the pre-registration says "that unit's tests", and
+  # the first attempt handed it everyone's.
+  npx vitest run "$TESTFILE" >"$OUT/unit-$N-$UNIT.vitest.txt" 2>&1
   VITEST_RC=$?
   case $VITEST_RC in
     0) UNIT_STATE="closed"; CLOSED=$((CLOSED + 1)); ok "unit $N closed — vitest exit 0" ;;
@@ -536,6 +597,16 @@ cp "$ART" "$OUT/" 2>/dev/null || true
 # ---------------------------------------------------------------------------
 next "Commit locally, and package for transport"
 # ---------------------------------------------------------------------------
+# EVERY ORACLE BACK BEFORE ANYTHING IS COMMITTED. Staging moves committed files
+# out of the tree; a commit taken while one is still aside would record it as
+# deleted. Checked rather than assumed, because the failure is silent.
+unstage
+for u in strata terms aggregate; do
+  [ -f "$REPO/tests/b12-$u.test.ts" ] ||
+    refuse "tests/b12-$u.test.ts did not come back from staging. Restore it with \`git checkout -- tests/\` before committing anything."
+done
+ok "all three oracles restored"
+
 # The Mac cannot push. The bundle applies exactly; the diff is what gets read.
 # SCOPED, NEVER `git add -A`. The blanket form sweeps in whatever else the
 # checkout was carrying -- on the machine this was written against, that would

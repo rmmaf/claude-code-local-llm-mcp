@@ -3,6 +3,11 @@
 Implement the exported functions. Do not change their signatures, do not add
 exports, do not edit any other file. `MIN_DELIVERY_OBSERVATIONS` (5) and
 `MIN_REPAIR_CLOSURES` (2) are already declared — use them, do not redefine them.
+`src/cost/b12/strata.ts` is already implemented; `strataCells` calls
+`partitionByStrata` from it.
+
+`poolRatio` returns `0` when `A + S` is zero — an empty set has no ratio, and
+`NaN` propagates into every figure downstream of it.
 
 ## `poolRatio(terms, horizon): number`
 
@@ -94,4 +99,4 @@ Fill every field of `B12Result` from the functions above.
 
 ## Done when
 
-`npx vitest run tests/b12-scorer.test.ts` exits 0. Do not read that file.
+`npx vitest run tests/b12-aggregate.test.ts` exits 0. Do not read that file.

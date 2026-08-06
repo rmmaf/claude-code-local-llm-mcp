@@ -1,70 +1,43 @@
-# UNIT 1 — `src/cost/b12/terms.ts`
+# UNIT 1 — `src/cost/b12/strata.ts`
 
 Implement the two exported functions. Do not change their signatures, do not add
-exports, do not edit any other file.
+exports, do not edit any other file. **No ratio is computed in this file** — it
+answers which observations belong in which cell, never what the cell's number is.
 
-## Constants, frozen — use these exact values
+First in the chain because it depends on nothing: `terms.ts` imports
+`subagentShare` from here and `aggregate.ts` imports `partitionByStrata`.
 
-- `rates.charsPerToken` (3.7) and `rates.clientTruncationCap` (30000): read them
-  off the `rates` argument, never hardcode them.
-- `positionalMultiplier(t, T, m, ttl)` is imported from `../report.js` and
-  returns `write + cacheRead * max(0, T - 1 - t)`, where `write` is
-  `m.cacheWrite1h` for ttl `"1h"` and `m.cacheWrite5m` for `"5m"`.
+## `subagentShare(observation, transcript): Evaluable<SubagentShare>`
 
-## `windowInvocationIds(observation, transcript): Set<string>`
+1. `const owned = new Set(observation.originatedRequestIds)`.
+2. `const own = transcript.requests.filter(r => owned.has(r.requestId))`.
+   **Filter — never use `transcript.requests` whole.** The transcript holds every
+   request in the lineage; the window holds its own.
+3. **If `own.length === 0`, return `{ evaluable: false, reason: "..." }`** with a
+   reason naming that the window originated no billed request. Do NOT return a
+   share of 0. Zero is what a genuinely single-threaded session measures;
+   returning it here files an empty observation into the `solo` stratum and lets
+   it vote on a cell it never contributed to.
+4. `const sidechain = own.filter(r => r.isSidechain).length`.
+5. `share = sidechain / own.length`.
+6. `stratum` is `"solo"` when `sidechain === 0`, otherwise `"multi"`. **The
+   threshold is ZERO, not a fraction** — any sidechain request at all makes it
+   `multi`. Do not introduce a percentage cutoff.
+7. Return `{ evaluable: true, value: { own: own.length, sidechain, share, stratum } }`.
 
-Return the `invocation_id`s this observation's window owns. Four hops, all
-required:
+## `partitionByStrata(terms): StrataPartition`
 
-1. Build `owned = new Set(observation.originatedRequestIds)`.
-2. Collect every `toolUse.id` from each `request of transcript.requests` whose
-   `request.requestId` is in `owned`. Call that set `ownedToolUseIds`.
-3. For each `result of transcript.toolResults`: if `result.invocationId` is not
-   null AND `result.toolUseId` is not null AND `ownedToolUseIds.has(result.toolUseId)`,
-   add `result.invocationId` to the output.
-4. Return that set.
+Return five arrays, preserving input order within each.
 
-A window that did not make the call owns nothing, even when the id is plainly
-present elsewhere in the same transcript.
-
-## `computeTerms(input): ObservationTerms`
-
-Steps, in order:
-
-1. `const owned = new Set(input.observation.originatedRequestIds)`.
-2. `aO` = `breakdownOfRequests(input.transcript.requests, input.rates, owned).units.total`.
-3. `oO` = `unitsAddedByInstallation(input.transcript, input.rates, input.installedChars, owned)`.
-4. `const mine = windowInvocationIds(input.observation, input.transcript)`.
-5. Call `buildCounterfactual(input.transcript, input.telemetry, input.rates,
-   buildSessionReport(input.transcript, input.rates), input.ambiguousIds)`.
-   **Pass the WHOLE transcript.** Never a filtered one: `positionalMultiplier`
-   reads `t` and `T` off the full segment and shortening it changes the answer.
-6. Keep only the returned `rows` whose `invocationId` is non-null and in `mine`.
-   Those are this window's rows; put them in `rows`.
-7. For each kept row with `disposition === "credited"`:
-   - `capped = row.capped` (already `min(bytes_raw, cap) - bytes_returned`, signed)
-   - `sHi += (capped / rates.charsPerToken) * row.multiplier`
-   - `sLo += (capped / rates.charsPerToken) * writeComponent`, where
-     `writeComponent` is `m.cacheWrite1h` when `row.ttl === "1h"` and
-     `m.cacheWrite5m` when `"5m"`, with `m = multipliersFor(rates, row.rateKey)`.
-     This is `positionalMultiplier` at `T - 1 - t = 0`.
-   - Add the same two numbers into `perDelivery[row.tool]` (`{sLo, sHi, rowCount}`),
-     creating the entry on first sight. Key by `row.tool` verbatim — never map a
-     tool name onto another delivery's bucket.
-8. **`turnsCollapsed` contributes NOTHING to `sLo`, `sHi` or `perDelivery`.** Its
-   count is a caller argument, so it is carried on the row and scored nowhere.
-9. **Never clamp.** A negative `capped` stays negative through every sum.
-10. `refusals`: for each of the four classes, count the kept rows with that
-    `disposition`; sum `row.units` into `units` for those whose `units` is a
-    number; increment `unsized` for each whose `units` is `null`.
-11. `subagentShare` = `subagentShare(input.observation, input.transcript)` from
-    `./strata.js`.
-12. `billedRequestCount` = the number of `transcript.requests` in `owned`.
-13. `rateKeys` = the sorted unique `rateKey(request.model, request.speed)` over
-    those same requests.
-14. `taskId`, `arm`, `verificationStratum` come off `input.observation`;
-    `disposition` off `input.disposition`.
+- `testRed` / `typesOnly`: split on `t.verificationStratum`, which is DECLARED in
+  the manifest and read off the observation. Never infer it from what the gate
+  did — inferring it after the fact lets a result choose its own cell.
+- `solo` / `multi`: read `t.subagentShare`. When `evaluable === true`, use
+  `t.subagentShare.value.stratum`.
+- `unevaluableShare`: when `evaluable === false`, the observation goes here and
+  into **NEITHER** `solo` nor `multi`. A bucket that absorbed them would make the
+  two cells look complete while one carried the unknowns.
 
 ## Done when
 
-`npx vitest run tests/b12-scorer.test.ts` exits 0. Do not read that file.
+`npx vitest run tests/b12-strata.test.ts` exits 0. Do not read that file.
