@@ -555,9 +555,19 @@ other machine before this reaches main." >/dev/null 2>&1 &&
 else
   info "nothing to commit — no unit changed a file"
 fi
-git bundle create "$OUT/new-commits.bundle" "$LOCAL_SHA..HEAD" >/dev/null 2>&1 ||
-  info "no new commits to bundle"
-git diff "$LOCAL_SHA" HEAD > "$OUT/changes.diff" 2>/dev/null || true
+# EVERYTHING THE REMOTE LACKS, not just what this run made. The range used to
+# start at the run's own first commit, which silently stranded anything committed
+# on this machine BEFORE the run — and the first real use of this script had
+# exactly that: three `evidence/` artifacts that exist on one Mac and back claims
+# B16 is holding on. The Mac cannot push, so a commit the bundle omits has no
+# other way off the machine.
+BUNDLE_BASE=$(git rev-parse --verify --quiet "origin/$BRANCH" 2>/dev/null)
+[ -n "$BUNDLE_BASE" ] || BUNDLE_BASE="$LOCAL_SHA"
+git bundle create "$OUT/new-commits.bundle" "$BUNDLE_BASE..HEAD" >/dev/null 2>&1 ||
+  info "no commits the remote lacks"
+git log --oneline "$BUNDLE_BASE..HEAD" > "$OUT/commits.txt" 2>/dev/null || true
+info "commits the bundle carries: $(wc -l < "$OUT/commits.txt" 2>/dev/null | tr -d ' ')"
+git diff "$BUNDLE_BASE" HEAD > "$OUT/changes.diff" 2>/dev/null || true
 
 ARCHIVE="${LC_RESULTS:-$HOME/lc-results}/$RUN_ID.tgz"
 if tar -czf "$ARCHIVE" -C "$OUT" . 2>"$OUT/tar.err"; then
