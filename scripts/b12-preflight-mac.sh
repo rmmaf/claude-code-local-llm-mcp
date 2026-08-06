@@ -343,19 +343,44 @@ probe_models() {
   REACHABLE=$(printf '%s' "$MODEL_LINE" | cut -f4)
 }
 
+# THE PROBE RAN AND THE ENDPOINT ANSWERED -- asserted after EVERY call, not just
+# the first. `$1` names which call, so a failure says whether it happened before
+# or after the load.
+assert_probe_ran() {
+  [ -n "$MODEL_LINE" ] || refuse "the model probe produced no output at all$1 (node failed). An unasked endpoint must not read as a working one."
+  [ "$REACH_OK" = "yes" ] || refuse \
+    "LM Studio is not answering on http://localhost:1234/v1$1. \`repair\` cannot do work without it, and a pre-flight where \`repair\` aborts reports \`excludedForeign: 1\` and no repair row — it fails, correctly, but you will have spent the setup for nothing."
+}
+
 probe_models
-[ -n "$MODEL_LINE" ] || refuse "could not run the model probe at all (node failed). An unasked endpoint must not read as a working one."
-[ "$REACH_OK" = "yes" ] || refuse \
-  "LM Studio is not answering on http://localhost:1234/v1. \`repair\` cannot do work without it, and a pre-flight where \`repair\` aborts reports \`excludedForeign: 1\` and no repair row — it fails, correctly, but you will have spent the setup for nothing."
+assert_probe_ran ""
 
 if [ "$MATCH_Q" = "none" ]; then
   info "loading $MODEL — this can take a while on first run"
   lms load "$MODEL" >/dev/null 2>&1 || refuse \
     "could not load $MODEL. Check \`lms ls\` for what is downloaded, then re-run with B12_MODEL=<id> to pick another."
   probe_models
-  [ "$MATCH_Q" = "none" ] && refuse \
-    "after \`lms load\` the endpoint still serves nothing matching $MODEL (it serves: $REACHABLE). Recording it as the model would be an assumption, not a measurement."
+  assert_probe_ran " after \`lms load\`"
 fi
+
+# THE ONE PLACE THE MODEL IS DECLARED RESOLVED, AND IT ASSERTS THE GOOD VALUES.
+#
+# The post-load re-check used to be `[ "$MATCH_Q" = "none" ] && refuse` -- a test
+# for one specific way of being wrong. `none` is what the probe says when it RAN
+# and matched nothing; when the probe itself failed every field came back EMPTY,
+# and "" is not "none", so the check passed. Measured: the run printed
+# `ok endpoint serves it as "" (match: )` and carried on with no served id, no
+# match quality and no endpoint list, which would have reached the artifact as
+# three nulls sitting under a green line.
+#
+# So it enumerates what "resolved" means instead. This runs on both paths -- the
+# model was already loaded, or it was just loaded -- so neither can skip it.
+case "$MATCH_Q" in
+  exact|fuzzy) : ;;
+  none) refuse "the endpoint serves nothing matching $MODEL (it serves: $REACHABLE). Recording it as the model would be an assumption, not a measurement." ;;
+  *) refuse "the model probe reported a match quality of \"$MATCH_Q\", which is neither exact, fuzzy nor none. A value the rule does not name must not be read as one that it does." ;;
+esac
+[ -n "$MATCH_ID" ] || refuse "the probe reported a $MATCH_Q match and named no served id. Half an answer is not an answer."
 ok "endpoint serves it as \"$MATCH_ID\" (match: $MATCH_Q)"
 [ "$MATCH_Q" = "fuzzy" ] && info "fuzzy means the served id differs from the catalog id; both go into the artifact"
 
@@ -499,7 +524,11 @@ const path = require("node:path");
 const os = require("node:os");
 const sessionId = process.argv[2];
 const root = path.join(os.homedir(), ".claude", "projects");
-const out = { transcript: null, tools: [], repairModel: null };
+// `transcriptFound` is decided HERE and nowhere else. Both consumers -- the
+// shell's terminal warning and the artifact's provenance block -- used to derive
+// it themselves from the shape of this JSON, which is two implementations of a
+// one-line rule that could disagree the moment this file changes.
+const out = { transcript: null, transcriptFound: false, tools: [], repairModel: null };
 const walk = (d, depth) => {
   if (depth > 3 || out.transcript !== null) return;
   let entries;
@@ -542,6 +571,7 @@ if (out.transcript) {
     dig(rec.toolUseResult, 0);
   }
 }
+out.transcriptFound = out.transcript !== null;
 process.stdout.write(JSON.stringify(out));
 JS
 PROBE=$(node "$PROBE_JS" "$SESSION_ID" 2>/dev/null || true)
@@ -549,14 +579,25 @@ case "$PROBE" in
   '{'*) : ;;
   *) PROBE=""; warn "could not read the session back; the artifact will record that as unknown rather than as absent" ;;
 esac
+# BOTH KNOWN ANSWERS ARE MATCHED POSITIVELY, and anything else is named unknown.
+# This was `*'"transcript":null'*` with everything else falling to `ok
+# "transcript found"` -- so a probe whose output no longer carried that exact
+# substring, for any reason, reported the good outcome. Same shape as the model
+# check above, in the same file, written the same hour.
 if [ -n "$PROBE" ]; then
   case "$PROBE" in
-    *'"transcript":null'*)
+    *'"transcriptFound":true'*)
+      ok "transcript found; tools called are recorded in the artifact"
+      ;;
+    *'"transcriptFound":false'*)
       warn "CLAUDE WROTE NO TRANSCRIPT for $SESSION_ID. The pre-flight below will"
       warn "fail on the harness, not on the instrument — read scratchSession.log"
       warn "in the artifact before concluding anything about the meter."
       ;;
-    *) ok "transcript found; tools called are recorded in the artifact" ;;
+    *)
+      warn "the probe answered but did not say whether a transcript exists; the"
+      warn "artifact records that as unknown rather than as either answer."
+      ;;
   esac
 fi
 
@@ -648,7 +689,9 @@ o.context = {
   untrackedFilesPresent: untracked ? untracked.split("\n") : [],
   scratchSession: {
     exitCode: Number(e.B12_CLAUDE_EXIT),
-    transcriptFound: probe ? probe.transcript !== null : null,
+    // Taken from the probe, not re-derived: `null` when the probe did not say,
+    // which is a third answer and not the absence of a problem.
+    transcriptFound: probe && typeof probe.transcriptFound === "boolean" ? probe.transcriptFound : null,
     toolsCalled: probe ? probe.tools : null,
     log: e.B12_CLAUDE_LOG || "",
   },
