@@ -290,7 +290,21 @@ read_window
 # TEST THE GOOD VALUES. A value the rule does not name must not be read as one
 # that it does — `[ "$X" = "unknown" ]` alone passes for an empty probe result.
 case "$WINDOW" in
-  ''|*[!0-9]*) refuse "the context probe reported \"$WINDOW\", which is not a number. An unreadable window must not be compared against a floor." ;;
+  ''|*[!0-9]*)
+    refuse "the context probe reported \"$WINDOW\", which is not a number. An unreadable window must not be compared against a floor.
+
+THE USUAL CAUSE IS THAT THE MODEL IS NOT LOADED. LM Studio unloads an idle model
+on its TTL, and \`pickLoadedContextTokens\` returns null rather than borrowing an
+unrelated model's window — a 32k model loaded while the request goes to a 16k one
+admits a request that overflows, and the answer comes back closed, well-formed
+and short.
+
+  lms ps    # what is loaded, and under which id
+  lms unload --all; lms load \"$MODEL\" --context-length $MIN_CONTEXT
+
+If \`lms ps\` shows the model loaded under a DIFFERENT id than \"$MODEL\", that is
+the other cause: pass the served id in B12_LOCAL_MODEL rather than renaming
+anything." ;;
 esac
 [ "$WINDOW" -ge "$MIN_CONTEXT" ] || refuse "the loaded context window is $WINDOW, under the $MIN_CONTEXT floor.
 Reload with:  lms load \"$MODEL_LOCAL\" --context-length $MIN_CONTEXT
