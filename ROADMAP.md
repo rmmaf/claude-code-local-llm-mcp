@@ -325,6 +325,29 @@ What may be built next, and the number that decides it.
        direction. **No threshold is set here**; setting one now, with the rate in
        hand, is the move rule 4 exists to prevent. What rule 4 still needs is the
        threshold and its argument, from whoever decides them.
+     - **RESOLVED 2026-08-06, and the resolution is that NO THRESHOLD WILL BE
+       SET.** `context_would_overflow` stays exploratory permanently; rule 4's
+       promotion path is closed rather than left waiting for a number.
+
+       The argument is the one rules 3 and 5 already make, followed to its end.
+       Rule 3 retires any refusal measured at a sub-maximal window because
+       `lms load --context-length` is the cheap arm and this file rules the
+       cheapest arm is the baseline. Rule 5 says the two codes must not merge
+       because `context_would_overflow` is also answered by a free reload. The
+       base rate then turned out not to be a number but a **function of the
+       window** — 33% of this repository's 15 source+test pairs exceed 16,384
+       tokens and 7% exceed 32,768, on a model that supports 262,144.
+
+       A threshold on a quantity that a configuration flag moves by a factor of
+       five is not a gate condition. It is a report about how the model was
+       loaded, and promoting it would let a `--context-length` argument open a
+       gate that buys a parser and a new apply path. **The honest closure is that
+       this code cannot become one, not that its number is still pending.**
+
+       `output_would_truncate` is unaffected and remains the sole opening and
+       killing outcome at ≥ 40% / < 20%, over the captured corpus, exactly as
+       rule 1 states. G7's status does not move: still `unevaluated`, still
+       waiting on the captured corpus and on nothing else.
   5. **The codes must not be merged, and the reason is not pedantry — they imply
      different fixes.** `output_would_truncate` says the answer is too big, which
      is what search/replace blocks are for. `context_would_overflow` says prompt
@@ -383,6 +406,43 @@ continuing to build on a premise that quietly stopped being true.
   session shape (near zero single-threaded, ~45% multi-agent). Record the
   subagent share as a covariate on every arm, or the comparison flatters
   whichever side spawned fewer agents.
+  - **NOT RECORDED. Measured 2026-08-06:** `scripts/b12-run.mjs` `observe()`
+    writes no subagent, thread or sidechain field on the observation. It is
+    recoverable rather than lost — `src/cost/report.ts:198` derives
+    `sidechainRequests` from `isSidechain`, and the observation carries
+    `originatedRequestIds` — so the scorer can compute the share for exactly
+    those ids. **It must, or this bullet is a paragraph.**
+- **AMENDED 2026-08-06 — the cost meter is INFRASTRUCTURE, not a delivery that
+  must pay for itself. The deliveries under this criterion are TWO: `gate` and
+  `repair`.** Nothing above this line has been edited; "Those are now three" is
+  the pre-amendment text and is left standing.
+
+  **The owner made this call, and the timing is the whole of its legitimacy.**
+  The bullet above says the choice must not be made after seeing `R`, because
+  choosing a criterion to fit a result is the failure this file exists to
+  prevent. B12 has not run. There is no `R`, no observation, and no scorer that
+  could produce one — so the criterion is being fixed while its answer is
+  strictly unknowable, which is the only condition under which fixing it means
+  anything.
+
+  **The argument, in the owner's words:** the meter suppresses nothing and emits
+  no telemetry row, so it is an instrument, not a delegation tool. Keeping it
+  named as a delivery means G-stop can never close — not because the project
+  failed, but on a technicality about a thing that was never in the category.
+
+  **What this does NOT do.** It does not lower the bar for the two that remain.
+  Each of `gate` and `repair` must still individually pay for itself in the
+  counterfactual accounting, and the first live reading is not encouraging:
+  `evidence/2026-08-06-mac-b12-2eab63d.preflight.json` has `gate` at **−467.1
+  units** on the scratch session — it cost more context than it suppressed, and
+  the pre-repair clamped view would have printed `0`. One synthetic session with
+  a one-line error proves nothing about a real task, but the sign is on the
+  table before the run rather than after it.
+
+  **The meter is not thereby exempt from evidence.** It is now judged as G1
+  judges it — whether it counts the same tokens on both sides and prices them
+  consistently — and G1 remains `open (reopened)`. What changes is that its
+  verdict no longer gates this criterion.
 
 ---
 

@@ -1330,6 +1330,29 @@ defect, and it pinned four of them in place.
   `tests/fs-safety.test.ts` pins that calibration, and re-fitting a constant
   against a corpus whose sizes its own author chose is the move corpus #1 was
   already caught by. **Changing it is a decision, not a cleanup.**
+  - **DECIDED 2026-08-06: 3.5 STAYS. The divisor does not move.** Not deferred —
+    decided, with the condition that would reopen it stated below.
+
+    Three reasons, and the first is the one this file keeps being caught by.
+    **(a)** 3.978 is pooled over a corpus whose sizes its own author chose, which
+    is the corpus #1 mistake in different clothes; the bullet above says so
+    itself. **(b) It is not even stable across corpora** — the same file records
+    4.22 B/token in one place against the 3.978 pooled over `mac-12-variance`, a
+    6% spread, so "the measured value" is a value, not the value. **(c) The two
+    errors are not symmetric, and that is decisive.** At 3.5 the estimator is
+    ~14% pessimistic: it refuses requests that would have fit, which costs
+    coverage **visibly** — `output_would_truncate` is a `ToolError` with a name,
+    and B16 already carries one observed over-refusal. At 3.978 it would refuse
+    less and truncate more, and truncation is **silent**: this premise's own
+    closing bullet is about a request that "quietly lost 90 lines" while the
+    detector reported a pass. Trading a logged refusal for an unlogged
+    amputation is the wrong direction for an estimator whose whole problem is
+    that it cannot see its own failures.
+
+    **Reopens if:** corpus #2 supplies requests *near* the bar — which corpus #1
+    by construction does not — and a run scoring them records its `timeoutMs`
+    against the ~208 s threshold above, so a zero means something. Re-derive
+    against **that** data, not against a re-pooling of this one.
 - **Falls if:** > 10% of the requests that pass still truncate.
 - **If it falls:** recalibrate `LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN` and
   `LOCAL_CODER_OUTPUT_USABLE_FRACTION` **against that run's data**, which is the

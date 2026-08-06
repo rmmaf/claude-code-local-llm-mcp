@@ -5,30 +5,32 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**THE PRE-FLIGHT PASSED ON THE MAC** at `2eab63d`, 11 checks green — the first
-time the whole chain ran end to end. `provenanceUnavailable false`, `ambiguous
-0`, `unmatched 0`, `excludedForeign 0`, and both tools produced a row that did
-work. **`repair` has now been called for real, once** — that number was zero for
-the project's whole history. Snapshot there covers 16 slugs / 52 files / 1740
-ids, a fraction of this machine's. Read from the pasted terminal only: the
-artifact `evidence/2026-08-06-mac-b12-2eab63d.preflight.json` has NOT been read,
-so nothing is registered in MEASUREMENTS.jsonl from this run yet.
+**The pre-flight passed on the Mac** (`2eab63d`, 11/11, artifact in `evidence/`)
+and **three decisions that had outlived every technical blocker are closed**, all
+while their answers were still unknowable — the only condition that makes closing
+them mean anything. G-stop no longer names the meter as a delivery that must pay:
+**two now, `gate` and `repair`**. G7 gets no threshold on
+`context_would_overflow`, ever. B14 stays at **3.5**. Live warning from the
+pre-flight: `gate` scored **−467.1 units** — it cost more than it suppressed.
 
-## Next action
+## Next action, in this order
 
-**Read the artifact, then seal the manifest and take the first scored
-observation.** `savedFraction 0.2851` from that run is an INSTRUMENT reading on
-a one-line synthetic fixture — not a B12 result, and registering it as one is
-the exact failure this registry exists to prevent. **Yours:** the version pin,
-now answerable — the Mac is 2.1.221 throughout, so B12's one-version VOID
-condition holds if the whole run stays there; G-stop naming the cost meter a
-delivery that cannot be scored; G7's threshold; B14 3.978 vs 3.5.
+1. **Write the scorer.** `R_ab` exists in the frozen design and in NO `.ts`,
+   `.mjs` or `.md` file. `observe()` writes observations; nothing reads them.
+   45 sessions would finish with no number. It must compute **subagent share per
+   arm** (G-stop requires it; `observe()` records no such field, but it is
+   derivable from `originatedRequestIds` + `isSidechain`, `report.ts:198`).
+2. **Then one paired observation**, smallest real task, both arms, ~2 sessions.
+   Score it with the scorer written in 1. Only then seal and run the rest.
+3. **Author the scorer through `repair`** — its mechanical parts are exactly what
+   it is for, and G-stop's second delivery has one call of exposure in its life.
+
+Not blocking B12: the meter's `savedFraction` credits suppression and never
+charges installation, and `unitsAddedByInstallation` is written, tested, called
+from nothing. Magnitude in doubt too — the scratch session called `ToolSearch`.
 
 ## Do not redo
 
-- **The project already had the rule.** My second model-id comparison refused a
-  Mac where the model WAS loaded; `matchModel` in `src/selection.ts` resolves it.
 - **Test the good values, not one bad one.** `[ "$X" = "none" ]` passed when the
-  probe failed and X was `""`, and printed `ok` for an empty answer.
-- **A signal handler that returns does not stop the script.** Ctrl-C ran the
-  cleanup and continued, and could leave `passed: true` at the deliverable path.
+  probe failed and `X` was `""`, and printed `ok` for an empty answer.
+- **A passing test makes an unwired function look finished.** Twice now.

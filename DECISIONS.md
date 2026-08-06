@@ -2237,3 +2237,50 @@ which the deferral observation puts in doubt; (c) whether fixing either is a
 repair to the instrument or a change to a design frozen by hash, in which case
 the rule is retract and re-register, not edit. Sealing the manifest before (a)
 is decided would produce observations that are one-sided by construction.
+
+## Three decisions taken while their answers were still unknowable
+
+All three had been sitting open longer than any technical blocker, and all three
+share a property that is the reason they could be taken today rather than after
+the run: **none of their answers exists yet.** B12 has not run, there is no `R`,
+and there is no scorer that could produce one. A criterion fixed while its result
+is strictly unknowable is a criterion; the same words written afterwards are a
+rationalisation. That timing is the whole of the legitimacy here, and it is the
+condition `ROADMAP.md` itself set for the first of them.
+
+**1. G-stop no longer names the cost meter as a delivery that must pay for
+itself.** Two deliveries remain, `gate` and `repair`. The meter suppresses
+nothing and emits no telemetry row, so the counterfactual has no per-delivery
+ratio to give it; it is an instrument, not a delegation tool. Keeping it named
+meant G-stop could never close — not on a failure, on a category error. It is
+still judged, by G1, on whether it counts the same tokens on both sides.
+
+This does not soften the criterion. `gate` came back at **−467.1 units** on the
+pre-flight's scratch session: it cost more context than it suppressed, and the
+clamped view this project shipped two weeks ago would have printed `0`. One
+synthetic one-line error says nothing about a real task. The sign being visible
+before the run rather than after it is the point.
+
+**2. G7 gets no threshold on `context_would_overflow`, permanently.** Rule 4 had
+been waiting for "the threshold and its argument, from whoever decides them", and
+the argument that arrived is that there should not be one. The base rate turned
+out to be a function of the window — 33% of this repository's source+test pairs
+exceed 16,384 tokens, 7% exceed 32,768, on a model supporting 262,144. A number a
+`--context-length` flag moves by a factor of five is not a gate condition; it is a
+report about how the model was loaded. Promoting it would let a configuration
+argument buy a parser and a new apply path. `output_would_truncate` is untouched.
+
+**3. B14's divisor stays at 3.5.** The measured 3.978 is pooled over a corpus
+whose sizes its own author chose, it is not stable across corpora (4.22 in one
+place, a 6% spread), and the two error directions are not symmetric: 3.5 refuses
+requests that would have fit, which is a named `ToolError`; 3.978 would truncate
+more, and truncation is what "quietly lost 90 lines" while the detector reported
+a pass. For an estimator whose defining problem is that it cannot see its own
+failures, the logged error is the one to keep. It reopens on corpus #2, against
+that data rather than a re-pooling of this one.
+
+**What none of this closes.** G-stop is now *evaluable*; it is not evaluated. The
+metric it is evaluated by, `R_ab`, exists in the frozen design and in no `.ts`,
+`.mjs` or `.md` file in this repository. Deciding a criterion is cheaper than
+building the thing that reads it, and doing the cheap one first is worth naming
+as what it was.
