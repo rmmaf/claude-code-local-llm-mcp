@@ -1281,8 +1281,115 @@ defect, and it pinned four of them in place.
     file** exits 0.
   - **This is attempt 2 of the Phase-3 exposure, not of B12.** B12's own
     two-attempt cap is untouched; it has not run.
-- **Measured:** — (no scored run; Phase-3 attempt 1 void, see above)
-- **Status:** open · **pre-registered**, run not started
+- **ATTEMPT 2 RESULT: 1 of 3 — INCONCLUSIVE**, which is the branch the rule named
+  in advance and the one it forbids reading either way.
+  `run 2026-08-06-mac-b12-phase3-d746d07`, US$ 0.74 of a US$ 40 ceiling. The one
+  closed unit is `strata`, **inherited** from the attempt the machine killed and
+  skipped rather than re-attempted; **this run closed nothing**
+  (`unitsClosedThisRun: 0`). Per the rule, the manifest may not be sealed on it.
+  - **`repair` never once produced a state better than the untouched stub**, and
+    that is the finding rather than a missing artifact. Failure counts across the
+    four calls: `terms` 4→9→9 and 4→7→7→7; `aggregate` 10→28→28 and 10→25→23→23.
+    `best` initialises to the ORIGINAL bytes at the starting failure count and
+    only advances on `after < best.failures`, so nothing ever displaced it, the
+    unapplied proposal WAS the stub, and `renderDiff` correctly returned `""`.
+  - **This corrects what attempt 1 recorded as a second defect.** That entry says
+    `repair` returns its best attempt as a diff and the harness did not keep it,
+    and that "the re-run captures it". The re-run did keep it. There was nothing
+    to keep. Attempt 1's own `13 → 1` calls did improve, so the loss was real
+    THERE; here the empty field is the measurement.
+  - **Round 1 made things worse in 4 of 4 calls**, and across the seven rounds
+    after a round 1 exactly one improved anything (25 → 23). Third independent
+    reproduction of B6's finding, now on this project's own remaining work.
+  - **It also replicates `run 2026-08-04-mac-09`** — `repair` net negative on
+    12 of 12 calls against a TypeScript gate — at 4 of 4, on a different corpus.
+    Two independent samples now say the same thing about the same condition.
+  - **The mechanism is visible in the token counts.** Completions held at
+    1895/1898/1898 and 3331/3385/3385 across rounds whose prompts grew by the
+    prepended failures. The model is not correcting; it is re-emitting. And
+    `envelope: "no_blocks"` in **6 of 13 attempts**, every one with
+    `finish_reason: "stop"` — attempt 1 saw 3 of 6, and it remains what it was
+    called before any data existed: the likeliest single cause, unexplained.
+  - **The context window was never the constraint, and this is worth recording
+    because a day was spent on it.** Largest prompt of the run 14,231 tokens
+    against 32,768, every attempt `stop`, window read 32,768 before AND after.
+  - **CHECKED AND REJECTED: the harness did not hand it an impossible task this
+    time.** The model compared against `"void(ambiguous)"` and friends while
+    `RowDisposition` (`src/cost/report.ts`) is `"credited" | "ambiguous" |
+    "unverifiable" | "excludedForeign" | "unmatched"`. Those four names are
+    exactly `RefusalLedger`'s fields in `types.ts`, which it HAD, and `UNIT-2.md`
+    gives `disposition === "credited"` correctly and names every row field used.
+    It took the `void(...)` shape from `Disposition` — the other disposition type
+    in the same file — and merged the two. Model error, not construction. The
+    `../b12.js` it tried to import appears in no spec. **Attempt 2 is a result,
+    not a void.**
+- **PHASE-3 EXPOSURE B — PRE-REGISTERED 2026-08-06, AFTER exposure A returned
+  1 of 3 and BEFORE any unit was attempted under the new condition.** A separate
+  exposure, **not attempt 3 of the same one**, and the distinction is the whole
+  of its legitimacy: attempt 2 was re-registered with conditions unchanged
+  because what had failed was satisfiability; this changes what the tool is given
+  and therefore cannot be presented as a re-draw of the same question.
+  - **THE TIMING, STATED AGAINST MYSELF.** `src/cost/report.ts` was never in
+    `context_files` although both units call five functions from it and consume
+    `CreditedRow`, and the specs compensated by naming its fields in prose —
+    work the type system should have done. The argument stands on its own. **I
+    did not make it before the run and noticed it only by reading the failure**,
+    which is why it may not be applied as a correction to exposure A. Exposure
+    A's numbers stay exactly as recorded above.
+  - **What changes — two things, both forced, and named together because one
+    causes the other.** `context_files` gains `src/cost/report.ts`; and the
+    window moves 32,768 → **65,536**, because that file is 51,747 B ≈ 14,800
+    tokens and adding it puts `aggregate`'s corrective retry at ~29,000 against
+    a ~29,491 usable budget — inside the margin where `context_would_overflow`
+    is reported as `model_failed` and the count cannot tell them apart. That is
+    the hazard the 32,768 floor already exists for, met from the other side.
+  - **What does not change:** local model, quantisation, temperature, the three
+    specs, the three oracles, `max_rounds: 3`, one unit per claude session, one
+    oracle per unit, dependency order, and the two-call retry protocol.
+  - **ALL THREE UNITS RESET TO STUBS.** Not inherited. `strata` closed under the
+    old condition, and carrying it forward would let ONE closure out of two
+    attempts reach the "≥ 2 of 3" bar — silently loosening a threshold the
+    thresholds section refuses to move. Three units, one condition, denominator
+    three. It also buys a free replication of the only unit that has ever
+    closed, and a `strata` that STOPS closing with more context in front of it
+    would be the most informative single result this exposure can produce.
+  - **Thresholds verbatim from exposure A. ≥ 2 of 3** closed — `R_repair` is
+    reachable. **0 of 3** — B12's text says it measures `gate` alone, amended
+    before Phase 4. **Exactly 1 of 3** — inconclusive, manifest not sealed.
+    CLOSED still means `repair` returns `passed: true` AND the harness's own
+    `vitest` run of that unit's file exits 0.
+  - **VOID if `report.ts` was not actually in the context** — checked against
+    the telemetry's own `detail.files`/`context_files`, not against this text.
+    A condition that only the registration believes in is the misdeclared window
+    of `mac-19` wearing a different hat.
+  - **VOID if fewer than three units are attempted under the new condition**
+    (crash, budget ceiling, a dependency left `blocked`). Incomplete is not a
+    reading, and this machine has already ended two runs by kernel panic.
+  - **What a hold does NOT establish, and it is a real weakness: two conditions
+    moved, so a better result cannot attribute.** "The right types helped" and
+    "more context helped" are not separable here, and separating them is B13's
+    job — downstream of B6, not a planned component, and explicitly requiring a
+    same-byte-budget control this exposure does not run. The Phase-3 question is
+    **reachability**, not mechanism: B12 will run under whatever configuration
+    works, so a result that cannot say WHY still answers what was asked. Stated
+    now so nobody reads it as more.
+  - **Free in B12's own currency, which is why it is allowed at all.**
+    `context_files` takes PATHS; the 51,747 B are read by the local model and
+    never enter Claude's context. Adding them costs the metric nothing.
+  - **PREDICTION, registered so it can be wrong: 1 of 3 again.** `strata` closes
+    (it closed in round 1 before); `terms` and `aggregate` more likely than not
+    do not. The literal-guessing was a concrete and identified cause of some of
+    exposure A's new failures, but nothing about adding a file addresses round 1
+    making things worse in 4 of 4 calls, no round after the first improving
+    anything, `no_blocks` at 6 of 13, or mac-09's 12 of 12. **If this is right
+    the exposure resolves nothing and costs about a dollar** — it is run anyway
+    because exposure A carries a known defect in its setup and a clean
+    INCONCLUSIVE is worth more than a flawed one. If it comes back 2 or 3 of 3,
+    that beat a stated expectation.
+- **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
+  (`run 2026-08-06-mac-b12-phase3-d746d07`); attempt 1 void. No scored B12 run.
+- **Status:** open · exposure A read INCONCLUSIVE · **exposure B pre-registered**,
+  run not started
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 

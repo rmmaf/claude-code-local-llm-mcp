@@ -151,7 +151,22 @@ HINT
 
 # The frozen inputs. A run that cannot prove it started from these proves nothing.
 RATES_FROZEN_AT="3541625"
-MIN_CONTEXT=32768
+# EXPOSURE B. `src/cost/report.ts` joins context_files, and the floor doubles
+# BECAUSE of it: that file is 51,747 B ~ 14,800 tokens, which puts aggregate's
+# corrective retry near 29,000 against 32,768's ~29,491 usable budget -- inside
+# the margin where context_would_overflow is reported as `model_failed` and the
+# Phase-3 count cannot tell the two apart. Both changes are pre-registered
+# together in PREMISES.md § B12 - PHASE-3 EXPOSURE B, with the admission that a
+# result under two moved conditions cannot attribute.
+EXPOSURE="${B12_EXPOSURE:-B}"
+MIN_CONTEXT=65536
+CONTEXT_FILES='"src/cost/b12/types.ts", "src/cost/rates.ts", "src/cost/report.ts"'
+# A fresh exposure may not inherit a body closed under the OLD condition: that
+# would let one closure out of two attempts reach the ">= 2 of 3" bar and
+# silently loosen a threshold this project refuses to move. Resuming a run the
+# machine killed MID-exposure is the opposite case and is what B12_RESUME=1 is
+# for -- same condition, so an already-green unit is legitimately skipped.
+RESUME="${B12_RESUME:-0}"
 BUDGET_USD="${B12_BUDGET_USD:-40}"
 MODEL_CLAUDE="${B12_CLAUDE_MODEL:-claude-sonnet-5}"
 MODEL_LOCAL="${B12_LOCAL_MODEL:-qwen3-coder-30b-a3b-instruct-dwq-v2}"
@@ -231,7 +246,24 @@ if [ -n "$FOREIGN" ]; then
 $FOREIGN"
 fi
 if [ -n "$TRACKED" ]; then
-  warn "a previous attempt left bodies under src/cost/b12/. Each unit's tests are re-run below and an already-green unit is SKIPPED, not re-attempted."
+  if [ "$RESUME" = "1" ]; then
+    warn "B12_RESUME=1: bodies under src/cost/b12/ are treated as THIS exposure's own. Each unit's tests are re-run below and an already-green unit is SKIPPED, not re-attempted."
+  else
+    refuse "there are bodies under src/cost/b12/ and this is a FRESH exposure ($EXPOSURE).
+
+Exposure $EXPOSURE may not inherit a unit closed under the previous condition:
+carrying one forward lets a single closure reach the \">= 2 of 3\" bar and
+loosens a threshold PREMISES.md refuses to move. Three units, one condition,
+denominator three.
+
+Reset all three, then re-run:
+  git checkout -- src/cost/b12/
+
+If instead you are RESUMING a run this machine killed mid-exposure — same
+condition throughout, so an already-green unit is legitimately skipped:
+  B12_RESUME=1 bash scripts/b12-scorer-mac.sh
+$TRACKED"
+  fi
 fi
 if [ "${UNTRACKED_N:-0}" -gt 0 ]; then
   warn "$UNTRACKED_N untracked path(s) present. They are LEFT ALONE and never committed: this run commits src/cost/b12/ and its own artifact, nothing else."
@@ -404,10 +436,13 @@ anything." ;;
 esac
 [ "$WINDOW" -ge "$MIN_CONTEXT" ] || refuse "the loaded context window is $WINDOW, under the $MIN_CONTEXT floor.
 Reload with:  lms load \"$MODEL_LOCAL\" --context-length $MIN_CONTEXT
-This is a refusal and not a warning: at 16384 a second repair round sits about
-1,400 tokens from context_would_overflow, which \`repair\` reports as
-\`model_failed\` — the same label a genuine model failure gets. The Phase-3 count
-this run pre-registered cannot tell those apart, so it must not be taken."
+This is a refusal and not a warning. Exposure $EXPOSURE passes src/cost/report.ts
+as a context file — 51,747 B, about 14,800 tokens — and at 32768 that puts
+aggregate's corrective retry near 29,000 against a ~29,491 usable budget.
+\`repair\` reports context_would_overflow as \`model_failed\`, the same label a
+genuine model failure gets, and the Phase-3 count cannot tell those apart. Run
+2026-08-06-mac-b12-phase3-d746d07 measured a largest prompt of 14,231 tokens
+WITHOUT that file; the floor doubled because the file was added, not by taste."
 WINDOW_START="$WINDOW"
 ok "context window $WINDOW_START (floor $MIN_CONTEXT)"
 
@@ -561,7 +596,7 @@ Then call mcp__local-coder__repair EXACTLY ONCE, with these arguments:
   spec:          the full text of $SPEC, verbatim
   checks:        \"all\"
   max_rounds:    3
-  context_files: [\"src/cost/b12/types.ts\", \"src/cost/rates.ts\"]
+  context_files: [$CONTEXT_FILES]
 
 Then report, verbatim, the returned passed, rounds_used, stopped_because and
 invocation_id.
@@ -712,7 +747,14 @@ const o = {
   runId: e.B12_RUN_ID,
   premise: "B12",
   phase: 3,
-  preRegisteredIn: "PREMISES.md § B12 — PHASE 3 READING RULE",
+  // WHICH exposure, and the condition that defines it. Exposure A and B answer
+  // the same pre-registered question under different context_files and windows,
+  // and a reader pooling them would be pooling two conditions.
+  exposure: e.B12_EXPOSURE,
+  contextFiles: e.B12_CONTEXT_FILES,
+  resumedWithinExposure: e.B12_RESUME === "1",
+  preRegisteredIn:
+    "PREMISES.md § B12 — PHASE-3 EXPOSURE " + e.B12_EXPOSURE,
   unitsAttempted: units.length,
   unitsClosed: closed,
   unitsClosedThisRun: closed - inherited,
@@ -763,6 +805,7 @@ MERGE_OUT=$(B12_RUN_ID="$RUN_ID" B12_UNITS="$UNITS_JSON" B12_SPENT="$SPENT" B12_
   B12_CORPUS_NEW="$CORPUS_NEW" B12_CORPUS_PRE="$CORPUS_PRE" B12_INHERITED="$INHERITED" \
   B12_OS="$OS_PRODUCT" B12_OS_BUILD="$OS_BUILD" B12_KERNEL="$KERNEL" B12_RUNTIME="$MLX_RUNTIME" \
   B12_PANIC_N="$PANIC_N" B12_PANIC_LAST="$PANIC_LAST" \
+  B12_EXPOSURE="$EXPOSURE" B12_CONTEXT_FILES="$CONTEXT_FILES" B12_RESUME="$RESUME" \
   node "$MERGE_JS" "$ART" 2>&1)
 case "$MERGE_OUT" in
   *B12-SCORER-OK*) ART_FINALISED=1; ok "$MERGE_OUT" ;;
