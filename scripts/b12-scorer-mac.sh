@@ -108,14 +108,25 @@ REPO_NAME=$(node -p "require('$REPO/package.json').name" 2>/dev/null)
   refuse "$REPO is not this project (package.json name is \"$REPO_NAME\", expected local-coder-mcp)"
 ok "$REPO"
 
-DIRTY=$(git status --porcelain 2>/dev/null)
+RAW=$(git status --porcelain 2>/dev/null)
 GIT_RC=$?
 [ $GIT_RC -eq 0 ] || refuse "git status exited $GIT_RC; a tree whose state could not be read is not a clean tree"
-if [ -n "$DIRTY" ]; then
-  refuse "the working tree is dirty. This script commits what the local model writes, so it must start from a tree where everything uncommitted came from this run.
-$DIRTY"
+# TRACKED CHANGES REFUSE; UNTRACKED FILES DO NOT — the same split
+# `b12-preflight-mac.sh:103-112` makes, and it matters on a real machine. A Mac
+# checkout carries untracked artifacts that belong to other premises entirely:
+# on `~/local-coder` the three `contract-stability.json` files B16's holding
+# status rests on were sitting untracked, and a blanket dirty-tree refusal is one
+# short step from a blanket `git clean` that destroys them.
+TRACKED=$(printf '%s\n' "$RAW" | grep -v '^?? ' | grep -E '^..' || true)
+UNTRACKED_N=$(printf '%s\n' "$RAW" | grep -c '^?? ')
+if [ -n "$TRACKED" ]; then
+  refuse "the working tree has TRACKED changes. This script commits what the local model writes, so every tracked change must have come from this run.
+$TRACKED"
 fi
-ok "tree clean"
+if [ "${UNTRACKED_N:-0}" -gt 0 ]; then
+  warn "$UNTRACKED_N untracked path(s) present. They are LEFT ALONE and never committed: this run commits src/cost/b12/ and its own artifact, nothing else."
+fi
+ok "no tracked changes"
 
 LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
 case "$LOCAL_SHA" in
@@ -284,6 +295,16 @@ BASELINE=$(wc -c < "$TELEMETRY" 2>/dev/null | tr -d ' ')
 [ -n "$BASELINE" ] || BASELINE=0
 info "telemetry baseline $BASELINE bytes"
 
+# THE CORPUS NEEDS A BASELINE TOO, AND SHIPPED WITHOUT ONE. `cp -R` of the whole
+# directory presents every capture ever taken on this machine as this run's --
+# `~/local-coder` already holds three from earlier work. Telemetry was baselined
+# in bytes from the start; this is the same rule arriving late.
+CORPUS_DIR="$REPO/.local-coder/corpus"
+CORPUS_BEFORE="$TMP_DIR/corpus-before.txt"
+ls "$CORPUS_DIR" 2>/dev/null | sort > "$CORPUS_BEFORE" || : > "$CORPUS_BEFORE"
+CORPUS_PRE=$(wc -l < "$CORPUS_BEFORE" | tr -d ' ')
+info "corpus entries already present: $CORPUS_PRE (these are NOT shipped)"
+
 RUN_ID="$(date -u +%Y-%m-%d)-mac-b12-phase3-$SHORT"
 OUT="${LC_RESULTS:-$HOME/lc-results}/$RUN_ID"
 mkdir -p "$OUT" || refuse "could not create $OUT"
@@ -428,12 +449,19 @@ node -e '
   fs.writeFileSync(out, buf.subarray(Number(baseline)));
 ' "$TELEMETRY" "$BASELINE" "$OUT/telemetry-slice.jsonl"
 info "telemetry slice $(wc -c < "$OUT/telemetry-slice.jsonl" | tr -d ' ') bytes"
-if [ -d "$REPO/.local-coder/corpus" ]; then
-  cp -R "$REPO/.local-coder/corpus" "$OUT/corpus" 2>/dev/null || true
-  info "corpus entries: $(ls "$OUT/corpus" 2>/dev/null | wc -l | tr -d ' ')"
-else
-  info "no .local-coder/corpus/ — the capture hook wrote nothing this run"
+# Only what THIS run captured. `comm -13` against the baseline listing, so a
+# machine with prior captures ships the new ones and says how many it withheld.
+CORPUS_NEW=0
+mkdir -p "$OUT/corpus"
+if [ -d "$CORPUS_DIR" ]; then
+  ls "$CORPUS_DIR" 2>/dev/null | sort > "$TMP_DIR/corpus-after.txt"
+  comm -13 "$CORPUS_BEFORE" "$TMP_DIR/corpus-after.txt" > "$TMP_DIR/corpus-new.txt" 2>/dev/null
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    cp -R "$CORPUS_DIR/$entry" "$OUT/corpus/" 2>/dev/null && CORPUS_NEW=$((CORPUS_NEW + 1))
+  done < "$TMP_DIR/corpus-new.txt"
 fi
+info "corpus FROM THIS RUN: $CORPUS_NEW ($CORPUS_PRE pre-existing, withheld)"
 
 mkdir -p "$REPO/evidence" || refuse "could not create $REPO/evidence"
 ART="$REPO/evidence/$(date -u +%Y-%m-%d)-mac-b12-$SHORT.scorer.json"
@@ -468,6 +496,8 @@ const o = {
   spendUsd: e.B12_SPENT,
   budgetUsd: e.B12_BUDGET,
   contextWindow: { atStart: e.B12_WIN_START, atEnd: e.B12_WIN_END, floor: e.B12_MIN_CTX },
+  // Counted apart so the archive cannot present an older capture as this run's.
+  corpus: { fromThisRun: e.B12_CORPUS_NEW, preExistingWithheld: e.B12_CORPUS_PRE },
   context: {
     commit: e.B12_SHA,
     branch: e.B12_BRANCH,
@@ -494,6 +524,7 @@ MERGE_OUT=$(B12_RUN_ID="$RUN_ID" B12_UNITS="$UNITS_JSON" B12_SPENT="$SPENT" B12_
   B12_WIN_START="$WINDOW_START" B12_WIN_END="$WINDOW_END" B12_MIN_CTX="$MIN_CONTEXT" \
   B12_SHA="$LOCAL_SHA" B12_BRANCH="$BRANCH" B12_CLAUDE_VER="$CLAUDE_VER" B12_CLAUDE_SHA="$CLAUDE_SHA" \
   B12_MODEL="$MODEL_CLAUDE" B12_LOCAL_MODEL="$MODEL_LOCAL" B12_RATES="$RATES_NOW" \
+  B12_CORPUS_NEW="$CORPUS_NEW" B12_CORPUS_PRE="$CORPUS_PRE" \
   node "$MERGE_JS" "$ART" 2>&1)
 case "$MERGE_OUT" in
   *B12-SCORER-OK*) ART_FINALISED=1; ok "$MERGE_OUT" ;;
@@ -506,8 +537,15 @@ cp "$ART" "$OUT/" 2>/dev/null || true
 next "Commit locally, and package for transport"
 # ---------------------------------------------------------------------------
 # The Mac cannot push. The bundle applies exactly; the diff is what gets read.
-if [ -n "$(git status --porcelain)" ]; then
-  git add -A >/dev/null 2>&1
+# SCOPED, NEVER `git add -A`. The blanket form sweeps in whatever else the
+# checkout was carrying -- on the machine this was written against, that would
+# have been an unrelated directory and the three untracked `contract-stability`
+# artifacts B16's holding status rests on, all under a commit message about the
+# scorer. A commit that claims one thing and contains another is worse than an
+# uncommitted file.
+if [ -n "$(git status --porcelain -- src/cost/b12 2>/dev/null)" ] || [ -f "$ART" ]; then
+  git add src/cost/b12 >/dev/null 2>&1
+  [ -f "$ART" ] && git add "$ART" >/dev/null 2>&1
   git commit -q -m "wip: scorer bodies authored by repair on the Mac ($RUN_ID)
 
 $CLOSED of $ATTEMPTED units closed. Written by scripts/b12-scorer-mac.sh; the
