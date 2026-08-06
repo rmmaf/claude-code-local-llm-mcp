@@ -53,12 +53,23 @@ export interface Rates {
    * is labeled an estimate; nothing in the absolute accounting touches it.
    */
   charsPerToken: number;
+  /**
+   * Characters of a tool result Claude Code will put in the context before it
+   * truncates. The counterfactual's "without the tool" world runs the same
+   * command through Bash, and THAT result is truncated too -- so a row may not
+   * claim more suppressed bytes than could ever have arrived. Measured at 30,000
+   * (B2, `run 2026-08-02-win-03`: a 30,136-character result stored as 30,000).
+   * Vendor-internal and version-specific: B12 requires it re-measured on the
+   * pinned build and recorded per run.
+   */
+  clientTruncationCap: number;
 }
 
 export const DEFAULT_RATES: Rates = {
   multipliers: DEFAULT_MULTIPLIERS,
   models: {},
   charsPerToken: 3.7,
+  clientTruncationCap: 30_000,
 };
 
 export const RATES_REL_PATH = path.join(".local-coder", "rates.json");
@@ -170,7 +181,12 @@ export async function loadRates(root: string): Promise<Rates> {
 
   const raw = parsed as Record<string, unknown>;
   const chars = raw.charsPerToken;
+  const cap = raw.clientTruncationCap;
   return {
+    clientTruncationCap:
+      typeof cap === "number" && Number.isFinite(cap) && cap > 0
+        ? cap
+        : DEFAULT_RATES.clientTruncationCap,
     multipliers: mergeMultipliers(raw.multipliers),
     models: parseModels(raw.models),
     charsPerToken:

@@ -10,9 +10,12 @@ import {
   buildCounterfactual,
   buildSessionReport,
   entryCostOfSegment,
+  invocationOwners,
+  lineagesOf,
   positionalMultiplier,
   priceUsage,
   scopeTelemetry,
+  unitsAddedByInstallation,
 } from "../src/cost/report.js";
 import {
   DEFAULT_MULTIPLIERS,
@@ -22,7 +25,7 @@ import {
   multipliersFor,
 } from "../src/cost/rates.js";
 import type { BilledRequest } from "../src/cost/transcript.js";
-import { listTranscripts, projectTranscriptDir, readTranscript } from "../src/cost/transcript.js";
+import { listSessionIds, listTranscripts, projectTranscriptDir, readTranscript, sessionFiles } from "../src/cost/transcript.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -155,6 +158,399 @@ describe("transcript parsing", () => {
     const transcript = await readTranscript(file);
     expect(transcript.requests[0]?.usage.cacheWrite5m).toBe(800);
     expect(transcript.requests[0]?.usage.cacheWrite1h).toBe(0);
+  });
+
+  it("reads a session as the union of its files, not just the main transcript", async () => {
+    // The defect that reopened G1. `listTranscripts` did a non-recursive readdir,
+    // so `<sessionId>/subagents/**` was invisible and a multi-agent session
+    // reported roughly half its cache tokens while printing "0 subagent" -- a gap
+    // that reads as a measurement.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    await fs.writeFile(path.join(dir, `${sid}.jsonl`), `${assistantRecord("req-main", { write1h: 100 })}\n`, "utf8");
+    const nested = path.join(dir, sid, "subagents", "workflows", "wf_1");
+    await fs.mkdir(nested, { recursive: true });
+    await fs.writeFile(
+      path.join(nested, "agent-x.jsonl"),
+      `${assistantRecord("req-sub", { write1h: 700, read: 5000 }, { isSidechain: true })}\n`,
+      "utf8"
+    );
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.files).toHaveLength(2);
+    expect(transcript.requests).toHaveLength(2);
+    expect(transcript.requests.reduce((n, r) => n + r.usage.cacheRead, 0)).toBe(5000);
+  });
+
+  it("admits a usage-bearing record whose grouping or dedup key is missing", async () => {
+    // `requestId` is a grouping key and `uuid` is a dedup key. B20's admission
+    // rule lists neither as a condition, and each implementation had quietly
+    // turned the key IT needed into one: the meter dropped records with no
+    // requestId, the oracle dropped records with no uuid. Opposite directions,
+    // both silent, so on a corpus where every record carries both — this one,
+    // 5,669 of 5,669 — the two sides agreed by accident.
+    clock = 0;
+    const root = tempRoot();
+    const bare = (extra: Record<string, unknown>, output: number): string => {
+      const r: Record<string, unknown> = {
+        type: "assistant",
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: output } },
+        ...extra,
+      };
+      return JSON.stringify(r);
+    };
+    const file = await writeTranscript(root, [
+      bare({ uuid: "u1", requestId: "req-1" }, 100),
+      bare({ uuid: "u2" }, 777), // no requestId: its own group of one
+      bare({ requestId: "req-3" }, 555), // no uuid: admitted, but undedupable
+    ]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(3);
+    expect(transcript.requests.reduce((n, r) => n + r.usage.output, 0)).toBe(1432);
+    // The undedupable one is counted AND reported: nothing can catch it if the
+    // same record ever turns up in a second file.
+    expect(transcript.admittedWithoutUuid).toBe(1);
+  });
+
+  it("never counts a REJECTED record as one it admitted", async () => {
+    // The counter used to be incremented in the record-level pass, which knows
+    // only "assistant plus usage" — half the admission predicate, missing the
+    // api-error and session checks. So an api-error record with no uuid was
+    // reported as admittedWithoutUuid: 1 AND excluded.apiError: 1. The same
+    // record, counted both ways, in one payload: a reader would believe an
+    // undedupable record had been billed when it had been thrown out.
+    //
+    // Two numbers computed from one rule drift apart the moment two places
+    // compute them. The count now happens where admission happens.
+    clock = 0;
+    const root = tempRoot();
+    const rejected = JSON.stringify({
+      type: "assistant",
+      sessionId: "sess-1",
+      isApiErrorMessage: true,
+      requestId: "req-2", // a real requestId, and no uuid
+      timestamp: new Date(1_700_000_000_000).toISOString(),
+      message: { model: "<synthetic>", content: [], usage: { output_tokens: 999 } },
+    });
+    const file = await writeTranscript(root, [assistantRecord("req-1", { output: 100 }), rejected]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.apiError).toBe(1);
+    expect(transcript.admittedWithoutUuid).toBe(0);
+  });
+
+  it("counts RECORDS, and neither that number nor the request count bounds the other", async () => {
+    // BOTH DIRECTIONS, because prose about this field has now been wrong twice in
+    // opposite ways. First an assertion that the counter can never exceed
+    // `requests.length` -- false, and it passed only because that fixture's
+    // counter is 0. Then a comment saying it "does exceed, whenever one group has
+    // several such records" -- also false: that condition holds in case B below
+    // and the counter is 2 against 4.
+    //
+    // A request is a `requestId` GROUP; this counter is over RECORDS, like every
+    // `excluded.*` field beside it. Neither number bounds the other, so the two
+    // are not comparable and this test says so in the only way that cannot rot.
+    //
+    // Counting per record is deliberate: the risk is that any ONE of them
+    // reappears in a second file with nothing able to catch it, so a per-group
+    // count can understate it -- equal when a group holds one such record, lower
+    // when it holds several. The oracle agrees exactly and goes further --
+    // `admittedWithoutUuid > 0` marks the session `suspect`, dropping it from
+    // B20's scored set rather than comparing it. All eleven real sessions report
+    // 0 on both sides, which is why no corpus run could have settled any of this.
+    const noUuid = (rid: string, output: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-1",
+        requestId: rid,
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: output } },
+      });
+
+    // A: one group of three uuid-less records. Counter 3, requests 1.
+    clock = 0;
+    const a = await readTranscript(
+      await writeTranscript(tempRoot(), [noUuid("req-1", 10), noUuid("req-1", 20), noUuid("req-1", 30)])
+    );
+    expect(a.requests).toHaveLength(1);
+    expect(a.admittedWithoutUuid).toBe(3);
+    expect(a.admittedWithoutUuid).toBeGreaterThan(a.requests.length);
+    // Still the LAST record of the group, unaffected by any of this.
+    expect(a.requests[0]?.usage.output).toBe(30);
+
+    // B: the same "one group with several such records", plus three groups that
+    // carry uuids. Counter 2, requests 4 -- the condition holds and it does not
+    // exceed, which is what refutes it as a sufficient one.
+    clock = 0;
+    const b = await readTranscript(
+      await writeTranscript(tempRoot(), [
+        noUuid("req-1", 10),
+        noUuid("req-1", 20),
+        assistantRecord("req-2", { output: 30 }),
+        assistantRecord("req-3", { output: 40 }),
+        assistantRecord("req-4", { output: 50 }),
+      ])
+    );
+    expect(b.requests).toHaveLength(4);
+    expect(b.admittedWithoutUuid).toBe(2);
+    expect(b.admittedWithoutUuid).toBeLessThan(b.requests.length);
+  });
+
+  it("counts a record once when the same uuid appears in two files of one session", async () => {
+    // RECORD identity across the union. Without it the union double-counts, and
+    // the invariant `|uuids(main) U uuids(sub)| == |main| + |sub|` is what B20's
+    // oracle checks on the other side.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    const shared = assistantRecord("req-1", { write1h: 100 });
+    await fs.writeFile(path.join(dir, `${sid}.jsonl`), `${shared}\n`, "utf8");
+    await fs.mkdir(path.join(dir, sid, "subagents"), { recursive: true });
+    await fs.writeFile(path.join(dir, sid, "subagents", "agent-x.jsonl"), `${shared}\n`, "utf8");
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.duplicateUuid).toBe(1);
+  });
+
+  it("never lets a rejected api-error record decide which session the files belong to", async () => {
+    // An api-error record is type "assistant" with a real requestId, and a retry
+    // writes one FIRST. When the anchor was "the first assistant record carrying
+    // a sessionId", one of these at the head of a file — carrying a different
+    // session — anchored the read to a session that owns nothing here, every
+    // legitimate record was excluded as foreign, and the CLI printed NOTHING.
+    // A record the admission rule refuses to count must not decide what counts.
+    clock = 0;
+    const root = tempRoot();
+    const file = await writeTranscript(root, [
+      assistantRecord("req-err", {}, { sessionId: "a-different-session", isApiErrorMessage: true }),
+      assistantRecord("req-1", { write1h: 100 }),
+      assistantRecord("req-2", { write1h: 200 }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.sessionId).toBe("sess-1");
+    expect(transcript.requests).toHaveLength(2);
+    expect(transcript.requests.reduce((n, r) => n + r.usage.cacheWrite1h, 0)).toBe(300);
+  });
+
+  it("counts records out rather than losing them when an explicit session id matches nothing", async () => {
+    // The other half: zero admitted is a fact that must be reportable, not an
+    // absence. Every exclusion is counted so a caller can tell "this session had
+    // no traffic" from "this read found none of it".
+    clock = 0;
+    const root = tempRoot();
+    const file = await writeTranscript(root, [assistantRecord("req-1", { write1h: 100 })]);
+
+    const transcript = await readTranscript(file, "some-other-session");
+    expect(transcript.requests).toHaveLength(0);
+    expect(transcript.excluded.foreignSession).toBe(1);
+  });
+
+  it("counts a tool result once when its record appears in two files, not just billed requests", async () => {
+    // The admission rule was applied to the billed-request loop and not to the
+    // one over tool results, which iterates the SAME records. On this project
+    // that double-counted 3 records and 60,439 bytes. Applying the rule per
+    // consumer is how consumers drift apart, so it is applied once, before both.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    const result = JSON.stringify({
+      type: "user",
+      uuid: "tool-result-1",
+      sessionId: sid,
+      timestamp: new Date(1_700_000_000_000).toISOString(),
+      message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+      toolUseResult: { stdout: "x".repeat(1000), stderr: "", interrupted: false, isImage: false },
+    });
+    await fs.writeFile(
+      path.join(dir, `${sid}.jsonl`),
+      `${assistantRecord("req-1", { write1h: 100 })}\n${result}\n`,
+      "utf8"
+    );
+    await fs.mkdir(path.join(dir, sid, "subagents"), { recursive: true });
+    await fs.writeFile(path.join(dir, sid, "subagents", "agent-x.jsonl"), `${result}\n`, "utf8");
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.toolResults).toHaveLength(1);
+    expect(transcript.excluded.duplicateUuid).toBe(1);
+  });
+
+  it("excludes a record that sits under the session directory but belongs to another session", async () => {
+    // A file under a directory is not thereby a request OF that session. The
+    // record says whose it is; believe the record, not the path.
+    clock = 0;
+    const dir = tempRoot();
+    const sid = "sess-1";
+    await fs.writeFile(path.join(dir, `${sid}.jsonl`), `${assistantRecord("req-1", { write1h: 100 })}\n`, "utf8");
+    await fs.mkdir(path.join(dir, sid, "tool-results"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, sid, "tool-results", "other.jsonl"),
+      `${assistantRecord("req-9", { write1h: 9999 }, { sessionId: "some-other-session" })}\n`,
+      "utf8"
+    );
+
+    const transcript = await readTranscript(await sessionFiles(dir, sid));
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.foreignSession).toBe(1);
+    expect(transcript.requests[0]?.usage.cacheWrite1h).toBe(100);
+  });
+
+  it("excludes api-error records by their own fields, never by usage reading zero", async () => {
+    clock = 0;
+    const root = tempRoot();
+    const file = await writeTranscript(root, [
+      // A legitimate record whose usage is all zeros must still be admitted.
+      assistantRecord("req-1", {}),
+      assistantRecord("req-2", { output: 9 }, { isApiErrorMessage: true }),
+      assistantRecord("req-3", { output: 9 }, { message: { model: "<synthetic>", content: [], usage: { output_tokens: 9 } } }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(1);
+    expect(transcript.excluded.apiError).toBe(2);
+    expect(transcript.requests[0]?.usage.output).toBe(0);
+  });
+
+  it("takes the LAST record's usage in a requestId group, because the first one is partial", async () => {
+    // The real shape: intermediate records carry a partial completion count and
+    // the terminal record carries the whole answer. Over this project 327 of
+    // 1,647 multi-record groups differ, and in 327 of 327 the first is smaller.
+    // Keeping the first dropped 655,570 output tokens, 19.27% of all output, in
+    // the class carrying the 5.0x multiplier.
+    clock = 0;
+    const root = tempRoot();
+    const partial = (output: number, tool: string): string =>
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-1",
+        sessionId: "s",
+        uuid: `u-${tool}-${output}`,
+        timestamp: new Date(1_700_000_000_000 + output).toISOString(),
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: `tu-${output}`, name: tool }],
+          usage: {
+            input_tokens: 2,
+            cache_creation_input_tokens: 16_667,
+            cache_read_input_tokens: 30_034,
+            output_tokens: output,
+            cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 16_667 },
+          },
+        },
+      });
+    const file = await writeTranscript(root, [partial(5, "Bash"), partial(5, "Read"), partial(695, "Edit")]);
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(1);
+    const [request] = transcript.requests;
+    expect(request?.usage.output).toBe(695);
+    // The repeated fields are unchanged — usage repeats, it does not accumulate.
+    expect(request?.usage.cacheRead).toBe(30_034);
+    expect(request?.usage.cacheWrite5m).toBe(16_667);
+    // Every tool_use block is still collected, from every record of the group.
+    expect(request?.toolUses.map((t) => t.name)).toEqual(["Bash", "Read", "Edit"]);
+  });
+
+  it("places a request where it started even though its usage comes from the last record", async () => {
+    // timestampMs, thread and segment stay with the FIRST record: a request is
+    // placed in the conversation where it began, and only the counts move.
+    clock = 0;
+    const root = tempRoot();
+    const at = (ms: number, output: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-1",
+        sessionId: "s",
+        uuid: `u-${ms}`,
+        timestamp: new Date(ms).toISOString(),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 0, output_tokens: output },
+        },
+      });
+    const file = await writeTranscript(root, [at(1_700_000_000_000, 1), at(1_700_000_900_000, 900)]);
+
+    const [request] = (await readTranscript(file)).requests;
+    expect(request?.usage.output).toBe(900);
+    expect(request?.timestampMs).toBe(1_700_000_000_000);
+  });
+
+  it("refuses a TTL split that disagrees with its own total, per the rule the comment always stated", async () => {
+    // 15 records in this project carry exactly this: a top-level total of 0
+    // against an ephemeral_1h between 2,452 and 4,911. The guard read
+    // `splitTotal > 0`, so the split was used anyway and the meter booked 42,558
+    // cacheWrite-1h tokens the top-level field calls zero — in the class carrying
+    // the 2.0x multiplier, the most expensive of the five.
+    const root = tempRoot();
+    const file = await writeTranscript(root, [
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-1",
+        sessionId: "s",
+        uuid: "u1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: {
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 0,
+            cache_creation: { ephemeral_1h_input_tokens: 2452, ephemeral_5m_input_tokens: 0 },
+          },
+        },
+      }),
+    ]);
+
+    const usage = (await readTranscript(file)).requests[0]?.usage;
+    expect(usage?.cacheWrite1h).toBe(0);
+    expect(usage?.cacheWrite5m).toBe(0);
+  });
+
+  it("keeps the two cache-write classes summing to the top-level total, split or not", async () => {
+    // The property that makes this side agree with scripts/session-token-walk.mjs
+    // by construction rather than by luck: whatever the split says, the classes
+    // sum to cache_creation_input_tokens.
+    const root = tempRoot();
+    const usageFor = (total: number, h: number, m: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        requestId: `req-${total}-${h}-${m}`,
+        sessionId: "s",
+        uuid: `u-${total}-${h}-${m}`,
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: {
+            cache_creation_input_tokens: total,
+            cache_read_input_tokens: 0,
+            output_tokens: 0,
+            cache_creation: { ephemeral_1h_input_tokens: h, ephemeral_5m_input_tokens: m },
+          },
+        },
+      });
+    const cases: Array<[number, number, number]> = [
+      [1000, 1000, 0], // consistent, all 1h
+      [1000, 400, 600], // consistent, split
+      [0, 2452, 0], // split exceeds total — the real shape
+      [900, 400, 100], // split below total — never seen here, still must balance
+    ];
+    const file = await writeTranscript(root, cases.map(([t, h, m]) => usageFor(t, h, m)));
+
+    const transcript = await readTranscript(file);
+    expect(transcript.requests).toHaveLength(4);
+    for (const [i, [total]] of cases.entries()) {
+      const u = transcript.requests[i]?.usage;
+      expect(u!.cacheWrite1h + u!.cacheWrite5m).toBe(total);
+    }
   });
 
   it("gives each subagent thread its own index and segment size", async () => {
@@ -599,7 +995,160 @@ describe("telemetry and the counterfactual", () => {
     expect(result.unverifiable).toBe(0);
     expect(result.byTool[0]?.calls).toBe(1);
     expect(result.byTool[0]?.turnsCollapsed).toBe(0);
-    expect(result.byTool[0]?.bytesSuppressed).toBe(3700);
+    expect(result.byTool[0]?.bytes.clampedUncapped).toBe(3700);
+  });
+
+  it("refuses a call whose invocation id two sessions both carry, on both sides", async () => {
+    // The id join was built to beat the timestamp window, and it does. But an
+    // `invocation_id` is CALL identity and it was being read as SESSION
+    // OWNERSHIP. Claude Code writes a resumed or forked conversation's inherited
+    // records into the new session file, so one `gate` result is physically
+    // present in every descendant and EVERY descendant's join matches it.
+    //
+    // Measured on this project before the fix: one id in four transcripts, its
+    // saving credited four times -- 21 gate rows on disk against 24 calls
+    // attributed, 3,756,512 suppressed bytes against 4,043,702, 1.076x. The four
+    // sessions shared 347 to 692 records pairwise and three had the same first
+    // timestamp, which is what a fork looks like on disk.
+    //
+    // No rule recovers the owner from the files alone, so both sides refuse it
+    // and report the magnitude. Under-counting is the safe direction here:
+    // `G-stop` STOPS the project on a low number.
+    clock = 0;
+    const shared = "33333333-3333-4333-8333-333333333333";
+    const at500 = new Date(1_700_000_000_500).toISOString();
+    const lineage = async (): Promise<string> => {
+      clock = 0;
+      return writeTranscript(tempRoot(), [
+        assistantRecord("req-1", { write1h: 100 }, {
+          message: {
+            model: "test-model",
+            content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+            usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+          },
+        }),
+        JSON.stringify({
+          type: "user",
+          uuid: "res-1",
+          parentUuid: null,
+          sessionId: "sess-1",
+          timestamp: at500,
+          message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+          toolUseResult: {
+            content: [{ type: "text", text: JSON.stringify({ passed: false, invocation_id: shared }) }],
+          },
+        }),
+        assistantRecord("req-2", { write1h: 100, read: 1000 }),
+      ]);
+    };
+    const parent = await readTranscript(await lineage());
+    const child = await readTranscript(await lineage());
+
+    // The set is what makes it visible; neither transcript can see it alone.
+    const ambiguous = invocationOwners([parent, child]);
+    expect([...ambiguous]).toEqual([shared]);
+    expect([...invocationOwners([parent])]).toEqual([]);
+
+    // AND THE UNIT MATTERS. These two share every requestId, so they are one
+    // lineage — a compaction continuation, not two conversations. Told to group
+    // by lineage, the same call is NOT ambiguous, because a task window inside a
+    // lineage owns it outright. Told nothing, it groups per transcript, which is
+    // what a per-session report needs: four sessions that each print a total may
+    // not each print the same call.
+    expect([...invocationOwners([parent, child], lineagesOf([parent, child]))]).toEqual([]);
+    expect(lineagesOf([parent, child])[0]).toBe(lineagesOf([parent, child])[1]);
+
+    const row = {
+      ts: at500,
+      invocation_id: shared,
+      tool: "gate",
+      bytes_raw: 7400,
+      bytes_returned: 3700,
+      turns_collapsed: 0,
+      latency_ms: 1,
+    };
+    for (const transcript of [parent, child]) {
+      const result = buildCounterfactual(
+        transcript,
+        [row],
+        DEFAULT_RATES,
+        buildSessionReport(transcript, DEFAULT_RATES),
+        ambiguous
+      );
+      expect(result.ambiguous).toBe(1);
+      expect(result.byTool).toEqual([]);
+      expect(result.unitsTotal).toBe(0);
+      // Refused, not vanished: the magnitude is reported so the exclusion is
+      // visible rather than reading as a session that simply saved nothing.
+      expect(result.ambiguousUnits.units).toBeGreaterThan(0);
+      expect(result.ambiguousUnits.unsized).toBe(0);
+      // AND THE FRACTION IS WITHHELD, NOT ZERO. This session's only telemetry
+      // was a real saving whose owner is unknown, so 0 would assert it saved
+      // nothing -- a different false claim, and the dangerous one, since G-stop
+      // stops the project on a low number. It reported 0.0000 before this.
+      expect(result.savedFraction).toBeNull();
+      // Every refusal class in ONE number, so a consumer deciding whether there
+      // is anything to report cannot miss a class that was added later.
+      expect(result.refusedRows).toBe(1);
+    }
+
+    // Without the set it is still credited once -- which is the pre-fix
+    // behaviour, and the reason this is a defect of the CALLER's knowledge and
+    // not of the join itself.
+    const alone = buildCounterfactual(parent, [row], DEFAULT_RATES, buildSessionReport(parent, DEFAULT_RATES));
+    expect(alone.byTool[0]?.calls).toBe(1);
+  });
+
+  it("withholds the saved fraction rather than reporting one built on timestamps", async () => {
+    // `provenanceUnavailable` means this transcript DOES call our tools but no
+    // result echoes an invocation id, so the exact join is gone and only the
+    // timestamp fallback remains -- the very thing that cannot tell two sessions
+    // apart. Reporting a number from it is worse than reporting none: `G-stop`
+    // stops this project below 15%, so a confident low figure IS the decision.
+    // Same treatment as session USD, withheld unless every model is priced.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_500).toISOString(),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ passed: false }) }] }, // no echo
+      }),
+      assistantRecord("req-2", { write1h: 100, read: 1000 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [
+        {
+          ts: new Date(1_700_000_000_500).toISOString(),
+          invocation_id: "44444444-4444-4444-8444-444444444444",
+          tool: "gate",
+          bytes_raw: 7400,
+          bytes_returned: 3700,
+          turns_collapsed: 0,
+          latency_ms: 1,
+        },
+      ],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.provenanceUnavailable).toBe(true);
+    // WITHHELD, and null is not 0: the units are still reported so the reader
+    // can see there was something to withhold.
+    expect(result.savedFraction).toBeNull();
+    expect(result.unitsTotal).toBeGreaterThan(0);
   });
 
   it("keeps the time window on every row the id join cannot vouch for", async () => {
@@ -735,7 +1284,7 @@ describe("telemetry and the counterfactual", () => {
     // The row HAS an id — it is the transcript that carries none — so this is a
     // broken echo, not an unverifiable row, and it still counts.
     expect(result.unverifiable).toBe(0);
-    expect(result.byTool[0]?.bytesSuppressed).toBe(3700);
+    expect(result.byTool[0]?.bytes.clampedUncapped).toBe(3700);
   });
 
   it("prices a subagent's tool call against the subagent's own thread", async () => {
@@ -806,6 +1355,189 @@ describe("telemetry and the counterfactual", () => {
     expect(result.byTool[0]?.unitsFromTurnCollapse).toBeCloseTo(400 * 0.1, 6);
   });
 
+  it("reports the magnitude of a refusal on a subagent thread, instead of zero", async () => {
+    // The crediting path resolves the calling thread; the REFUSAL path shipped
+    // hardcoding "main" -- the same bug inverted. On this fixture the only
+    // main-thread request is at t=0, before the call at t=600, so no main
+    // request matches and the refused magnitude came back 0. A refusal that
+    // reports "nothing was refused" is precisely the silent exclusion the
+    // counter was added to prevent, and sessions here run to 78% subagent.
+    clock = 0;
+    const id = "33333333-3333-4333-8333-333333333333";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-main-1", { write1h: 100, read: 50_000 }), // t = 0, main, BEFORE the call
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub-1",
+        sessionId: "sess-1",
+        uuid: "s1",
+        parentUuid: null,
+        isSidechain: true,
+        timestamp: at(500),
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-x", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: "s1",
+        sessionId: "sess-1",
+        isSidechain: true,
+        timestamp: at(600),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-x" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub-2",
+        sessionId: "sess-1",
+        uuid: "s2",
+        parentUuid: "s1",
+        isSidechain: true,
+        timestamp: at(900),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 400, output_tokens: 0 },
+        },
+      }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(600), invocation_id: id, tool: "gate", bytes_raw: 40_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id]) // another session carries it too, so it is refused
+    );
+
+    expect(result.ambiguous).toBe(1);
+    expect(result.byTool).toEqual([]);
+    // The point of the test: refused, and the magnitude is KNOWN and non-zero.
+    expect(result.ambiguousUnits.units).toBeGreaterThan(0);
+    expect(result.ambiguousUnits.unsized).toBe(0);
+  });
+
+  it("counts a refusal it cannot size instead of summing the unknown as zero", async () => {
+    // No request follows the call in any thread, so there is nothing to price
+    // the refusal against. The amount withheld is UNKNOWN, and a sum cannot say
+    // "plus some unknown amount" -- so it is counted separately rather than
+    // folded in as 0, which would read as "we refused nothing worth having".
+    clock = 0;
+    const id = "55555555-5555-4555-8555-555555555555";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      // and nothing after it: the session ends here.
+    ]);
+
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(9_000), invocation_id: id, tool: "gate", bytes_raw: 40_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id])
+    );
+
+    expect(result.ambiguous).toBe(1);
+    // Not "0 units refused": NO units sized, plus one refusal nobody could size.
+    expect(result.ambiguousUnits.units).toBe(0);
+    expect(result.ambiguousUnits.unsized).toBe(1);
+  });
+
+  it("does not borrow another thread's request to size a subagent's refusal", async () => {
+    // The first fix for the hardcoded-"main" bug replaced it with a FALLBACK to
+    // main, which is worse than the bug it replaced: it does not compute an
+    // approximate answer, it computes a DIFFERENT one — against a thread that
+    // never paid for the call — and returns it as known, with the unsized
+    // counter reading 0.
+    //
+    // Measured on exactly this fixture before the fallback was removed:
+    // 283,176 units reported as known, of which 270,000 came from the main
+    // thread's cacheRead of 900,000 (turns_collapsed 3 x 900,000 x 0.1). The
+    // subagent's own thread has nothing after the call at all, so the honest
+    // answer is that the magnitude is unknown.
+    clock = 0;
+    const id = "77777777-7777-4777-8777-777777777777";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub-1",
+        sessionId: "sess-1",
+        uuid: "s1",
+        parentUuid: null,
+        isSidechain: true,
+        timestamp: at(500),
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-x", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: "s1",
+        sessionId: "sess-1",
+        isSidechain: true,
+        timestamp: at(600),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-x" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      // Nothing follows on the SUBAGENT thread. A main-thread request does
+      // follow, and it is the one the fallback used to reach for.
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-main-2",
+        sessionId: "sess-1",
+        uuid: "m2",
+        parentUuid: null,
+        isSidechain: false,
+        timestamp: at(900),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: { cache_creation_input_tokens: 10, cache_read_input_tokens: 900_000, output_tokens: 0 },
+        },
+      }),
+    ]);
+
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(600), invocation_id: id, tool: "gate", bytes_raw: 40_000, bytes_returned: 1_000, turns_collapsed: 3, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id])
+    );
+
+    expect(result.ambiguous).toBe(1);
+    expect(result.ambiguousUnits.unsized).toBe(1);
+    expect(result.ambiguousUnits.units).toBe(0);
+  });
+
   it("values suppressed bytes with the multiplier of the request that would have cached them", async () => {
     clock = 0;
     const root = tempRoot();
@@ -854,7 +1586,13 @@ describe("telemetry and the counterfactual", () => {
     const gate = result.byTool[0];
     expect(gate?.tool).toBe("gate");
     expect(gate?.unmatched).toBe(0);
-    expect(gate?.unitsFromSuppression).toBeCloseTo(2000, 6);
+    expect(gate?.unitsFromSuppression.clampedUncapped).toBeCloseTo(2000, 6);
+    // 3,700 raw is under the 30,000 truncation ceiling, so capping changes nothing
+    // and the row is byte-positive, so signing changes nothing either. All three
+    // agree here ON PURPOSE: the variants must not move a case that has no reason
+    // to move.
+    expect(gate?.unitsFromSuppression.signedUncapped).toBeCloseTo(2000, 6);
+    expect(gate?.unitsFromSuppression.signedCapped).toBeCloseTo(2000, 6);
     expect(gate?.unitsFromTurnCollapse).toBe(0);
   });
 
@@ -899,10 +1637,140 @@ describe("telemetry and the counterfactual", () => {
       session
     );
 
-    // 3 turns x 50,000 cached tokens x 0.1 = 15,000 units, and it is a floor.
+    // 3 turns x 50,000 cached tokens x 0.1 = 15,000 units -- REPORTED.
     expect(result.byTool[0]?.unitsFromTurnCollapse).toBeCloseTo(15_000, 6);
-    expect(result.savedFraction).toBeGreaterThan(0);
-    expect(result.savedFraction).toBeLessThan(1);
+    // AND IN NO SCORED NUMBER. `turns_collapsed` is a caller argument: `gate`
+    // derives it from the `category` the caller passed and `repair` writes
+    // `rounds.length` whether or not it closed the failure. Worse, the term
+    // multiplies that self-declared count by the accumulated context while the
+    // denominator counts the same cache read once, so padding the context before
+    // a collapsing call raises the numerator faster than the denominator.
+    //
+    // This row suppressed no bytes at all, so with turn collapse excluded there
+    // is nothing left to credit and the fraction is 0 -- which is the negative
+    // control for the exclusion: it fired.
+    expect(result.byTool[0]?.unitsTotal).toBe(0);
+    expect(result.savedFraction).toBe(0);
+  });
+
+  it("charges the installed tool schemas once per segment and re-read after", async () => {
+    // B12's harm is over tasks with the server INSTALLED, not invoked. The seven
+    // schemas measured 15,227 characters of `tools/list` wire JSON on this build
+    // plus a 900-character policy block, and they sit in the system prompt of
+    // every thread whether or not a tool is called. Omitting this term lets an
+    // unused tool look free.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }),
+      assistantRecord("req-2", { write1h: 100 }),
+      assistantRecord("req-3", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const chars = 16_127;
+    const units = unitsAddedByInstallation(transcript, DEFAULT_RATES, chars);
+
+    // One main segment of 3 requests: entering at position 0 costs the 1h write
+    // (2.0) plus two re-reads (0.1 each) = 2.2 per token.
+    expect(units).toBeCloseTo((chars / DEFAULT_RATES.charsPerToken) * 2.2, 6);
+    // It is NOT free and it is NOT tiny: ~4,360 tokens of context on this build.
+    expect(units).toBeGreaterThan(9_000);
+  });
+
+  it("keeps a call that ADDED bytes as the negative it is", async () => {
+    // The shipped clamp records `max(0, raw - returned)`, so a tool call that
+    // returned more than the operation produced counts as having saved nothing
+    // rather than as having cost something. That is not rare here: a live gate
+    // row in this project ran 431 raw against 1,205 returned, and
+    // `run 2026-08-04-mac-09` measured tsc-gated `repair` net negative 12 of 12.
+    // B12 may not consume the clamped figure; both are reported.
+    clock = 0;
+    const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      // The real shape of the measured row: a single type error summarised into
+      // a larger structured payload than the raw output it described.
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 431, bytes_returned: 1_205, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const gate = result.byTool[0];
+    expect(gate?.rowsNetNegative).toBe(1);
+    expect(gate?.bytes.clampedUncapped).toBe(0);
+    expect(gate?.bytes.signedUncapped).toBe(-774);
+    expect(gate?.bytes.signedCapped).toBe(-774); // 431 is far under the ceiling
+    // The scored figure is the signed one, so the call is a COST here.
+    expect(gate?.unitsTotal).toBeLessThan(0);
+    expect(gate?.unitsFromSuppression.clampedUncapped).toBe(0);
+  });
+
+  it("refuses to credit bytes that could never have reached a context", async () => {
+    // The counterfactual world is "the agent ran this through Bash", and Claude
+    // Code truncates a tool result at `clientTruncationCap` characters before it
+    // enters the context -- B2 measured a 30,136-character result stored as
+    // 30,000. So a tool that summarised 1.9 MB did not save 1.9 MB of context;
+    // at most the ceiling could ever have arrived.
+    clock = 0;
+    const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    // B3's measured npm-test mode: 1,919,136 raw returned as 6,859.
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 1_919_136, bytes_returned: 6_859, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const gate = result.byTool[0];
+    expect(gate?.bytes.signedUncapped).toBe(1_919_136 - 6_859);
+    expect(gate?.bytes.signedCapped).toBe(DEFAULT_RATES.clientTruncationCap - 6_859);
+    // 82x apart on this row, which is the size of the modelling choice.
+    expect(gate!.bytes.signedUncapped / gate!.bytes.signedCapped).toBeGreaterThan(80);
+    expect(gate?.unitsTotal).toBeCloseTo(
+      ((DEFAULT_RATES.clientTruncationCap - 6_859) / DEFAULT_RATES.charsPerToken) * 2.0,
+      6
+    );
   });
 
   it("counts telemetry with no later request as unmatched rather than free saving", async () => {
@@ -985,7 +1853,7 @@ describe("telemetry and the counterfactual", () => {
     expect(result.unitsTotal).toBe(0);
     expect(result.savedFraction).toBe(0);
     // Withheld, not hidden: the magnitude is reported so the exclusion is visible.
-    expect(result.unverifiableUnits).toBeGreaterThan(0);
+    expect(result.unverifiableUnits.units).toBeGreaterThan(0);
   });
 });
 
@@ -997,12 +1865,94 @@ describe("telemetry and the counterfactual", () => {
 describe("the cost-meter CLI", () => {
   const execFileAsync = promisify(execFile);
 
+  it("reports a session that admitted nothing instead of printing nothing at all", async () => {
+    // Skipping on `requests === 0` printed no session line, no zero and no
+    // counts, so a session read through the wrong anchor became invisible rather
+    // than merely wrong. A session whose only assistant records are api-errors
+    // reaches the same branch honestly, and must still be visible.
+    clock = 0;
+    const root = tempRoot();
+    const transcripts = tempRoot();
+    await fs.writeFile(
+      path.join(transcripts, "sess-1.jsonl"),
+      `${[
+        assistantRecord("req-a", {}, { isApiErrorMessage: true }),
+        assistantRecord("req-b", {}, { isApiErrorMessage: true }),
+      ].join("\n")}\n`,
+      "utf8"
+    );
+
+    const cli = path.join(import.meta.dirname, "..", "dist", "cost", "cli.js");
+    const { stdout } = await execFileAsync(process.execPath, [cli, "--dir", transcripts, "--root", root]);
+
+    expect(stdout).toContain("0 billed requests");
+    expect(stdout).toContain("apiError 2");
+    expect(stdout).toContain("mis-read");
+  }, 30_000);
+
+  it("attributes to the session that was asked for, or to nothing at all", async () => {
+    // --session X selects <X>.jsonl AND everything under <X>/. Discarding X and
+    // anchoring on the first billable record let the report come back labelled Y
+    // -- with X's own subagent records then excluded as foreign, silently. It
+    // also made the meter identify a session by a different rule than the oracle
+    // does, so B20's residual of 0 would have been agreement by coincidence.
+    clock = 0;
+    const root = tempRoot();
+    const transcripts = tempRoot();
+    // The file is named for one session and holds another's records.
+    await fs.writeFile(
+      path.join(transcripts, "sess-1.jsonl"),
+      `${assistantRecord("req-1", { write1h: 100 }, { sessionId: "a-different-session" })}
+`,
+      "utf8"
+    );
+
+    const cli = path.join(import.meta.dirname, "..", "dist", "cost", "cli.js");
+    const { stdout } = await execFileAsync(process.execPath, [cli, "--dir", transcripts, "--root", root, "--json"]);
+    const payload = JSON.parse(stdout) as Array<{ session: { sessionId: string; requests: number; excluded: Record<string, number> } }>;
+
+    expect(payload).toHaveLength(1);
+    // Never Y's id on a report the operator asked about X.
+    expect(payload[0]?.session.sessionId).toBe("sess-1");
+    expect(payload[0]?.session.requests).toBe(0);
+    expect(payload[0]?.session.excluded.foreignSession).toBe(1);
+  }, 30_000);
+
+  it("keeps --json parseable, and the admitted-nothing session inside the payload", async () => {
+    // The zero-request branch wrote its human line unconditionally, so --json
+    // emitted ANSI prose and then the array: unparseable, and B20 requires these
+    // artifacts to be machine-produced. It also skipped before pushing, so the
+    // session was missing from the payload entirely — the same invisibility one
+    // layer out, this time inside the evidence file.
+    clock = 0;
+    const root = tempRoot();
+    const transcripts = tempRoot();
+    await fs.writeFile(
+      path.join(transcripts, "sess-1.jsonl"),
+      `${[
+        assistantRecord("req-a", {}, { isApiErrorMessage: true }),
+        assistantRecord("req-b", {}, { isApiErrorMessage: true }),
+      ].join("\n")}\n`,
+      "utf8"
+    );
+
+    const cli = path.join(import.meta.dirname, "..", "dist", "cost", "cli.js");
+    const { stdout } = await execFileAsync(process.execPath, [cli, "--dir", transcripts, "--root", root, "--json"]);
+
+    const payload = JSON.parse(stdout) as Array<{ session: { requests: number; excluded: Record<string, number> } }>;
+    expect(payload).toHaveLength(1);
+    expect(payload[0]?.session.requests).toBe(0);
+    expect(payload[0]?.session.excluded.apiError).toBe(2);
+    // Not one byte of prose: a consumer parses stdout whole.
+    expect(stdout.trimStart().startsWith("[")).toBe(true);
+  }, 30_000);
+
   it("shows withheld rows even when nothing at all was counted", async () => {
     clock = 0;
     const root = tempRoot();
     const transcripts = tempRoot();
     await fs.writeFile(
-      path.join(transcripts, "session.jsonl"),
+      path.join(transcripts, "sess-1.jsonl"),
       `${[
         assistantRecord("req-1", { write1h: 100 }),
         assistantRecord("req-2", { write1h: 100, read: 1000 }),
@@ -1050,7 +2000,7 @@ describe("the cost-meter CLI", () => {
     // A session that DID call gate, whose result carries no invocation id, so
     // `provenanceUnavailable` is true — while the telemetry log does not exist.
     await fs.writeFile(
-      path.join(transcripts, "session.jsonl"),
+      path.join(transcripts, "sess-1.jsonl"),
       `${[
         assistantRecord("req-1", { write1h: 100 }, {
           message: {
@@ -1094,7 +2044,7 @@ describe("the cost-meter CLI", () => {
     const root = tempRoot();
     const transcripts = tempRoot();
     await fs.writeFile(
-      path.join(transcripts, "session.jsonl"),
+      path.join(transcripts, "sess-1.jsonl"),
       `${[
         assistantRecord("req-1", { write1h: 100 }),
         assistantRecord("req-2", { write1h: 100, read: 1000 }),
@@ -1132,6 +2082,365 @@ describe("the cost-meter CLI", () => {
     expect(stdout).not.toContain("savings appear once the local tools run");
     expect(stdout).not.toContain("every telemetry row in range was withheld");
   }, 30_000);
+});
+
+describe("the B12 harness", () => {
+  const runNode = promisify(execFile);
+  const BUDGET = 45 * 60 * 1000;
+  const classify = async (over: Record<string, unknown>): Promise<{ outcome: string; censored: boolean; valid: boolean; reasons: string[] }> => {
+    const mod = await import("../scripts/b12-run.mjs");
+    return (mod as { classifyRun: (o: unknown) => { outcome: string; censored: boolean; valid: boolean; reasons: string[] } }).classifyRun({
+      exitCode: 0,
+      signal: null,
+      errorCode: null,
+      wallMs: 1_000,
+      budgetMs: BUDGET,
+      originatedCount: 12,
+      slugsBefore: 3,
+      slugsAfter: 3,
+      ...over,
+    });
+  };
+
+  it("keeps a budget timeout as a censored observation, not an invalid one", async () => {
+    // `spawnSync` reports a timeout as ETIMEDOUT with a null exit status, and a
+    // missing binary the same way but with ENOENT. Collapsing them into one
+    // `failed` flag marked a timed-out arm INVALID and told the reader "the CLI
+    // could not be spawned at all", which is not what happened.
+    //
+    // The direction is the point. The design keeps a censored arm as a LOWER
+    // BOUND precisely "because dropping budget-exhausted control arms removes
+    // exactly the evidence that favours the tools" — control arms are the long
+    // ones, having no gate to answer in a single call. Invalidating them biases
+    // toward a hold, which is the error that keeps a project running on a
+    // premise that stopped being true.
+    const timedOut = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" });
+    expect(timedOut.censored).toBe(true);
+    expect(timedOut.valid).toBe(true);
+    expect(timedOut.reasons).toEqual([]);
+
+    // A SIGTERM WITHOUT `ETIMEDOUT` IS NOT OUR BUDGET. This assertion originally
+    // read `censored: true` and encoded the defect it was meant to guard:
+    // `spawnSync` sets ETIMEDOUT exactly when IT does the killing, so a SIGTERM
+    // without one means something else ended the process, and calling that
+    // censored accepts an outside kill as a budget exhaustion.
+    const otherKill = await classify({ exitCode: null, signal: "SIGTERM", wallMs: BUDGET });
+    expect(otherKill.censored).toBe(false);
+    expect(otherKill.valid).toBe(false);
+
+    // A censored arm need not have originated anything: killed before its first
+    // billed request, it still measures "did not finish inside the budget".
+    const killedEarly = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT", originatedCount: 0 });
+    expect(killedEarly.censored).toBe(true);
+    expect(killedEarly.valid).toBe(true);
+
+    // But a broken run is still broken, and says which.
+    const noBinary = await classify({ exitCode: null, errorCode: "ENOENT" });
+    expect(noBinary.censored).toBe(false);
+    expect(noBinary.valid).toBe(false);
+    expect(noBinary.reasons[0]).toContain("ENOENT");
+
+    // And an arm that ran to completion recording nothing is not an observation.
+    const emptyButFinished = await classify({ originatedCount: 0 });
+    expect(emptyButFinished.censored).toBe(false);
+    expect(emptyButFinished.valid).toBe(false);
+    expect(emptyButFinished.reasons[0]).toContain("no requestId was originated");
+  });
+
+  it("refuses an arm the CLI abandoned partway, however much it had already done", async () => {
+    // The exit code was not passed into the rule AT ALL, so an execution failure
+    // reached the archive as a complete observation. Measured:
+    // `claude --definitely-not-a-flag` returns status 1 with NO spawn error, so
+    // `errorCode` stayed null and `spawnFailed` stayed false. An arm that had
+    // originated a few requests before an expired credential or a context
+    // overflow killed it came back valid, and its truncated cost would have been
+    // scored as a whole task.
+    //
+    // A non-zero exit is the CLI failing. It is NOT the same as the agent
+    // failing the task: `claude --print` exits 0 either way, and a genuine
+    // failure to solve the task is caught by the acceptance predicate as
+    // `accepted: false` -- which is data, and is kept.
+    const crashedLate = await classify({ exitCode: 1, originatedCount: 7 });
+    expect(crashedLate.valid).toBe(false);
+    expect(crashedLate.censored).toBe(false);
+    expect(crashedLate.reasons.join(" ")).toContain("exited 1");
+
+    // Killed by something that is not our budget is also not censored.
+    const outsideSignal = await classify({ exitCode: null, signal: "SIGKILL", originatedCount: 7 });
+    expect(outsideSignal.valid).toBe(false);
+    expect(outsideSignal.censored).toBe(false);
+    expect(outsideSignal.reasons.join(" ")).toContain("SIGKILL");
+
+    // And one cause gives one reason: a missing binary is not also reported as
+    // an abandoned run.
+    const noBinary = await classify({ exitCode: null, errorCode: "ENOENT", originatedCount: 7 });
+    expect(noBinary.reasons).toHaveLength(1);
+    expect(noBinary.reasons[0]).toContain("ENOENT");
+  });
+
+  it("gives a failure the same verdict however late it happened", async () => {
+    // Censoring was `ETIMEDOUT || (exitCode !== 0 && wallMs >= budgetMs)`, and
+    // the second half used DURATION as evidence that WE stopped the process.
+    // Duration says how long something took, not who ended it — so the same
+    // failure, exit 1, came back invalid when early and censored-and-valid when
+    // late. An arm that hung on a network call for the whole budget and then
+    // died of an expired credential was archived as a legitimate
+    // budget-exhausted observation, and it did not even need to have originated
+    // anything to qualify.
+    //
+    // Only `ETIMEDOUT` is positive evidence: `spawnSync` sets it exactly when it
+    // kills a child at the timeout it was given.
+    const early = await classify({ exitCode: 1, wallMs: 1_000 });
+    const late = await classify({ exitCode: 1, wallMs: BUDGET });
+    expect(late.censored).toBe(false);
+    expect(late.valid).toBe(false);
+    expect(late.reasons[0]).toBe(early.reasons[0]);
+
+    // A real budget kill still is one.
+    const killed = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT", wallMs: BUDGET });
+    expect(killed.censored).toBe(true);
+    expect(killed.valid).toBe(true);
+
+    // Whether the budget was enforced is a FACT the harness holds, not something
+    // to read off the clock. This check first asked `wallMs >= budgetMs`, which
+    // is the same duration-as-evidence mistake one line up: with a timeout
+    // actually set, `spawnSync` raises ETIMEDOUT the moment the wall crosses, so
+    // the question could essentially only be answered "yes" on a legitimate
+    // completion whose measured wall included spawn overhead.
+    const unenforced = await classify({ exitCode: 0, budgetEnforced: false });
+    expect(unenforced.censored).toBe(false);
+    expect(unenforced.valid).toBe(false);
+    expect(unenforced.reasons.join(" ")).toContain("never enforced");
+  });
+
+  it("does not censor a child that finished, whatever the timer says", async () => {
+    // `spawnSync` times the WHOLE call, so node's startup and teardown count
+    // toward the budget. Measured: a child sleeping 330ms under a 400ms timeout
+    // returns `status: 0` AND `ETIMEDOUT` at 405ms of wall clock.
+    //
+    // That child completed. Censoring it files a finished task as a lower bound
+    // and discards the observation it actually produced -- and near the boundary
+    // this is not rare, it is what every long-but-successful arm looks like.
+    const boundary = await classify({ exitCode: 0, errorCode: "ETIMEDOUT", wallMs: 405, budgetMs: 400 });
+    expect(boundary.censored).toBe(false);
+    expect(boundary.valid).toBe(true);
+    expect(boundary.reasons).toEqual([]);
+
+    // A child that was actually killed has no exit status of its own.
+    const killed = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT", wallMs: 416, budgetMs: 400 });
+    expect(killed.censored).toBe(true);
+    expect(killed.valid).toBe(true);
+  });
+
+  it("does not censor a FAILURE that happened to die as the timer crossed", async () => {
+    // The previous repair wrote `exitCode !== 0` where it meant
+    // `exitCode === null`, so it excluded the exit-0 boundary case it was
+    // written for and admitted the exit-1 one it was not: a crash carrying
+    // `ETIMEDOUT` came back censored and valid, with no reasons.
+    //
+    // Only a process that was really killed has no exit status of its own.
+    const crashedAtBoundary = await classify({ exitCode: 1, errorCode: "ETIMEDOUT" });
+    expect(crashedAtBoundary.outcome).toBe("exited_nonzero");
+    expect(crashedAtBoundary.censored).toBe(false);
+    expect(crashedAtBoundary.valid).toBe(false);
+  });
+
+  it("names every outcome, so an unhandled combination cannot become a default", async () => {
+    // Six defects landed in this rule while it was a chain of `&&`s: three
+    // fields it was never handed, two it should never have used (duration, in
+    // consecutive repairs), and one `!== 0` that should have been `=== null`.
+    // The shape was the problem -- a condition true of the case in mind is
+    // easily also true of one that is not. The rule is now decided by case, and
+    // every branch is named in the artifact rather than left as a fall-through
+    // nobody chose.
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{}, "completed"],
+      [{ exitCode: 0, errorCode: "ETIMEDOUT" }, "completed"],
+      [{ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" }, "censored"],
+      [{ exitCode: null, signal: "SIGKILL" }, "killed_by_signal"],
+      [{ exitCode: 2 }, "exited_nonzero"],
+      [{ exitCode: null, errorCode: "ENOENT" }, "spawn_failed"],
+    ];
+    for (const [over, expected] of cases) {
+      const got = (await classify(over)) as unknown as { outcome: string };
+      expect(got.outcome).toBe(expected);
+    }
+    // Exactly one outcome is both valid and not a completion.
+    const censored = await classify({ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" });
+    expect(censored.valid).toBe(true);
+    expect(censored.censored).toBe(true);
+  });
+
+  it("admits exactly what the meter admits, on records that vary one field at a time", async () => {
+    // `scripts/b12-run.mjs` re-implements B20's admission rule because it must
+    // run before `dist/` exists. Two implementations of one rule that are never
+    // compared is this project's signature defect: it produced a residual of 0
+    // FOUR times for reasons belonging to the corpus rather than to the rules,
+    // and reading them side by side found none of the four.
+    //
+    // So they are compared here, on a fixture that exercises every field the
+    // rule mentions -- which the real corpus does not, since all 5,669 of its
+    // records carry both keys and none is an api-error in an awkward place.
+    const root = tempRoot();
+    const slug = path.join(root, "slug-one");
+    await fs.mkdir(slug, { recursive: true });
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const rec = (extra: Record<string, unknown>, ms: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        sessionId: "sess-1",
+        timestamp: at(ms),
+        message: { model: "test-model", content: [], usage: { output_tokens: 10 } },
+        ...extra,
+      });
+    const main = [
+      rec({ uuid: "u1", requestId: "req-1" }, 0), // ordinary
+      rec({ uuid: "u2" }, 1), // no requestId: admitted, ungroupable
+      rec({ requestId: "req-3" }, 2), // no uuid: admitted, undedupable
+      rec({ uuid: "u4", requestId: "req-4", isApiErrorMessage: true }, 3), // excluded by field
+      JSON.stringify({
+        type: "assistant",
+        uuid: "u5",
+        requestId: "req-5",
+        sessionId: "sess-1",
+        timestamp: at(4),
+        message: { model: "<synthetic>", content: [], usage: { output_tokens: 0 } },
+      }), // excluded by model
+      JSON.stringify({ type: "user", uuid: "u6", sessionId: "sess-1", timestamp: at(5), message: { content: [] } }),
+      "not json at all",
+      "",
+    ].join("\n");
+    await fs.writeFile(path.join(slug, "sess-1.jsonl"), `${main}\n`, "utf8");
+    // The same record in a subagent file: dedup by uuid must catch it ONCE.
+    await fs.mkdir(path.join(slug, "sess-1", "subagents"), { recursive: true });
+    await fs.writeFile(
+      path.join(slug, "sess-1", "subagents", "agent-a.jsonl"),
+      `${rec({ uuid: "u1", requestId: "req-1" }, 0)}\n${rec({ uuid: "u7", requestId: "req-7" }, 6)}\n`,
+      "utf8"
+    );
+
+    const out = path.join(root, "snap.json");
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    await runNode(process.execPath, [script, "snapshot", "--root", root, "--out", out], {
+      cwd: process.cwd(),
+    });
+    const harness: string[] = JSON.parse(await fs.readFile(out, "utf8")).requestIds;
+
+    const meter = new Set<string>();
+    for (const id of await listSessionIds(slug)) {
+      const transcript = await readTranscript(await sessionFiles(slug, id), id);
+      for (const request of transcript.requests) meter.add(request.requestId);
+    }
+
+    // req-1 once despite two files, req-3 and req-7 present, req-4 and req-5 out.
+    expect([...harness].sort()).toEqual(["req-1", "req-3", "req-7"]);
+    expect([...meter].filter((r) => !r.startsWith("__norid__")).sort()).toEqual(["req-1", "req-3", "req-7"]);
+    expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
+  });
+
+  it("cannot report a passing pre-flight without a fresh call to check", async () => {
+    // The first version asserted NONE of the five conditions the frozen design
+    // names and printed PASSED on a machine where all of them fail: 12 ambiguous
+    // rows, 4 foreign, 6 sessions withholding. The design's own cost of that is
+    // stated -- "the difference between losing ten minutes and losing forty-five
+    // sessions plus an attempt" -- so a pre-flight that cannot check must say so
+    // rather than pass.
+    //
+    // Scoping matters as much as the assertions: those 12 ambiguous rows are
+    // facts about accumulated continuation lineages, not about whether the join
+    // works now. Checked against history the list either always fails or means
+    // nothing, so it is checked against ONE scratch session that called the
+    // tools -- and with no session id there is nothing to check.
+    // Pointed at a fixture, not at this machine's 56 slugs: a check whose cost
+    // and result depend on unrelated history is not a check.
+    const root = tempRoot();
+    const slug = path.join(root, "slug-one");
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(
+      path.join(slug, "sess-1.jsonl"),
+      JSON.stringify({
+        type: "assistant",
+        uuid: "u1",
+        requestId: "req-1",
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 10 } },
+      }) + "\n",
+      "utf8"
+    );
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const failure = await runNode(process.execPath, [script, "preflight", "--root", root], {
+      cwd: process.cwd(),
+    }).catch((e: { code: number; stdout: string }) => e);
+
+    // Exit 1, and it names the check it could not make rather than failing opaquely.
+    expect((failure as { code: number }).code).toBe(1);
+    expect((failure as { stdout: string }).stdout).toMatch(/FAIL {2}fresh-call assertions ran/);
+    // The parts it CAN check still report, so a real failure is distinguishable
+    // from "could not look".
+    expect((failure as { stdout: string }).stdout).toMatch(/ok {4}snapshot covers every project slug/);
+  }, 30_000);
+
+  it("reports a missing claude as a failed check rather than exiting with nothing said", async () => {
+    // Every precondition the preflight has is a `check()` that can come back
+    // red. The binary was the one that called `process.exit` instead -- so on a
+    // machine without `claude` the preflight wrote no checks, no artifact and an
+    // EMPTY stdout, withholding the one fact it existed to state. CI is exactly
+    // that machine, and it is where this was found: the run that should have
+    // said `FAIL  claude on PATH` said nothing.
+    //
+    // PATH is emptied rather than the lookup stubbed, so this asserts observable
+    // behaviour on a machine without the binary instead of behaviour against a
+    // seam invented for the test. It is deterministic on a machine that HAS
+    // claude, which the CI failure was not.
+    const root = tempRoot();
+    const slug = path.join(root, "slug-one");
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(
+      path.join(slug, "sess-1.jsonl"),
+      JSON.stringify({
+        type: "assistant",
+        uuid: "u1",
+        requestId: "req-1",
+        sessionId: "sess-1",
+        timestamp: new Date(1_700_000_000_000).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 10 } },
+      }) + "\n",
+      "utf8"
+    );
+    const emptyDir = tempRoot();
+    await fs.mkdir(emptyDir, { recursive: true });
+    // Every spelling of PATH is dropped, not just the uppercase one: Windows
+    // carries `Path`, and leaving it in place would spread the real PATH back in
+    // beside the empty one and let the lookup succeed on some platforms only.
+    const env: NodeJS.ProcessEnv = {};
+    for (const [k, v] of Object.entries(process.env)) if (!/^path$/i.test(k)) env[k] = v;
+    env.PATH = emptyDir;
+
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const failure = await runNode(process.execPath, [script, "preflight", "--root", root], {
+      cwd: process.cwd(),
+      env,
+    }).catch((e: { code: number; stdout: string }) => e);
+
+    expect((failure as { code: number }).code).toBe(1);
+    expect((failure as { stdout: string }).stdout).toMatch(/FAIL {2}claude on PATH/);
+    // And the rest of the preflight still runs, so the artifact names what is
+    // wrong instead of being absent.
+    expect((failure as { stdout: string }).stdout).toMatch(/ok {4}snapshot covers every project slug/);
+  }, 30_000);
+
+  it("refuses a snapshot that found nothing rather than reporting an empty machine", async () => {
+    // A snapshot returning zero ids is a scoping error -- four worktrees mean
+    // four slugs, and a run scored against the wrong tree returns a confident
+    // 0.0000 on every observation, which is a FALL on the primary instrument.
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "empty-slug"), { recursive: true });
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    await expect(
+      runNode(process.execPath, [script, "snapshot", "--root", root], { cwd: process.cwd() })
+    ).rejects.toThrow(/REFUSED/);
+  });
 });
 
 describe("against a real transcript, when one is present", () => {

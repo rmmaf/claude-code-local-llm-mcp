@@ -20,8 +20,15 @@ import path from "node:path";
 
 import { readTelemetry, TELEMETRY_REL_PATH } from "../telemetry.js";
 import { loadRates, RATES_REL_PATH } from "./rates.js";
-import { buildCounterfactual, buildSessionReport, entryCostOfSegment, scopeTelemetry } from "./report.js";
-import { listTranscripts, projectTranscriptDir, readTranscript } from "./transcript.js";
+import {
+  buildCounterfactual,
+  buildSessionReport,
+  entryCostOfSegment,
+  invocationOwners,
+  scopeTelemetry,
+} from "./report.js";
+import type { Transcript } from "./transcript.js";
+import { listSessionIds, projectTranscriptDir, readTranscript, sessionFiles } from "./transcript.js";
 
 // Built at runtime so no escape sequence has to survive a file round-trip.
 const ESC = String.fromCharCode(27);
@@ -32,6 +39,7 @@ const RESET = `${ESC}[0m`;
 interface Options {
   dir: string | null;
   files: string[];
+  session: string | null;
   last: number;
   all: boolean;
   root: string;
@@ -39,7 +47,7 @@ interface Options {
 }
 
 function parseArgs(argv: string[]): Options {
-  const options: Options = { dir: null, files: [], last: 1, all: false, root: process.cwd(), json: false };
+  const options: Options = { dir: null, files: [], session: null, last: 1, all: false, root: process.cwd(), json: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = (): string => {
@@ -50,6 +58,7 @@ function parseArgs(argv: string[]): Options {
     switch (arg) {
       case "--dir": options.dir = next(); break;
       case "--file": options.files.push(next()); break;
+      case "--session": options.session = next(); break;
       case "--last": options.last = Number(next()); break;
       case "--all": options.all = true; break;
       case "--root": options.root = path.resolve(next()); break;
@@ -57,7 +66,7 @@ function parseArgs(argv: string[]): Options {
       case "--help":
       case "-h":
         process.stdout.write(
-          "usage: cost-meter [--dir <transcripts>] [--file <f>]... [--last N|--all] [--root <project>] [--json]\n"
+          "usage: cost-meter [--dir <transcripts>] [--file <f>]... [--session <id>] [--last N|--all] [--root <project>] [--json]\n"
         );
         process.exit(0);
         break;
@@ -92,6 +101,18 @@ function pad(text: string, width: number): string {
   return text.length >= width ? text : text + " ".repeat(width - text.length);
 }
 
+/**
+ * A refused magnitude in words. `units` is a floor while anything is `unsized`,
+ * so the sentence has to say so -- a reader who sees "~500k withheld" and is not
+ * told there is more will treat it as the whole of what was refused.
+ */
+function refused(m: { units: number; unsized: number }): string {
+  const sized = `~${int(m.units)} units withheld`;
+  if (m.unsized === 0) return sized;
+  if (m.units === 0) return `${int(m.unsized)} of them could not be sized at all, so the amount withheld is UNKNOWN`;
+  return `at least ${sized}, and ${int(m.unsized)} more that could not be sized`;
+}
+
 function padStart(text: string, width: number): string {
   return text.length >= width ? text : " ".repeat(width - text.length) + text;
 }
@@ -100,30 +121,103 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const rates = await loadRates(options.root);
 
-  let files = options.files.map((f) => path.resolve(f));
-  if (files.length === 0) {
+  // A SESSION, NOT A FILE. Since Claude Code 2.1.219 one session is the main
+  // transcript plus every `.jsonl` under `<sessionId>/`, and reading only the
+  // first showed roughly half the cache tokens of a multi-agent session.
+  // `--file` still reads exactly what it is handed: it is an explicit override,
+  // and an override that quietly widened would be its own defect.
+  const units: Array<{ files: string[]; sessionId?: string }> = [];
+  /**
+   * Every session in the directory, not only the chosen ones. Ownership of a
+   * telemetry row is a fact about the SET — an `invocation_id` present in two
+   * sessions belongs to neither — and `--session X` alone cannot see that. So
+   * the set is always enumerated, even for a single-session run.
+   */
+  let siblings: string[] = [];
+  if (options.files.length > 0) {
+    for (const one of options.files) units.push({ files: [path.resolve(one)] });
+  } else {
     const dir = options.dir ?? projectTranscriptDir(options.root, os.homedir());
-    const found = await listTranscripts(dir);
+    const all = await listSessionIds(dir);
+    siblings = all;
+    const found = options.session !== null ? [options.session] : all;
     if (found.length === 0) {
-      process.stderr.write(`no transcripts found in ${dir}\n`);
+      process.stderr.write(`no transcripts found in ${dir}` + String.fromCharCode(10));
       process.exit(1);
     }
-    files = options.all ? found : found.slice(-options.last);
+    const chosen = options.session !== null || options.all ? found : found.slice(-options.last);
+    // THE ID IS PASSED, NOT JUST USED TO FIND THE FILES. Discarding it let the
+    // read anchor on whatever the first billable record happened to say, so
+    // `--session X` could return a total attributed to Y -- with X's own
+    // subagent records then excluded as foreign, silently, because only a count
+    // changed and not the visibility.
+    //
+    // It also made the two sides of B20 identify a session by DIFFERENT RULES:
+    // the oracle requires record.sessionId to equal the id it was given, the
+    // meter took the first record's word for it. They agreed on the scored run
+    // because filename and records match on all 11 files of this corpus --
+    // agreement by coincidence, which is the thing B20 exists to exclude.
+    for (const id of chosen) units.push({ files: await sessionFiles(dir, id), sessionId: id });
   }
 
   const telemetry = await readTelemetry(options.root);
   const payloads: unknown[] = [];
 
-  for (const file of files) {
-    const transcript = await readTranscript(file);
+  // Read every session ONCE, chosen or not, and keep it. The chosen ones are
+  // reported; the rest exist only to answer "does anyone else carry this
+  // invocation id?". Reading them twice, or extracting ids by a second rule
+  // written here, is precisely how the two sides of B20 drifted apart.
+  const dir = options.dir ?? projectTranscriptDir(options.root, os.homedir());
+  const read = new Map<string, Transcript>();
+  for (const id of siblings) read.set(id, await readTranscript(await sessionFiles(dir, id), id));
+  for (const unit of units) {
+    if (unit.sessionId === undefined || !read.has(unit.sessionId)) {
+      read.set(unit.sessionId ?? unit.files.join("|"), await readTranscript(unit.files, unit.sessionId));
+    }
+  }
+  // `--file` hands us an explicit list and no set to compare against, so nothing
+  // can be shown ambiguous and nothing is claimed to have been checked.
+  const ambiguousIds = invocationOwners(read.values());
+
+  for (const unit of units) {
+    const transcript =
+      read.get(unit.sessionId ?? unit.files.join("|")) ?? (await readTranscript(unit.files, unit.sessionId));
     const session = buildSessionReport(transcript, rates);
-    if (session.requests === 0) continue;
+    // How many records the admission rule refused. A session with none admitted
+    // and some refused is a MIS-READ, not an empty session, and the difference
+    // has to survive into both output modes.
+    const dropped = Object.values(transcript.excluded).reduce((n, v) => n + v, 0);
+    if (session.requests === 0 && dropped === 0) continue;
 
     const scoped = scopeTelemetry(transcript, telemetry);
-    const counterfactual = buildCounterfactual(transcript, scoped, rates, session);
+    const counterfactual = buildCounterfactual(transcript, scoped, rates, session, ambiguousIds);
 
     if (options.json) {
+      // NOTHING BUT JSON GOES TO STDOUT HERE. The zero-request branch used to
+      // write its human line unconditionally, so `--json` emitted ANSI prose and
+      // then the array — unparseable, and `B20` requires these artifacts to be
+      // machine-produced. It also `continue`d before pushing, so the session was
+      // missing from the payload entirely: the same invisibility one layer out,
+      // inside the evidence file.
       payloads.push({ session, counterfactual });
+      continue;
+    }
+
+    if (session.requests === 0) {
+      process.stdout.write(
+        `
+${BOLD}SESSION ${transcript.sessionId.slice(0, 8)}${RESET}  ` +
+          `${DIM}${transcript.files.length} file(s)${RESET}
+` +
+          `  0 billed requests, and ${int(dropped)} record(s) excluded ` +
+          `(${Object.entries(transcript.excluded)
+            .filter(([, v]) => v > 0)
+            .map(([k, v]) => `${k} ${v}`)
+            .join(", ")})
+` +
+          `  ${DIM}a session with traffic on disk and none admitted is a mis-read, not an empty session${RESET}
+`
+      );
       continue;
     }
 
@@ -276,7 +370,10 @@ async function main(): Promise<void> {
     // including it made a session with zero rows announce that every row had been
     // withheld. Only rows that actually exist decide whether there is a report.
     const counted = counterfactual.byTool.length > 0;
-    const withheldRows = counterfactual.excludedForeign + counterfactual.unverifiable;
+    // ASKS FOR THE TOTAL, never re-sums the parts. Summing them here missed
+    // `ambiguous` when it was added, and a session whose only telemetry was
+    // refused that way printed nothing at all.
+    const withheldRows = counterfactual.refusedRows;
 
     if (counted || withheldRows > 0) {
       process.stdout.write(`\n  ${BOLD}estimated savings from local tools${RESET}\n`);
@@ -288,7 +385,7 @@ async function main(): Promise<void> {
         for (const saving of counterfactual.byTool) {
           process.stdout.write(
             `    ${pad(saving.tool, 12)}${padStart(int(saving.calls), 6)}` +
-              `${padStart(kib(saving.bytesSuppressed), 12)}${padStart(int(saving.turnsCollapsed), 7)}` +
+              `${padStart(kib(saving.bytes.clampedUncapped), 12)}${padStart(int(saving.turnsCollapsed), 7)}` +
               `${padStart(int(saving.unitsTotal), 14)}\n`
           );
         }
@@ -297,12 +394,32 @@ async function main(): Promise<void> {
           `    ${DIM}nothing counted — every telemetry row in range was withheld${RESET}\n`
         );
       }
+      // WITHHELD PRINTS AS A SENTENCE, NEVER AS A NUMBER. `G-stop` stops this
+      // project below 15%, so a figure produced by the timestamp fallback would
+      // be read as that decision. Same treatment as an unpriced session's USD.
       process.stdout.write(
         `    ${DIM}${"─".repeat(51)}${RESET}\n` +
-          `    ${BOLD}${pct(counterfactual.savedFraction)} of what this session would have cost${RESET}\n` +
-          `    ${DIM}suppression term is an estimate (charsPerToken=${rates.charsPerToken}); ` +
-          `turn-collapse term is a floor${RESET}\n`
+          (counterfactual.savedFraction === null
+            ? `    ${BOLD}saving WITHHELD — it can only be stated as a lower bound${RESET}\n` +
+              `    ${DIM}${
+                counterfactual.provenanceUnavailable
+                  ? "rows carry an invocation id but no result in this transcript echoes one, " +
+                    "so only timestamps remain and those cannot tell two sessions apart"
+                  : "a real saving here belongs to no single session, so it can be neither " +
+                    "credited nor called zero"
+              }${RESET}\n`
+            : `    ${BOLD}${pct(counterfactual.savedFraction)} of what this session would have cost${RESET}\n` +
+              `    ${DIM}suppression term is an estimate (charsPerToken=${rates.charsPerToken}); ` +
+              `turn-collapse term is a floor${RESET}\n`)
       );
+      if (counterfactual.ambiguous > 0) {
+        process.stdout.write(
+          `    ${DIM}${int(counterfactual.ambiguous)} row(s) whose invocation id appears in more ` +
+            `than one session were NOT counted (${refused(counterfactual.ambiguousUnits)}): ` +
+            `a resumed conversation carries the original record forward, so the call ` +
+            `belongs to no single session${RESET}\n`
+        );
+      }
       if (counterfactual.excludedForeign > 0) {
         process.stdout.write(
           `    ${DIM}${int(counterfactual.excludedForeign)} telemetry row(s) belong to another ` +
@@ -312,7 +429,7 @@ async function main(): Promise<void> {
       if (counterfactual.unverifiable > 0) {
         process.stdout.write(
           `    ${DIM}${int(counterfactual.unverifiable)} row(s) had no invocation id and were ` +
-            `NOT counted (~${int(counterfactual.unverifiableUnits)} units withheld): a tool that ` +
+            `NOT counted (${refused(counterfactual.unverifiableUnits)}): a tool that ` +
             `cannot point at the transcript entry it produced cannot show its output ever ` +
             `reached the context${RESET}\n`
         );

@@ -14,7 +14,7 @@ What may be built next, and the number that decides it.
 
 ---
 
-## G1 — cost meter · `open` (reopened)
+## G1 — cost meter · `closed` (again)
 
 - **Delivered:** `src/cost/{cli,rates,transcript,report}.ts`, `src/telemetry.ts`,
   `.local-coder/rates.json`.
@@ -27,12 +27,77 @@ What may be built next, and the number that decides it.
   meter-derived may be measured until it agrees.** That covers B12 and anything
   reading `savedFraction`. It does not cover B6 or B7, which come from `repair`'s
   own returned payload and never touch the meter.
-- **Closes again when:** the meter agrees with a comparator to within 5%. Which
-  comparator is now an open question, not a detail: `/usage` reports 20.0% of
-  published list price for its own token counts, so it is not measuring
-  list-price API cost. **Pick and pre-register the comparator as its own premise
-  before running anything against it** — choosing it after seeing a disagreement
-  is how a threshold gets quietly fitted to the data.
+- **CLOSED AGAIN by B20 holding** (`run 2026-08-05-win-14-b20`): the meter's
+  per-class token totals equal an independent enumeration's, **residual exactly 0
+  on 4 classes x 11 sessions**, artifacts under `evidence/`. The comparator was
+  pre-registered before any repair and it is not `/usage`.
+- **The measurement ban lifts with it.** B12 and anything reading `savedFraction`
+  may be measured again. **G-stop becomes evaluable**, which it has not been
+  since B1 fell.
+- **Three defects were repaired to get here, and each was found by writing the
+  check rather than by running it.** `listTranscripts` read one file where a
+  session is many (390 of 2,703 requests invisible); the dedup kept the FIRST
+  record of a `requestId` group where the last one carries the answer (655,570
+  output tokens, 19.27%, at the 5.0x rate); and `readUsage` used a TTL split that
+  contradicted its own total (42,558 tokens in the 2.0x class). Two of the three
+  undercounted, and B1's headline still ran 231% high — so none of them explains
+  that fall, and the fall's own diagnosis of it was right: `/usage` was measuring
+  a different quantity. (B20 replaces B19, which replaced B17. Both are `moot` and
+  neither was ever measured: their VOID conditions froze the oracle's *code*
+  before it was trustworthy, and four false-negative paths were found across two
+  reviews. B20 freezes the *standard* instead. The outcome, the threshold and the
+  admission rule are byte-identical to the pre-registration commit throughout.)
+- **THE ORIGINAL CONDITION — "within 5%" of a dollar comparator — IS DELETED, NOT
+  SATISFIED.** It cannot be met on this account and no amount of repair will make
+  it meetable: `/usage` reports **20.0% of published list price for its own token
+  counts** because this is a Max subscription, and a Max subscription produces no
+  per-token invoice to check against. **Even a perfect meter leaves the dollar
+  disagreement at roughly 5x, permanently.** Recording that as a property of the
+  venue is the honest move; leaving the 5% standing beside B20's condition would
+  be worse than either, because a marginal reading would then sit inside both and
+  whoever adjudicated later would get to choose which one it answered to.
+- **Timing, stated because it is the only thing that makes this legitimate.**
+  This replacement is written **before** the oracle exists, before the meter is
+  repaired, and before any comparison has been run — the same claim G7's
+  amendment below rests on, and the difference is the timing and nothing else.
+  What licenses it is `PREMISES.md`'s own disposition of B1: failure 2 says the
+  *experiment* was mis-specified, so a corrected instrument check is proposed and
+  pre-registered as its own premise. That was B17, and is now B20 — the
+  replacements changed the instrument, never the outcome or the threshold.
+- **What closing this does NOT license.** No absolute dollar figure may be
+  reported as measured on this plan. **B12 and G-stop consume ratios only** —
+  reduction against a control arm — and a ratio survives an unknown pricing basis
+  only if that basis is constant across both arms.
+- **NARROWED 2026-08-05, while pre-registering B12: a session's total is not that
+  session's cost.** Measured — **zero of 5,769** billable-shaped records carry a
+  foreign `sessionId`, because Claude Code **rewrites the id** on the inherited
+  records it copies into a resumed or forked conversation's file. So B20's
+  session rule cannot separate a session's own work from what it inherited,
+  nothing in the format marks a record as inherited, and **535 of 1,904 distinct
+  billed requests (28.1%) are claimed by two or more sessions** — 87 by four. Per
+  session the inherited share runs **1% to 100%** and no session is clean. G1 is
+  untouched: B20 compares the two sides over the same files, both read a shared
+  record identically, and the residual of 0 stands. What is narrowed is what may
+  be read OFF a session total afterwards. **A session is therefore not an
+  observation, and B12 may not use one as its unit** — a mostly-inherited session
+  divides by another conversation's cost. Narrowing only, in the one direction a
+  closed gate's text may move.
+- **Recorded without a threshold: the uniform-discount assumption.** The ratio
+  argument above needs the plan's discount to be **uniform across token classes**.
+  If the subscription discounts cache reads differently from output, a saving
+  ratio computed at list rates is biased by an unknown amount in an unknown
+  direction. Nothing here measures that, nothing can measure it from the data
+  available, and it is currently doing silent work for the entire stopping
+  criterion. Named here so it stops being silent.
+- **The repair proceeded, and `src/cost/` being "frozen" did not forbid it.**
+  See `DECISIONS.md § the freeze forbids measuring, not repairing`. The short
+  form: read as a blanket edit ban, the freeze makes this gate's own written
+  closing condition unreachable by construction.
+- **The active-gate count returns to six**, without anyone having to resolve the
+  interpretive question the note at the foot of this file records. The board was
+  at seven because a *reopening* breached the ceiling; the reopening is over. The
+  ambiguity — whether `open (reopened)` counts as active — is untouched and stays
+  a decision for whoever needs it, which is nobody while the count is six.
 
 ## G2 — deterministic layer (PostToolUse hook) · `closed` (dead)
 
@@ -78,6 +143,11 @@ What may be built next, and the number that decides it.
   anyway, pointers cost *on top of* the read and the tool is strictly negative.
 - **Motivation, measured:** `Agent` results were 472 KiB of 816 KiB (58%) of all
   tool output in a real session — the largest single contributor to context.
+  **That denominator is now known to be main-thread only** and the number is
+  therefore understated by an unknown, session-dependent amount: the meter that
+  produced it could not see `<sessionId>/subagents/**`. Flagged rather than
+  recomputed — recomputing needs the oracle B20 pre-registers, and a number
+  corrected by hand would be the same class of error twice.
 
 ## G5 — Mac diagnostics, reduced · `unevaluated`
 
@@ -255,6 +325,29 @@ What may be built next, and the number that decides it.
        direction. **No threshold is set here**; setting one now, with the rate in
        hand, is the move rule 4 exists to prevent. What rule 4 still needs is the
        threshold and its argument, from whoever decides them.
+     - **RESOLVED 2026-08-06, and the resolution is that NO THRESHOLD WILL BE
+       SET.** `context_would_overflow` stays exploratory permanently; rule 4's
+       promotion path is closed rather than left waiting for a number.
+
+       The argument is the one rules 3 and 5 already make, followed to its end.
+       Rule 3 retires any refusal measured at a sub-maximal window because
+       `lms load --context-length` is the cheap arm and this file rules the
+       cheapest arm is the baseline. Rule 5 says the two codes must not merge
+       because `context_would_overflow` is also answered by a free reload. The
+       base rate then turned out not to be a number but a **function of the
+       window** — 33% of this repository's 15 source+test pairs exceed 16,384
+       tokens and 7% exceed 32,768, on a model that supports 262,144.
+
+       A threshold on a quantity that a configuration flag moves by a factor of
+       five is not a gate condition. It is a report about how the model was
+       loaded, and promoting it would let a `--context-length` argument open a
+       gate that buys a parser and a new apply path. **The honest closure is that
+       this code cannot become one, not that its number is still pending.**
+
+       `output_would_truncate` is unaffected and remains the sole opening and
+       killing outcome at ≥ 40% / < 20%, over the captured corpus, exactly as
+       rule 1 states. G7's status does not move: still `unevaluated`, still
+       waiting on the captured corpus and on nothing else.
   5. **The codes must not be merged, and the reason is not pedantry — they imply
      different fixes.** `output_would_truncate` says the answer is too big, which
      is what search/replace blocks are for. `context_would_overflow` says prompt
@@ -288,8 +381,68 @@ counterfactual accounting survive. This is deliberately a hard number and not a
 judgment call: the failure mode this whole registry exists to prevent is
 continuing to build on a premise that quietly stopped being true.
 
-- **Measured by:** B12, over 20 real tasks with the server and hook on versus off.
+- **Measured by:** B12, **pre-registered 2026-08-05** — design frozen by sha256 in
+  `evidence/2026-08-05-b12-preregistration.json`, run not started.
+- **ONE OF THE THREE DELIVERIES CANNOT BE SCORED BY THIS CRITERION, and that is
+  structural rather than a gap to be filled.** G-stop requires each surviving
+  delivery to individually pay for itself in the counterfactual accounting. The
+  counterfactual credits a tool for bytes it suppressed and turns it collapsed.
+  **The cost meter suppresses nothing and writes no telemetry row**, so it has no
+  per-delivery ratio and cannot acquire one without becoming a different thing.
+  So B12 holding closes G-stop for `gate`, leaves `repair` on its own exposure,
+  and **cannot close G-stop overall**. The choice this forces — amend G-stop to
+  name the meter as infrastructure rather than as a delivery that must pay, or
+  accept that G-stop is not evaluable as written — is recorded here now, unmade,
+  because making it after seeing `R` would be choosing the criterion to fit the
+  result. **It is the project owner's call and it is not urgent until B12 runs.**
 - **Reopens if:** a later measurement with a new `run_id` clears 15%.
+- **15% is a RATIO, and that is what makes it reachable on this account.** A
+  constant pricing basis cancels between the two arms, so G-stop never needed the
+  meter's absolute dollars to be right — it needs the meter to count the same
+  tokens on both sides and price them consistently. That is what G1 now closes
+  on. **Two conditions ride on it and both are stated in G1**: the discount must
+  be uniform across token classes, which is unmeasured; and the two arms must not
+  differ in **subagent share**, because the coverage error is a function of
+  session shape (near zero single-threaded, ~45% multi-agent). Record the
+  subagent share as a covariate on every arm, or the comparison flatters
+  whichever side spawned fewer agents.
+  - **NOT RECORDED. Measured 2026-08-06:** `scripts/b12-run.mjs` `observe()`
+    writes no subagent, thread or sidechain field on the observation. It is
+    recoverable rather than lost — `src/cost/report.ts:198` derives
+    `sidechainRequests` from `isSidechain`, and the observation carries
+    `originatedRequestIds` — so the scorer can compute the share for exactly
+    those ids. **It must, or this bullet is a paragraph.**
+- **AMENDED 2026-08-06 — the cost meter is INFRASTRUCTURE, not a delivery that
+  must pay for itself. The deliveries under this criterion are TWO: `gate` and
+  `repair`.** Nothing above this line has been edited; "Those are now three" is
+  the pre-amendment text and is left standing.
+
+  **The owner made this call, and the timing is the whole of its legitimacy.**
+  The bullet above says the choice must not be made after seeing `R`, because
+  choosing a criterion to fit a result is the failure this file exists to
+  prevent. B12 has not run. There is no `R`, no observation, and no scorer that
+  could produce one — so the criterion is being fixed while its answer is
+  strictly unknowable, which is the only condition under which fixing it means
+  anything.
+
+  **The argument, in the owner's words:** the meter suppresses nothing and emits
+  no telemetry row, so it is an instrument, not a delegation tool. Keeping it
+  named as a delivery means G-stop can never close — not because the project
+  failed, but on a technicality about a thing that was never in the category.
+
+  **What this does NOT do.** It does not lower the bar for the two that remain.
+  Each of `gate` and `repair` must still individually pay for itself in the
+  counterfactual accounting, and the first live reading is not encouraging:
+  `evidence/2026-08-06-mac-b12-2eab63d.preflight.json` has `gate` at **−467.1
+  units** on the scratch session — it cost more context than it suppressed, and
+  the pre-repair clamped view would have printed `0`. One synthetic session with
+  a one-line error proves nothing about a real task, but the sign is on the
+  table before the run rather than after it.
+
+  **The meter is not thereby exempt from evidence.** It is now judged as G1
+  judges it — whether it counts the same tokens on both sides and prices them
+  consistently — and G1 remains `open (reopened)`. What changes is that its
+  verdict no longer gates this criterion.
 
 ---
 

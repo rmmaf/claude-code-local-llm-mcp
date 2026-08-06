@@ -5,31 +5,32 @@ Ceiling: 25 lines below this header.
 
 ## Where I stopped
 
-**B16 HOLDS** — 0 of 52 admitted requests lost content across `mac-20` and
-`mac-23`, both non-void, window verified at 32,768 before *and* after. Caveats
-travel with the verdict: both share a corpus at temperature 0.1 where 12 of 13
-cases reproduce byte-identically, so 52 is nearer n=1 replicated than n=2, and
-neither refused anything. **The oldest open point closed too** — the overflow
-policy is `truncateMiddle`, read via `@lmstudio/sdk` after six dead ends. It
-drops the MIDDLE of the context: a wrong window fails silently by design.
+**The pre-flight passed on the Mac** (`2eab63d`, 11/11, artifact in `evidence/`)
+and **three decisions that had outlived every technical blocker are closed**, all
+while their answers were still unknowable — the only condition that makes closing
+them mean anything. G-stop no longer names the meter as a delivery that must pay:
+**two now, `gate` and `repair`**. G7 gets no threshold on
+`context_would_overflow`, ever. B14 stays at **3.5**. Live warning from the
+pre-flight: `gate` scored **−467.1 units** — it cost more than it suppressed.
 
-## Next action
+## Next action, in this order
 
-**Unblocked:** B15 still needs `scripts/classify-verification.mjs` — standalone,
-read-only over a raw session JSONL, counting eligible verification events. It
-must NOT live in `src/cost/`, which is frozen while G1 is reopened.
-**Yours to decide:** G7's threshold on `context_would_overflow` (base rate known
-— 33% at 16k, 7% at 32k, so it is a function of the window), and B14's 3.978 vs
-3.5. **Mac as left:** loaded at 32,768 with JIT on, so any unload silently
-returns it to 16,384.
+1. **Write the scorer.** `R_ab` exists in the frozen design and in NO `.ts`,
+   `.mjs` or `.md` file. `observe()` writes observations; nothing reads them.
+   45 sessions would finish with no number. It must compute **subagent share per
+   arm** (G-stop requires it; `observe()` records no such field, but it is
+   derivable from `originatedRequestIds` + `isSidechain`, `report.ts:198`).
+2. **Then one paired observation**, smallest real task, both arms, ~2 sessions.
+   Score it with the scorer written in 1. Only then seal and run the rest.
+3. **Author the scorer through `repair`** — its mechanical parts are exactly what
+   it is for, and G-stop's second delivery has one call of exposure in its life.
+
+Not blocking B12: the meter's `savedFraction` credits suppression and never
+charges installation, and `unitsAddedByInstallation` is written, tested, called
+from nothing. Magnitude in doubt too — the scratch session called `ToolSearch`.
 
 ## Do not redo
 
-- **B16's `> 10%` and 20-request denominator are INHERITED from B14.** Rederiving
-  either destroys their only defence. The six D8 runs are in-sample.
-- **Resolve the MODEL first, then its window**; never borrow another model's;
-  never pin one across `repair` rounds; the retry needs its own pre-flight.
-- **Never sum `usage` against a window, fold `finish_reason` into `envelope`, or
-  read absent `usage` as zero.** `repair` rows score the ENVELOPE half only.
-- **A negative result is only as good as the command that produced it** —
-  `grep -I` skips binaries, zsh aborts a whole line on an unmatched glob.
+- **Test the good values, not one bad one.** `[ "$X" = "none" ]` passed when the
+  probe failed and `X` was `""`, and printed `ok` for an empty answer.
+- **A passing test makes an unwired function look finished.** Twice now.

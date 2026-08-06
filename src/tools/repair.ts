@@ -619,10 +619,27 @@ async function repairLoop(
     if (result.checks.some((check) => check.executed)) ctx.progress.checksRan = true;
   };
 
+  /**
+   * The LAST gate's raw output, not the sum across rounds.
+   *
+   * Summing let `repair` inflate its own counterfactual numerator by looping:
+   * `max_rounds` is a caller argument (1-10, default 3), so a caller who asked
+   * for ten rounds claimed up to eleven gate outputs' worth of suppressed bytes
+   * for one call. A term the caller sets is not a measurement of what the tool
+   * saved. The per-round totals stay in `rounds` and in the telemetry detail, so
+   * nothing is lost -- only the inflatable number is no longer the credited one.
+   */
   let rawBytes = 0;
+  let rawBytesAllRounds = 0;
+  let gateRuns = 0;
+  const observeGate = (result: GateResult): void => {
+    rawBytes = result.bytes_raw;
+    rawBytesAllRounds += result.bytes_raw;
+    gateRuns++;
+  };
   let gate = await runGateNow();
   markChecksRan(gate);
-  rawBytes += gate.bytes_raw;
+  observeGate(gate);
 
   const rounds: RoundTrace[] = [];
   /**
@@ -788,7 +805,7 @@ async function repairLoop(
       const gateStarted = now();
       gate = await runGateNow();
       markChecksRan(gate);
-      rawBytes += gate.bytes_raw;
+      observeGate(gate);
       const after = countFailures(gate);
 
       rounds.push({
@@ -894,6 +911,11 @@ async function repairLoop(
     detail: {
       passed: result.passed,
       stopped_because: stoppedBecause,
+      // Reported so the credited figure can be checked against the summed one,
+      // and so a caller raising `max_rounds` shows up as more gate runs rather
+      // than as more saving.
+      gate_runs: gateRuns,
+      gate_raw_bytes_all_rounds: rawBytesAllRounds,
       // Which model produced the timings in `rounds` below. It went only to the
       // caller before (`repair.ts` result payload), so a latency read from the
       // log had no subject — and B7 is a latency premise. `null` now means the

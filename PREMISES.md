@@ -74,6 +74,538 @@ and stays that way. Failure 2 says the *experiment* was mis-specified — a
 finding, not an excuse — and a corrected instrument check has to be proposed and
 pre-registered as its own premise before anything is measured against it.
 
+**That check is now written, as B17 below, and it does not use `/usage`.** Both
+of B1's failures turned out to belong to the comparator: the scope gap has a
+located mechanical cause in the meter, and the basis gap is a property of the
+subscription that no threshold can remove. B17 replaces the instrument rather
+than the number. **B1 stays `fallen`.**
+
+## B17 — the cost meter counts every billed token a session incurred
+
+> ### ⚠ `moot` — superseded by B19, and killed by its own VOID condition.
+>
+> Stop-time review found two defects in `scripts/session-token-walk.mjs` before
+> it had scored anything: a disjointness invariant that **could not fail**, and a
+> `cacheWrite` rule that contradicted the `useSplit` repair by 42,558 tokens. See
+> `DECISIONS.md § a check that cannot fail is worse than no check`. Fixing them
+> edited the oracle after the commit **VOID condition 2** froze it at, and that
+> condition also says the clock may not move again — so every run scorable under
+> B17 is void, permanently. **B19 replaces it, inheriting the outcome, the
+> threshold, the holds/falls conditions and the admission rule VERBATIM**, so
+> nothing is re-derived and nothing is loosened. Same disposition as B14 → B16,
+> and for the same reason: the premise was never wrong, its method was.
+>
+> Everything below stands as written, and B19 points at it rather than repeating
+> it.
+
+**This is a repair verification, not a blind instrument test.** The mechanism was
+diagnosed before this premise was written, the fix is known, and the expected
+residual is zero. What is pre-registered here is therefore **not** an unknown
+outcome — it is the **admission rule and the oracle**, fixed in text before the
+repair is written, so the repair cannot be tuned by redefining what counts.
+Pre-registration is working here as a commitment device against reinterpretation,
+not as evidence about an unknown, and saying so is the difference between a
+limitation declared and a limitation found later.
+
+- **Assumed:** the meter's per-class token totals for one `sessionId` equal the
+  totals over every billed record that session wrote — (assumed)
+- **Source of the assumption:** the coverage defect is mechanical and located —
+  `listTranscripts` does a non-recursive `readdir` and cannot see
+  `<sessionId>/subagents/**`, which since Claude Code 2.1.219 is where every
+  sidechain record lives. See `DECISIONS.md § the session is N files`.
+- **States the outcome as the HARM, not the DETECTOR — B16's correction applied
+  to B1's error.** B1 named `/usage` in its own title, so when `/usage` turned
+  out to measure a different scope on a different basis, the *premise* recorded
+  "the meter is wrong" and G1 stayed shut. Here the outcome is **a billed record
+  went uncounted**; the comparator is named separately under **Method**, and a
+  comparator found blind falsifies the method and leaves this premise standing to
+  be re-measured with a better one.
+- **Method, not threshold:** an independent enumeration in
+  `scripts/session-token-walk.mjs`, importing nothing from `src/cost/`, written
+  to Claude Code 2.1.219's **own shipped enumerator** and quoting it here so that
+  both implementations answer to this text rather than to each other — the main
+  directory's `*.jsonl` files, **plus `<sessionId>/subagents/**` recursively,
+  deduplicated by record `uuid`**. Writing the oracle to a vendor specification
+  is what makes this a conformance test rather than a second guess checked
+  against a first.
+- **`/usage` is disqualified, and that is a finding rather than a preference.**
+  Its existence as a token source cannot be settled by reading the binary — two
+  independent readings of the same bundle disagree over whether the panel renders
+  a token block at all or only cost and utilisation percentages. It is compact-
+  formatted to one decimal, which quantises by up to **±4.8%** just above a unit
+  boundary; its "This session" is ambiguous between the running process and the
+  `sessionId`'s whole history, **measured at 13.3% apart on output**; it is
+  ephemeral; and reading it costs a live session and a hand transcription. A
+  comparator whose existence is not decidable by inspection cannot gate anything.
+- **Admission rule, AMENDED 2026-08-05 — see the amendment note directly below,
+  which is the only thing that makes the edit legitimate.** A billed request is a
+  **`requestId` group**, formed in three steps that are separate on purpose:
+  1. **Admit** every record with `type: "assistant"` carrying `message.usage`,
+     **excluding** records with `isApiErrorMessage: true` — which carry a real
+     `requestId`, `model: "<synthetic>"` and all-zero usage, so they must be
+     excluded by those fields and **never** by usage reading zero, since a
+     legitimate record can also read zero at the top level. **Excluding files
+     that are not request logs:** `subagents/workflows/wf_*/journal.jsonl` ends
+     in `.jsonl`, holds records keyed `{type, key, agentId}`, and carries agent
+     return values in which the string `usage` appears — a naive `**/*.jsonl`
+     glob double counts.
+  2. **De-duplicate by `uuid`.** That is *record* identity across the file union
+     — the vendor's rule, and a guard against reading one record twice — and it
+     is **not** request identity.
+  3. **Group by `requestId`, and take the group's usage from its LAST record in
+     file order.** Records with no `requestId` form their own group of one; there
+     are none in this corpus, and that is measured rather than assumed.
+  Both implementations are written to this paragraph and to nothing else.
+- **THE AMENDMENT, AND WHY IT IS LEGITIMATE.** As first written this rule said "a
+  billed request is a record … deduplicated by `uuid`", and that is not
+  implementable as worded: Claude Code writes one billed request as several
+  `assistant` records, one per content block, each carrying a copy of
+  `message.usage`. Over this corpus **5,364 `uuid`-distinct records collapse to
+  2,478 `requestId` groups**, so summing usage per record inflates by **2.165x**.
+  The rule as written scored an arithmetic artefact, not the meter.
+  **What licenses the edit is timing and direction.** It is made **before
+  `scripts/session-token-walk.mjs` exists, before the meter is touched, and
+  before any residual has been seen** — the same claim G7's amendment rests on,
+  and the difference is the timing and nothing else. It is also the direction the
+  premise's own **Method, not threshold** clause anticipates: a method found
+  blind is corrected and the premise stands. And it makes the rule **more
+  specified, never more permissive** — step 3 did not exist at all before.
+  **VOID condition 2's clock therefore runs from this amendment**, not from the
+  pre-registration commit. That is not a loophole and the reason is checkable:
+  nothing has been measured against either version, so there is no residual the
+  new wording could have been chosen to accommodate.
+- **Step 3 is not a detail, it is the third defect this premise found before
+  running.** `src/cost/transcript.ts:239-243` keeps the **first** record of a
+  `requestId` group and discards every later record's usage. Measured over this
+  corpus: **only `output_tokens` ever differs within a group — 327 of 1,647
+  multi-record groups — and in 327 of 327 the first record is the SMALLER one.**
+  Intermediate records carry a partial count; the terminal one carries the whole
+  answer. Taking the last record agrees with taking the maximum on **2,482 of
+  2,482** groups, while `stop_reason` does not identify the terminal record — 27
+  groups have none and 1,300 have more than one — so **last-in-file-order is the
+  rule, not `stop_reason`**. First-wins drops **655,570 output tokens, 19.27% of
+  all output in this project**, in the class carrying the 5.0x multiplier.
+  `MEASUREMENTS.jsonl:9` and `:54` stand as recorded; what is falsified is the
+  generalisation they licensed — usage repeats verbatim except for
+  `output_tokens`, and that exception is the expensive one.
+- **Metric, exact:** per class `c ∈ {input, cacheRead, cacheWrite, output}`,
+  `meter_c − oracle_c`, **in integers**. `cacheWrite` is compared as
+  `cacheWrite1h + cacheWrite5m` summed, stated rather than discovered. Plus one
+  invariant, measured and archived:
+  `|uuids(main) ∪ uuids(subagents)| == |main| + |subagents|`. Without it the
+  union can pass by two errors cancelling. **`isSidechain` is not a key and does
+  not establish this** — it is `false` on every record of the main file and
+  `true` on every record of a subagent file, so it identifies the source, not the
+  record.
+- **Experiment:** for **every** session present in `~/.claude/projects/<slug>/`
+  at the pre-registration commit, run the repaired meter selecting that
+  `sessionId` explicitly, run `scripts/session-token-walk.mjs` over the same id,
+  and difference the four classes. The set is fixed by that enumeration rule
+  rather than chosen, so no session can be dropped after its residual is seen.
+- **Holds if:** every class differs by **exactly 0 tokens** on **every** session
+  in a set fixed by enumeration rule, containing **≥ 5 sessions**, of which
+  **≥ 1 is single-threaded** (zero subagent records) and **≥ 1 contains
+  `subagents/workflows/wf_*/` nesting**.
+- **The single-threaded session is a required arm, not an exclusion.** An earlier
+  draft made it VOID on the grounds that it cannot distinguish a fixed meter from
+  a broken one. That is a power argument wearing a definedness argument's
+  clothes: both denominators are ~10⁷ and the metric is perfectly defined there.
+  Dropping it would have discarded the negative control — the arm that shows the
+  repair does not *introduce* error where there was none — which is the role
+  `run 2026-08-04-mac-19-32k` plays for B16.
+- **Falls if:** any class differs by ≥ 1 token on any session in the set.
+- **Why the number is 0, and why B1's 5% does not transfer.** Both sides are
+  integer sums of the same integers read from the same files. There is no
+  sampling, no estimation, no display formatting and no clock, so a one-token
+  difference is a defect with a locatable cause and never noise. B1's 5% was a
+  **dollar** threshold against a rounded live panel; inheriting it would be a
+  threshold with no argument behind it, which is what G7's rule 4 forbids.
+  Removing the panel removes every mechanism that would justify a non-zero
+  tolerance, so the correct tolerance is zero.
+- **Disclosure of what was known when the threshold was fixed.** The readdir
+  mechanism, session `5fe28335`'s per-class coverage (cacheRead 54.8%,
+  cacheWrite 41.0%, output 99.1%, input 88.7%) and the ~96% pooled coverage over
+  eleven sessions were all computed **before** this premise was written, under
+  `run 2026-08-05-win-02-layout`. **The threshold of 0 uses none of those
+  figures.** Recorded rather than suppressed, per the rule G7 states: do not
+  forbid the second number, report when the deviation happened.
+- **Void conditions, fixed here rather than argued afterwards.** Each is
+  demanding on the *experiment* rather than permissive on the *result*, which is
+  the only direction a construction rule may be chosen in after the fact:
+  1. **VOID unless `evidence/<run_id>.meter.json` and
+     `evidence/<run_id>.walk.json` are both committed**, carrying the four-class
+     vector per session per side, the `uuid` disjointness count, the subagent
+     request share per session, the Claude Code version, and the SHAs of the
+     pre-registration, oracle and repair commits. **Machine-produced JSON only.**
+     Hand-typed numbers do not archive a run: B1's comparator side survives
+     nowhere but inside free-text `method` strings, which is why its fall cannot
+     be re-adjudicated today.
+  2. **VOID if `scripts/session-token-walk.mjs` or the admission rule above
+     changed after the amendment commit of 2026-08-05** — the clock moved once,
+     for the reason given in the amendment note, and it may not move again. What
+     is frozen is the standard, not the instrument: the meter may be iterated
+     freely against it, and must be, since repairing it is the point.
+  3. **VOID if the Claude Code version that wrote any session in the set differs
+     from the version recorded at pre-registration.** 2.1.219 is running and
+     2.1.220 is already on disk; an auto-update silently changes the layout being
+     conformed to.
+- **Attempt cap, and what it binds.** The readings are deterministic and
+  re-runnable, so capping *them* would mean nothing. What is capped is
+  restatement: **G1's closing condition may be restated on a different comparator
+  ONCE MORE, in total.** After that the recorded conclusion is that G-stop is not
+  evaluable in this venue, and the continue/stop decision is made on a stated
+  non-metered basis. The cap exists because "the comparator was wrong, not the
+  meter" is infinitely available — the same hazard G2 names for implementations
+  and B15 for strings.
+- **If it falls:** the residual is neither file discovery nor per-request
+  selection, since both are now located and specified above. The remaining
+  surface is per-record extraction — `readUsage`'s TTL split, and whether
+  `usage.iterations` still sums to the top level on every record rather than on
+  the ones that were spot-checked. **Do not compensate by widening the
+  tolerance**; a tolerance is what this premise removed.
+- **What a hold does NOT establish**, stated so it cannot be cited for more
+  later: that Anthropic billed these records; that the transcript writer wrote
+  every record it should have; that tokens map to the right rate key — 1h/5m TTL
+  attribution, model attribution, and the `speed` fast-mode suffix `rateKey()`
+  builds are tested by nothing here; and that any absolute dollar figure is
+  measurable on this plan.
+- **Measured:** — (no run)
+- **Status:** **moot** — superseded by B19, see the box at the top of this block.
+  It was never measured, so it is `moot` rather than `fallen`. B14's disposition
+  exactly, and for the same reason: the premise was sound, its method was not.
+
+## B18 — Claude Code's own accounting of a session equals the on-disk union
+
+- **Assumed:** they agree — (assumed)
+- **EXPLORATORY. It cannot open or close G1, and no gate reads it.** B17 asks
+  whether the meter reads every billed record **on disk**; that is a claim about
+  the meter. B18 asks whether the records on disk are the ones Claude Code
+  **credited**; that is a claim about Claude Code's internal consistency, and it
+  cannot decide a premise about the meter. The hierarchy is fixed here before
+  either runs, with its reason, which is what distinguishes it from choosing the
+  gating outcome after seeing both — the move G7's rule 2 exists to prevent.
+- **Method:** `claude -p --output-format json` → `result.modelUsage` summed
+  across model rows, against the oracle walk over `result.session_id`, on a run
+  that spawns nested workflow subagents. Recorded alongside: the CLI version, the
+  process `startedAt`, and **both** vectors — the union by `sessionId` and that
+  union restricted to `timestamp >= startedAt` — so the process-versus-history
+  ambiguity is visible rather than silently absorbed into a residual. If
+  `~/.claude.json → projects[<cwd>].lastModelUsage` populates, it is recorded
+  unrounded; it is empty for all four entries of this project today, and a
+  60-second pilot settles whether that is permanent.
+- **Experiment:** one headless run with nested subagents, both vectors archived.
+- **Measured:** — (no run)
+- **Falls if:** nothing. A disagreement here is a finding about the venue and
+  produces a new premise; it does not touch B20's status. Recorded without a
+  threshold, deliberately, for the reason above.
+- **Status:** open
+
+## B19 — the cost meter counts every billed token a session incurred
+
+> ### ⚠ `moot` — superseded by B20, and killed by the same freeze that killed B17.
+>
+> A second stop-time review found two more false-negative paths in the oracle,
+> both of them **this project's own bug wearing a different costume**:
+> `sessionFiles` hardcoded the path segment `subagents`, and `jsonlUnder` caught
+> every error and returned `[]`. A corpus whose agent logs sat one directory over
+> came back as a clean single-threaded session — 2 requests, 0 subagent, a
+> passing invariant, 1,500 output tokens uncounted. See
+> `DECISIONS.md § the oracle hardcoded where to look, which is the bug it was built to find`.
+>
+> **The churn is not the oracle. It is that this premise and B17 both froze the
+> IMPLEMENTATION before it was trustworthy, instead of freezing the STANDARD.**
+> Three premises have now died to that, none of them for tuning, and a freeze
+> that pins a defect in place is not protecting anything. **B20 changes what the
+> freeze attaches to**, which is why it is a replacement rather than a fourth
+> repetition — and it is the last one this line gets.
+
+**Replaces B17, which is `moot`.** B17 was never measured and nothing about it
+was wrong except its instrument: its oracle carried a disjointness invariant that
+could not fail and a `cacheWrite` rule that contradicted the repair by 42,558
+tokens. Fixing them edited the file B17's VOID condition had frozen, and that
+condition also forbade the clock moving twice — so B17 is unscorable by its own
+text and this premise takes a fresh number. **IDs are never recycled**; B14 → B16
+is the precedent, including that the outcome did not change.
+
+- **INHERITED VERBATIM FROM B17, and that is the point:** the outcome, the
+  threshold of **exactly 0**, the **Holds if** and **Falls if** conditions, the
+  **admission rule** with its three steps, the **Experiment**, the
+  **Method, not threshold** clause, the **disclosure** of what was known when the
+  threshold was fixed, and the statement of **what a hold does NOT establish**.
+  Read them there. Nothing is re-derived and nothing is loosened — **the
+  admission rule did not change in the repair**; only the implementation, and an
+  extraction rule the admission rule never specified.
+- **What is new, 1 — the extraction rule, which B17 left unstated and should not
+  have.** `cacheWrite` is the **top-level `cache_creation_input_tokens`** on both
+  sides; the TTL split never overrides it. This is not a choice made here: it is
+  what `readUsage`'s own comment already fixes — *"the split is authoritative when
+  present **and consistent**; otherwise attribute the whole cache write to the
+  5-minute TTL"* — text that predates all of this, which is why adopting it
+  cannot be fitting. Fifteen records carry a top-level 0 against an
+  `ephemeral_1h` of 2,452 to 4,911; under the two rules the sides differ by
+  **42,558 tokens**, so B17 would have fallen on its own oracle's preference.
+  Those records and their tokens are **counted and totalled** in the oracle's
+  output — visible and unscored rather than invisible and absorbed. Which reading
+  Anthropic bills is not decidable from these files, and this premise does not
+  score TTL attribution.
+- **What is new, 2 — the invariant must be demonstrated capable of failing before
+  it may score anything.** B17's disjointness check reported `sharedUuids: 0` on a
+  corpus built to violate it, because the per-source sets were filled after the
+  de-duplication guard. It was cited as a passing check and was a loop artefact.
+  `tests/session-token-walk.test.ts` now holds the corpus where it comes back
+  **false**, and this premise's `Holds if` may not be read as satisfied unless
+  that test is present and passing. **An invariant never shown to fail is not
+  evidence** — the same lesson as B16's negative control arriving by accident,
+  learned here on purpose.
+- **VOID conditions: B17's three, with condition 2 re-pointed.** VOID unless both
+  `evidence/<run_id>.meter.json` and `evidence/<run_id>.walk.json` are committed
+  with the full four-class vector per session per side, machine-produced. VOID if
+  the Claude Code version that wrote any session differs from the version
+  recorded here. And **VOID if `scripts/session-token-walk.mjs` differs from
+  commit `9078a49`, or the admission rule changes** — the freeze now attaches to
+  a **SHA rather than a date**, because a date froze a file whose defects had not
+  yet been found and that is exactly how B17 died. A SHA can be checked; a date
+  can only be believed.
+- **This clock does not move.** If the oracle needs a third correction, the
+  honest reading is that the method is not converging, and the remedy is to say
+  so rather than to renumber again. **One more replacement, total** — the same
+  cap B17 put on restating G1's comparator, applied to the instrument.
+- **Measured:** — (no run)
+- **Status:** **moot** — superseded by B20, see the box above. Never measured, so
+  `moot` and not `fallen`. **The clause directly above was right about the
+  symptom and wrong about the cause:** a third correction did arrive, and it did
+  not mean the method was failing to converge. It meant the freeze was pointed at
+  the wrong object. B20 spends the replacement this clause allowed, on that.
+
+## B20 — the cost meter counts every billed token a session incurred
+
+**Replaces B19, which replaced B17. Both are `moot`, neither was ever measured,
+and neither died of tuning** — they died because their VOID conditions froze
+`scripts/session-token-walk.mjs` at a commit before anyone had shown the file was
+trustworthy, and it was not: four false-negative paths were found across two
+reviews, every one of which would have made the premise HOLD on a broken meter.
+
+**What changes here is the object of the freeze, and that is the whole point of
+the renumber.** The thing that must not be tuned is the **standard**, not the
+code that implements it. Freezing the code was over-tight in the direction that
+matters least and useless in the direction that matters most: it never stopped a
+defect, and it pinned four of them in place.
+
+- **"THE STANDARD" IS TWO DIFFERENT KINDS OF THING, AND THE FIRST DRAFT OF THIS
+  PREMISE LUMPED THEM.** That was wrong within a day: it claimed everything was
+  byte-identical to the pre-registration commit while the oracle had already been
+  broadened past the enumeration clause. The two need different treatment and the
+  difference is not a matter of taste.
+  - **A THRESHOLD CAN BE FITTED.** Move it and the same data changes verdict, in
+    whichever direction the author prefers. **Frozen absolutely, from the
+    pre-registration commit, no exceptions.**
+  - **AN ENUMERATION RULE IS A FACTUAL CLAIM ABOUT WHERE A VENDOR WRITES FILES,
+    AND IT MUST BE EXACT.** Under-inclusion hides the defect; over-inclusion
+    invents one. Neither is safe, and correcting it is repair rather than tuning
+    only because the **thresholds** it feeds are frozen and verified — never
+    because of anything about the correction's direction.
+- **FROZEN ABSOLUTELY, and byte-identical to the pre-registration commit — this
+  part of the claim survives and has been checked:** the outcome, the threshold
+  of **exactly 0**, the **Holds if** and **Falls if** conditions, the
+  **Experiment**, the **disclosure** of what was known when the threshold was
+  fixed, and the statement of **what a hold does NOT establish**. `git diff` over
+  `PREMISES.md` from the pre-registration commit touches none of those lines.
+  Read them in B17.
+  - **Checked field by field at `win-14`, not asserted:** ten bullets extracted
+    from B17 at `db4874e` and at `HEAD` and compared byte-for-byte — the heading,
+    the HARM/DETECTOR statement, `Metric, exact`, `Experiment`, `Holds if`, the
+    single-threaded-arm clause, `Falls if`, why the number is 0, the disclosure,
+    and what a hold does not establish. **All ten identical.** The fields that
+    differ are the ones amended with a note (`Admission rule`), the consequence
+    field `If it falls` — which is not the falsification condition `Falls if` —
+    and `Status`. **The check failed vacuously twice before it worked**: once
+    comparing `None` to `None` when a regex matched nothing, once on a field
+    marker that never existed. It now asserts the markers were found.
+- **AMENDED 2026-08-05, and this is the amendment the clause above exists to
+  license:** the enumeration is **every `*.jsonl` under `<sessionId>/`,
+  recursively** — not `<sessionId>/subagents/**` as B17 wrote it. The original
+  clause encoded a literal path segment, which is the identical assumption
+  `listTranscripts` makes with its non-recursive `readdir` and **the exact defect
+  this premise exists to falsify**. A corpus with agents one directory over came
+  back as a clean single-threaded session with a passing invariant.
+  - **Timing:** before any comparison has been run, and there is therefore no
+    residual the new wording could have been chosen to accommodate.
+  - **"BROADENING IS ALWAYS SAFE" WAS WRITTEN HERE AND IS FALSE. Measured, not
+    reasoned about.** The claim was that a superset of files can only make the
+    oracle count more, therefore only make the meter look worse, therefore never
+    be fitted in its favour. **A superset of FILES is not a superset of COUNTED
+    TOKENS**, because step 3 is last-write-wins per `requestId`, not a sum. A
+    stray `.jsonl` under the session directory holding an early partial copy of a
+    group **replaces** the winning record: measured **695 → 5 output tokens** on
+    a fixture. That is the file set growing and the count *shrinking* — the
+    direction that drives a residual toward zero and can hold this premise on a
+    meter that is wrong. A second fixture, a foreign session's record in the same
+    place, went the other way: **695 → 4,937.**
+  - **So direction is not a safety proxy and the latitude is not bounded by it.**
+    What bounds it is: the thresholds are frozen absolutely and verifiably; the
+    conformance suite must be green; and **any enumeration change after the first
+    scored run requires every existing `evidence/` artifact to be re-emitted**, so
+    a change in counted tokens appears as a diff rather than being absorbed.
+    Today that costs nothing because no artifact exists — which is exactly why
+    the correction is being made now rather than argued about later.
+- **THE ADMISSION RULE, STATED HERE IN FULL AND IN ONE PLACE.** B17 wrote it as
+  three steps. The oracle now performs four, and for a while the extra one lived
+  only in a separate bullet of this premise while B17's three-step text and the
+  oracle's own header both still said three. **Two descriptions of one rule,
+  disagreeing, is worse than either being wrong** — a reader following "the
+  admission rule" got a rule nothing implemented. This supersedes B17's wording
+  for B20; B17's stands as history.
+  1. **Admit** records with `type: "assistant"` carrying `message.usage`,
+     excluding `isApiErrorMessage: true` and `model: "<synthetic>"` — they carry
+     a real `requestId` and all-zero usage, so they are excluded **by those
+     fields and never by usage reading zero**, since a legitimate record can read
+     zero at the top level.
+  2. **Require `record.sessionId` to equal this session, unconditionally.** A
+     file under a session's directory is not thereby a request *of* that session:
+     unguarded, a stray record read **695 → 4,937** output tokens on a fixture.
+     **A record with no `sessionId` at all is excluded AND marks the session
+     `suspect`** — counted separately, never quietly dropped, because dropping
+     them silently is how a session with real traffic comes back empty. That is
+     not hypothetical here: this oracle has produced a false empty twice.
+     Measured: **0 of 5,595 records in this corpus lack the field**, so requiring
+     it costs nothing today and a non-zero count means the layout moved.
+  3. **De-duplicate by `uuid`** — RECORD identity across the file union, not
+     request identity.
+  4. **Group by `requestId`, take the group's usage from its LAST record in file
+     order.** A group spanning more than one file marks the session **`suspect`**
+     and it is not scored: last-write-wins is undefined there, the oracle cannot
+     know which record is authoritative, and guessing is what produced the
+     **695 → 5** reading that started this.
+  **An earlier draft's guard was conditional on the field being present**, so it
+  admitted any record that omitted `sessionId` and did not implement the rule it
+  declared one paragraph above. Both guards are zero across the real corpus and
+  both are now shown *firing* in `tests/session-token-walk.test.ts`.
+- **The emitted artifact must describe the rule that produced it.** For one
+  commit the oracle's `rule` string still named `subagents/**` after the walk had
+  been broadened, so an `evidence/` file would have carried a false account of
+  its own method. Pinned by `tests/session-token-walk.test.ts`. **In this
+  repository the artifact is the record**, and a record that misdescribes itself
+  is worse than a missing one.
+- **Also frozen, inherited from B19:** the **extraction rule** — `cacheWrite` is
+  the top-level `cache_creation_input_tokens` on both sides, per `readUsage`'s own
+  documented fallback, with the 15 disagreeing records counted and totalled
+  rather than resolved.
+- **NOT FROZEN: the oracle's implementation, until the first scored run.** It may
+  be repaired freely up to that point, and after it any change to
+  `scripts/session-token-walk.mjs` **voids that run** and requires a new one.
+  **The argument is that this is precisely the anti-tuning rule, stated
+  correctly:** tuning means choosing the standard by its answer, and *there is no
+  answer to tune toward until a residual exists*. Before the first comparison
+  there is nothing to fit; after it there is, and the freeze bites exactly then.
+  B17's and B19's version bit a year too early and let go a moment too late.
+- **This IS a loosening of B19's letter, and the compensating tightening is named
+  rather than implied.** The oracle must pass `tests/session-token-walk.test.ts`,
+  and that file must contain, as *negative* controls: the disjointness invariant
+  returning **false** on a collision corpus; the walk finding agent logs that sit
+  **outside** `subagents/`; the walk **throwing** rather than reporting an empty
+  session when a directory cannot be read; and a session with no admitted request
+  coming back **void**. A repair that breaks one of those is caught by a check,
+  not by whoever is reading the diff that day. **Trust moved from a hash to a
+  suite, which is the direction it should have run in from the start.**
+- **VOID conditions.** B17's three, with the second re-pointed as above:
+  1. **VOID** unless `evidence/<run_id>.meter.json` and
+     `evidence/<run_id>.walk.json` are both committed, machine-produced, with the
+     four-class vector per session per side.
+  2. **VOID** if the oracle changed after the run it scores without every
+     existing `evidence/` artifact being re-emitted; if any **absolutely frozen**
+     rule above changed at all; or if the conformance suite was not passing at
+     the commit the run was produced from.
+  3. **VOID** if the Claude Code version that wrote any session in the set
+     differs from the version recorded at that run.
+  4. **VOID sessions do not count toward the set.** A session with no admitted
+     request satisfies "every class differs by exactly 0" on both sides
+     trivially; the oracle marks those `void` and they are excluded from the
+     ≥ 5. Zero requests is a fact about the corpus, never a verdict about the
+     meter.
+  5. **SUSPECT sessions do not count toward the set either, and do not fall it.**
+     A `requestId` group spanning files makes the walk's own aggregation
+     undefined, so the session says nothing about the meter in either direction.
+     Excluded and reported, never scored.
+- **NO MORE REPLACEMENTS. This line ends here.** B19 permitted one and this is
+  it. If the oracle needs a fifth correction, the recorded conclusion is that
+  **G1 cannot be closed in this venue**, G-stop is not evaluable, and the
+  continue/stop decision is made on a stated non-metered basis. That is a real
+  outcome this project is allowed to reach, and reaching it honestly beats a
+  sixth renumber.
+- **Measured: `run 2026-08-05-win-14-b20`. Residual EXACTLY 0 on every class of
+  every session — 4 classes x 11 sessions — and the request counts equal on all
+  eleven.** Artifacts: `evidence/2026-08-05-win-14-b20.{walk,meter,comparison}.json`,
+  machine-produced, carrying the four-class vector per session per side, the
+  `uuid` disjointness counts, the subagent share per session, the Claude Code
+  version and the three commit SHAs.
+  - **The set was fixed by the enumeration rule, not chosen:** every session
+    present at the pre-registration commit `db4874e`. Eleven scored, **none void,
+    none suspect, none dropped**, so there is no selection to argue about.
+  - **Both required arms are present.** Seven single-threaded sessions as the
+    negative control — the arm that shows the repair does not introduce error
+    where there was none — and `c9e2fe70` carrying `subagents/workflows/`
+    nesting. One Claude Code version throughout, `2.1.219`.
+  - **Read from a FROZEN SNAPSHOT of those files.** The live directory grows
+    while the session measuring it runs, so a comparison whose input changes
+    between its two halves cannot be repeated — which is the whole reason this
+    premise demands artifacts. Both sides read one fixed copy.
+  - **Conformance suite green at the run's commit:** `tests/session-token-walk.test.ts`,
+    14 tests, including the four negative controls this premise requires.
+  - **RE-EMITTED, and the first attempt is superseded rather than deleted.**
+    `run 2026-08-05-win-11-b20` produced identical vectors from a meter that
+    identified a session by its first billable record, while the oracle required
+    `record.sessionId` to equal the id it was handed. **Two different rules
+    agreeing because filename and records match on all 11 files here — 0 of 11
+    disagree — is agreement by corpus, not by rule**, and that is the coincidence
+    this premise exists to exclude. The meter now honours the id. Both artifact
+    sets are committed; the earlier one is evidence of the instrument, not of the
+    result. **A third emission followed**, because each side had also promoted
+    the key IT needed — `requestId` for the meter, `uuid` for the oracle — into
+    an admission condition step 1 does not state, in opposite directions and
+    both silently. **All three runs return identical vectors**, because every one
+    of this corpus's 5,669 assistant records carries both keys. Three times now
+    the residual was 0 for a reason that was a property of the corpus rather than
+    of the rules, and each time a fixture varying one field found what reading
+    the two implementations side by side did not.
+    **A fourth emission followed, and it is the scored one.** The meter reported
+    one fixture record as `admittedWithoutUuid: 1` *and* `excluded.apiError: 1` —
+    the same record counted as admitted and as rejected in one payload — because
+    the counter sat in the record-level pass, which knows only assistant-plus-usage
+    and not the api-error or session checks that decide admission. The symptom was
+    that a **rejected** record was counted as admitted, so the number could read
+    non-zero on a session that admitted nothing. The oracle counts at the point of
+    admission and reported 0. **All eleven sessions report 0 on both sides**, which
+    is why this corpus could never have shown it: the fourth time a number agreed
+    for a reason belonging to the corpus and not to the rules. Vectors again
+    identical; only the instrument commit differs, and that is the whole reason to
+    re-emit.
+    - **RETRACTED from the sentence above as first written: "it could therefore
+      exceed the number of requests admitted."** That was offered as a symptom of
+      the defect and it is not one. The counter is over **records** while a
+      request is a `requestId` **group**, and **neither number bounds the other**:
+      measured 3 against 1 request where one group holds three uuid-less records,
+      and 2 against 4 where two of them share a group and three others carry
+      uuids. Counting per record is deliberate — each could reappear in a second
+      file undetected, so a per-group count can understate the risk, equalling it
+      when a group holds one such record and falling below when it holds several.
+      **Three statements about this field were wrong in three consecutive
+      commits, each an existential dressed as a universal.** "It can never
+      exceed the request count", pinned as a test assertion that passed only
+      because the fixture's counter was 0. "It exceeds by design", which reads as
+      always. "It does exceed whenever one group has several such records", a
+      sufficient condition that is not one — case B above satisfies it and does
+      not exceed. Each was refuted by a fixture, and the test now pins **both
+      directions**, which is the only form that cannot rot back into an ordering.
+      Nothing scored changes: `win-14`'s artifacts carry 0 for all eleven
+      sessions, and the oracle marks any session with a non-zero count `suspect`,
+      which drops it from the set before it can be compared.
+- **What the repair recovered: 390 of 2,703 billed requests were invisible.**
+  The meter printed `(N main, 0 subagent)` on every session for four days. The
+  gap is not spread evenly — `514a829f` is 78% subagent by request count while
+  seven sessions have none at all — which is why it was never a constant and why
+  no scale factor could have corrected an old number.
+- **Status:** **holding**
+
 ## B2 — `hookSpecificOutput.updatedToolOutput` changes what is BILLED, not only what is displayed
 
 - **Assumed:** it does — (assumed, from documentation only)
@@ -532,20 +1064,142 @@ pre-registered as its own premise before anything is measured against it.
   negative. This is the one premise whose failure means deletion, not adjustment.
 - **Status:** open
 
-## B12 — the combined saving is ≥ 30% of cost per task
+## B12 — a task done with the server installed costs ≥ 30% less billed Anthropic context than the same task done without it
 
 - **Assumed:** ≥ 30% — (assumed; the per-lever estimate behind it is a derivation
   over the measured cost split, not a measurement)
-- **Source of the assumption:** the cost decomposition below plus the positional
+- **Source of the assumption:** the cost decomposition plus the positional
   multiplier.
-- **Experiment:** 20 real tasks run with the MCP server enabled and disabled;
-  compare with `npm run cost-meter`. There is no hook arm — G2 is closed, so the
-  server is the whole of what is being measured.
-- **Measured:** — (no run)
-- **Falls if:** < 15% — see `G-stop` in `ROADMAP.md`.
+- **PRE-REGISTERED 2026-08-05, BEFORE ANY OBSERVATION EXISTS.** The full design
+  is frozen verbatim in `evidence/2026-08-05-b12-preregistration.json`,
+  **sha256 `5d42b19a899d4cc4538fcdb4d7573d17cf8ca9d4cb557f148c1746e6181ea55e`**,
+  committed as an ancestor of every observation. It carries the clauses this
+  entry states plus the ones only an implementer needs: 23 VOID conditions, 11
+  artifacts with their field lists, 16 covariates, and the run script's
+  obligations. **What is written here decides; what is written there implements.**
+  Freezing by hash rather than by prose is deliberate — B20 spent four emissions
+  discovering that a frozen claim nobody can check is not frozen.
+  - **How it was produced, because the method bounds what it is worth:** three
+    independent designs from different angles, each attacked on four adversarial
+    lenses by reviewers told to refute rather than to be fair, then synthesised.
+    **12 attack passes, 120 findings — 38 rated fatal, 72 major. No design
+    survived intact.** Four load-bearing claims were verified against the code
+    before being accepted; one was a defect in code shipped that same morning
+    (`wouldHaveAdded` hardcoding the main thread, fixed at `47b65f7`).
+- **States the outcome as the HARM, not the DETECTOR.** The harm is *the task
+  cost the same or more*. `savedFraction` is named separately under **Method**,
+  so a detector found blind falsifies the METHOD and leaves B12 standing. B14
+  returned a pass because its detector could not look; this is written so that
+  cannot repeat.
+  - **"a task", not "an attempt":** scored only if the task's committed
+    acceptance command exits 0. Otherwise the numerator is earned at a
+    verification step and the denominator is croppable by quitting, so every
+    fraction rises by giving up.
+  - **"installed", not "invoked":** a task that never calls a tool still pays the
+    tool schemas in every system prompt of every thread. `unitsAddedByInstallation`
+    is a term in the metric, not a caveat.
+  - **"less billed Anthropic context", never "less cost":** `repair`, `scaffold`,
+    `implement` and `fix` move work to a local model whose tokens and seconds are
+    outside the denominator **by construction**. A reduction here is consistent
+    with a pure relocation.
+- **Method, not threshold:** the counterfactual accounting in `src/cost/report.ts`,
+  joined by `invocation_id`, priced from `.local-coder/rates.json`. It is
+  PRIMARY and runs FIRST; the paired A/B runs second and **can only kill a hold,
+  never grant one**.
+  - **"The estimator is a floor" is DELETED — it is false, and no verdict
+    asymmetry may rest on it.** Four biases, each measured here, and they run in
+    BOTH directions: the positional multiplier takes `T` from the treated
+    session's own segment, which the tool lengthened by being called; the
+    numerator is uncapped above Claude Code's own 30,000-character truncation
+    ceiling (B2); `Math.max(0, …)` records a byte-negative call as zero, and
+    negative is the majority mode on a TypeScript repo (`run 2026-08-04-mac-09`:
+    `repair` negative **12 of 12**); and the refusal machinery deflates silently —
+    four sessions once printed a confident `0.0000` while refusing **534,443
+    units**.
+  - **Therefore the scored quantity is a BRACKET, not a point.** `R_lo` credits
+    every row at the cache write alone and zero re-reads; `R_hi` uses the
+    observed segment. Publishing a bound as a point value is the error the
+    `savedFraction` withholding rule already exists to prevent, one level up.
+- **Unit of observation: ONE TASK WINDOW**, delimited by a `requestId` snapshot
+  taken immediately before and diffed immediately after — any id absent from the
+  pre-snapshot was **originated** by the task. **Not a session:** `ROADMAP.md` G1
+  is narrowed to say why. The snapshot covers **every project slug this machine
+  writes to**, because a one-slug snapshot returns `inherited = 0` for arms that
+  wrote elsewhere, which is a check that cannot fail — and each arm runs in a
+  fresh worktree, so its slug does not exist when the "before" is taken.
+  **Corrected 2026-08-05: at that scope the snapshot is 56 slugs, 7,158 files and
+  70,453 ids, and takes ~25-31 s, not the 0.69 s first recorded** — that figure
+  was one slug, and one slug is exactly the scoping the clause forbids. Two per
+  observation over 45 observations is ~40 minutes, which is the price of making
+  inheritance impossible by construction rather than by inference.
+- **Scored as a VECTOR, not a scalar:** pooled `R`, plus `R_gate`, `R_repair` and
+  an explicit `R_other`, because G-stop requires each delivery to pay for itself
+  and pooling lets one delivery's exposure hold another's verdict hostage.
+- **Holds if** all seven conditions in the frozen design, of which the first is
+  **`R_lo` ≥ 30% over ≥ 20 admitted observations** — the WHOLE bracket clears the
+  line, the only reading of a frozen threshold against an interval that does not
+  require picking a point after seeing the data. A hold must also survive
+  deleting its best task, its best row, and reinstating everything it dropped.
+  - **Said now rather than in a post-mortem: this may be unreachable.** On a
+    25-request task suppressing 200 KB at the write component alone, `R_lo` is
+    roughly 26%. **It is genuinely possible that no honest run of this design
+    ever holds.** That is a fact about the design's power, disclosed before the
+    data, not an excuse to be discovered after it.
+- **Falls if `R_hi⁺` < 15%** — computed at the observed segment, over the FULL
+  observation set, granting every refused and excluded unit its measured
+  magnitude. A fall stops the project, so it must survive the most generous
+  arithmetic the data admits.
+  - **And the fall is CONDITIONAL.** It stands unappealed only if no refused
+    magnitude is `null`, `R_hi⁺` was evaluable, the excluded observations do not
+    carry more tool calls than the admitted ones, and both subagent strata are
+    evaluable and both below 15%. Otherwise it is `open — provisional` until the
+    A/B lands. **A fall on a deflated instrument stops the project permanently,
+    which is strictly the worse of the two errors**, and every source design
+    guarded only the other one.
+  - **A bracket straddling a line is `open`, with both ends published.** `open`
+    is not a defeat; it is what an interval spanning a threshold honestly says.
+  - **Two subagent strata in different bands with a clean refusal ledger is
+    VOID, not a fall** — that is the signature of a coverage bug, the shape that
+    hid 390 of 2,703 requests for four days.
+- **Why these numbers, and they are not being re-derived:** `git log` shows B12
+  edited exactly once, at `59cf135` on 2026-08-02, and never since. **30% and 15%
+  pre-date every measurement in this file's B12 line and have never moved.** Two
+  numbers in the design have no ancestor — the pacing ceiling and the per-task
+  denominator share cap — and both are labelled CHOSEN rather than derived, in
+  the pre-registration commit, before any observation.
+- **Attempt cap: TWO registered scored runs**, on B20's "no more replacements"
+  basis, with the second manifest sealed and hashed at the SAME commit as the
+  first so attempt 2 is a pre-registered replication rather than a re-draw
+  informed by twenty per-task outcomes. A VOID consumes an attempt except for
+  enumerated vendor-side causes. After two, **the recorded conclusion is that
+  G-stop is not evaluable in this venue** and the continue/stop decision is made
+  on a stated non-metered basis.
+- **What a hold does NOT establish** — eleven items in the frozen design; the
+  four that bite hardest:
+  1. **NOT that G-stop is satisfied.** G-stop names three surviving deliveries
+     and requires each to pay for itself. **The cost meter suppresses nothing and
+     writes no telemetry row, so it has no `R_d` and structurally cannot have
+     one.** B12 holding therefore cannot close G-stop, and that consequence is
+     fixed here, in advance, rather than argued when it arrives.
+  2. **NOT that the task set is representative.** The manifest is **authored**.
+     B20's set was every session at a commit — a rule with no discretion — and
+     that defence does not transfer. B3 measured the two verification modes
+     **400x apart**, so the author's choice of tasks is the largest single lever
+     on `R`.
+  3. **NOT that total cost fell rather than moved.** Local compute is outside the
+     denominator by construction.
+  4. **NOT anything about correctness.** B4 is open and unmeasured. Acceptance
+     rates per arm are published beside every ratio precisely so a cost reduction
+     bought by doing less is visible as one.
+- **The operator cannot be blinded, and no clause makes that residual zero.** The
+  treatment IS the presence of the tools in the operator's own tool list. Seven
+  channels are enumerated and bounded in the frozen design; what remains is
+  declared, not repaired.
 - **If it falls:** the project stops. Only the pieces that individually paid for
-  themselves in the counterfactual accounting survive.
-- **Status:** open
+  themselves survive — and per item 1 above, the cost meter cannot be shown to
+  have done so by this instrument.
+- **Measured:** — (no run)
+- **Status:** open · **pre-registered**, run not started
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 
@@ -676,6 +1330,29 @@ pre-registered as its own premise before anything is measured against it.
   `tests/fs-safety.test.ts` pins that calibration, and re-fitting a constant
   against a corpus whose sizes its own author chose is the move corpus #1 was
   already caught by. **Changing it is a decision, not a cleanup.**
+  - **DECIDED 2026-08-06: 3.5 STAYS. The divisor does not move.** Not deferred —
+    decided, with the condition that would reopen it stated below.
+
+    Three reasons, and the first is the one this file keeps being caught by.
+    **(a)** 3.978 is pooled over a corpus whose sizes its own author chose, which
+    is the corpus #1 mistake in different clothes; the bullet above says so
+    itself. **(b) It is not even stable across corpora** — the same file records
+    4.22 B/token in one place against the 3.978 pooled over `mac-12-variance`, a
+    6% spread, so "the measured value" is a value, not the value. **(c) The two
+    errors are not symmetric, and that is decisive.** At 3.5 the estimator is
+    ~14% pessimistic: it refuses requests that would have fit, which costs
+    coverage **visibly** — `output_would_truncate` is a `ToolError` with a name,
+    and B16 already carries one observed over-refusal. At 3.978 it would refuse
+    less and truncate more, and truncation is **silent**: this premise's own
+    closing bullet is about a request that "quietly lost 90 lines" while the
+    detector reported a pass. Trading a logged refusal for an unlogged
+    amputation is the wrong direction for an estimator whose whole problem is
+    that it cannot see its own failures.
+
+    **Reopens if:** corpus #2 supplies requests *near* the bar — which corpus #1
+    by construction does not — and a run scoring them records its `timeoutMs`
+    against the ~208 s threshold above, so a zero means something. Re-derive
+    against **that** data, not against a re-pooling of this one.
 - **Falls if:** > 10% of the requests that pass still truncate.
 - **If it falls:** recalibrate `LOCAL_CODER_OUTPUT_BYTES_PER_TOKEN` and
   `LOCAL_CODER_OUTPUT_USABLE_FRACTION` **against that run's data**, which is the

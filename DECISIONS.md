@@ -1494,3 +1494,793 @@ one response come back short. So whatever the overflow policy is, the practical
 rule is already decided: **the declared window must be verified against `lms ps`
 before it is trusted**, and a run that skips that verification is measuring its
 own configuration rather than the model. B16 carries that as a VOID condition.
+
+### the session is N files, and the meter was reading one
+
+**Measured 2026-08-05, `run 2026-08-05-win-02-layout`, before B17 was written.**
+
+For four days B1's fall carried a failure labelled *Scope*: the meter counted
+**65%** of `/usage`'s cache-read tokens for the same session, and the record said
+"this is not arithmetic" and then stopped, because `/usage`'s scope could not be
+determined from the data available. It was never a scope mystery. It is a file
+discovery bug, and it is visible without `/usage` at all.
+
+Since Claude Code 2.1.219 a session is not one file:
+
+```
+~/.claude/projects/<slug>/<sessionId>.jsonl                          <- main thread only
+~/.claude/projects/<slug>/<sessionId>/subagents/agent-*.jsonl
+~/.claude/projects/<slug>/<sessionId>/subagents/workflows/wf_*/agent-*.jsonl
+~/.claude/projects/<slug>/<sessionId>/subagents/workflows/wf_*/journal.jsonl   <- NOT a request log
+```
+
+`listTranscripts` (`src/cost/transcript.ts:319-331`) does a **non-recursive**
+`fs.readdir` and keeps names ending in `.jsonl`. The `<sessionId>/` directory
+does not end in `.jsonl`, so it is dropped whole. In this project: **11 files at
+the top level, 37 recursively.**
+
+| session `5fe28335` | main | subagents | meter sees |
+|---|---|---|---|
+| billed requests | 44 | 62 | 41.5% |
+| `cache_read` | 7,186,947 | 5,934,022 | **54.8%** |
+| `cache_creation` | 280,814 | 403,787 | **41.0%** |
+| `output` | 113,508 | 985 | 99.1% |
+| `input` | 909 | 116 | 88.7% |
+
+That is the signature B1 recorded against `/usage` — high output coverage,
+badly degraded cache coverage — and the mechanism explains why: subagents burn
+cache reads and return almost no tokens to the parent.
+
+**Four things follow, and only the first is the bug.**
+
+1. **The error is a function of session shape, not a constant.** Near zero on a
+   single-threaded session, ~45% on a multi-agent one, ~4% pooled across the
+   eleven here. No single number describes it, which is why B17 scores every
+   session in its set separately rather than in aggregate — and why any B12
+   comparison must record subagent share as a covariate.
+2. **`(N main, 0 subagent)` is the worse version of the failure.** The meter
+   prints that line on every session, and it reads as a measurement. `isSidechain`
+   is `true` on 172 of 172 records in the subagent files and `false` on 114 of
+   114 in the main file, so the whole sidechain apparatus in `src/cost/` —
+   `sidechainRoot`, per-thread compaction, the thread-scoped counterfactual join —
+   is correct code that can never fire under this layout. **A careful
+   implementation of the previous layout is indistinguishable from a working one
+   until something counts the files.**
+3. **The scope of the repair is larger than "recurse".** `buildSessionReport`
+   takes one `Transcript`; `Transcript.sessionId` is `requests[0].sessionId`; the
+   CLI emits one payload per file; `--last 1` sorts by mtime, so the "newest
+   session" can be a subagent file; `sidechainRoot` walks a `parentUuid` map built
+   within a single file. The meter has to start emitting one vector per
+   `sessionId`, not one per file.
+4. **`journal.jsonl` is a trap for whoever fixes it.** It ends in `.jsonl`, sits
+   under `subagents/workflows/wf_*/`, holds records keyed `{type, key, agentId}`,
+   and carries agent return values in which the string `usage` appears. A glob of
+   `**/*.jsonl` that sums anything usage-shaped double counts. B17's admission
+   rule excludes it by requiring `type: "assistant"` with `message.usage`.
+
+**The transferable lesson.** A reader that enumerates files has a **discovery
+rule**, and a discovery rule is falsifiable separately from the arithmetic it
+feeds. B1 tested the two together, against a comparator that could resolve
+neither, and got a number that named the wrong half. `MEASUREMENTS.jsonl` had
+recorded the arithmetic as internally consistent — 251 duplicate groups all
+carrying identical usage, no record missing a `requestId`, `usage.iterations`
+summing to the top level — which was true, and true of one file.
+
+### the freeze forbids measuring, not repairing
+
+**Decided 2026-08-05.** `STATE.md:20` and `PREMISES.md:793-794` both say
+`src/cost/` "is frozen while G1 is reopened". Neither is a rule; both are
+parenthetical gloss inside B15's problem, explaining why
+`classify-verification.mjs` must live elsewhere. The only normative text is G1's
+own reopening condition — **"nothing meter-derived may be measured until it
+agrees"** — which bans a use, not an edit.
+
+The reading is settled by reductio rather than by preference: **read as a blanket
+edit ban, the freeze makes G1's own written closing condition unreachable by
+construction.** G1 closes when the meter agrees; the meter cannot agree until the
+discovery bug is fixed; the fix is in `src/cost/transcript.ts`. A rule that
+guarantees the gate it guards can never close is not a discipline, it is a
+deadlock, and the shorthand overshot what the condition says.
+
+**What survives, and it is the part that was doing real work:** the meter may not
+be edited to **serve a different premise** while it is under audit. B15's
+`classify-verification.mjs` still may not move into `src/cost/` — and its actual
+reason was never the freeze anyway, it was that `transcript.ts` architecturally
+cannot answer B15's question, since it keeps `{id, name}` per tool call and
+discards each call's `input`.
+
+**Two boundaries, because "repair" is exactly the word that stretches.**
+
+- The **oracle** goes in `scripts/session-token-walk.mjs` and imports nothing
+  from `src/cost/`. An oracle that shared code with the thing it checks would
+  agree by construction.
+- The **repair** goes in `src/cost/`, not in a script. `ROADMAP.md` names
+  `src/cost/{cli,rates,transcript,report}.ts` as G1's *Delivered* artifact, and
+  B12 and `savedFraction` read the meter — so a script that agrees with the
+  oracle would verify an instrument nobody uses.
+- The repair's scope is bounded in advance: it may change **which files are read**
+  and how records are merged and deduplicated across the union. It may not touch
+  `rates.ts`, and it may not change per-record token extraction beyond the
+  `useSplit` consistency fix recorded below, which is a separate commit.
+
+**A judgment call belongs here rather than in `ROADMAP.md`** by the first rule of
+`PREMISES.md`, and the precedent for resolving an ambiguity in governing text by
+a recorded decision is the gate-ceiling note that same file already carries.
+
+### the split is used when present, and the comment says "and consistent"
+
+`readUsage` (`src/cost/transcript.ts:117-121`) documents the rule as *"the split
+is authoritative when present **and consistent**"*. The guard written is
+`splitTotal > 0`. The consistency check was never written, and
+`Math.max(0, total - splitTotal)` silently swallows a negative remainder.
+
+**Counterexample, on disk, in session `c9e2fe70`:** a record with
+`cache_creation_input_tokens: 0` and
+`cache_creation.ephemeral_1h_input_tokens: 278`. `useSplit` is true, so the meter
+books **278 cacheWrite-1h tokens against a top-level field that says zero** — in
+the class carrying the 2.0x multiplier, the most expensive of the five.
+
+Found by adversarial review of B17's design, before B17 ran. Repaired in its own
+commit, ahead of the discovery fix, because a known signed defect inside a scored
+class would make a zero-residual result mean less than it says.
+
+### usage repeats verbatim, except for the field that costs the most
+
+**Measured 2026-08-05, `run 2026-08-05-win-03-dedup`, before the oracle was
+written and before anything was compared.**
+
+`src/cost/transcript.ts:239-243` is the correctness core of the meter — Claude
+Code writes one billed request as several `assistant` records, and summing them
+naively overcounts `cache_read` by 2.3x, which the dedup by `requestId` exists to
+prevent. The rule it implements is **first record wins**: later records
+contribute their `tool_use` blocks and their usage is discarded.
+
+The justification for discarding it is recorded at `MEASUREMENTS.jsonl:9` —
+*"usage repeats verbatim on every content block of one request"* — and checked at
+`:54`, where 251 duplicate groups all carried identical usage and none differed.
+Both rows stand. What does not survive is the generalisation they licensed.
+
+Over every transcript in this project, **2,482 `requestId` groups, 1,647 of them
+holding more than one record**:
+
+| | groups |
+|---|---|
+| usage identical across the group | 1,320 |
+| **usage differs** | **327** |
+| …where the differing field is `output_tokens` | 327 |
+| …where the differing field is anything else | **0** |
+| …where the FIRST record holds the smaller value | **327 of 327** |
+
+Only `output_tokens` varies. `input_tokens`, `cache_read_input_tokens`,
+`cache_creation_input_tokens` and both TTL splits are identical in 2,482 of
+2,482. Intermediate records carry a partial completion count; the terminal record
+carries the whole answer.
+
+```
+req_011CdcbHwVuWCQpRakCQmKDa
+  a274a76d  stop=null       out=5     cr=30034  cw=16667
+  bbfeb04d  stop=null       out=5     cr=30034  cw=16667
+  cb7af054  stop=null       out=5     cr=30034  cw=16667
+  9edf7817  stop=null       out=5     cr=30034  cw=16667
+  25972d21  stop=tool_use   out=695   cr=30034  cw=16667
+```
+
+**The meter keeps the 5 and discards the 695.** Project-wide the rule drops
+**655,570 output tokens — 19.27% of all output** — in the class carrying the
+**5.0x** multiplier, the highest per token of the five.
+
+**Three things make this worth writing down rather than just fixing.**
+
+1. **The defect is signed.** First-wins can only undercount output, never
+   overcount it: 327 of 327, no counterexample. That matters because B1's
+   headline ran the *other* way — the meter reported $119.11 against `/usage`'s
+   $35.96 — so this error and that one are independent, and neither explains the
+   other. Two of the meter's three known defects undercount and the reported
+   dollar figure was still too high.
+2. **`stop_reason` is not the selector, and the obvious rule would have been
+   wrong.** It reads like the terminal marker, but 27 groups carry none at all
+   and 1,300 carry more than one. **Last-in-file-order agrees with the maximum on
+   2,482 of 2,482 groups**, needs no tie-break, and is what B17's admission rule
+   now specifies. The rule that looks principled and the rule that works are not
+   the same rule here.
+3. **A verified claim about one session became a rule about all of them.** The
+   check at `MEASUREMENTS.jsonl:54` was real, careful, and reported honestly. It
+   was also n=1, and the row that carried it into the code said "repeats
+   verbatim" without the qualifier. The transferable form: **a dedup rule is a
+   claim about every group it will ever see**, and confirming it on the groups in
+   front of you is confirming the weaker statement.
+
+Found by writing B17's oracle, before the oracle existed — which is the argument
+for pre-registering an admission rule in prose. Specifying what a billed request
+*is*, precisely enough for a second implementation, is what forced the question
+that the first implementation had answered by assumption.
+
+### a check that cannot fail is worse than no check
+
+**Found by stop-time review 2026-08-05, before the oracle had scored anything.**
+
+B17's disjointness invariant exists for one reason, and B17 states it: *"Without
+it the union can pass by two errors cancelling."* No `uuid` may occur in both a
+main transcript and a subagent file, because if one does, the file union is
+double-counting or the de-duplication is silently dropping a request.
+
+The implementation could not fail. Per-source `uuid` sets were populated **after**
+the global de-duplication guard:
+
+```js
+if (seenUuid.has(uuid)) { uuidDuplicates += 1; continue; }
+seenUuid.add(uuid);
+(isSubagent ? subUuids : mainUuids).add(uuid);   // <- never reached for a collision
+```
+
+The main file is walked first, so a `uuid` on both sides landed in `mainUuids`
+alone and its subagent occurrence was dropped as a duplicate before the second
+set ever saw it. The intersection was empty **by construction**.
+
+Given a corpus built specifically to violate it — one `uuid` written into both
+files — it reported:
+
+```
+uuidDisjoint : {mainUuids: 2, subagentUuids: 1, sharedUuids: 0, holds: true}
+```
+
+while discarding that subagent's request and its 70 output tokens. The check
+answered *yes* to the only question it was built to answer *no* to.
+
+**This is the same failure as the meter printing `(N main, 0 subagent)`.** In
+both cases a number that reads as a measurement is an artefact of the loop that
+produced it, and in both cases the honest-looking output is what stops anyone
+looking further. The zero the oracle now reports on the real corpus is a
+measurement; the previous zero was a shape of the code.
+
+**Three things this changes, beyond the fix.**
+
+1. **The freeze attaches to a SHA, not a date.** B17 froze
+   `scripts/session-token-walk.mjs` as of a commit and forbade the clock moving
+   twice. Both defects were in the file at that commit. A date freezes whatever
+   was there, defects included, and can only be believed; a SHA can be checked.
+   B19 names commit `9078a49`.
+2. **An invariant must be shown to fail before it may be cited.** B19 will not
+   read its `Holds if` as satisfied unless `tests/session-token-walk.test.ts` is
+   present and passing, and that file's load-bearing case is the corpus where the
+   invariant returns `false`. B16 got its negative control by accident, when a
+   run declared the wrong window and became the control group the project never
+   had; this one is deliberate. **An invariant never shown to fail is not
+   evidence** — it is a line of output.
+3. **B17 dies of its own VOID condition, and that is the system working.** The
+   condition was written to stop the standard being tuned once residuals were
+   visible. No residual was visible; the edits strengthen the check and remove a
+   self-inflicted disagreement; and it still voids B17, because a rule that bends
+   when the author judges the bend harmless is not a rule. Renumbering to B19 and
+   inheriting the outcome, threshold and admission rule **verbatim** costs one
+   commit and preserves the only thing this registry produces.
+
+### the oracle's cache-write rule was fighting the repair it measures against
+
+Second defect from the same review, and it would have made B19 fall on nothing.
+
+`readUsage` documents its rule as *"the split is authoritative when present **and
+consistent**; otherwise attribute the whole cache write to the 5-minute TTL"*.
+The consistency check was never written — that is the defect recorded above under
+*the split is used when present* — and the repair implements the documented
+intent by requiring `splitTotal === total` and falling back to the top-level
+total.
+
+The oracle, meanwhile, took `max(total, split)`, justified in its own header as
+*"the reading that cannot silently drop a token that was written."* That
+reasoning is not obviously wrong. It is simply **a different rule from the one
+the other side of the comparison will use**, and B19 compares the two sides.
+
+Fifteen records in this corpus carry a top-level `cache_creation_input_tokens` of
+**0** against an `ephemeral_1h_input_tokens` of **2,452 to 4,911**:
+
+| rule | cacheWrite over those 15 records |
+|---|---|
+| `max(total, split)` — the oracle's first draft | **42,558** |
+| `total` — what the repaired meter will report | **0** |
+
+So B19 would have shown a 42,558-token residual produced entirely by the oracle's
+preference, and whoever read it would have concluded the meter miscounts.
+
+**Resolved by taking the rule that predates the argument.** `cacheWrite` is the
+top-level total on both sides, which is `readUsage`'s own documented fallback and
+therefore cannot have been chosen to fit anything here. The 15 records and their
+42,558 split-only tokens are **counted and totalled in the oracle's output**, so
+the quantity is visible and unscored rather than invisible and absorbed.
+
+**What stays open, deliberately.** Which of the two numbers Anthropic actually
+bills is not decidable from these files. B17 already said in terms that it does
+not score TTL attribution and B19 inherits that, so the honest disposition is a
+named open question rather than a rule chosen by whoever happened to write the
+second implementation. **Anyone who wants that answer needs a premise of their
+own**, and it will need a comparator this venue does not currently have.
+
+### the oracle hardcoded where to look, which is the bug it was built to find
+
+**Second stop-time review, 2026-08-05, still before anything had been scored.**
+
+`src/cost/transcript.ts:319-331` does a **non-recursive `readdir`** and therefore
+cannot see `<sessionId>/subagents/**`. That is B1's scope failure, the finding
+this whole line of work exists to fix, and the oracle written to detect it
+contained the same assumption in a different costume:
+
+```js
+return { main, subagents: jsonlUnder(path.join(dir, sessionId, "subagents")) };
+//                                                       ^^^^^^^^^^^ a literal
+function jsonlUnder(dir) {
+  try { entries = readdirSync(dir, ...); } catch { return []; }
+  //                                        ^^^^^^^^^^^^^^^ every error is "empty"
+}
+```
+
+Given a corpus with two main records and two subagent records placed one
+directory over — `<sessionId>/agents/`, or nested a level deeper — it returned:
+
+| | truth | oracle |
+|---|---|---|
+| billed requests | 4 | **2** |
+| subagent requests | 2 | **0** |
+| output tokens | 1,550 | **110** |
+| `uuidDisjoint.holds` | — | **true** |
+
+A clean, single-threaded, invariant-passing session, with 1,440 output tokens on
+disk that nothing counted. **If the layout drifts again, the oracle and the meter
+agree on a false zero and the premise HOLDS, certifying a meter that cannot see
+half its traffic.**
+
+**The layout has already changed once. That change is the entire finding.** A
+literal path segment was the one assumption with no business being in a file
+written to catch literal-path-segment assumptions.
+
+Fixed both ways: the enumeration is now the session's directory recursively — a
+strict superset, so it can only find more — and `jsonlUnder` swallows **only**
+`ENOENT`.
+
+> **⚠ RETRACTED, same day — "a strict superset, so it can only find more" is
+> true of FILES and false of TOKENS.** The aggregation is last-write-wins per
+> `requestId`, not summation, so an added file can *replace* a winning record
+> and the session counts LESS: measured 695 → 5. See
+> *§ a superset of files is not a superset of tokens*. The enumeration change
+> itself stands; the safety argument for it does not, and the guards that
+> replace it are in `PREMISES.md` B20's admission rule. A missing directory is a fact about the corpus. `EACCES`, `ENOTDIR`,
+`EPERM` and `EIO` are facts about the *process*, and reporting "no subagent
+traffic" for one of those certifies a session nobody could read.
+
+Two zeros that were previously the same zero are now distinguishable, and the
+distinction fired on its first run: **`723e03c0` and `b5063f62` have session
+directories that exist and hold no request log.** Benign — both carry only
+externalised tool payloads, a `.txt` and two `.pdf` — but that was established by
+*looking*, which is the only reason it is a fact rather than a hope.
+
+### freeze the standard, not the code that implements it
+
+**Three premises have now been retired without ever being measured**, and not one
+of them died of tuning:
+
+| | why it died |
+|---|---|
+| **B1** | measured, `fallen` — the comparator was wrong on two independent counts |
+| **B17** | its VOID condition froze `session-token-walk.mjs` at a commit; fixing a vacuous invariant and a contradictory cache-write rule tripped it |
+| **B19** | same clause, same file, after the two defects above |
+
+The pattern is not the oracle being bad. It is that **B17 and B19 both froze the
+implementation before anyone had shown the implementation was trustworthy.** Four
+false-negative paths were found across two reviews. The freeze stopped none of
+them; what it did was make each fix cost a premise, and — much worse in
+principle — it would have **pinned every one of those defects in place** had
+nobody looked.
+
+A freeze exists to stop a standard being chosen by its answer. **You cannot
+choose by an answer that does not exist yet.** Before the first scored run there
+is no residual to fit; after it there is, and that is the moment the freeze
+should bite. B17 and B19 bit years early and let go a moment late.
+
+**B20's disposition, and the trade stated plainly.**
+
+- The **standard** is frozen: the admission rule, the extraction rule, the
+  metric, the thresholds, the holds/falls conditions. Byte-identical to the
+  pre-registration commit across all three premises, which is checkable and has
+  been checked.
+- The **implementation** is free until the first scored run. After it, any change
+  voids that run.
+- This **is** a loosening of B19's letter, and the compensating tightening is
+  named rather than implied: `tests/session-token-walk.test.ts` must pass, and it
+  must contain four **negative** controls — the invariant returning false on a
+  collision, agent logs found outside `subagents/`, a read error throwing instead
+  of reporting empty, and a recordless session coming back void.
+
+**Trust moved from a hash to a suite.** A hash says the file has not changed. A
+suite says the file still fails the things it is supposed to fail — which is the
+property anyone actually wanted, and the one a hash cannot express. That should
+have been the shape from the start, and the three-premise detour is the cost of
+finding it out.
+
+**One thing is now fixed and will not move again:** if the oracle needs another
+correction, the recorded conclusion is that **G1 cannot be closed in this venue**
+and the continue/stop decision is made on a stated non-metered basis. Reaching
+that honestly is a permitted outcome. A sixth renumber is not.
+
+### not everything called "the standard" is the same kind of rule
+
+**Found by stop-time review 2026-08-05, one day after B20 was written to fix the
+previous version of this mistake.**
+
+B20's whole point was that B17 and B19 froze the wrong object — the
+implementation rather than the standard. It was right, and it was still not
+enough, because **"the standard" is two different kinds of thing and B20's first
+draft lumped them into one claim of byte-identity.** That claim was false within
+a day, and in the most embarrassing possible place: the same turn that wrote it
+had already broadened the oracle past the enumeration clause it declared frozen.
+
+| | can it be fitted? | treatment |
+|---|---|---|
+| **threshold** — `exactly 0`, `>= 5 sessions`, holds/falls | **yes.** Move it and the same data changes verdict, in the author's preferred direction | frozen absolutely, from pre-registration, no exceptions |
+| **enumeration rule** — where the vendor writes files | **no.** Getting it wrong makes the oracle see *less*, so it can only make the premise FAIL TO DETECT the defect | repairable, in the broadening direction only |
+
+The asymmetry is the whole argument. A wrong threshold flatters whoever chose it.
+A wrong enumeration **hurts the person who wrote it** — it hides the very gap
+they are hunting. B17's clause said `<sessionId>/subagents/**`, which is a
+literal path segment, which is the identical assumption `listTranscripts` makes
+with its non-recursive `readdir`, which is **the defect this premise exists to
+falsify**. Freezing that clause was freezing the bug.
+
+**So the latitude is bounded by direction, and the bound is checkable rather than
+arguable.** The new enumeration is a strict superset of the old: it can only
+admit more records, therefore only make the meter look worse, never better.
+**Broadening is repair. Narrowing is how a gap gets hidden, and it voids
+everything, at any time, before or after a run.**
+
+> **⚠ RETRACTED, same day, and this paragraph is the reason the next entry
+> exists.** Direction is NOT a safety proxy. Broadening the file set made the
+> oracle count 690 tokens LESS on a fixture, because step 4 is last-write-wins
+> rather than a sum — the direction that drives a residual toward zero and holds
+> the premise on a broken meter. The two-rule-classes distinction above survives
+> and is right; only its *bound* was wrong. What bounds the latitude is stated in
+> B20: frozen thresholds, a green conformance suite, and mandatory re-emission of
+> every `evidence/` artifact on any enumeration change after the first scored
+> run. See *§ a superset of files is not a superset of tokens*.
+
+**The second finding is smaller and sharper.** The oracle emits its rule as a
+string into every artifact, and B20 requires those artifacts as evidence. For one
+commit the string still said `subagents/** recursive` after the walk had been
+broadened — so an `evidence/` file would have carried a **false account of its own
+method**, with nothing inside it to reveal the discrepancy. In this repository
+the artifact is the record; a record that misdescribes itself is worse than a
+missing one, because a missing one is obviously missing.
+
+It is pinned now by a test that ties the string to *observed behaviour* rather
+than to itself: the run the string labels must be one that counted agents living
+outside `subagents/`. A test that only compared the string to a constant would
+have rotted the same way the string did.
+
+**The compressed lesson, after four rounds of this:** every rule in a
+pre-registration should carry, in its own text, **the direction in which being
+wrong hurts**. Thresholds hurt the reader and are frozen. Factual claims about
+someone else's file layout hurt the author and are repairable one way only. A
+freeze that cannot tell those apart will either pin a bug or license a fit, and
+which of the two it does is luck.
+
+### a superset of files is not a superset of tokens
+
+**Refuted by fixture 2026-08-05, `run 2026-08-05-win-07-monotonicity`.** The claim
+was mine, it was in `PREMISES.md`, and I wrote it without testing it:
+
+> the new rule is a strict **superset** of the old. It can only admit more
+> records, so it can only make the meter look **worse**, never better. A change
+> that can only hurt the thing under test is not fitted in its favour.
+
+Every clause of that is reasonable and the conclusion is false, because the
+aggregation is **last-write-wins per `requestId`, not summation**. Adding a file
+does not add its tokens; it changes **which record wins**.
+
+| fixture | truth | oracle read |
+|---|---|---|
+| main only, 3-record group, terminal record 695 | 695 | 695 |
+| plus a stray `.jsonl` holding an early **partial copy** of that group | 695 | **5** |
+| plus a stray `.jsonl` holding **another session's** record | 695 | **4,937** |
+
+The middle row is the dangerous one. The file set grew and the count *shrank*, by
+690 tokens, which moves a residual **toward zero** — the direction that makes
+this premise **HOLD on a meter that is wrong**. The exact failure the claim
+asserted was impossible.
+
+**Direction is not a safety proxy.** Under-inclusion hides the defect;
+over-inclusion invents one; and "broadening" can do either depending on what the
+added file contains. What actually bounds the latitude to repair an enumeration
+is that **the thresholds it feeds are frozen and verified**, the conformance
+suite is green, and any change after the first scored run forces every existing
+artifact to be re-emitted so a delta in counted tokens shows up as a diff.
+
+**Both failures were already visible in numbers this oracle computed and
+ignored** — `groupsSpanningFiles` and a `sessionId` comparison that was counted
+and never acted on. That is its own lesson: a diagnostic nobody branches on is a
+comment with a number in it.
+
+Guarded now, and in the honest way for each. A record is admitted only if its own
+`sessionId` matches — the record says whose it is, and the record is what to
+believe rather than the path. A `requestId` group spanning files marks the session
+**`suspect`**, and the oracle **refuses to score it** rather than guessing which
+record is authoritative; B20 makes such a session neither count toward the set nor
+fall it, because an undefined aggregation says nothing about the meter in either
+direction.
+
+**Seven defects across three stop-time reviews, all before anything was scored,
+all false negatives or false artifacts.** The arithmetic has been correct the
+whole way through. What kept going wrong is one thing: **asserting a property of
+the instrument instead of measuring one.** The vacuous invariant, the hardcoded
+path segment, the swallowed error, the stale rule string and this monotonicity
+claim are the same mistake five times. Each fix in this round was a fixture
+first and a patch second, which is the only reason any of them is trustworthy.
+
+### a fabricated timestamp is not the same class of error as a wrong number
+
+**Found by stop-time review 2026-08-05. Seven rows written this session carry a
+`ts` I incremented by hand instead of reading; five of them are in the FUTURE**,
+by 27 to 217 minutes. The real span of the work was 05:14Z to 06:23Z.
+
+`MEASUREMENTS.jsonl:53` has carried a rounding error since the day B1 fell — it
+records the meter's error as `2.313` where the arithmetic gives `2.312` — and
+that row stands, harmlessly, because **a wrong derived value is checkable from
+its own `method` string.** Anyone can recompute `(119.11 - 35.96) / 35.96` and
+see it. The row carries its own audit.
+
+A wrong `ts` carries nothing. It cannot be recomputed from anything in the file,
+it looks exactly like a right one, and it establishes a **false ordering against
+every real timestamp it sits next to**. That is not a cosmetic difference in this
+repository, because **ordering is the load-bearing property of every
+pre-registration argument here.** The entire claim that B17's threshold preceded
+its data — the claim three premises and eleven commits rest on — is a claim
+*about time*. A file whose timestamps are invented cannot support it from its own
+contents.
+
+**Retracted rather than corrected**, per the rule this file already follows:
+history is not rewritten, the claim built on it is. The seven rows stand and
+`run 2026-08-05-win-09-ts-retraction` says what is wrong with them.
+
+**What actually saves the ordering argument is that it never depended on `ts`.**
+Commit dates are real, verifiable, produced by something other than me, and
+already recorded: `git show -s --format=%cI` over this branch gives
+02:14:19-03:00 through 03:23:25-03:00. Every run_id maps to a time through its
+commit. The pre-registration ordering is provable from `git log` whether or not
+a single `ts` in this file is trustworthy — which is luck, not design, and the
+lesson is to stop relying on luck.
+
+**The fix is to stop inventing the field.** `ts` is read from the system clock at
+write time. The retraction row is the first one written that way.
+
+**And the wider shape, which is now four for four.** The vacuous invariant, the
+hardcoded path segment, the monotonicity claim, and this: every one is a value
+asserted where a value could have been read or measured. The instrument was never
+the problem. *Writing down what I expected instead of what was there* was.
+
+### a unit is a join key, not a label
+
+**Found by stop-time review 2026-08-05**, auditing every row this session wrote
+against the vocabulary already in the file.
+
+Two rows name one quantity and carry another:
+
+| row | value · unit | how it scans | what it is |
+|---|---|---|---|
+| `subagent_request_silently_dropped_by_the_collision` | 70 `tokens` | 70 requests dropped | **one** request, whose output was 70 tokens |
+| `foreign_session_record_counted_as_this_sessions` | 4242 `tokens` | 4,242 foreign records | **one** record, carrying 4,242 tokens |
+
+Wrong by factors of 70 and 4,242 to anyone reading `metric` + `value`, which is
+how a JSONL file gets read. The honest names were
+`output_tokens_lost_to_the_uuid_collision` and
+`output_tokens_from_one_foreign_record`. **The findings themselves are
+unaffected** — both are stated correctly in their own `method` strings — which is
+exactly what makes this the dangerous kind of error: the row is right where
+somebody looks closely and wrong where they skim.
+
+**Three unit terms were invented** — `files`, `rows`, `sessions` — in a file that
+already had nineteen, including `count` as the generic and `records` and
+`requests` as domain-specific ones. That is not a style complaint. **A unit is a
+join key.** Anyone aggregating this file by unit now finds six different terms
+meaning "a number of things", and the fragmentation is invisible until the moment
+someone tries to group, at which point it silently splits one series into six.
+Reuse the existing term; a new one needs a reason stated where it is introduced.
+
+**Retracted rather than rewritten**, per the rule this file follows, and for the
+same reason the fabricated timestamps were: the rows stand, and
+`run 2026-08-05-win-10-unit-retraction` is what a reader finds next to them.
+
+**Five for five now**, and the shape has not varied once: the vacuous invariant,
+the hardcoded path segment, the monotonicity claim, the invented timestamps, and
+these labels. **Every one is a value written from expectation rather than read
+from the thing itself.** Not one was an error of arithmetic, of logic, or of the
+instrument. The instrument has been right the whole way; what kept being wrong is
+the sentence describing it.
+
+## A predicate written as conditions, repaired six times
+
+*2026-08-05. A judgment, recorded here rather than in `MEASUREMENTS.jsonl`,
+because nothing measured it.*
+
+`classifyRun` in `scripts/b12-run.mjs` decides whether an arm of B12 produced a
+sound observation. Stop-time review found a defect in it on six consecutive
+turns. What follows is a reading of why, and it is a reading — the alternative
+explanation, that a rule under six rounds of adversarial review simply gets six
+findings whatever its shape, is not excluded by anything here.
+
+The six fall into two families.
+
+**Fields the rule was never handed.** The exit status, the signal, and whether
+the budget was enforced at all. Each time, the field that decided the case was
+one the function could not see, so it answered confidently from what it had. The
+argument list turned out to be the real specification, and I had written it from
+what happened to be in scope at the call site rather than from what "this
+observation is sound" requires.
+
+**Fields it should never have used.** `wallMs`, twice, in consecutive repairs —
+duration standing in as evidence of *who ended the process*. The second time is
+the one worth keeping: fixing a clock proxy, I reached for another clock proxy
+one line away. A wrong instinct is not spent by being caught once.
+
+The sixth was `exitCode !== 0` where the intent was `exitCode === null`, which
+excluded the case it was written for and admitted one it was not.
+
+**What I changed, and what that does not prove.** The rule is now a case
+analysis over the triple `spawnSync` returns — `spawn_failed`, `censored`,
+`killed_by_signal`, `exited_nonzero`, `completed` — with no fall-through, and the
+outcome name is recorded per observation. The argument for the shape is that a
+condition true of the case in mind is easily also true of a case that is not, and
+a chain of `&&`s makes that invisible while an enumeration makes an unhandled
+combination a named branch instead of a default nobody chose.
+
+That argument is plausible and it is not evidence. The enumeration has survived
+zero turns of review. If it takes a seventh finding, the honest conclusion is
+that the shape was not the cause and this entry is what should be retracted.
+
+## The instrument never ran, and only one arm would have said so
+
+`B12`'s treatment arm was never going to produce an observation. `claude --help`
+declares `--mcp-config <configs...>` and `--allowed-tools <tools...>` as variadic
+options, which consume every following argument until one starts with `-`. Both
+the Mac pre-flight and `observe()` in the harness put the positional prompt
+immediately after one of them, so the prompt was read as another value and
+`claude --print` ran with no prompt at all: it exits 1 before a session exists,
+which is exactly the Mac's `claude exited 1` with no transcript and the harness's
+subsequent `ENOENT` on the session jsonl.
+
+The part worth keeping is not the flag. It is that **the control arm was
+immune**. Control ends in `--strict-mcp-config`, a boolean, so the prompt reached
+it. Had this run at scale, every control arm would have produced an observation
+and every treatment arm would have died at argument parsing — and the harness
+classifies a null exit with no signal as `spawn_failed`, an honest name for a
+broken run, so the failure would have been visible. But a slower version of the
+same bug, one that only shortened the treatment prompt, would have produced a
+complete-looking dataset in which the treatment arm was systematically deprived
+of its instructions. The registry would have recorded that as evidence about
+tools.
+
+I built the pre-flight to catch instrument faults before spending forty-five
+sessions, and it caught this one — but not by asserting anything. It caught it
+because it happened to invoke `claude` the same wrong way and failed loudly on a
+Tuesday instead of quietly across an experiment. That is luck wearing the costume
+of a control.
+
+**What I changed.** Two independent guards in both places: a non-variadic option
+immediately before the prompt, and `--` to end option parsing. Either alone is
+sufficient; both are there because the failure mode is silent and the cost of the
+second guard is one argument.
+
+**What this does not establish.** I verified the argv handling of one Claude Code
+version on one machine, by running it. I did not verify that a future version
+keeps `--` meaningful, and there is no assertion anywhere that the prompt
+arrived — the run can still only observe that the session did something. A check
+that the transcript exists at all now runs in the pre-flight and is recorded in
+the artifact, which converts this class from a mystery into a named field. It
+does not prevent it.
+
+**A second thing the same day, from the same family.** This clone runs on Windows
+with `core.autocrlf=true` and had no `.gitattributes`, so a checkout rewrote the
+Mac shell script with CRLF while the committed blob stayed LF — measured, 699 CR
+bytes after a `git stash` round trip. The script is delivered by copying it out
+of the working tree by hand, which is precisely the path that ships working-tree
+bytes. `MEASUREMENTS.jsonl` promises a byte-identical committed prefix and
+`evidence/*.json` is frozen by sha256; both are invariants about exact bytes that
+a per-machine checkout rule can break on one machine and not the other. Pinned in
+`.gitattributes` rather than remembered.
+
+**Postscript, same day, one commit later.** The paragraph above calls "two
+implementations of one rule that never meet" this registry's oldest defect. In
+the same commit I added a third: a string compare asking whether LM Studio serves
+`$MODEL`. It refused a Mac where the model was loaded and answering, because the
+endpoint spells it `qwen3-coder-30b-a3b-instruct-dwq-v2` and the catalog spells it
+`mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2`. `matchModel` in
+`src/selection.ts` has resolved exactly that since long before I got here, and
+returns a `quality` so the fuzziness is visible rather than assumed. The check now
+imports it out of the `dist/` the script has just built.
+
+Naming a defect class in prose does not inoculate against it. What caught this one
+was the same thing that caught the argv bug: a script that RUNS the thing, on the
+machine that has it, and refuses out loud. The pre-flight has now paid for itself
+twice without ever reaching the assertion it was written to make.
+
+## The term the design promised, and the one nobody charged for
+
+B12's pre-registration is explicit that installing the server is not free: the
+tool descriptions sit "in the very system prompt of every thread and segment —
+B15 measured 114 tokens for a 688→1,110-character description edit alone — and
+those units sit in the denominator on both sides of a one-sided model.
+`unitsAddedByInstallation` is therefore **a term in the metric, not a
+paragraph**."
+
+In the implementation it is a paragraph. `src/cost/report.ts:616` defines it and
+`tests/cost-meter.test.ts:1670` calls it. Nothing else does — not
+`buildSessionReport`, not `scripts/b12-run.mjs`, not the pre-flight that just
+passed. Its four siblings in the same module have 3, 5, 8 and 28 call sites. An
+observation scored today charges the treatment arm nothing for the context that
+installing the server costs, which is exactly the one-sidedness the design names
+and claims to have corrected.
+
+I wrote that function, wrote the sentence calling it a term rather than a
+paragraph, measured 16,127 chars for it, and never wired it in. It has a passing
+test, which is what made it look finished. This is the same shape as everything
+else this week — a thing that exists reported as a thing that works — and it is
+the most expensive instance yet, because it would not have failed. It would have
+returned a number.
+
+**And the assumption underneath it is now in question.** The Mac scratch session
+called `ToolSearch` before `gate` and `repair`, in a session given exactly two
+allowed MCP tools. That is evidence that on Claude Code 2.1.221 the MCP schemas
+are DEFERRED — fetched on demand — rather than resident in every request's system
+prompt, which is the premise the whole term is built on. If that holds, the
+correct charge is not 16,127 chars at position 0; it is whatever a `ToolSearch`
+round trip costs, on the requests that make one.
+
+**This is the owner's call and I am not making it.** Three things are separable
+and only the first is established: (a) the term is not computed — measured,
+`2026-08-06-win-19-b12-installation-term`; (b) whether its magnitude is right,
+which the deferral observation puts in doubt; (c) whether fixing either is a
+repair to the instrument or a change to a design frozen by hash, in which case
+the rule is retract and re-register, not edit. Sealing the manifest before (a)
+is decided would produce observations that are one-sided by construction.
+
+## Three decisions taken while their answers were still unknowable
+
+All three had been sitting open longer than any technical blocker, and all three
+share a property that is the reason they could be taken today rather than after
+the run: **none of their answers exists yet.** B12 has not run, there is no `R`,
+and there is no scorer that could produce one. A criterion fixed while its result
+is strictly unknowable is a criterion; the same words written afterwards are a
+rationalisation. That timing is the whole of the legitimacy here, and it is the
+condition `ROADMAP.md` itself set for the first of them.
+
+**1. G-stop no longer names the cost meter as a delivery that must pay for
+itself.** Two deliveries remain, `gate` and `repair`. The meter suppresses
+nothing and emits no telemetry row, so the counterfactual has no per-delivery
+ratio to give it; it is an instrument, not a delegation tool. Keeping it named
+meant G-stop could never close — not on a failure, on a category error. It is
+still judged, by G1, on whether it counts the same tokens on both sides.
+
+This does not soften the criterion. `gate` came back at **−467.1 units** on the
+pre-flight's scratch session: it cost more context than it suppressed, and the
+clamped view this project shipped two weeks ago would have printed `0`. One
+synthetic one-line error says nothing about a real task. The sign being visible
+before the run rather than after it is the point.
+
+**2. G7 gets no threshold on `context_would_overflow`, permanently.** Rule 4 had
+been waiting for "the threshold and its argument, from whoever decides them", and
+the argument that arrived is that there should not be one. The base rate turned
+out to be a function of the window — 33% of this repository's source+test pairs
+exceed 16,384 tokens, 7% exceed 32,768, on a model supporting 262,144. A number a
+`--context-length` flag moves by a factor of five is not a gate condition; it is a
+report about how the model was loaded. Promoting it would let a configuration
+argument buy a parser and a new apply path. `output_would_truncate` is untouched.
+
+**3. B14's divisor stays at 3.5.** The measured 3.978 is pooled over a corpus
+whose sizes its own author chose, it is not stable across corpora (4.22 in one
+place, a 6% spread), and the two error directions are not symmetric: 3.5 refuses
+requests that would have fit, which is a named `ToolError`; 3.978 would truncate
+more, and truncation is what "quietly lost 90 lines" while the detector reported
+a pass. For an estimator whose defining problem is that it cannot see its own
+failures, the logged error is the one to keep. It reopens on corpus #2, against
+that data rather than a re-pooling of this one.
+
+**What none of this closes.** G-stop is now *evaluable*; it is not evaluated. The
+metric it is evaluated by, `R_ab`, exists in the frozen design and in no `.ts`,
+`.mjs` or `.md` file in this repository. Deciding a criterion is cheaper than
+building the thing that reads it, and doing the cheap one first is worth naming
+as what it was.

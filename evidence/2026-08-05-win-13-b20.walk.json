@@ -1,0 +1,845 @@
+{
+  "runId": "2026-08-05-win-13-b20",
+  "ts": "2026-08-05T15:29:05Z",
+  "premise": "B20",
+  "snapshot": {
+    "why": "the live transcript directory grows while this session runs; both sides must read one fixed input",
+    "path": "C:\\Users\\digom\\AppData\\Local\\Temp\\claude\\C--Users-digom-Documents-GitHub-claude-code-local-llm-mcp--claude-worktrees-multi-agent-plan-models-eval-75e2c4\\c9e2fe70-c679-4a02-986d-d894eb7e82e4\\scratchpad\\b20-snapshot",
+    "sessions": 11,
+    "files": 38
+  },
+  "commands": {
+    "oracle": "node scripts/session-token-walk.mjs walk --dir=C:\\Users\\digom\\AppData\\Local\\Temp\\claude\\C--Users-digom-Documents-GitHub-claude-code-local-llm-mcp--claude-worktrees-multi-agent-plan-models-eval-75e2c4\\c9e2fe70-c679-4a02-986d-d894eb7e82e4\\scratchpad\\b20-snapshot --json",
+    "meter": "node dist/cost/cli.js --dir C:\\Users\\digom\\AppData\\Local\\Temp\\claude\\C--Users-digom-Documents-GitHub-claude-code-local-llm-mcp--claude-worktrees-multi-agent-plan-models-eval-75e2c4\\c9e2fe70-c679-4a02-986d-d894eb7e82e4\\scratchpad\\b20-snapshot --all --json"
+  },
+  "commits": {
+    "preRegistration": "db4874e88e26a5fd159037332012f5a569b28640",
+    "oracle": "1701634e6025c009078ce1e5834c67eb4b5fb750",
+    "repair": "1701634e6025c009078ce1e5834c67eb4b5fb750",
+    "head": "1701634e6025c009078ce1e5834c67eb4b5fb750"
+  },
+  "conformanceSuite": {
+    "file": "tests/session-token-walk.test.ts",
+    "passed": true,
+    "tests": 14
+  },
+  "side": "oracle",
+  "rule": "main *.jsonl + every *.jsonl under <sessionId>/ recursive (NOT a hardcoded subagents/); admit type=assistant with message.usage, excluding isApiErrorMessage/synthetic; admitting only records whose own sessionId matches; dedup by uuid; group by requestId; take the LAST record in file order; cacheWrite is the top-level cache_creation_input_tokens",
+  "sessions": [
+    {
+      "sessionId": "1705b026-e3c6-40c6-88c9-add75fad647a",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "1705b026-e3c6-40c6-88c9-add75fad647a.jsonl",
+        "subagents": [],
+        "sessionDirExists": false,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "1705b026-e3c6-40c6-88c9-add75fad647a.jsonl",
+            "isSubagent": false,
+            "admitted": 329
+          }
+        ]
+      },
+      "records": {
+        "admitted": 329,
+        "main": 329,
+        "subagent": 0,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 329,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 156,
+        "main": 156,
+        "subagent": 0,
+        "subagentShare": 0
+      },
+      "tokens": {
+        "input": 306,
+        "cacheRead": 36074329,
+        "cacheWrite": 1279438,
+        "output": 227816
+      },
+      "diagnostics": {
+        "multiRecordGroups": 110,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 2,
+        "ttlSplitOnlyTokens": 4904
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "514a829f-3579-4a44-85ea-2894d46f356b",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "514a829f-3579-4a44-85ea-2894d46f356b.jsonl",
+        "subagents": [
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a21e6351b5bcb56a5.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a384ffc4fc410f4e1.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a43b138c940df7969.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a557b1ce85b3021d4.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a68a086b5fb730a4d.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a6c87a1386f09473a.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a7efa8e5c81ea5613.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a899e603ec9be505d.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a96df95b0cfaeb054.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-ac00fe0de4acc5fb3.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-ac4a6bb4c4d90e523.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-ace996f344ab2aab1.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-afc5986bc97601e60.jsonl",
+          "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-afc7959d769782417.jsonl"
+        ],
+        "sessionDirExists": true,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b.jsonl",
+            "isSubagent": false,
+            "admitted": 113
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a21e6351b5bcb56a5.jsonl",
+            "isSubagent": true,
+            "admitted": 30
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a384ffc4fc410f4e1.jsonl",
+            "isSubagent": true,
+            "admitted": 61
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a43b138c940df7969.jsonl",
+            "isSubagent": true,
+            "admitted": 61
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a557b1ce85b3021d4.jsonl",
+            "isSubagent": true,
+            "admitted": 8
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a68a086b5fb730a4d.jsonl",
+            "isSubagent": true,
+            "admitted": 30
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a6c87a1386f09473a.jsonl",
+            "isSubagent": true,
+            "admitted": 47
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a7efa8e5c81ea5613.jsonl",
+            "isSubagent": true,
+            "admitted": 109
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a899e603ec9be505d.jsonl",
+            "isSubagent": true,
+            "admitted": 44
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-a96df95b0cfaeb054.jsonl",
+            "isSubagent": true,
+            "admitted": 8
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-ac00fe0de4acc5fb3.jsonl",
+            "isSubagent": true,
+            "admitted": 22
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-ac4a6bb4c4d90e523.jsonl",
+            "isSubagent": true,
+            "admitted": 76
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-ace996f344ab2aab1.jsonl",
+            "isSubagent": true,
+            "admitted": 6
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-afc5986bc97601e60.jsonl",
+            "isSubagent": true,
+            "admitted": 128
+          },
+          {
+            "file": "514a829f-3579-4a44-85ea-2894d46f356b\\subagents\\agent-afc7959d769782417.jsonl",
+            "isSubagent": true,
+            "admitted": 54
+          }
+        ]
+      },
+      "records": {
+        "admitted": 797,
+        "main": 113,
+        "subagent": 684,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 113,
+        "subagentUuids": 684,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 253,
+        "main": 56,
+        "subagent": 197,
+        "subagentShare": 0.7787
+      },
+      "tokens": {
+        "input": 32879,
+        "cacheRead": 35454847,
+        "cacheWrite": 2807456,
+        "output": 586776
+      },
+      "diagnostics": {
+        "multiRecordGroups": 224,
+        "groupsWhereFirstDiffersFromLast": 177,
+        "outputLostByFirstWins": 421607,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 0,
+        "ttlSplitOnlyTokens": 0
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "5fe28335-5fb0-41bc-bdaa-23c84011ec1e",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "5fe28335-5fb0-41bc-bdaa-23c84011ec1e.jsonl",
+        "subagents": [
+          "5fe28335-5fb0-41bc-bdaa-23c84011ec1e\\subagents\\agent-a2c0ce46050cd8178.jsonl",
+          "5fe28335-5fb0-41bc-bdaa-23c84011ec1e\\subagents\\agent-a9216468363d41c35.jsonl",
+          "5fe28335-5fb0-41bc-bdaa-23c84011ec1e\\subagents\\agent-afe998e68cae4daf2.jsonl"
+        ],
+        "sessionDirExists": true,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "5fe28335-5fb0-41bc-bdaa-23c84011ec1e.jsonl",
+            "isSubagent": false,
+            "admitted": 113
+          },
+          {
+            "file": "5fe28335-5fb0-41bc-bdaa-23c84011ec1e\\subagents\\agent-a2c0ce46050cd8178.jsonl",
+            "isSubagent": true,
+            "admitted": 45
+          },
+          {
+            "file": "5fe28335-5fb0-41bc-bdaa-23c84011ec1e\\subagents\\agent-a9216468363d41c35.jsonl",
+            "isSubagent": true,
+            "admitted": 49
+          },
+          {
+            "file": "5fe28335-5fb0-41bc-bdaa-23c84011ec1e\\subagents\\agent-afe998e68cae4daf2.jsonl",
+            "isSubagent": true,
+            "admitted": 78
+          }
+        ]
+      },
+      "records": {
+        "admitted": 285,
+        "main": 113,
+        "subagent": 172,
+        "uuidDuplicatesDropped": 1,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 113,
+        "subagentUuids": 172,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 106,
+        "main": 44,
+        "subagent": 62,
+        "subagentShare": 0.5849
+      },
+      "tokens": {
+        "input": 1025,
+        "cacheRead": 13120969,
+        "cacheWrite": 684601,
+        "output": 190556
+      },
+      "diagnostics": {
+        "multiRecordGroups": 91,
+        "groupsWhereFirstDiffersFromLast": 54,
+        "outputLostByFirstWins": 76063,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 0,
+        "ttlSplitOnlyTokens": 0
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "61ede066-f399-4871-b670-639d78dc4d3e",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "61ede066-f399-4871-b670-639d78dc4d3e.jsonl",
+        "subagents": [],
+        "sessionDirExists": false,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "61ede066-f399-4871-b670-639d78dc4d3e.jsonl",
+            "isSubagent": false,
+            "admitted": 581
+          }
+        ]
+      },
+      "records": {
+        "admitted": 581,
+        "main": 581,
+        "subagent": 0,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 581,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 272,
+        "main": 272,
+        "subagent": 0,
+        "subagentShare": 0
+      },
+      "tokens": {
+        "input": 500,
+        "cacheRead": 96145824,
+        "cacheWrite": 1820108,
+        "output": 357490
+      },
+      "diagnostics": {
+        "multiRecordGroups": 197,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 2,
+        "ttlSplitOnlyTokens": 9822
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "723e03c0-1140-400d-910e-96fa789c977f",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "723e03c0-1140-400d-910e-96fa789c977f.jsonl",
+        "subagents": [],
+        "sessionDirExists": true,
+        "sessionDirYieldedNoLogs": true,
+        "perFile": [
+          {
+            "file": "723e03c0-1140-400d-910e-96fa789c977f.jsonl",
+            "isSubagent": false,
+            "admitted": 260
+          }
+        ]
+      },
+      "records": {
+        "admitted": 260,
+        "main": 260,
+        "subagent": 0,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 260,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 126,
+        "main": 126,
+        "subagent": 0,
+        "subagentShare": 0
+      },
+      "tokens": {
+        "input": 249,
+        "cacheRead": 29175841,
+        "cacheWrite": 852029,
+        "output": 181813
+      },
+      "diagnostics": {
+        "multiRecordGroups": 84,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 2,
+        "ttlSplitOnlyTokens": 4904
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "b5063f62-97f4-4a3d-9f9f-1e5e74a4a91b",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "b5063f62-97f4-4a3d-9f9f-1e5e74a4a91b.jsonl",
+        "subagents": [],
+        "sessionDirExists": true,
+        "sessionDirYieldedNoLogs": true,
+        "perFile": [
+          {
+            "file": "b5063f62-97f4-4a3d-9f9f-1e5e74a4a91b.jsonl",
+            "isSubagent": false,
+            "admitted": 155
+          }
+        ]
+      },
+      "records": {
+        "admitted": 155,
+        "main": 155,
+        "subagent": 0,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 155,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 69,
+        "main": 69,
+        "subagent": 0,
+        "subagentShare": 0
+      },
+      "tokens": {
+        "input": 19858,
+        "cacheRead": 19576034,
+        "cacheWrite": 1317580,
+        "output": 174478
+      },
+      "diagnostics": {
+        "multiRecordGroups": 45,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 0,
+        "ttlSplitOnlyTokens": 0
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "b64f8638-6338-4e81-acfe-2575a59a8b84",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "b64f8638-6338-4e81-acfe-2575a59a8b84.jsonl",
+        "subagents": [],
+        "sessionDirExists": false,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "b64f8638-6338-4e81-acfe-2575a59a8b84.jsonl",
+            "isSubagent": false,
+            "admitted": 441
+          }
+        ]
+      },
+      "records": {
+        "admitted": 441,
+        "main": 441,
+        "subagent": 0,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 441,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 239,
+        "main": 239,
+        "subagent": 0,
+        "subagentShare": 0
+      },
+      "tokens": {
+        "input": 445,
+        "cacheRead": 102923475,
+        "cacheWrite": 6321793,
+        "output": 231823
+      },
+      "diagnostics": {
+        "multiRecordGroups": 124,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 2,
+        "ttlSplitOnlyTokens": 4276
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "c9e2fe70-c679-4a02-986d-d894eb7e82e4",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "c9e2fe70-c679-4a02-986d-d894eb7e82e4.jsonl",
+        "subagents": [
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\agent-a2abb6b7a8bf0e397.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\agent-a96cc84284574792e.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\agent-acf26e8d7995763c1.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a3ea8c3e4db296fad.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a3eab8fe298a4c06f.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a47cbc14f7b8818db.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a93ffd47bd526ab3e.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-aa49a42f402d177a9.jsonl",
+          "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\journal.jsonl"
+        ],
+        "sessionDirExists": true,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4.jsonl",
+            "isSubagent": false,
+            "admitted": 540
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\agent-a2abb6b7a8bf0e397.jsonl",
+            "isSubagent": true,
+            "admitted": 40
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\agent-a96cc84284574792e.jsonl",
+            "isSubagent": true,
+            "admitted": 56
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\agent-acf26e8d7995763c1.jsonl",
+            "isSubagent": true,
+            "admitted": 54
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a3ea8c3e4db296fad.jsonl",
+            "isSubagent": true,
+            "admitted": 46
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a3eab8fe298a4c06f.jsonl",
+            "isSubagent": true,
+            "admitted": 25
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a47cbc14f7b8818db.jsonl",
+            "isSubagent": true,
+            "admitted": 88
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-a93ffd47bd526ab3e.jsonl",
+            "isSubagent": true,
+            "admitted": 17
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\agent-aa49a42f402d177a9.jsonl",
+            "isSubagent": true,
+            "admitted": 7
+          },
+          {
+            "file": "c9e2fe70-c679-4a02-986d-d894eb7e82e4\\subagents\\workflows\\wf_1c5a355d-7ce\\journal.jsonl",
+            "isSubagent": true,
+            "admitted": 0
+          }
+        ]
+      },
+      "records": {
+        "admitted": 873,
+        "main": 540,
+        "subagent": 333,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 540,
+        "subagentUuids": 333,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 411,
+        "main": 283,
+        "subagent": 128,
+        "subagentShare": 0.3114
+      },
+      "tokens": {
+        "input": 7159,
+        "cacheRead": 128582373,
+        "cacheWrite": 2483175,
+        "output": 570983
+      },
+      "diagnostics": {
+        "multiRecordGroups": 263,
+        "groupsWhereFirstDiffersFromLast": 96,
+        "outputLostByFirstWins": 157900,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 1,
+        "ttlSplitOnlyTokens": 278
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "d013cac5-afe5-4fca-9452-4981915c5736",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "d013cac5-afe5-4fca-9452-4981915c5736.jsonl",
+        "subagents": [],
+        "sessionDirExists": false,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "d013cac5-afe5-4fca-9452-4981915c5736.jsonl",
+            "isSubagent": false,
+            "admitted": 444
+          }
+        ]
+      },
+      "records": {
+        "admitted": 444,
+        "main": 444,
+        "subagent": 0,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 444,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 227,
+        "main": 227,
+        "subagent": 0,
+        "subagentShare": 0
+      },
+      "tokens": {
+        "input": 422,
+        "cacheRead": 92526406,
+        "cacheWrite": 4729527,
+        "output": 247298
+      },
+      "diagnostics": {
+        "multiRecordGroups": 130,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 2,
+        "ttlSplitOnlyTokens": 4276
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "f5c8c483-1129-4afc-ba77-82675ec5af25",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "f5c8c483-1129-4afc-ba77-82675ec5af25.jsonl",
+        "subagents": [],
+        "sessionDirExists": false,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "f5c8c483-1129-4afc-ba77-82675ec5af25.jsonl",
+            "isSubagent": false,
+            "admitted": 715
+          }
+        ]
+      },
+      "records": {
+        "admitted": 715,
+        "main": 715,
+        "subagent": 0,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 715,
+        "subagentUuids": 0,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 381,
+        "main": 381,
+        "subagent": 0,
+        "subagentShare": 0
+      },
+      "tokens": {
+        "input": 709,
+        "cacheRead": 115764169,
+        "cacheWrite": 8658793,
+        "output": 418955
+      },
+      "diagnostics": {
+        "multiRecordGroups": 205,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 2,
+        "ttlSplitOnlyTokens": 4276
+      },
+      "suspect": false,
+      "suspectReasons": []
+    },
+    {
+      "sessionId": "fc31cbdb-3912-4d73-9558-038b35884276",
+      "claudeCodeVersions": [
+        "2.1.219"
+      ],
+      "void": false,
+      "files": {
+        "main": "fc31cbdb-3912-4d73-9558-038b35884276.jsonl",
+        "subagents": [
+          "fc31cbdb-3912-4d73-9558-038b35884276\\subagents\\agent-ae80221d78c82758f.jsonl"
+        ],
+        "sessionDirExists": true,
+        "sessionDirYieldedNoLogs": false,
+        "perFile": [
+          {
+            "file": "fc31cbdb-3912-4d73-9558-038b35884276.jsonl",
+            "isSubagent": false,
+            "admitted": 881
+          },
+          {
+            "file": "fc31cbdb-3912-4d73-9558-038b35884276\\subagents\\agent-ae80221d78c82758f.jsonl",
+            "isSubagent": true,
+            "admitted": 7
+          }
+        ]
+      },
+      "records": {
+        "admitted": 888,
+        "main": 881,
+        "subagent": 7,
+        "uuidDuplicatesDropped": 0,
+        "excludedApiError": 0,
+        "excludedForeignSession": 0,
+        "excludedNoSessionId": 0,
+        "admittedWithoutUuid": 0,
+        "skippedUnparseable": 0
+      },
+      "uuidDisjoint": {
+        "mainUuids": 881,
+        "subagentUuids": 7,
+        "sharedUuids": 0,
+        "holds": true
+      },
+      "requests": {
+        "total": 463,
+        "main": 460,
+        "subagent": 3,
+        "subagentShare": 0.0065
+      },
+      "tokens": {
+        "input": 859,
+        "cacheRead": 166530566,
+        "cacheWrite": 4616473,
+        "output": 486314
+      },
+      "diagnostics": {
+        "multiRecordGroups": 276,
+        "groupsWhereFirstDiffersFromLast": 0,
+        "outputLostByFirstWins": 0,
+        "groupsSpanningFiles": 0,
+        "ttlSplitDisagreements": 2,
+        "ttlSplitOnlyTokens": 9822
+      },
+      "suspect": false,
+      "suspectReasons": []
+    }
+  ]
+}
