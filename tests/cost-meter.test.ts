@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  breakdownOfRequests,
   buildCounterfactual,
   buildSessionReport,
   entryCostOfSegment,
@@ -2722,5 +2723,230 @@ describe("speed is part of the price", () => {
     it("returns null for an empty segment", () => {
       expect(entryCostOfSegment([], rates)).toBeNull();
     });
+  });
+});
+
+describe("the four B12 scoring seams", () => {
+  const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+
+  /**
+   * A transcript shaped so a refusal has something to be priced against: one
+   * request carrying the tool_use, the tool_result that echoes an invocation id,
+   * and a LATER request for `requestAtOrAfter` to land on. The later request
+   * carries a big `cacheRead` on purpose — it is what the deleted turn-collapse
+   * term multiplied, so without it the old and new formulas agree by accident.
+   */
+  async function transcriptWithLaterRequest(echoedId: string): Promise<string> {
+    clock = 0;
+    return writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: echoedId }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100, read: 50_000 }),
+    ]);
+  }
+
+  it("prices a refused row by the SCORED rule, not by three adjustments the numerator does not make", async () => {
+    // `wouldHaveAdded` fed the refusal magnitudes and therefore `R_hi+`, the
+    // number on B12's FALL side -- and it computed a different quantity from the
+    // crediting path in three ways at once: clamped where the numerator is
+    // signed, uncapped where it is capped, and carrying a turn-collapse term the
+    // frozen metric excludes BY NAME. A refused row was worth more than an
+    // identical credited row, and part of the excess was set by a tool-call
+    // argument: `turns_collapsed` is `rounds.length` whether or not `repair`
+    // closed anything.
+    //
+    // DERIVED BY HAND, not read off the implementation. The row is refused as
+    // ambiguous and matches `req-2`, which sits at t=1 of a 2-request 1h segment,
+    // so the multiplier is `2.0 + 0.1 x max(0, 2-1-1) = 2.0`:
+    //   scored : (min(50000, 30000) - 1000) / 3.7 x 2.0 = 29000/3.7 x 2.0
+    const id = "aaaaaaaa-0000-4000-8000-aaaaaaaaaaaa";
+    const file = await transcriptWithLaterRequest(id);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 50_000, bytes_returned: 1_000, turns_collapsed: 3, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id])
+    );
+
+    expect(result.ambiguous).toBe(1);
+    expect(result.ambiguousUnits.unsized).toBe(0);
+    expect(result.ambiguousUnits.units).toBeCloseTo(15675.675675675675, 6);
+    // THE NEGATIVE CONTROL. The pre-repair formula was
+    //   max(0, 50000-1000)/3.7 x 2.0  +  3 x 50000 x 0.1  =  41486.486...
+    // 2.6x the honest figure, on the side that decides whether the project
+    // stops. If this assertion ever passes, the alignment has been reverted.
+    expect(result.ambiguousUnits.units).not.toBeCloseTo(41486.48648648649, 3);
+  });
+
+  it("gives excludedForeign a magnitude, because R_hi+ is defined over all FOUR classes", async () => {
+    // This class shipped as a bare counter while the other three carried
+    // magnitudes, so `R_hi+` -- which grants every refused row its would-have
+    // magnitude across all four -- was not computable as the frozen design
+    // defines it. The design's own Phase-0 repair list named `unmatched` and
+    // missed this one.
+    //
+    // The transcript echoes id A; the telemetry row carries id B. So the row is
+    // ours to see and not ours to claim, which is exactly `excludedForeign` --
+    // and `provenanceUnavailable` stays false because A did arrive.
+    const echoed = "bbbbbbbb-0000-4000-8000-bbbbbbbbbbbb";
+    const foreign = "cccccccc-0000-4000-8000-cccccccccccc";
+    const file = await transcriptWithLaterRequest(echoed);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: foreign, tool: "gate", bytes_raw: 10_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.provenanceUnavailable).toBe(false);
+    expect(result.excludedForeign).toBe(1);
+    expect(result.excludedForeignUnits.unsized).toBe(0);
+    // (10000 - 1000)/3.7 x 2.0, by the same hand derivation as above.
+    expect(result.excludedForeignUnits.units).toBeCloseTo(4864.864864864865, 6);
+    // A count with no magnitude is the silent exclusion the other three
+    // counters exist to prevent, and a zero here would read as "nothing worth
+    // having was refused".
+    expect(result.excludedForeignUnits.units).not.toBe(0);
+  });
+
+  it("lists every row it saw, and the credited ones sum to the scored total", async () => {
+    // B12's unit is a TASK WINDOW, not a session, and a window cannot be scored
+    // by shortening the transcript -- `positionalMultiplier` reads t and T off
+    // the full segment. So the scorer meters the whole lineage and selects ROWS,
+    // which is only possible if the rows are returned.
+    const echoed = "dddddddd-0000-4000-8000-dddddddddddd";
+    const foreign = "eeeeeeee-0000-4000-8000-eeeeeeeeeeee";
+    const file = await transcriptWithLaterRequest(echoed);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [
+        { ts: at(500), invocation_id: echoed, tool: "gate", bytes_raw: 10_000, bytes_returned: 1_000, turns_collapsed: 2, latency_ms: 1 },
+        { ts: at(500), invocation_id: foreign, tool: "gate", bytes_raw: 8_000, bytes_returned: 500, turns_collapsed: 0, latency_ms: 1 },
+        { ts: at(500), tool: "repair", bytes_raw: 400, bytes_returned: 900, turns_collapsed: 0, latency_ms: 1 },
+      ],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows.map((r) => r.disposition)).toEqual([
+      "credited",
+      "excludedForeign",
+      "unverifiable",
+    ]);
+
+    // THE IDENTITY. Summing the ledger's credited rows must land on the
+    // aggregate, or the artifact and the verdict are describing different runs.
+    const creditedUnits = result.rows
+      .filter((r) => r.disposition === "credited")
+      .reduce((sum, r) => sum + (r.units ?? 0), 0);
+    expect(creditedUnits).toBeCloseTo(result.unitsTotal, 9);
+
+    // The credited row carries its position; a refused row cannot, because it
+    // has no request to be positioned against -- usually the reason it was
+    // refused. Null, never a stand-in zero.
+    const credited = result.rows[0];
+    expect(credited?.index).toBe(1);
+    expect(credited?.segmentSize).toBe(2);
+    expect(credited?.ttl).toBe("1h");
+    expect(credited?.multiplier).toBeCloseTo(2.0, 9);
+    expect(credited?.turnsCollapsed).toBe(2);
+    expect(result.rows[1]?.multiplier).toBeNull();
+    expect(result.rows[1]?.segmentSize).toBeNull();
+
+    // `turns_collapsed: 2` is on the row and in NO scored number.
+    expect(creditedUnits).toBeCloseTo((9_000 / 3.7) * 2.0, 6);
+  });
+
+  it("restricts breakdownOfRequests to the requestIds it was handed", async () => {
+    // FOUND BY RUNNING THE CONTROLS, NOT BY READING. Deleting this filter left
+    // the whole 93-test suite green -- and it is the seam `A_o` is computed
+    // from, so a subset silently returning the WHOLE session's cost would put
+    // every observation's denominator wrong with nothing to catch it. The
+    // function has carried the parameter and a paragraph of documentation about
+    // why it matters since it was written; what it had not carried is a test.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }),
+      assistantRecord("req-2", { write1h: 300 }),
+    ]);
+    const transcript = await readTranscript(file);
+
+    // 1h cache writes at 2.0x: (100 + 300) x 2.0 = 800 for the pair.
+    expect(breakdownOfRequests(transcript.requests, DEFAULT_RATES).units.total).toBeCloseTo(800, 9);
+    // The window's own cost is its own requests', and nothing else's.
+    expect(
+      breakdownOfRequests(transcript.requests, DEFAULT_RATES, new Set(["req-1"])).units.total
+    ).toBeCloseTo(200, 9);
+    expect(
+      breakdownOfRequests(transcript.requests, DEFAULT_RATES, new Set(["req-2"])).units.total
+    ).toBeCloseTo(600, 9);
+    // An empty set is zero, not everything. The failure mode this guards is a
+    // filter that no-ops, and a no-op filter returns 800 for all four of these.
+    expect(breakdownOfRequests(transcript.requests, DEFAULT_RATES, new Set()).units.total).toBe(0);
+  });
+
+  it("charges the installation term only to the segments a window actually originated", async () => {
+    // The whole-transcript form prices every `thread#segment` in the file. B12
+    // scores a task window inside a lineage that is usually much longer, so
+    // without a subset seam an observation is charged for segments another task
+    // originated -- while `holdsIf` 6 requires this term for EVERY observation.
+    //
+    // Two threads, one request each, both 1h, so each segment's entry multiplier
+    // is `2.0 + 0.1 x max(0, 1-1-0) = 2.0`. installedChars 3700 is 1000 tokens.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-main", { write1h: 100 }),
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub",
+        sessionId: "sess-1",
+        uuid: "s1",
+        parentUuid: null,
+        isSidechain: true,
+        timestamp: at(1_000),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: {
+            input_tokens: 0,
+            cache_creation_input_tokens: 100,
+            cache_read_input_tokens: 0,
+            output_tokens: 0,
+            cache_creation: { ephemeral_1h_input_tokens: 100, ephemeral_5m_input_tokens: 0 },
+          },
+        },
+      }),
+    ]);
+    const transcript = await readTranscript(file);
+
+    // Both segments: 1000 tokens x (2.0 + 2.0).
+    expect(unitsAddedByInstallation(transcript, DEFAULT_RATES, 3_700)).toBeCloseTo(4_000, 9);
+    // The main thread's window alone: 1000 x 2.0. Half, because it owns one of
+    // the two segments -- not because the segment got shorter.
+    expect(
+      unitsAddedByInstallation(transcript, DEFAULT_RATES, 3_700, new Set(["req-main"]))
+    ).toBeCloseTo(2_000, 9);
+    // A window that originated nothing is charged nothing, and that is a real
+    // answer rather than a missing one.
+    expect(unitsAddedByInstallation(transcript, DEFAULT_RATES, 3_700, new Set())).toBe(0);
   });
 });
