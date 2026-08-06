@@ -1386,10 +1386,70 @@ defect, and it pinned four of them in place.
     because exposure A carries a known defect in its setup and a clean
     INCONCLUSIVE is worth more than a flawed one. If it comes back 2 or 3 of 3,
     that beat a stated expectation.
+- **EXPOSURE B RESULT: INCOMPLETE, and VOID on its own pre-registered condition.
+  NOT the "1 of 3 — INCONCLUSIVE" its own artifact printed.**
+  `run 2026-08-06-mac-b12-phase3-f2932ff`, US$ 0.82 of 40, window 65,536 read
+  before and after, `report.ts` in `context_files`, all three units reset first.
+  - **`aggregate` never generated a token.** Both `repair` calls died in the LM
+    Studio backend — HTTP 400, MLX scheduler exception — before any output.
+    Telemetry, which does not depend on anyone's narration: `files` empty,
+    **zero attempts recorded**, `10 → 10`, `model_ms` 256,479 then **391**. The
+    second call's 391 ms says the backend was already dead and did not recover.
+  - **B15's own rule decides it:** "a round that never got a response carries no
+    attempts at all, which is different from zero." `aggregate` has NO
+    observation, so fewer than three units were attempted, which exposure B
+    pre-registered as VOID with "crash" named among the causes. **The counter-
+    argument, stated so it can be taken:** `repair` WAS invoked twice, so one may
+    read "attempted" as "invoked". This project has already decided that reading
+    for rounds; applying it to units is the consistent move, not a new one.
+  - **THE HARNESS PRINTED A READING IT HAD NO RIGHT TO**, and this is the
+    defect rather than the crash. `UNIT_STATE` comes from `VITEST_RC` alone, so
+    a unit whose model never ran is recorded `red` — indistinguishable from a
+    unit that ran and failed. Three records then existed, so the merge logic
+    emitted INCONCLUSIVE off a denominator of three. **A run that measured two
+    units reported on three.**
+  - **WHAT IT DID MEASURE, and it is the most informative run this premise has
+    had.** Against exposure A on the identical units:
+
+    | | A (no `report.ts`, 32,768) | B (with, 65,536) |
+    |---|---|---|
+    | `strata` | inherited | **closed in round 1**, 5 → 0 |
+    | `terms` call 1 | 4 → **9** | 4 → **1** |
+    | `terms` call 2 | 4 → 7 → 7 → 7 | 4 → 3 → **2** |
+    | `tsc` on the best attempt | failing | **passing** |
+    | `envelope: no_blocks` | 6 of 13 attempts | **0** |
+
+    On its best attempt `repair` wrote **121 lines**, left `tsc` green, and
+    failed **one test of four**. Round 1 stopped making things worse — the
+    behaviour reproduced three times before this and now reversed under one
+    changed condition.
+  - **THE REGISTERED PREDICTION WAS RIGHT ON THE COUNT AND WRONG ON THE
+    MECHANISM.** It said 1 of 3 and said nothing about adding a file would
+    address round 1 worsening, later rounds not improving, or `no_blocks`. The
+    count matched; every mechanism named moved. Recorded because a prediction
+    that is only scored on its headline is not a prediction.
+  - **THE SPEC IS IMPLICATED, TWICE, AND THIS TIME IT IS NOT DERIVABLE-BUT-
+    MISSED.** `UNIT-2.md` names `multipliersFor` (step 7) and `rateKey`
+    (step 13) **without their module**, in a document whose preamble says
+    "`positionalMultiplier(t, T, m, ttl)` **from `../report.js`**". Both live in
+    `src/cost/rates.ts`; `report.ts` imports them (`report.ts:1`) and does not
+    re-export. Call 2 imported `multipliersFor` from `../report.js`, took
+    `TS2459`, and round 3 timed out. Call 1 dodged it — `rates.multipliers`
+    directly, and `rateKey` **reimplemented inline** rather than imported.
+  - **WHICH TEST FAILED IS UNKNOWABLE, and that is a third harness gap.**
+    `repair` returns `remaining_failures`; the prompt asks the session for the
+    `diff` and not for that. The one-failure state lived only inside the loop,
+    and both `terms` vitest captures are byte-identical at 4,354 B because the
+    tree was rolled back. Same information-loss class as attempt 1's diff, at
+    the single most informative moment this premise has produced. The obvious
+    candidate — the inlined `rateKey` — stays a hypothesis: the fixture uses
+    only default multipliers, so the rate-key blindness alone would not fail it.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
-  (`run 2026-08-06-mac-b12-phase3-d746d07`); attempt 1 void. No scored B12 run.
-- **Status:** open · exposure A read INCONCLUSIVE · **exposure B pre-registered**,
-  run not started
+  (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B —
+  **INCOMPLETE/VOID** (`run 2026-08-06-mac-b12-phase3-f2932ff`), with `strata`
+  closed and `terms` at one failing test. Attempt 1 void. No scored B12 run.
+- **Status:** open · exposure A INCONCLUSIVE · exposure B **VOID, incomplete** —
+  `aggregate` unmeasured, and how to complete it is undecided
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 
