@@ -35,9 +35,15 @@ export function subagentShare(
   observation: B12Observation,
   transcript: Transcript
 ): Evaluable<SubagentShare> {
-  void observation;
-  void transcript;
-  throw new Error("not implemented");
+  const owned = new Set(observation.originatedRequestIds);
+  const own = transcript.requests.filter(r => owned.has(r.requestId));
+  if (own.length === 0) {
+    return { evaluable: false, reason: "window originated no billed request" };
+  }
+  const sidechain = own.filter(r => r.isSidechain).length;
+  const share = sidechain / own.length;
+  const stratum = sidechain === 0 ? "solo" : "multi";
+  return { evaluable: true, value: { own: own.length, sidechain, share, stratum } };
 }
 
 export interface StrataPartition {
@@ -61,6 +67,27 @@ export interface StrataPartition {
  * because inferring it after the fact lets the result choose its own cell.
  */
 export function partitionByStrata(terms: readonly ObservationTerms[]): StrataPartition {
-  void terms;
-  throw new Error("not implemented");
+  const testRed: ObservationTerms[] = [];
+  const typesOnly: ObservationTerms[] = [];
+  const solo: ObservationTerms[] = [];
+  const multi: ObservationTerms[] = [];
+  const unevaluableShare: ObservationTerms[] = [];
+
+  for (const t of terms) {
+    if (t.verificationStratum === "test-red") {
+      testRed.push(t);
+    } else if (t.verificationStratum === "types-only") {
+      typesOnly.push(t);
+    }
+
+    if (!t.subagentShare.evaluable) {
+      unevaluableShare.push(t);
+    } else if (t.subagentShare.value.stratum === "solo") {
+      solo.push(t);
+    } else {
+      multi.push(t);
+    }
+  }
+
+  return { testRed, typesOnly, solo, multi, unevaluableShare };
 }
