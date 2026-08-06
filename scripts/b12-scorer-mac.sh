@@ -13,7 +13,8 @@
 # own vitest run exits 0. The tool's word is not the measurement.
 #
 # WHAT IT CHANGES IN YOUR CLONE, stated plainly rather than implied:
-#   - writes implementation bodies into src/cost/b12/{terms,strata,aggregate}.ts
+#   - writes implementation bodies into src/cost/b12/{strata,terms,aggregate}.ts
+#     in that dependency order, skipping any unit whose tests are already green
 #     (the local model does this through `repair`, not this script)
 #   - runs `npm ci` and `npm run build`, so node_modules/ and dist/ are rebuilt
 #   - appends to .local-coder/telemetry.jsonl and .local-coder/corpus/ (both
@@ -157,9 +158,19 @@ GIT_RC=$?
 # short step from a blanket `git clean` that destroys them.
 TRACKED=$(printf '%s\n' "$RAW" | grep -v '^?? ' | grep -E '^..' || true)
 UNTRACKED_N=$(printf '%s\n' "$RAW" | grep -c '^?? ')
+# A unit body that a PREVIOUS attempt closed is not contamination -- it is the
+# result. `run 2026-08-06-mac-b12-phase3` (attempt 2) died with the machine
+# during unit 3, leaving `strata.ts` closed and applied; refusing on it would
+# have cost that work, the money it took, and another shot at whatever killed the
+# box. Changes under `src/cost/b12/` are allowed through and re-verified below;
+# everything else tracked still refuses.
+FOREIGN=$(printf '%s\n' "$TRACKED" | grep -v ' src/cost/b12/' || true)
+if [ -n "$FOREIGN" ]; then
+  refuse "the working tree has TRACKED changes outside src/cost/b12/. This script commits what the local model writes, so every other tracked change must be dealt with first.
+$FOREIGN"
+fi
 if [ -n "$TRACKED" ]; then
-  refuse "the working tree has TRACKED changes. This script commits what the local model writes, so every tracked change must have come from this run.
-$TRACKED"
+  warn "a previous attempt left bodies under src/cost/b12/. Each unit's tests are re-run below and an already-green unit is SKIPPED, not re-attempted."
 fi
 if [ "${UNTRACKED_N:-0}" -gt 0 ]; then
   warn "$UNTRACKED_N untracked path(s) present. They are LEFT ALONE and never committed: this run commits src/cost/b12/ and its own artifact, nothing else."
@@ -372,6 +383,7 @@ next "Three units, one claude session each"
 SPENT="0"
 CLOSED=0
 ATTEMPTED=0
+INHERITED=0
 
 # DEPENDENCY ORDER, not alphabetical. `strata` depends on nothing; `terms` calls
 # `subagentShare` from it; `aggregate` calls `partitionByStrata`. A unit that
@@ -387,6 +399,26 @@ for N in 1 2 3; do
   SPEC="docs/b12-scorer/UNIT-$N.md"
   TESTFILE="tests/b12-$UNIT.test.ts"
   [ -f "$REPO/$TESTFILE" ] || refuse "$TESTFILE is missing; this unit has no oracle"
+
+  # RESUMPTION. A unit an earlier attempt already closed is skipped, not
+  # re-attempted: `repair` closing it once is the fact this run exists to
+  # establish, and a crash afterwards did not un-close it. Recorded as
+  # `already-green` and counted apart, so the reading can say which attempt
+  # closed what instead of presenting inherited work as this run's.
+  npx vitest run "$TESTFILE" >"$OUT/unit-$N-$UNIT.pre.vitest.txt" 2>&1
+  if [ $? -eq 0 ]; then
+    ok "unit $N/$UNIT is ALREADY GREEN — skipped, not re-attempted"
+    CLOSED=$((CLOSED + 1))
+    INHERITED=$((INHERITED + 1))
+    node -e '
+      const fs = require("fs");
+      fs.appendFileSync(process.argv[1], JSON.stringify({
+        unit: Number(process.argv[2]), name: process.argv[3], state: "already-green",
+        note: "closed by an earlier attempt; this run did not call repair for it",
+      }) + "\n");
+    ' "$UNITS_JSON" "$N" "$UNIT"
+    continue
+  fi
 
   # THE BUDGET GATE. Between units and never inside one: 2.1.220 has no
   # --max-turns, so a runaway session is bounded by the clock alone. One unit per
@@ -553,7 +585,8 @@ const file = process.argv[2];
 const units = existsSync(e.B12_UNITS)
   ? readFileSync(e.B12_UNITS, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
   : [];
-const closed = units.filter((u) => u.state === "closed").length;
+const closed = units.filter((u) => u.state === "closed" || u.state === "already-green").length;
+const inherited = units.filter((u) => u.state === "already-green").length;
 const reading =
   units.length < 3 ? "incomplete — fewer than three units attempted"
   : closed >= 2 ? "R_repair reachable (>= 2 of 3)"
@@ -566,6 +599,8 @@ const o = {
   preRegisteredIn: "PREMISES.md § B12 — PHASE 3 READING RULE",
   unitsAttempted: units.length,
   unitsClosed: closed,
+  unitsClosedThisRun: closed - inherited,
+  unitsInheritedFromEarlierAttempt: inherited,
   reading,
   units,
   spendUsd: e.B12_SPENT,
@@ -599,7 +634,7 @@ MERGE_OUT=$(B12_RUN_ID="$RUN_ID" B12_UNITS="$UNITS_JSON" B12_SPENT="$SPENT" B12_
   B12_WIN_START="$WINDOW_START" B12_WIN_END="$WINDOW_END" B12_MIN_CTX="$MIN_CONTEXT" \
   B12_SHA="$LOCAL_SHA" B12_BRANCH="$BRANCH" B12_CLAUDE_VER="$CLAUDE_VER" B12_CLAUDE_SHA="$CLAUDE_SHA" \
   B12_MODEL="$MODEL_CLAUDE" B12_LOCAL_MODEL="$MODEL_LOCAL" B12_RATES="$RATES_NOW" \
-  B12_CORPUS_NEW="$CORPUS_NEW" B12_CORPUS_PRE="$CORPUS_PRE" \
+  B12_CORPUS_NEW="$CORPUS_NEW" B12_CORPUS_PRE="$CORPUS_PRE" B12_INHERITED="$INHERITED" \
   node "$MERGE_JS" "$ART" 2>&1)
 case "$MERGE_OUT" in
   *B12-SCORER-OK*) ART_FINALISED=1; ok "$MERGE_OUT" ;;
