@@ -1198,6 +1198,36 @@ defect, and it pinned four of them in place.
 - **If it falls:** the project stops. Only the pieces that individually paid for
   themselves survive — and per item 1 above, the cost meter cannot be shown to
   have done so by this instrument.
+- **PHASE 3 READING RULE — PRE-REGISTERED 2026-08-06, BEFORE THE MAC RUN AND
+  BEFORE ANY UNIT WAS ATTEMPTED.** The frozen run plan routes this project's own
+  mechanical work through `repair` for exposure, and attaches a consequence with
+  no number to it: *"if `R_repair` proves unreachable in phase 3, B12 is
+  measuring `gate` alone and the premise text should say so before phase 4 rather
+  than after phase 6."* This supplies the number. **The timing is the whole of
+  its legitimacy**, the same claim the two G-stop amendments of this date rest
+  on: no unit has been attempted, and the scorer those units implement does not
+  exist, so the answer is strictly unknowable as this is written.
+  - **The exposure:** the three arithmetic-core units of the B12 scorer
+    (`terms`, `strata`, `aggregate`) — real failing-assertion gates on this
+    repository's own remaining work, not fixtures authored for the experiment.
+    Each is handed to `repair` at its frozen `max_rounds`.
+  - **A unit COUNTS AS CLOSED only if `repair` returns `passed: true` AND the
+    harness's own `vitest` run of that unit's tests exits 0.** The tool's word is
+    not the measurement; this project has already recorded one call reporting
+    success on an already-green tree.
+  - **≥ 2 of 3 closed:** `R_repair` is reachable. B12 keeps both deliveries and
+    its text does not move.
+  - **0 of 3 closed:** `R_repair` is unreachable in this venue. **B12's text is
+    amended BEFORE Phase 4 to say it measures `gate` alone**, and `repair` is
+    recorded `unexercised` rather than fallen — `holdsIf` already forbids
+    `R_repair` from gating B12's status, so this changes what is CLAIMED, not
+    what is required.
+  - **Exactly 1 of 3: INCONCLUSIVE**, named now so it cannot be read either way
+    later. The manifest may not be sealed on it; more exposure comes first.
+  - **What it does NOT decide:** nothing about `R_gate`, nothing about the
+    bracket, nothing about whether B12 holds or falls. Three units, one
+    repository, one local model is **exposure, not a rate** — the caveat B6
+    carries, for the same reason.
 - **Measured:** — (no run)
 - **Status:** open · **pre-registered**, run not started
 
