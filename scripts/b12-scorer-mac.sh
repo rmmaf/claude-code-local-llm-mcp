@@ -150,6 +150,38 @@ ok "$REPO"
 RAW=$(git status --porcelain 2>/dev/null)
 GIT_RC=$?
 [ $GIT_RC -eq 0 ] || refuse "git status exited $GIT_RC; a tree whose state could not be read is not a clean tree"
+
+# ORPHANED ORACLES, FROM A RUN THE MACHINE DID NOT LET FINISH.
+# `stage_only` holds the other units' oracles outside tests/ for the duration of
+# a unit and `cleanup` puts them back -- but a KERNEL PANIC RUNS NO TRAP. Two
+# IOGPUFamily panics on 2026-08-06 killed the box mid-unit, and what they left
+# behind is exactly two deleted tracked files. The next run then refuses on them:
+# correct by the letter, but it is refusing a condition THIS SCRIPT CREATED and
+# can prove is benign, and the cost is a human round trip before every retry.
+#
+# Narrow on purpose, because "restore what looks stale" is how evidence dies.
+# Only DELETIONS, only of the three known oracle paths, and the repair is
+# `git checkout --` of a committed file -- which cannot lose content, because a
+# deleted file has none. A MODIFIED oracle is not touched and still refuses:
+# that one has content, and content is exactly what must not be silently thrown
+# away. Everything else outside src/cost/b12/ refuses as before.
+ORPHANED=""
+for u in strata terms aggregate; do
+  if printf '%s\n' "$RAW" | grep -qE "^(D |.D) tests/b12-$u\.test\.ts$"; then
+    ORPHANED="$ORPHANED tests/b12-$u.test.ts"
+  fi
+done
+if [ -n "$ORPHANED" ]; then
+  warn "oracle(s) left staged aside by a run that died mid-unit:$ORPHANED"
+  for f in $ORPHANED; do
+    git -C "$REPO" checkout -- "$f" ||
+      refuse "could not restore $f. Restore by hand with:  git checkout -- tests/"
+  done
+  RAW=$(git status --porcelain 2>/dev/null)
+  GIT_RC=$?
+  [ $GIT_RC -eq 0 ] || refuse "git status exited $GIT_RC after restoring the oracles"
+  ok "restored from HEAD:$ORPHANED"
+fi
 # TRACKED CHANGES REFUSE; UNTRACKED FILES DO NOT — the same split
 # `b12-preflight-mac.sh:103-112` makes, and it matters on a real machine. A Mac
 # checkout carries untracked artifacts that belong to other premises entirely:
