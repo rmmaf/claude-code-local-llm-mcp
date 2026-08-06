@@ -311,9 +311,9 @@ admits a request that overflows, and the answer comes back closed, well-formed
 and short.
 
   lms ps    # what is loaded, and under which id
-  lms unload --all; lms load \"$MODEL\" --context-length $MIN_CONTEXT
+  lms unload --all; lms load \"$MODEL_LOCAL\" --context-length $MIN_CONTEXT
 
-If \`lms ps\` shows the model loaded under a DIFFERENT id than \"$MODEL\", that is
+If \`lms ps\` shows the model loaded under a DIFFERENT id than \"$MODEL_LOCAL\", that is
 the other cause: pass the served id in B12_LOCAL_MODEL rather than renaming
 anything." ;;
 esac
