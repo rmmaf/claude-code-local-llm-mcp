@@ -1121,6 +1121,36 @@ while `readInvocationId` requires a UUID shape. Neither was a code defect. Both
 are the same lesson this file already records — a fixture that contradicts its
 own stated intent passes silently.
 
+**Four more for `design.artifacts` 5's per-file sha256**, in `cost-meter.test.ts`
+against the existing snapshot fixture, and they had to be rewritten before three
+of them could be proved. Written as four ordinary `expect`s in a row, the first
+failure ends the test and the three below it never execute — so the
+omitted-subagent-file defect fired the length assertion and left the hash and
+sort assertions unproved WHILE LOOKING CHECKED, which is this file's oldest
+failure mode wearing a new shape. They are `expect.soft` now, so all four
+evaluate and each carries its own message. Proved by: hashing the file NAME
+instead of its bytes, omitting the subagent file from the list while still
+counting it, and sorting DESCENDING.
+
+**The sort defect had to be planted twice, and the first attempt is the useful
+one.** `.reverse()` did not fire: the directory walk returns
+`sess-1/subagents/agent-a.jsonl` before `sess-1.jsonl`, and reversing that pair
+happens to PRODUCE the sorted order, because `.` sorts before the separator.
+A defect that accidentally implements the correct behaviour proves nothing, and
+the assertion looked unprovable until the defect was replaced with a descending
+comparator.
+
+**WHAT IS NOT COVERED, STATED RATHER THAN LEFT TO BE ASSUMED.** The archive's
+VALUE has eighteen controls; the harness WIRING has none. `observe()` needs a
+real `claude` binary, a manifest that does not exist yet, and a live MCP server,
+so nothing exercises the capture call, the `.mcp.json` refusal, the run-log row
+or the commit barrier. **The commit barrier is the one that matters** — it is the
+guard that makes "committed at each task's END" a fact, and a guard nobody has
+watched fire is not a guard. It self-checks twice (the index is non-empty before
+the commit, `HEAD` carries the path after it), which is defence written in the
+absence of a test rather than a substitute for one. It goes on the list for the
+day the manifest is sealed.
+
 **The eighteenth control is a TYPE, and it names what is missing.**
 `METERED_KEYS` is held to `keyof MeteredRecord` by an `Exclude`-based assert,
 because `RawRecord`'s fields are all optional and adding one would NOT break an

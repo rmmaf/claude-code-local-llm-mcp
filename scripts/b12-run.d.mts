@@ -35,6 +35,29 @@ export type ClassifiedOutcome =
   | "completed";
 
 /** The closed classification of one arm's outcome. `scripts/b12-run.mjs`. */
+/**
+ * One machine's transcript corpus at an instant. `design.artifacts` 5.
+ *
+ * `fileHashes` is the clause's "per-file sha256", and it is what makes a
+ * transcript rewritten between the pre- and post-snapshot visible: the artifact
+ * previously carried a file COUNT and no list, and the frozen text says the
+ * vendor rewrites these files.
+ *
+ * `rootOverride` exists so the same code that snapshots the machine can be
+ * pointed at a fixture — the harness re-implements B20's admission rule because
+ * it must run before `dist/` exists, and two implementations that are never
+ * compared is how the meter and the oracle drifted apart four times.
+ */
+export function takeSnapshot(rootOverride?: string): {
+  ts: string;
+  slugsWalked: number;
+  slugs: string[];
+  files: number;
+  billableRecords: number;
+  fileHashes: Array<{ path: string; sha256: string }>;
+  requestIds: string[];
+};
+
 export function classifyRun(input: {
   exitCode: number | null;
   signal: string | null;

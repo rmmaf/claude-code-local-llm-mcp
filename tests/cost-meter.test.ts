@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -2341,7 +2342,37 @@ describe("the B12 harness", () => {
     await runNode(process.execPath, [script, "snapshot", "--root", root, "--out", out], {
       cwd: process.cwd(),
     });
-    const harness: string[] = JSON.parse(await fs.readFile(out, "utf8")).requestIds;
+    const snapshot = JSON.parse(await fs.readFile(out, "utf8"));
+    const harness: string[] = snapshot.requestIds;
+
+    // `design.artifacts` 5 asks the snapshot for "the directory count, the file
+    // count, the id count AND PER-FILE SHA256". It carried the first three and a
+    // file count with no list, so a transcript rewritten between the pre- and
+    // post-snapshot was invisible — and the frozen text says the vendor rewrites
+    // these files. Both fixture files, hashed, and the count still agrees with
+    // the list it is a count of.
+    //
+    // `expect.soft`, FOUR FACTS, AND THE CHOICE IS THE POINT. Written as four
+    // ordinary assertions the first failure ends the test and the three below it
+    // never execute — so a planted defect proves only the topmost one while the
+    // rest look checked and are not. That is exactly what happened here: the
+    // omitted-subagent-file defect fired the length assertion and the hash and
+    // sort assertions never ran. Soft assertions all evaluate, and each carries
+    // its own message instead of one object diff the JSON reporter truncates.
+    const hashes: Array<{ path: string; sha256: string }> = snapshot.fileHashes;
+    const hashPaths = hashes.map((h) => h.path);
+    // The count and the list are one fact stated twice, and they can drift:
+    // `files` is the length of the WALK and `fileHashes` of what was READ.
+    expect.soft(hashes.length, "fileHashes length disagrees with the file count").toBe(snapshot.files);
+    expect
+      .soft(hashes.map((h) => path.basename(h.path)).sort(), "the wrong files were hashed")
+      .toEqual(["agent-a.jsonl", "sess-1.jsonl"]);
+    expect
+      .soft(hashes.find((h) => h.path.endsWith("sess-1.jsonl"))?.sha256, "the hash is not of the file bytes")
+      .toBe(createHash("sha256").update(`${main}` + String.fromCharCode(10), "utf8").digest("hex"));
+    // Sorted by path, so two snapshots of one machine diff line for line rather
+    // than by whatever order the directory walk happened to return.
+    expect.soft(hashPaths, "fileHashes is not sorted by path").toEqual([...hashPaths].sort());
 
     const meter = new Set<string>();
     for (const id of await listSessionIds(slug)) {
