@@ -1080,6 +1080,56 @@ but not under "always pair with index 0", because index 0's key is correct for
 row 0 either way. The index rule is proved by the `unattributed` assertion beside
 it, which fired on exactly that defect.
 
+## Seventeen more, for the capture — and one type-level control
+
+`src/cost/b12/capture.ts` and `tests/b12-capture.test.ts`, the first half of F24.
+**All seventeen passed on first execution, which is the state that says nothing.**
+Twelve defects were then planted in five groups, restoring the file between each,
+with the grouping chosen so that no ASSERTION is touched by two defects — which
+is what attribution actually needs, and is weaker than one-defect-per-function:
+
+| defect planted | in | what fired |
+|---|---|---|
+| iterate `Object.keys(source)` instead of `METERED_KEYS` | `reduceRecord` | `cwd`/`version`/`gitBranch`/`userType` archived |
+| `message` left whole | `reduceRecord` | `id` and `stop_reason` survived the narrowing |
+| `toolUseResult` replaced by its serialized LENGTH | `reduceRecord` | **563** where the payload belongs |
+| drop the `key in source` guard | `reduceRecord` | absent keys came back as explicit `undefined` |
+| `{}` for a non-object instead of `null` | `reduceRecord` | a malformed line archived as an admitted record |
+| a non-object line not counted | `reduceFile` | 1 dropped where 2 were |
+| no union-find — seed `sessionId` only | `lineageIndices` | the continuation left the lineage |
+| only the FIRST matching component | `lineageIndices` | one file where the seed names two |
+| a seed that matches nothing returns EVERY index | `lineageIndices` | the whole machine as one lineage |
+| `.git` not skipped | `captureObservation` | `.git/objects/…` hashed as a source file |
+| telemetry read from `process.cwd()` | `captureObservation` | **111 rows** — the repository's own live log |
+| `dirtyAtCapture` hardcoded false | `captureObservation` | a dirty acceptance read as clean |
+| the declared scope not labelled | `captureObservation` | `null` where the manifest declared one |
+| native path separators kept | `captureObservation` | `src\a.ts` — unreadable off Windows |
+| only the first slug searched | `captureObservation` | a fork into a second slug left the lineage |
+| **`isLocalToolResult` filter removed** | `captureObservation` | **two invocation ids where the join owns one** |
+
+**The last row needed a FIXTURE change before it could fire, and that is the
+entry worth keeping.** With only a `gate` result in the transcript, deleting the
+F10 filter changes nothing and the assertion passes on the defect it exists to
+catch. It fires only once the fixture also carries a `Read` whose output QUOTES
+somebody else's invocation id — which is F10's own scenario, and the reason the
+filter is the first hop of a five-hop join rather than a tidiness.
+
+**Two fixture defects surfaced before any control did**, both invisible until
+something executed them: the assistant record carried no `tool_use` block, so the
+result had `name: null` and failed the join; and the invocation id was `inv-1`,
+while `readInvocationId` requires a UUID shape. Neither was a code defect. Both
+are the same lesson this file already records — a fixture that contradicts its
+own stated intent passes silently.
+
+**The eighteenth control is a TYPE, and it names what is missing.**
+`METERED_KEYS` is held to `keyof MeteredRecord` by an `Exclude`-based assert,
+because `RawRecord`'s fields are all optional and adding one would NOT break an
+object literal that omits it — the archive would quietly start dropping a field
+the meter reads while every oracle stayed green, since no fixture carries a field
+that does not exist yet. Seen failing: removing `"isCompactSummary"` gives
+`TS2322: Type 'true' is not assignable to type '"isCompactSummary"'` — the
+missing key BY NAME, not merely a red build.
+
 ## Ten more, for F19, F20, F21 and F22
 
 The F19 pass added eight assertions to `b12-aggregate.test.ts` and the F20/F21

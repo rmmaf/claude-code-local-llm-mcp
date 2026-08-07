@@ -107,7 +107,33 @@ export interface Transcript {
   };
 }
 
-interface RawRecord {
+/**
+ * THE FIELDS THE METER READS — every one of them, and nothing else.
+ *
+ * This is `readTranscript`'s parse target, so the set is not a judgement about
+ * what matters: it is what the parser declares it will look at. Everything else
+ * Claude Code writes on a transcript line (`cwd`, `version`, `gitBranch`,
+ * `userType`, `message.id`, `stop_reason`, …) is never read here and never will
+ * be without this interface changing.
+ *
+ * **EXPORTED BECAUSE `design.artifacts` 6 NAMES THIS SET AND ENUMERATES IT
+ * SHORT.** The clause says "the admitted records reduced to the fields the meter
+ * reads" and then lists eight — `requestId, uuid, sessionId, type, model, usage,
+ * timestamp, isApiErrorMessage` — which cannot rebuild a `Transcript`: no
+ * threads without `parentUuid` and `isSidechain`, no segments without
+ * `isCompactSummary`, no tool join without `message.content` and
+ * `toolUseResult`. The criterion governs and the enumeration is incomplete
+ * against it (`docs/b12-scorer/FINDINGS.md` F24), so `src/cost/b12/capture.ts`
+ * reduces to THIS interface and a type-level assert there fails the build if the
+ * two drift apart.
+ *
+ * `toolUseResult` is kept VERBATIM and cannot be summarised: the meter's number
+ * is `JSON.stringify(record.toolUseResult).length`, and `readInvocationId` scans
+ * the same string. Storing the derived byte count instead would archive the
+ * meter's answer rather than its input, which is the one substitution an archive
+ * built for re-scoring may not make.
+ */
+export interface RawRecord {
   type?: string;
   uuid?: string;
   isApiErrorMessage?: boolean;
