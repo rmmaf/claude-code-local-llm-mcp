@@ -39,6 +39,12 @@ check() { # check <label> <expected> <actual>
     FAIL=$((FAIL + 1)); printf '    FAIL  %s\n          expected: %s\n          actual:   %s\n' "$1" "$2" "$3"
   fi
 }
+check_has() { # check_has <label> <needle> <haystack>
+  case "$3" in
+    *"$2"*) PASS=$((PASS + 1)); printf '    ok    %s\n' "$1" ;;
+    *) FAIL=$((FAIL + 1)); printf '    FAIL  %s\n          wanted to contain: %s\n          actual:           %s\n' "$1" "$2" "$3" ;;
+  esac
+}
 head2() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # ---------------------------------------------------------------------------
@@ -53,6 +59,11 @@ STATE_SH="$TMP/state-block.sh"
 awk '/^  # >>> B12-STATE-BLOCK$/{f=1;next} f&&/^  # <<< B12-STATE-BLOCK$/{exit} f' "$SCORER" > "$STATE_SH"
 [ -s "$STATE_SH" ] || { printf 'extraction failed: the state block is empty. Did its markers change?\n' >&2; exit 1; }
 printf '    ..    state decision: %s lines\n' "$(wc -l < "$STATE_SH" | tr -d ' ')"
+
+GUARD_SH="$TMP/stub-guard.sh"
+awk '/^# >>> B12-STUB-GUARD$/{f=1;next} f&&/^# <<< B12-STUB-GUARD$/{exit} f' "$SCORER" > "$GUARD_SH"
+[ -s "$GUARD_SH" ] || { printf 'extraction failed: the stub guard is empty. Did its markers change?\n' >&2; exit 1; }
+printf '    ..    fresh-exposure stub guard: %s lines\n' "$(wc -l < "$GUARD_SH" | tr -d ' ')"
 
 # ---------------------------------------------------------------------------
 head2 "The telemetry-window reader, against fabricated windows"
@@ -194,6 +205,95 @@ check "a missing context file records a VOID" "closed|1| context-file-missing:ag
   "$(state_of 0 1 1 3 ok missing)"
 check "no rows records BOTH VOIDs" "no_repair_call|0| local-model-unverified:aggregate context-unverifiable:aggregate" \
   "$(state_of 1 0 0 0 unknown no-rows)"
+
+# ---------------------------------------------------------------------------
+head2 "The fresh-exposure guard, against throwaway repositories"
+# ---------------------------------------------------------------------------
+# Each case builds a real repository with exactly the property under test. The
+# one that matters most is `committed`: a body the scorer itself committed at
+# the end of an earlier run leaves `git status` clean, which is precisely why
+# the guard may not consult it.
+STUB='export function f(): never { throw new Error("not implemented"); }'$'\n'
+BODY='export function f(): number { return 1; }'$'\n'
+NOTASTUB='export function f(): number { return 0; } // no such marker'$'\n'
+
+mkrepo() { # mkrepo <name> <stub text> <what happens after the stub commit>
+  local dir="$TMP/repo-$1"
+  rm -rf "$dir"; mkdir -p "$dir/src/cost/b12"
+  git -C "$dir" init -q 2>/dev/null
+  git -C "$dir" config user.email t@t; git -C "$dir" config user.name t
+  for u in strata terms aggregate; do printf '%s' "$2" > "$dir/src/cost/b12/$u.ts"; done
+  printf 'export type T = 1;\n' > "$dir/src/cost/b12/types.ts"
+  git -C "$dir" add -A >/dev/null 2>&1
+  git -C "$dir" commit -qm stubs >/dev/null 2>&1
+  printf '%s' "$dir"
+}
+
+run_guard() { # run_guard <repo> <frozen ref> <units> <resume> -> "<exit>|<first refusal line>"
+  local out rc
+  # `refuse` prints to STDOUT here on purpose. Capturing the real one's stderr
+  # through a command substitution is one redirection away from capturing
+  # nothing and comparing an empty string to an empty string — which is how the
+  # first draft of this file reported four passes it had not earned.
+  out=$(
+    set -u
+    ok() { :; }; warn() { :; }; info() { :; }
+    refuse() { printf 'REFUSED %s\n' "$1"; exit 1; }
+    REPO="$1"; STUBS_FROZEN_AT="$2"; UNITS_TO_ATTEMPT="$3"; RESUME="$4"
+    . "$GUARD_SH"
+  )
+  rc=$?
+  printf '%s|%s' "$rc" "$(printf '%s' "$out" | head -1)"
+}
+
+R=$(mkrepo clean "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+check "all three units are stubs -> passes" "0|" "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 0)"
+
+# THE DEFECT THAT CAUSED THIS REWRITE. The body is COMMITTED, so `git status` is
+# clean and the old guard saw nothing to object to.
+R=$(mkrepo committed "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+printf '%s' "$BODY" > "$R/src/cost/b12/aggregate.ts"
+git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm "wip: scorer bodies" >/dev/null 2>&1
+check_has "a clean tree still refuses a COMMITTED body" \
+  "1|REFUSED unit(s) this run will attempt already carry a body: aggregate" \
+  "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 0)"
+check "the same repo passes when that unit is NOT attempted" "0|" \
+  "$(run_guard "$R" "$FROZEN" "strata terms" 0)"
+check "B12_RESUME=1 lets the committed body through" "0|" \
+  "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 1)"
+
+# An uncommitted body refuses too — the case the old guard did catch.
+R=$(mkrepo dirty "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+printf '%s' "$BODY" > "$R/src/cost/b12/terms.ts"
+check_has "an uncommitted body refuses, naming that unit" \
+  "1|REFUSED unit(s) this run will attempt already carry a body: terms" \
+  "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 0)"
+
+# The pin itself. A comment claiming these are stubs is not evidence.
+R=$(mkrepo notastub "$NOTASTUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+check_has "a pin that is not actually a stub refuses" \
+  'does not contain "not implemented", so it is not a stub' \
+  "$(run_guard "$R" "$FROZEN" "strata" 0)"
+
+R=$(mkrepo clean2 "$STUB")
+check_has "an unknown frozen commit refuses" "is not a commit in this clone" \
+  "$(run_guard "$R" "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "strata" 0)"
+
+# The remedy the refusal prints must name the commit. A bare `git checkout --`
+# restores the committed body, which is how the old escape hatch was a no-op.
+R=$(mkrepo remedy "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+printf '%s' "$BODY" > "$R/src/cost/b12/aggregate.ts"
+git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm wip >/dev/null 2>&1
+REMEDY=$(
+  ok() { :; }; warn() { :; }; info() { :; }
+  refuse() { printf '%s\n' "$1"; exit 1; }
+  REPO="$R"; STUBS_FROZEN_AT="$FROZEN"; UNITS_TO_ATTEMPT="aggregate"; RESUME=0
+  . "$GUARD_SH"
+)
+check "the remedy names the frozen commit, not a bare checkout" "yes" \
+  "$(printf '%s' "$REMEDY" | grep -q "git checkout $FROZEN -- src/cost/b12/aggregate.ts" && echo yes || echo no)"
+check "the remedy names only the dirty unit" "no" \
+  "$(printf '%s' "$REMEDY" | grep -q "src/cost/b12/strata.ts" && echo yes || echo no)"
 
 # ---------------------------------------------------------------------------
 head2 "End to end: exposure B's aggregate, through both units at once"

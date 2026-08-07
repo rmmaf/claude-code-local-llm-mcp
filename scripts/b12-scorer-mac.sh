@@ -335,6 +335,13 @@ fi
 # Per FILE, because types.ts lives in the same directory and is real code. Per
 # ATTEMPTED unit, because a unit this run does not score cannot bias its count —
 # which is exactly what makes B12_ONLY legitimate rather than a loophole.
+#
+# The markers are load-bearing, as in step 7: scripts/b12-scorer-selftest.sh
+# extracts this region VERBATIM and drives it against throwaway repositories
+# built to have exactly the property being tested — including the one that made
+# this rewrite necessary, a body COMMITTED by an earlier run, which leaves the
+# tree clean and the answer already on disk.
+# >>> B12-STUB-GUARD
 git -C "$REPO" rev-parse --verify "$STUBS_FROZEN_AT^{commit}" >/dev/null 2>&1 ||
   refuse "$STUBS_FROZEN_AT is not a commit in this clone, and it is what the stubs are pinned to. Nothing below can be verified against it. Try \`git fetch\` first."
 if [ "$RESUME" = "1" ]; then
@@ -376,6 +383,7 @@ condition throughout, so an already-green unit is legitimately skipped:
   fi
   ok "every unit this run attempts is byte-identical to its stub at $STUBS_FROZEN_AT"
 fi
+# <<< B12-STUB-GUARD
 if [ "${UNTRACKED_N:-0}" -gt 0 ]; then
   warn "$UNTRACKED_N untracked path(s) present. They are LEFT ALONE and never committed: this run commits src/cost/b12/ and its own artifact, nothing else."
 fi
