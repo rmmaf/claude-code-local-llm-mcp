@@ -24,9 +24,37 @@ all of them — `coverage.ts` joined the three when the run-level ledger landed 
 which is exactly why they need writing down: an oracle that cannot fail on a
 defect is not evidence the defect is absent.
 
+## Twenty-five findings, and only two of them are work
+
+**F1–F25, one number per finding except F2, which split. F18 does not exist and
+never did** — the numbering skipped it, and that is recorded here rather than
+back-filled, because renumbering would break every citation in `git log`.
+
+The count says less than the split does. **Seventeen are closed. Of the eight
+open, two are code owed, one is a decision, and five will never close** — each of
+those five is a place the frozen design underdetermines what an implementer needs,
+every closing route was adjudicated and REFUSED, and what shipped is the literal
+reading plus enough published detail that a reader of a committed artifact can see
+the gap.
+
+**So the open list is not a backlog, and reading it as one is the mistake this
+section exists to prevent.** A registered limit still open on the day the scorer
+is finished is the CORRECT state: closing one would mean amending a
+pre-registration, which is the failure the whole apparatus was built against.
+The three headings below say which kind each finding is, and nothing else about
+this file changed.
+
+The arrival pattern is worth as much as the count. F1–F10 were defects in the
+scorer's own bodies and they stopped. F17 onward are all on the BOUNDARY between
+the scorer and what surrounds it — the frozen text, the harness, the artifacts —
+which is what a component looks like approaching done with its surroundings not
+ready, rather than one decaying.
+
 ---
 
-## OPEN
+## OPEN — code owed
+
+Two, both with a known fix and a known owner.
 
 ### F24 — the archive the assembler must read is not the archive the harness writes
 
@@ -65,34 +93,6 @@ Two dependent gaps fall out of the same hole:
   "EVERY admission condition **from the committed archive alone**". That test
   cannot be written against an archive that does not carry the inputs.
 
-### F25 — the frozen text demands a declaration and supplies no disposition for its absence
-
-Found by the same gate, against a resolution the first draft of `UNIT-5.md`
-invented.
-
-`admissionRule` 8 requires `verificationStratum` "declared per task before the
-run", and `scripts/b12-run.mjs` does not write it — so the assembler joins it from
-the manifest by `taskId`. The question is what happens when the join FAILS.
-
-**A throw is not available.** `admissionRule` 1 makes every registered run owe a
-committed result artifact carrying `scored` or the VOID clause BY NAME, from
-registration onward. An exception produces no artifact, which is the one outcome
-the design does not allow.
-
-**And no member of the closed disposition list describes it.** `void(withheld)`
-is fixed by `admissionRule` 5 to `provenanceUnavailable || ambiguous > 0`;
-`void(execution_error)` is narrowly enumerated by clause 12 as a harness exit, an
-unhandled exception, or a transcript ending with no assistant turn;
-`void(task_failed)` is the acceptance predicate. A malformed manifest is none of
-them.
-
-So the frozen text contains an ENCODING GAP: it mandates the declaration, mandates
-a named disposition, and provides no name for the case where the declaration is
-missing. **The first draft resolved it by inventing a throw, which is both a
-minted rule and the one handling `admissionRule` 1 forbids.** Recorded unresolved.
-It is arguably the strongest candidate for a re-registered premise, since unlike
-F20 and F21 it is not a choice between two readings — it is a hole.
-
 ### F23 — `voidConditions` 8 wants two BRACKETS and the artifact carries two byte sums
 
 Found by the same gate. Unlike F24 and F25 this one is a defect in UNIT 3, not in
@@ -117,6 +117,77 @@ permissive on the result" (`thresholdArgument`).
 Satisfying it is a second full pass of the arithmetic with the cap applied and
 without — `poolRatio` over rows priced both ways at both horizons — which changes
 `B12Result` and belongs in its own pass with its own controls. Not fixed here.
+
+---
+
+## OPEN — a decision, not an implementation
+
+One. It is the only open finding with **no shipped behaviour at all**: a run that
+reaches it has no legal outcome, so there is nothing to publish a limit about.
+
+### F25 — the frozen text demands a declaration and supplies no disposition for its absence
+
+Found by the same gate, against a resolution the first draft of `UNIT-5.md`
+invented.
+
+`admissionRule` 8 requires `verificationStratum` "declared per task before the
+run", and `scripts/b12-run.mjs` does not write it — so the assembler joins it from
+the manifest by `taskId`. The question is what happens when the join FAILS.
+
+**A throw is not available.** `admissionRule` 1 makes every registered run owe a
+committed result artifact carrying `scored` or the VOID clause BY NAME, from
+registration onward. An exception produces no artifact, which is the one outcome
+the design does not allow.
+
+**And no member of the closed disposition list describes it.** `void(withheld)`
+is fixed by `admissionRule` 5 to `provenanceUnavailable || ambiguous > 0`;
+`void(execution_error)` is narrowly enumerated by clause 12 as a harness exit, an
+unhandled exception, or a transcript ending with no assistant turn;
+`void(task_failed)` is the acceptance predicate. A malformed manifest is none of
+them.
+
+So the frozen text contains an ENCODING GAP: it mandates the declaration, mandates
+a named disposition, and provides no name for the case where the declaration is
+missing. **The first draft resolved it by inventing a throw, which is both a
+minted rule and the one handling `admissionRule` 1 forbids.**
+
+**A THIRD ROUTE EXISTS AND IS NOT YET ADJUDICATED — recorded as a candidate, not
+as a resolution.** Every route considered so far tried to answer the question at
+SCORING time, where `admissionRule` 1 has already attached. It attaches "from
+registration onward", and the manifest is sealed and hashed BEFORE the first
+billed request (`design.artifacts` 1). So the harness's preflight can refuse a
+manifest in which any task declares no `verificationStratum` — before any run is
+registered, before clause 1 binds, and while nothing has been spent. That mints
+no rule: `b12-run.mjs`'s own contract is that "a precondition that cannot be
+checked is a hard exit, never a warning", and this precondition is checkable by
+reading the file. It does not close the finding as stated — a manifest could
+still be corrupted between sealing and scoring, and its hash is what catches that
+— but it makes the gap unreachable on a compliant run. **It belongs to the same
+harness pass as F24 and is gated with it.**
+
+---
+
+## REGISTERED LIMITS — recorded, not closeable by implementation
+
+Five. None is a defect. Each ships the literal reading of a frozen text that
+underdetermines what an implementer needs, plus enough published detail that a
+reader of a committed artifact can see the gap for themselves. They stay here
+permanently.
+
+**EIGHT CLOSING ROUTES WERE ADJUDICATED ACROSS THE FIVE AND ALL EIGHT WERE
+REFUSED**, one of them twice. Enumerated so the count is checkable rather than
+impressive:
+
+| finding | route offered | why refused |
+|---|---|---|
+| F20 | `admissionRule` 6 says such an observation "is admitted" | an equivocation — the clause reads "to the FALL arithmetic only" |
+| F20 | publish BOTH readings on `result.json` | permitted, but owed by the replay emitter, not by artifact 8 |
+| F20 | return `open` when the two readings disagree | `open`-on-undecidability has three NAMED precedents, which is evidence against a general principle — and it would route around attempt consumption |
+| F21 | require 5 hold-eligible observations per cell too | mints a second PREDICATE over a different population; **refused twice** |
+| F17 | amend the preflight to screen `R_hi⁺`'s refusals | the preflight is a frozen artifact (see F11's rule) |
+| F11 | allocate `O` across deliveries, or publish `R_installation` | changes the ESTIMAND, which B20's repair rule does not license |
+| F13 | amend the design so `R_other` has a source | same rule as F11 |
+| F13 | instrument the five silent tools | a design change wearing an implementation's clothes — it would CREATE data the experiment assumed existed, and would not close F11 anyway |
 
 ### F20 — which sense of "excluded" the selection guard takes is UNDETERMINED
 
