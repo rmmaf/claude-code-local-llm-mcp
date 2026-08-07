@@ -51,12 +51,27 @@ ledger. `scopeTelemetry` admits any row within ±60,000 ms of the transcript
 (`report.ts:717-734`), and `admissionRule` 5 says so by hand, so one physical row
 can sit in two observations' slices and be summed twice by `rHiPlus`.
 
-**Bounded, not solved.** `d/dF [(S+F−O)/(A+S+F)] = (A+O)/(A+S+F)² ≥ 0`, so extra
-refused units move `R_hi+` **up**: duplication can turn a true fall into `open`
-and can never manufacture a hold, since a hold is decided by `R_lo`, its
-recomputations, the strata and `R_gate`. The residue that is not free: duplicated
-units also enter `holdsIf` 5's cleanliness ceiling, so duplication can **block a
-legitimate hold**.
+**Bounded, not solved, and the direction FOLLOWS THE SIGN.**
+`d/dF [(S+F−O)/(A+S+F)] = (A+O)/(A+S+F)² ≥ 0`, so `R_hi+` moves with `F` — and
+`F` can be negative, because `wouldHaveAdded` is signed and a row whose returned
+bytes exceed its capped raw bytes has a negative magnitude. So:
+
+- **positive** (the ordinary case) → `R_hi+` up. Safe: it can turn a true fall
+  into `open` and can never manufacture a hold, which is decided by `R_lo`, its
+  recomputations, the strata and `R_gate`.
+- **negative** → `R_hi+` down, which **manufactures a fall**.
+
+**Corrected at gate 2, where it was raised as a blocker.** "Duplication is the
+safe direction" was written here and in `types.ts` and was wrong in exactly the
+case the codebase has measured — whole tools net negative, `rowsNetNegative` on
+the row. `UNIT-3.md` step 1b now refuses `rHiPlus` on a negative
+`unattributedRefusals` class sum, which is the only case the declared types can
+see. **It is not a complete guard:** a class sum of zero can hide a +100 and a
+−100, and duplicating one of those moves the figure with nothing to detect it.
+
+The residue that remains even for positive magnitudes: duplicated units enter
+`holdsIf` 5's cleanliness ceiling, so duplication can also **block a legitimate
+hold**.
 
 Codex's design, recorded whole because it also closes F9: a run-level
 `RunTelemetryCoverage`, deduplicated by source artifact plus line ordinal (an
@@ -134,6 +149,21 @@ observations' `gate`/`repair` call counts, which `AggregateInput` does carry via
 `dropped[].rows`, and a new verdict member. Also unlisted: the run-level void
 clause and the register of prior runs that `design.artifacts` requires on the
 artifact's face.
+
+### F15 — `CreditedRow`'s null invariant is not encoded, so `?? 0` passes everything
+
+`units` and `unitsLo` are `number | null`, non-null on every credited row and
+possibly null on a refused one. **`disposition === "credited"` narrows neither**
+— the interface is flat, so an implementation writing `row.unitsLo ?? 0` compiles
+and passes every oracle in the repository while committing the exact
+unknown-summed-as-zero collapse this scorer forbids everywhere else.
+
+`UNIT-2.md` step 7 now prescribes a throw naming the row instead, which is a
+statement in a document and not an enforcement. The enforcement is to make
+`CreditedRow` a disposition-discriminated union — a credited row's two magnitude
+fields become `number`, a refused row's stay nullable. That touches the two
+literals in `report.ts` and every reader, so it is recorded rather than done in
+the pass that found it.
 
 ### A stale citation in the frozen design, recorded because it cannot be fixed
 
@@ -322,14 +352,25 @@ pseudocode, which is worth remembering when reading the one unit that closed.
 the run's. `git log -p` is the only thing that keeps "what the local model wrote"
 legible once a human has touched the file.
 
-## Seven assertions that are not yet controls
+## Nine assertions that are not yet controls
 
-The scorer-correctness pass added five assertions to `tests/b12-aggregate.test.ts`
-and two to `tests/b12-terms.test.ts`. Both files test stubs, so **every one of
-them fails on `not implemented` whether it is right or wrong** — they have never
-been executed against any implementation. Their constants were derived by hand
-and their API shape is pinned by `tsc`; nothing else about them has been checked,
-and each is marked `UNPROVED CONTROL` in the file.
+The scorer-correctness pass added seven assertions to
+`tests/b12-aggregate.test.ts` and two to `tests/b12-terms.test.ts`. Both files
+test stubs, so **every one of them fails on `not implemented` whether it is right
+or wrong** — none has ever been executed against any implementation. Their
+constants were derived by hand and their API shape is pinned by `tsc`; nothing
+else about them has been checked, and each is marked `UNPROVED CONTROL`.
+
+**Three were already defective when written, which is the argument for the
+re-check rather than against it.** Re-deriving the fixtures against the specs
+found `strataCells`'s `typesOnly` assertion satisfied by the 5-observation floor
+alone, so it passed on the defect it was written to catch. Gate 2 found two more:
+the closure floor gave every fixture `closures` of 0 or 1, where summing rows and
+counting observations agree, so it did not test "observations, not rows"; and the
+closure test supplied only `true` and `null`, so `passed !== true` would have
+satisfied both arms while merging a repair that ran and failed with one that
+could not say. All three are fixed. **Three defects in seven assertions is the
+rate to expect from assertions nobody has watched fail.**
 
 They must be re-checked the day a body lands, by breaking that body deliberately
 and watching each one fail for its own reason. Until then they are specifications

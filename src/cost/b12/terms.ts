@@ -13,7 +13,10 @@
  * IT NARROWS THREE THINGS, NOT ONE. This header used to say "only the credit is
  * narrowed", which is wrong: `A_o` and `O_o` are computed over `owned` too
  * (`breakdownOfRequests` and `unitsAddedByInstallation` both take the id set).
- * What the full lineage is for is SEGMENT POSITIONING, and nothing else.
+ * The full lineage is what SEGMENT POSITIONING and the PROVENANCE JOIN are
+ * computed against — `buildCounterfactual` reads it for local-vs-foreign
+ * ownership, for a row's timestamp and thread, and for the request a row is
+ * matched to, as well as for `t` and `T`.
  */
 
 import type { TelemetryRecord } from "../../telemetry.js";

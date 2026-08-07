@@ -1578,12 +1578,15 @@ defect, and it pinned four of them in place.
       design and computed by the artifact — is **false** by `O/(A+S)` on every
       run with a non-zero installation term. Neither is fixable by an
       implementer; both need the design to say something it does not say.
-    - **Seven of the new assertions are not controls yet.** They test stubs, so
+    - **Nine of the new assertions are not controls yet.** They test stubs, so
       they fail on `not implemented` whether they are right or wrong. Marked
       `UNPROVED CONTROL` in the files and to be re-checked by breaking a real
       body the day one exists. Registered now because "the oracle agreed" is
       exactly the claim a green run would invite, and these oracles have not been
-      watched fail.
+      watched fail — **three of the first seven were defective when written**,
+      each passing on the very defect it was aimed at, and were caught only by
+      re-deriving the fixtures against the specs and by an adversarial review of
+      the diff.
     - **`STUBS_FROZEN_AT` moved to `3d27f08`**, which is where the repaired stubs
       live. A consequence rather than a choice: `strata` has a body at that
       commit, so the harness now refuses any run that attempts it — enforcing the

@@ -173,26 +173,28 @@ export interface ObservationTerms {
   /** Refused rows this window OWNS — their `invocationId` is one of its own. */
   refusals: RefusalLedger;
   /**
-   * Refused rows in this observation's telemetry slice that belong to NO window:
-   * `invocationId` null, or an id this window does not own.
+   * Every OTHER refused row in this observation's telemetry slice: `invocationId`
+   * null, or an id this window does not own.
    *
-   * WITHOUT THIS, TWO OF THE FOUR CLASSES ARE STRUCTURALLY EMPTY AND `R_hi+` IS
-   * DEFLATED TOWARD THE FALL LINE. An `unverifiable` row is refused precisely
-   * because it has no `invocation_id`, so it can never be in any window's owned
-   * set; an `excludedForeign` row is refused precisely because its id is absent
-   * from this transcript, which is where owned ids come from. A ledger built
-   * only from owned rows can hold `ambiguous` and `unmatched` and nothing else,
-   * while the frozen metric defines `R_hi+` over ALL FOUR — so the fall-side
-   * figure was short by construction, and the whole point of `R_hi+` is that a
+   * WITHOUT IT `R_hi+` IS SHORT. An `unverifiable` row is refused precisely
+   * because it has no `invocation_id`, so it is structurally unownable; an
+   * `excludedForeign` row is refused because its id is absent from the
+   * gate/repair-filtered map, which is *nearly* but not exactly the set the
+   * window join reads (see `FINDINGS.md` F10), so it is unownable on any normal
+   * input rather than provably. A ledger built from owned rows alone therefore
+   * holds `ambiguous` and `unmatched` and little else, while the frozen metric
+   * defines `R_hi+` over ALL FOUR — and the whole point of `R_hi+` is that a
    * fall must survive the most generous arithmetic the data admits.
    *
-   * IT MAY DOUBLE-COUNT, AND THAT IS THE SAFE DIRECTION. `admissionRule` 5 says
-   * `scopeTelemetry`'s ±60,000 ms window pulls a neighbouring arm's rows in
-   * whenever two sessions run within a minute, so one such row can appear in two
-   * observations' slices. Over-crediting `refused` moves
-   * `(S + refused - O) / (A + S + refused)` UP, and `R_hi+` gates only the fall
-   * — it can prevent one and can never manufacture a hold. Omission is the error
-   * that stops the project; duplication is not.
+   * IT MAY DOUBLE-COUNT, AND THE DIRECTION FOLLOWS THE SIGN. `admissionRule` 5
+   * says `scopeTelemetry`'s ±60,000 ms window pulls a neighbouring arm's rows in
+   * whenever two sessions run within a minute, so one row can appear in two
+   * slices. `wouldHaveAdded` is SIGNED, so duplication moves
+   * `(S + refused - O) / (A + S + refused)` up for a positive magnitude — safe,
+   * since `R_hi+` gates only the fall — and DOWN for a negative one, which
+   * manufactures a fall. `rHiPlus` therefore refuses on a negative class sum
+   * here; that closes the case this shape can see and not the case it cannot
+   * (a zero sum hiding +100 and -100). F12 is the real fix.
    */
   unattributedRefusals: RefusalLedger;
   /** Unevaluable when the window carried no billed request of its own. */

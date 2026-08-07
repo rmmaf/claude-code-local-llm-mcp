@@ -66,10 +66,14 @@ export function poolRatio(terms: readonly ObservationTerms[], horizon: "lo" | "h
  * deflated instrument stops the project permanently, which is strictly the worse
  * of the two errors.
  *
- * OVER BOTH LEDGERS ON EVERY OBSERVATION. `unverifiable` and `excludedForeign`
- * rows cannot belong to any window — that is what makes them what they are — so
- * they reach here only through `unattributedRefusals`, and a figure summed from
- * `refusals` alone is missing two of the four classes it claims to cover.
+ * OVER BOTH LEDGERS ON EVERY OBSERVATION. `unverifiable` rows can never belong
+ * to a window and `excludedForeign` rows do not on any normal input, so they
+ * reach here through `unattributedRefusals`, and a figure summed from `refusals`
+ * alone is missing most of two of the four classes it claims to cover.
+ *
+ * ALSO NOT EVALUABLE on a negative `unattributedRefusals` class sum: those rows
+ * may be counted twice and `wouldHaveAdded` is signed, so a duplicated negative
+ * magnitude pushes this figure DOWN, toward a fall the data does not support.
  */
 export function rHiPlus(all: readonly ObservationTerms[]): Evaluable<number> {
   void all;
@@ -109,13 +113,19 @@ export function recompute(
 /**
  * One delivery's figure over the COMMON denominator.
  *
- * THE IDENTITY IS WHY THE DENOMINATOR IS SHARED. The design asserts
- * `sum_d R_d + R_other = R`, and ratios do not otherwise sum; the only reading
- * under which that holds is one denominator with the numerator partitioned by
- * the telemetry `tool` field. Fixed here, in writing, before any `R` exists —
- * the design warns that an implementer's natural alternative, bucketing
- * `scaffold`'s rows under the nearest named delivery, would decide `gate`'s
- * survival on another tool's saving.
+ * ONE SHARED DENOMINATOR, with the numerator partitioned by the telemetry `tool`
+ * field. Fixed in writing before any `R` exists, because the design warns that
+ * an implementer's natural alternative — bucketing `scaffold`'s rows under the
+ * nearest named delivery — would decide `gate`'s survival on another tool's
+ * saving.
+ *
+ * **THE DESIGN'S `sum_d R_d + R_other = R` IS FALSE AND THIS COMMENT USED TO
+ * REPEAT IT.** `sum_d R_d = S/(A+S)` while `R = (S-O)/(A+S)`, so they differ by
+ * `O/(A+S)` on every run whose installation term is non-zero — which `holdsIf` 6
+ * requires for every observation. Build the shared denominator anyway, and let
+ * `B12Result.identityHolds` come out false: it says "compute it; do not assume
+ * it". Allocating `O` across deliveries is a design decision nobody has made.
+ * `FINDINGS.md` F11.
  */
 export function deliveryScore(
   terms: readonly ObservationTerms[],

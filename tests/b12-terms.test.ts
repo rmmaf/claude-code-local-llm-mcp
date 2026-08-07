@@ -208,6 +208,23 @@ describe("computeTerms — every constant derived by hand", () => {
     // and the artifact could not tell an unexercised delivery from an unreadable
     // one.
     expect(silent.perDelivery.repair?.closureUnknown).toBe(1);
+
+    // AND THE THIRD ARM, without which the two above do not pin the rule. With
+    // only `true` and `null` in the fixture, `closureUnknown += passed !== true`
+    // satisfies both and quietly counts a repair that RAN AND DID NOT CLOSE as a
+    // row that could not say. `false` is a measurement; it increments neither.
+    const red = computeTerms({
+      observation: observation({ originatedRequestIds: ALL_FOUR }),
+      transcript,
+      telemetry: [{ ...row, tool: "repair", detail: { passed: false } }],
+      rates: DEFAULT_RATES,
+      installedChars: 3_700,
+      ambiguousIds: new Set(),
+      disposition: "scored",
+    });
+    expect(red.perDelivery.repair?.rowCount).toBe(1);
+    expect(red.perDelivery.repair?.closures).toBe(0);
+    expect(red.perDelivery.repair?.closureUnknown).toBe(0);
   });
 
   it("meters the WHOLE lineage — a shortened transcript would shorten T and deflate R", async () => {

@@ -152,6 +152,36 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
     expect(result.evaluable).toBe(false);
     if (!result.evaluable) expect(result.reason.length).toBeGreaterThan(0);
   });
+
+  it("refuses a NEGATIVE unattributed magnitude, which duplication turns into a fall", () => {
+    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    //
+    // An unattributed row may be counted twice: `scopeTelemetry` admits anything
+    // within 60 s, so one row can sit in two observations' slices and nothing in
+    // the declared types can tell. Duplication moves this figure in the
+    // direction of the duplicated magnitude's SIGN, and `wouldHaveAdded` is
+    // signed -- a row whose returned bytes exceed its capped raw bytes has a
+    // negative magnitude, and this project has measured whole tools net negative.
+    // A duplicated positive is safe (it can only prevent a fall); a duplicated
+    // NEGATIVE manufactures one.
+    const negative = terms({
+      aO: 1_000,
+      sHi: 100,
+      unattributedRefusals: ledger({ excludedForeign: { count: 1, units: -400, unsized: 0 } }),
+    });
+    expect(rHiPlus([negative]).evaluable).toBe(false);
+
+    // THE ANTI-VACUITY ARM. The same shape with the sign flipped is evaluable --
+    // otherwise this test would be satisfied by an implementation that refuses
+    // every non-empty unattributed ledger, which would make `R_hi+` unevaluable
+    // on nearly every real run and quietly kill the fall side.
+    const positive = terms({
+      aO: 1_000,
+      sHi: 100,
+      unattributedRefusals: ledger({ excludedForeign: { count: 1, units: 400, unsized: 0 } }),
+    });
+    expect(rHiPlus([positive]).evaluable).toBe(true);
+  });
 });
 
 describe("recompute — the row guard ranks per horizon, because the two disagree", () => {
@@ -291,7 +321,15 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
         aO: 100,
         sLo: 50,
         sHi: 50,
-        perDelivery: { repair: { sLo: 50, sHi: 50, rowCount: 1, closures, closureUnknown } },
+        perDelivery: {
+          repair: {
+            sLo: 50,
+            sHi: 50,
+            rowCount: Math.max(1, closures + closureUnknown),
+            closures,
+            closureUnknown,
+          },
+        },
       });
 
     // Five carrying observations, ONE of which closed. Over the observation
@@ -302,9 +340,22 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
     if (!short.scored) expect(short.reason).toBe("unexercised");
     expect((short as { r?: number }).r).toBeUndefined();
 
-    // Two closures: scored.
+    // Two closures in two observations: scored.
     const two = [withClosures(0, 1, 0), withClosures(1, 1, 0), ...[2, 3, 4].map((n) => withClosures(n, 0, 0))];
     expect(deliveryScore(two, ["repair"], "lo", 2).scored).toBe(true);
+
+    // THE CONTROL FOR "OBSERVATIONS, NOT ROWS", and without it nothing here
+    // distinguishes the two readings: every fixture above has `closures` of 0 or
+    // 1, so summing rows and counting observations agree on 1, 2 and 1. Here ONE
+    // observation closed twice. Summing gives 2 and scores it; counting
+    // observations gives 1 and refuses. `holdsIf` says "at least two of THOSE" —
+    // of the observations — so one task that closed twice is one closure, and a
+    // delivery cannot clear its floor on a single window's repetitions.
+    const twiceInOne = [
+      withClosures(0, 2, 0),
+      ...[1, 2, 3, 4].map((n) => withClosures(n, 0, 0)),
+    ];
+    expect(deliveryScore(twiceInOne, ["repair"], "lo", 2).scored).toBe(false);
 
     // THE NEGATIVE CONTROL. Four observations whose rows could not say whether
     // they closed are NOT four closures. An implementation counting any repair
@@ -328,6 +379,38 @@ describe("aggregate — the artifact publishes the banned form and decides on th
     expect(result.rLo).not.toBeCloseTo(result.meanOfPerObservationRatios, 3);
     expect(result.thresholds).toEqual({ hold: 0.3, fall: 0.15 });
     expect(result.admitted).toBe(2);
+  });
+
+  it("reports identityHolds FALSE once the installation term is non-zero", () => {
+    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    //
+    // The frozen design asserts `Σ_d R_d + R_other = R` and `identityHolds` says
+    // "compute it; do not assume it". Computing it gives false:
+    //   Σ_d numerator_d = S = 250      pooled numerator = S - O = 250 - 50 = 200
+    // They differ by O on every run whose installation term is non-zero, and
+    // `holdsIf` 6 requires O computed for EVERY observation. FINDINGS F11.
+    //
+    // The existing identity fixture in this file cannot see it: every `terms()`
+    // in it leaves `oO` at 0, where the two expressions coincide. That is the
+    // whole reason this assertion exists beside it.
+    const withInstall = [0, 1, 2, 3, 4].map((n) =>
+      terms({
+        taskId: `i${n}`,
+        aO: 100,
+        sLo: 50,
+        sHi: 50,
+        oO: 10,
+        perDelivery: {
+          gate: { sLo: 30, sHi: 30, rowCount: 1, closures: 1, closureUnknown: 0 },
+          repair: { sLo: 20, sHi: 20, rowCount: 1, closures: 1, closureUnknown: 0 },
+        },
+      })
+    );
+    const result = aggregate({ runId: "run-1", admitted: withInstall, dropped: [] });
+    expect(result.identityHolds).toBe(false);
+    // And the pooled figure is the one with O subtracted, so a reader can see
+    // WHICH of the two the artifact decided on.
+    expect(result.rLo).toBeCloseTo(200 / 750, 12);
   });
 
   it("leaves a stratum below the floor unevaluable rather than scoring it", () => {

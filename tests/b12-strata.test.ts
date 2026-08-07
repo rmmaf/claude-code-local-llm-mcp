@@ -95,11 +95,11 @@ describe("partitionByStrata — five buckets, and the fifth is why there are fiv
   });
 
   it("files an unrecognised stratum in its OWN bucket rather than dropping it", () => {
-    // `verificationStratum` is typed as a two-value union, but it is READ from
-    // `evidence/<runId>/obs-<taskId>-<arm>/observation.json` and no validator for
-    // it exists anywhere in this repository. The union is a claim about the
-    // manifest, not a guarantee from the compiler, and the cast below is what a
-    // manifest typo actually delivers at runtime.
+    // `verificationStratum` is typed as a two-value union, but no writer emits
+    // it: `scripts/b12-run.mjs` puts no such field in `observation.json`, so it
+    // will arrive through a manifest join nobody has written and nothing
+    // validates. The union is a claim about a document, not a guarantee from the
+    // compiler, and the cast below is what a typo delivers at runtime.
     //
     // The `if` / `else if` with no `else` that stood here dropped such an
     // observation from BOTH declared cells, silently, while it went on counting

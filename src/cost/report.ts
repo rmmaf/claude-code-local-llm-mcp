@@ -216,8 +216,21 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
  * context is worth far more than shortening the reply that mentions it.
  */
 export function positionalMultiplier(t: number, T: number, m: RateMultipliers, ttl: "1h" | "5m" = "1h"): number {
-  const write = ttl === "1h" ? m.cacheWrite1h : m.cacheWrite5m;
-  return write + m.cacheRead * Math.max(0, T - 1 - t);
+  return writeComponent(m, ttl) + m.cacheRead * Math.max(0, T - 1 - t);
+}
+
+/**
+ * The write half of the multiplier alone — B12's low horizon, `T-1-t = 0`.
+ *
+ * Its own function rather than `positionalMultiplier(0, 1, m, ttl)`, which is
+ * the same number for every rate table this project will load and NOT the same
+ * expression: that spelling reaches the low horizon through `cacheRead * 0`, so
+ * a `cacheRead` of `NaN` or `Infinity` makes the write component `NaN` while
+ * this returns the rate. One spelling, in one place, and no arithmetic between
+ * the caller and the answer.
+ */
+export function writeComponent(m: RateMultipliers, ttl: "1h" | "5m"): number {
+  return ttl === "1h" ? m.cacheWrite1h : m.cacheWrite5m;
 }
 
 export interface EntryCost {
@@ -405,10 +418,11 @@ export type RowDisposition =
  * The positional fields are populated for `credited` rows and are `null` on a
  * refusal, because a refused row was not credited AGAINST a request — it has no
  * position of its own. This is not the same as there being no request anywhere:
- * `wouldHaveAdded` selects a counterfactual one for three of the four classes in
- * order to size them, and those fields are discarded rather than absent. Only
- * `unmatched` is unpositioned in the literal sense, and that is why it is the
- * class that is unsized by construction.
+ * `wouldHaveAdded` ATTEMPTS to select a counterfactual one for three of the four
+ * classes in order to size them, and when it succeeds those fields are discarded
+ * rather than absent. It can also fail — any of the three can lack a later
+ * same-thread request and come back `null`. Only `unmatched` is unsized BY
+ * CONSTRUCTION, because there the missing request is the definition of the class.
  *
  * `units` carries the scored contribution of a credited row and the would-have
  * magnitude of a refused one, and it is `null` when nothing could size it —
@@ -915,7 +929,7 @@ export function buildCounterfactual(
     const tokens =
       (Math.min(entry.bytes_raw, rates.clientTruncationCap) - entry.bytes_returned) /
       rates.charsPerToken;
-    return { hi: tokens * wmult, lo: tokens * positionalMultiplier(0, 1, wm, wttl) };
+    return { hi: tokens * wmult, lo: tokens * writeComponent(wm, wttl) };
   };
   /**
    * The tool's OWN verdict for this call, off an untyped optional bag.
@@ -1106,11 +1120,11 @@ export function buildCounterfactual(
       capped,
       turnsCollapsed: entry.turns_collapsed,
       units: (capped / rates.charsPerToken) * multiplier,
-      // The SAME row at `T-1-t = 0`, which is B12's low horizon. Through
-      // `positionalMultiplier` rather than by branching on `ttl` here, so the
-      // write component is spelled in one place and cannot drift from the one
-      // the high horizon is built on.
-      unitsLo: (capped / rates.charsPerToken) * positionalMultiplier(0, 1, m, ttl),
+      // The SAME row at `T-1-t = 0`, which is B12's low horizon. Through the
+      // shared `writeComponent` rather than by branching on `ttl` here, so the
+      // write half is spelled in one place and cannot drift from the one the
+      // high horizon is built on.
+      unitsLo: (capped / rates.charsPerToken) * writeComponent(m, ttl),
       passed: verdictOf(entry),
     });
 

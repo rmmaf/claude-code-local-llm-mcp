@@ -99,10 +99,11 @@ export function partitionByStrata(terms: readonly ObservationTerms[]): StrataPar
 
   for (const t of terms) {
     // WIDENED ON PURPOSE, AND THE `else` IS THE POINT. `verificationStratum` is
-    // typed as a two-value union, but it is READ from the manifest's
-    // `observation.json` and nothing in this repository validates it, so the
-    // union is a claim about the manifest rather than a guarantee from the
-    // compiler. Without the widening `tsc` narrows the third branch to `never`
+    // typed as a two-value union, but it will arrive through an unvalidated join
+    // against the manifest — `observation.json` does not carry the field and the
+    // join has not been written — so the union is a claim about a document
+    // rather than a guarantee from the compiler. Without the widening `tsc`
+    // narrows the third branch to `never`
     // and the code cannot say what it does with a value the rule does not name.
     // This is not a redundant branch to be simplified away.
     const declared: string = t.verificationStratum;
