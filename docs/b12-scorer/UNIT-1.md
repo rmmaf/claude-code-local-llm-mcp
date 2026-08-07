@@ -27,16 +27,27 @@ First in the chain because it depends on nothing: `terms.ts` imports
 
 ## `partitionByStrata(terms): StrataPartition`
 
-Return five arrays, preserving input order within each.
+Return six arrays, preserving input order within each.
 
 - `testRed` / `typesOnly`: split on `t.verificationStratum`, which is DECLARED in
   the manifest and read off the observation. Never infer it from what the gate
   did — inferring it after the fact lets a result choose its own cell.
+- `unknownStratum`: any other value goes here, and into **NEITHER** `testRed` nor
+  `typesOnly`. The field is typed as a two-value union, but it is read from
+  unvalidated JSON and nothing in the repository checks it, so **write the
+  comparison against a widened `const declared: string = t.verificationStratum`
+  and give it a real `else`.** Without the widening `tsc` narrows the third
+  branch to `never` and there is no way to say what happens to a value the rule
+  does not name. Enumerate the good values; refuse the rest.
 - `solo` / `multi`: read `t.subagentShare`. When `evaluable === true`, use
   `t.subagentShare.value.stratum`.
 - `unevaluableShare`: when `evaluable === false`, the observation goes here and
   into **NEITHER** `solo` nor `multi`. A bucket that absorbed them would make the
   two cells look complete while one carried the unknowns.
+
+The two "neither" buckets are not the same kind of thing, and `aggregate.ts`
+treats them differently: an unevaluable share is a MEASURED ABSENCE, an
+unrecognised stratum is a CORRUPTED DECLARATION. Do not merge them.
 
 ## Done when
 

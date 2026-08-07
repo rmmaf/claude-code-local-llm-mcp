@@ -13,6 +13,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { partitionByStrata, subagentShare } from "../src/cost/b12/strata.js";
+import type { ObservationTerms } from "../src/cost/b12/types.js";
 import { readTranscript } from "../src/cost/transcript.js";
 import { makeScratch, observation, req, subRequest, terms, writeSession } from "./b12-fixtures.js";
 
@@ -91,6 +92,35 @@ describe("partitionByStrata — five buckets, and the fifth is why there are fiv
     const p = partitionByStrata(set);
     expect(p.testRed.map((t) => t.taskId)).toEqual(["a", "c"]);
     expect(p.typesOnly.map((t) => t.taskId)).toEqual(["b"]);
+  });
+
+  it("files an unrecognised stratum in its OWN bucket rather than dropping it", () => {
+    // `verificationStratum` is typed as a two-value union, but it is READ from
+    // `evidence/<runId>/obs-<taskId>-<arm>/observation.json` and no validator for
+    // it exists anywhere in this repository. The union is a claim about the
+    // manifest, not a guarantee from the compiler, and the cast below is what a
+    // manifest typo actually delivers at runtime.
+    //
+    // The `if` / `else if` with no `else` that stood here dropped such an
+    // observation from BOTH declared cells, silently, while it went on counting
+    // in `solo` -- so `holdsIf` 3, which requires four evaluable cells, would
+    // have read a deflated count with nothing recording that anything went
+    // missing. Enumerate the good values; refuse the ones the rule does not name.
+    const typo = "test_red" as ObservationTerms["verificationStratum"];
+    const set = [
+      terms({ taskId: "a", verificationStratum: "test-red" }),
+      terms({ taskId: "typo", verificationStratum: typo }),
+      terms({ taskId: "b", verificationStratum: "types-only" }),
+    ];
+    const p = partitionByStrata(set);
+    expect(p.unknownStratum.map((t) => t.taskId)).toEqual(["typo"]);
+    expect(p.testRed.map((t) => t.taskId)).toEqual(["a"]);
+    expect(p.typesOnly.map((t) => t.taskId)).toEqual(["b"]);
+    // The two axes are independent -- a corrupt stratum says nothing about the
+    // subagent share -- so the observation still belongs to `solo`. That
+    // independence is exactly what made the drop invisible: every count that DID
+    // move looked healthy.
+    expect(p.solo.map((t) => t.taskId)).toContain("typo");
   });
 
   it("puts an unevaluable share in NEITHER solo nor multi", () => {
