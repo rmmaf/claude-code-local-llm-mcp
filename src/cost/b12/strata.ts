@@ -1,6 +1,8 @@
 /**
- * UNIT 2 — the subagent share, and the partition the four strata cells are
- * computed over.
+ * UNIT 1 — the subagent share, and the partition the four strata cells are
+ * computed over. Specified by `docs/b12-scorer/UNIT-1.md`; this header said
+ * "UNIT 2" until 2026-08-07 and `terms.ts` said "UNIT 1", which is the wrong way
+ * round in both files.
  *
  * NO RATIO IS COMPUTED HERE. This unit answers "which observations belong in
  * which cell"; `aggregate.ts` answers "what is the cell's number". Keeping the
@@ -57,6 +59,21 @@ export interface StrataPartition {
    * look complete while one of them carried the unknowns.
    */
   unevaluableShare: ObservationTerms[];
+  /**
+   * Observations whose `verificationStratum` is not one of the two declared
+   * values. In NEITHER `testRed` nor `typesOnly`, for the same reason as above.
+   *
+   * NOT THE SAME KIND OF THING AS `unevaluableShare`, and the difference decides
+   * what `aggregate.ts` does with each. An unevaluable share is a MEASURED
+   * ABSENCE — the window originated no billed request, so it genuinely belongs
+   * to neither cell, and `solo`/`multi` stay evaluable without it. An
+   * unrecognised stratum is a CORRUPTED DECLARATION: the observation belongs to
+   * one of the two cells and nobody can say which, so both declared cells are
+   * unevaluable while this array is non-empty. Deflating a cell by an unknown
+   * count is the failure `holdsIf` 3 cannot see, because it asks whether four
+   * cells are evaluable and not whether they hold what they claim to.
+   */
+  unknownStratum: ObservationTerms[];
 }
 
 /**
@@ -65,6 +82,11 @@ export interface StrataPartition {
  * The verification stratum is DECLARED per task in the manifest before the run
  * and is read off the observation; it is never inferred from what the gate did,
  * because inferring it after the fact lets the result choose its own cell.
+ *
+ * Declared is not the same as validated. Nothing in this repository checks that
+ * field against its two legal values — the reader for `observation.json` has not
+ * been written — so a typo arrives here as an ordinary string and leaves in
+ * `unknownStratum` rather than nowhere at all.
  */
 export function partitionByStrata(terms: readonly ObservationTerms[]): StrataPartition {
   const testRed: ObservationTerms[] = [];
@@ -72,12 +94,23 @@ export function partitionByStrata(terms: readonly ObservationTerms[]): StrataPar
   const solo: ObservationTerms[] = [];
   const multi: ObservationTerms[] = [];
   const unevaluableShare: ObservationTerms[] = [];
+  const unknownStratum: ObservationTerms[] = [];
 
   for (const t of terms) {
-    if (t.verificationStratum === "test-red") {
+    // WIDENED ON PURPOSE, AND THE `else` IS THE POINT. `verificationStratum` is
+    // typed as a two-value union, but it is READ from the manifest's
+    // `observation.json` and nothing in this repository validates it, so the
+    // union is a claim about the manifest rather than a guarantee from the
+    // compiler. Without the widening `tsc` narrows the third branch to `never`
+    // and the code cannot say what it does with a value the rule does not name.
+    // This is not a redundant branch to be simplified away.
+    const declared: string = t.verificationStratum;
+    if (declared === "test-red") {
       testRed.push(t);
-    } else if (t.verificationStratum === "types-only") {
+    } else if (declared === "types-only") {
       typesOnly.push(t);
+    } else {
+      unknownStratum.push(t);
     }
 
     if (t.subagentShare.evaluable === false) {
@@ -89,5 +122,5 @@ export function partitionByStrata(terms: readonly ObservationTerms[]): StrataPar
     }
   }
 
-  return { testRed, typesOnly, solo, multi, unevaluableShare };
+  return { testRed, typesOnly, solo, multi, unevaluableShare, unknownStratum };
 }
