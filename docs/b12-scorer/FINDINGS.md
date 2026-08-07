@@ -88,17 +88,37 @@ in what the local model wrote** — the spec says "split on
 `t.verificationStratum`" and says nothing about validation, and the body follows
 the spec exactly. Fix the spec, the oracle and the body together.
 
-### F6 — `UNIT-2.md` names two functions without their module
+### F6 — `UNIT-2.md`'s only worked example teaches the wrong module
 
-Step 7 names `multipliersFor(rates, row.rateKey)` and step 13 names
-`rateKey(request.model, request.speed)` with no module, in a document whose
-preamble does say "`positionalMultiplier(t, T, m, ttl)` **from `../report.js`**".
-Both live in `src/cost/rates.ts`; `report.ts:1` imports them and does not
-re-export.
+Corrected 2026-08-07 after sweeping every symbol named in all three specs against
+where it is actually exported from. **This was recorded as two functions; it is
+five, and the mechanism is worse than omission.**
 
-This is not hypothetical. Exposure B's `terms` call 2 imported `multipliersFor`
-from `../report.js`, took `TS2459`, and round 3 timed out. Call 1 dodged it by
-using `rates.multipliers` directly and reimplementing `rateKey` inline.
+`UNIT-2.md` names six functions that live outside the unit it specifies. Exactly
+one carries its module:
+
+| symbol | lives in | module named? |
+|---|---|---|
+| `positionalMultiplier` | `report.ts` | **yes** — "from `../report.js`" |
+| `breakdownOfRequests` | `report.ts` | no |
+| `buildCounterfactual` | `report.ts` | no |
+| `unitsAddedByInstallation` | `report.ts` | no |
+| `multipliersFor` | **`rates.ts`** | no |
+| `rateKey` | **`rates.ts`** | no |
+
+The single worked example says `../report.js`. An implementer generalising from
+it is **right for three of the five and wrong for exactly the two that live
+elsewhere**. The spec is not merely silent — it teaches an answer that is correct
+in the only case it demonstrates and wrong in the two it does not.
+`report.ts:1` imports both from `./rates.js` and does not re-export them.
+
+Not hypothetical: exposure B's `terms` call 2 imported `multipliersFor` from
+`../report.js`, took `TS2459`, and round 3 timed out. Call 1 dodged it by using
+`rates.multipliers` directly and reimplementing `rateKey` inline — two different
+workarounds for one spec defect, in one exposure.
+
+`UNIT-1.md` and `UNIT-3.md` are clean: every cross-file reference in them names
+its module (`partitionByStrata` "from `./strata.js`", `subagentShare` likewise).
 
 ### F7 — `budget_seconds` is an unregistered parameter that truncates a registered one
 
@@ -109,10 +129,27 @@ that unit, at any window. Both calls of `run 2026-08-07-mac-b12-phase3-c40e9f4`
 stopped on `budget` with round 3 timing out.
 
 Three units of one exposure were therefore measured against different effective
-conditions. Pin it explicitly (≥ 450 s at the measured rate; 600 s matches the
-MCP config's `LOCAL_CODER_TIMEOUT_MS`) and register it **before** the next
-exposure. Do not re-run a unit that already has an observation in order to give
-it the rounds it should have had — that is a second draw at the same bar.
+conditions.
+
+**Raising the budget to 600 alone is the wrong fix, and the codebase already
+says so.** The per-request timeout is `Math.min(config.timeoutMs, remaining)`
+(`shared.ts:547`), and `repair.ts:703-726` records that when `config.timeoutMs`
+equals the budget, round 1's request is issued with the whole budget as its
+timeout. The scorer's MCP config sets `LOCAL_CODER_TIMEOUT_MS` to 600000, so
+`budget_seconds: 600` would make them equal and let one slow round starve the
+two after it — trading a truncation for a starvation.
+
+The pair has to be set together. Longest LEGITIMATE round observed across three
+exposures is **149 s** (`aggregate` typically 106–132 s); the 256 s round was the
+backend dying. So a per-request ceiling near 180 s clears real work with margin
+while cutting a dead backend off early instead of letting it eat the budget, and
+a 600 s budget then fits three such rounds with no single request able to consume
+more than 30% of it. **That property — no request can starve its successors — is
+the one to preserve; guaranteeing the absolute worst case is not possible,
+because a round with a corrective retry issues two requests.**
+
+Do not re-run a unit that already has an observation in order to give it the
+rounds it should have had — that is a second draw at the same bar.
 
 ### F8 — `strata.ts`'s file header says "UNIT 2" and it is UNIT 1
 
