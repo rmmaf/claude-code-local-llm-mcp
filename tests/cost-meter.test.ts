@@ -2090,12 +2090,18 @@ describe("the B12 harness", () => {
   const runNode = promisify(execFile);
   const BUDGET = 45 * 60 * 1000;
   const classify = async (over: Record<string, unknown>): Promise<{ outcome: string; censored: boolean; valid: boolean; reasons: string[] }> => {
-    const mod = await import("../scripts/b12-run.mjs");
-    return (mod as { classifyRun: (o: unknown) => { outcome: string; censored: boolean; valid: boolean; reasons: string[] } }).classifyRun({
+    // NO CAST. It used to read `mod as { classifyRun: (o: unknown) => ... }`,
+    // which typed the argument as `unknown` and made this call site unchecked —
+    // and it was carrying `wallMs: 1_000`, a field `classifyRun` does not take.
+    // `wallMs` standing in as evidence of who ended the process is a defect the
+    // harness fixed TWICE (see the enumeration in `b12-run.mjs`); the test kept
+    // passing it afterwards, harmlessly at runtime and invisibly to everything
+    // else. The shape now comes from `scripts/b12-run.d.mts`.
+    const { classifyRun } = await import("../scripts/b12-run.mjs");
+    return classifyRun({
       exitCode: 0,
       signal: null,
       errorCode: null,
-      wallMs: 1_000,
       budgetMs: BUDGET,
       originatedCount: 12,
       slugsBefore: 3,
