@@ -122,13 +122,19 @@ export function withToolUse(
   requestId: string,
   ms: number,
   usage: { write1h?: number },
-  toolUseId: string
+  toolUseId: string,
+  /**
+   * The tool the request called. Defaults to ours; pass another name to build a
+   * result that merely QUOTES an invocation id rather than producing one, which
+   * is the case `isLocalToolResult` exists to separate.
+   */
+  toolName = "mcp__local-coder__gate"
 ): string {
   const write1h = usage.write1h ?? 0;
   return req(requestId, ms, usage, {
     message: {
       model: "test-model",
-      content: [{ type: "tool_use", id: toolUseId, name: "mcp__local-coder__gate" }],
+      content: [{ type: "tool_use", id: toolUseId, name: toolName }],
       usage: {
         input_tokens: 0,
         cache_creation_input_tokens: write1h,

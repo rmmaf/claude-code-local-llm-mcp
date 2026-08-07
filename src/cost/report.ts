@@ -648,11 +648,19 @@ export interface CounterfactualReport {
  * The id is recovered by scanning the serialized tool result, so it can be found
  * in payloads that merely *quote* one: `.local-coder/telemetry.jsonl` carries an
  * `invocation_id` on every line, and a single `Read`, `Grep` or `cat` of that file
- * would otherwise mark every id in the project's whole history as belonging to
- * this session. Trusting an id only from a `gate`/`repair` result is what keeps
- * an echo distinguishable from a quotation.
+ * would otherwise mark an id from the project's history as belonging to this
+ * session. Trusting an id only from a `gate`/`repair` result is what keeps an
+ * echo distinguishable from a quotation. (One id, not every id: `readInvocationId`
+ * runs a single non-global `exec` and returns the FIRST match, so a quotation
+ * injects one id per result — which is enough to misattribute a saving.)
+ *
+ * EXPORTED FOR `b12/terms.ts`, which was not applying it and had to. `mine` was
+ * built from every tool result while `byInvocation` was built from these, so the
+ * window join was strictly wider than the crediting join and a window could claim
+ * an id that is not this server's at all (`FINDINGS.md` F10). One predicate in one
+ * place is the only version of this that stays true.
  */
-function isLocalToolResult(record: ToolResultRecord): boolean {
+export function isLocalToolResult(record: ToolResultRecord): boolean {
   return record.name !== null && /(^|__)(gate|repair)$/.test(record.name);
 }
 

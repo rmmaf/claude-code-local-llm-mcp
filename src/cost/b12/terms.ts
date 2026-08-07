@@ -23,6 +23,7 @@ import {
   breakdownOfRequests,
   buildCounterfactual,
   buildSessionReport,
+  isLocalToolResult,
   unitsAddedByInstallation,
 } from "../report.js";
 import type { CreditedRow } from "../report.js";
@@ -75,11 +76,25 @@ export interface TermsInput {
 /**
  * The invocation ids this observation OWNS.
  *
- * The join is four hops and none of them may be skipped: a telemetry row names
- * an `invocation_id`; the transcript's `toolResults` carry that id and a
- * `toolUseId`; the `BilledRequest` whose `toolUses` contains that id is the
- * request that made the call; and the observation owns the row exactly when that
- * request's `requestId` is one it originated.
+ * The join is FIVE hops and none of them may be skipped: a telemetry row names
+ * an `invocation_id`; the result carrying that id was produced by one of THIS
+ * server's tools; the transcript's `toolResults` carry the id and a `toolUseId`;
+ * the `BilledRequest` whose `toolUses` contains that id is the request that made
+ * the call; and the observation owns the row exactly when that request's
+ * `requestId` is one it originated.
+ *
+ * **THE FIRST HOP WAS MISSING AND THIS DOC SAID FOUR.** `byInvocation` on the
+ * crediting side is built from `toolResults.filter(isLocalToolResult)`, and this
+ * read EVERY tool result — so the window join was strictly wider than the join it
+ * is supposed to select within. Transcript ids are scanned out of arbitrary
+ * serialised output, so an owned `Read` of `.local-coder/telemetry.jsonl` put a
+ * quoted id into `mine` that `byInvocation` had never heard of, and the window
+ * could claim a call that is not this server's at all (`FINDINGS.md` F10).
+ *
+ * With the filter, `mine` is a SUBSET of `byInvocation`'s keys on every input,
+ * which is what makes an `excludedForeign` row — refused precisely because its id
+ * is absent from `byInvocation` — provably unownable rather than unownable on
+ * normal input. That was the residue F1 was corrected to admit.
  *
  * Exported because it is the subtlest step in the unit and a bug here is silent:
  * an over-wide window credits another task's savings, and an over-narrow one
@@ -99,6 +114,10 @@ export function windowInvocationIds(
 
   const mine = new Set<string>();
   for (const result of transcript.toolResults) {
+    // OUR TOOL'S RESULT OR NOTHING, and it is the SAME predicate the crediting
+    // side filters `byInvocation` with rather than a second copy of the rule.
+    // A payload that quotes an invocation id is not a payload that produced one.
+    if (!isLocalToolResult(result)) continue;
     // BOTH ids required, and the membership test is the point of the hop. A
     // result whose `toolUseId` is null cannot be traced back to a request, so no
     // window can claim it — dropping it here is what stops one task's saving

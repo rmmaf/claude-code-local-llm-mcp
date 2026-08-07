@@ -60,7 +60,7 @@ const row = {
 
 const ALL_FOUR = ["req-1", "req-2", "req-3", "req-4"];
 
-describe("windowInvocationIds — the four-hop join", () => {
+describe("windowInvocationIds — the five-hop join", () => {
   it("resolves the ids the window owns, and only those", async () => {
     const transcript = await readTranscript(await fixture());
     // `req-1` made the call, so a window containing it owns the invocation.
@@ -73,6 +73,41 @@ describe("windowInvocationIds — the four-hop join", () => {
     expect([
       ...windowInvocationIds(observation({ originatedRequestIds: ["req-3", "req-4"] }), transcript),
     ]).toEqual([]);
+  });
+
+  it("owns nothing from a result that merely QUOTES an invocation id", async () => {
+    // F10. The window join read EVERY tool result while the crediting side's
+    // `byInvocation` reads `toolResults.filter(isLocalToolResult)` -- gate and
+    // repair only. Transcript ids are scanned out of arbitrary serialised output,
+    // so a `Read` of `.local-coder/telemetry.jsonl` (every line of which carries
+    // an `invocation_id`) put a quoted id into `mine` that `byInvocation` never
+    // held. The window then claimed a call that is not this server's at all,
+    // which is the over-wide window `terms.ts`'s own header warns about.
+    //
+    // The request below OWNS both calls, so ownership is not what separates them
+    // -- the tool is. `foreign` is the id a `Read` result quoted; `own` is the one
+    // a `gate` result echoed.
+    const own = "22222222-2222-4222-8222-222222222222";
+    const foreign = "33333333-3333-4333-8333-333333333333";
+    const file = await writeSession(scratch.tempRoot(), [
+      withToolUse("req-1", 0, { write1h: 100 }, "tu-gate"),
+      withToolUse("req-2", 1_000, { write1h: 100 }, "tu-read", "Read"),
+      toolResult("tu-gate", own, 500),
+      toolResult("tu-read", foreign, 1_500),
+      req("req-3", 2_000, { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+
+    const mine = windowInvocationIds(
+      observation({ originatedRequestIds: ["req-1", "req-2", "req-3"] }),
+      transcript
+    );
+    expect([...mine]).toEqual([own]);
+    // Stated separately because it is the whole finding: the id is PRESENT, it is
+    // reachable from a request this window originated, and it is still not the
+    // window's -- a payload that quotes an invocation id is not a payload that
+    // produced one.
+    expect(mine.has(foreign)).toBe(false);
   });
 });
 

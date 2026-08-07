@@ -35,18 +35,28 @@ before spending its remaining budget on the error.
 
 ## `windowInvocationIds(observation, transcript): Set<string>`
 
-Four hops, all required:
+**FIVE hops, all required. This section said four until 2026-08-07**, and the
+missing one is the first test in step 3.
 
 1. `owned = new Set(observation.originatedRequestIds)`.
 2. Collect every `toolUse.id` from each `request of transcript.requests` whose
    `request.requestId` is in `owned`. Call it `ownedToolUseIds`.
-3. For each `result of transcript.toolResults`: if `result.invocationId` is not
-   null AND `result.toolUseId` is not null AND
+3. For each `result of transcript.toolResults`: if `isLocalToolResult(result)`
+   AND `result.invocationId` is not null AND `result.toolUseId` is not null AND
    `ownedToolUseIds.has(result.toolUseId)`, add `result.invocationId`.
 4. Return that set.
 
 A window that did not make the call owns nothing, even when the id is plainly
 present elsewhere in the same transcript.
+
+**`isLocalToolResult` is imported from `../report.js`, not reimplemented.** It is
+the same predicate `byInvocation` is filtered with on the crediting side
+(`report.ts:894`), and two copies of one rule is how two consumers of it drift
+apart. Without it the window join is strictly WIDER than the join it selects
+within: transcript ids are scanned out of arbitrary serialised output, so an owned
+`Read` of `.local-coder/telemetry.jsonl` puts a quoted id into `mine` that
+`byInvocation` never held, and the window claims a call that is not this server's
+(`FINDINGS.md` F10). With it, `mine ⊆ byInvocation.keys()` on every input.
 
 ## `computeTerms(input): ObservationTerms`
 

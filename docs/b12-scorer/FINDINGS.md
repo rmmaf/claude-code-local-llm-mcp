@@ -89,22 +89,6 @@ would not close F11 anyway, since the missing `O/(A+S)` is untouched by it.
 `unexercised` is the design's own state for a delivery nobody exercised, and it
 is neither a hold nor a fall.
 
-### F10 — the window join is wider than the crediting join
-
-`windowInvocationIds` (`UNIT-2.md` step 3) collects ids from **every**
-`transcript.toolResults` entry. `byInvocation` (`report.ts:783-786`) is built
-from `toolResults.filter(isLocalToolResult)` — gate and repair only.
-
-So `mine` can contain an id that `byInvocation` does not, whenever some other
-tool's serialised output quotes one (transcript ids are scanned out of arbitrary
-serialised results, `transcript.ts:240-252`). Two consequences, both small and
-both real: an `excludedForeign` row is *practically* unownable rather than
-*provably* so (see F1), and a window can claim an id that is not this server's at
-all — the over-wide window `terms.ts`'s own doc warns about.
-
-Not fixed here because it changes the four-hop join, which is the subtlest step
-in the unit. The candidate fix is one filter: apply `isLocalToolResult` in step 3.
-
 ### F14 — `B12Result` cannot say what `fallsIf` requires it to say
 
 `fallsIf` names `open — provisional` as a real state: a fall whose refusal
@@ -130,6 +114,35 @@ note exists so the next reader does not follow the line number.
 ---
 
 ## CLOSED
+
+### F10 — the window join was wider than the crediting join — FIXED
+
+`windowInvocationIds` collected ids from **every** `transcript.toolResults` entry.
+`byInvocation` (`report.ts:894-898`) is built from
+`toolResults.filter(isLocalToolResult)` — gate and repair only.
+
+Transcript ids are scanned out of arbitrary serialised output, so a result that
+merely QUOTES an id put it into `mine` while `byInvocation` had never held it.
+Two consequences, both small and both real: an `excludedForeign` row was
+*practically* unownable rather than *provably* so (F1's corrected residue), and a
+window could claim an id that is not this server's at all — the over-wide window
+`terms.ts`'s own header warns about.
+
+**Fixed** by exporting `isLocalToolResult` and applying it as the FIRST hop of the
+join, which is now five and was documented as four. One predicate in one place:
+the alternative is a second copy of the rule in the module that has to agree with
+it. `mine ⊆ byInvocation.keys()` on every input afterwards, which is exactly what
+makes `excludedForeign` provably unownable.
+
+Seen failing: an owned request calls `Read`, whose result quotes an invocation id.
+Without the filter the window claims two ids where it owns one.
+
+**One overstatement corrected in the process.** This entry said a `Read` of
+`.local-coder/telemetry.jsonl` would mark "every id in the project's whole
+history" as this session's, and `report.ts` said the same. `readInvocationId`
+runs a single non-global `exec` and returns the FIRST match
+(`transcript.ts:248-252`), so a quotation injects ONE id per result. That is still
+enough to misattribute a saving; it is not the whole history.
 
 ### F12 — `unattributedRefusals` double-counted, and the fix had to be run-level — FIXED
 
