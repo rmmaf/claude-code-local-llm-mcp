@@ -84,6 +84,92 @@ against. The fix belongs to the harness, not to any scorer unit, and it has to
 land before the first scored observation or the run it produces is the one that
 cannot be corrected.
 
+**A SECOND GATE, 2026-08-07, ADJUDICATED THE FIX BEFORE IT WAS WRITTEN AND FOUND
+F24 IS NOT ONE GAP BUT A FAMILY.** Two of my four readings were refuted, the
+count above was corrected against me, and four obligations nobody had counted
+came out. Everything below is checked against the frozen text, not copied.
+
+**The count was wrong in my favour and is corrected.** Four of the six are
+absent, not four and a half: the pre/post `requestId` diff is **present in
+full** — both complete snapshots are archived and `originatedRequestIds` is the
+set difference, which is exactly what `unitOfMeasurement` defines ("any id absent
+from the pre-snapshot was ORIGINATED"). It demands no deletion set.
+
+**THE REDUCTION THE CLAUSE NAMES CANNOT REBUILD A `Transcript`, WHICH MAKES
+ARTIFACT 11 UNSATISFIABLE AS WRITTEN.** The parenthetical is `requestId, uuid,
+sessionId, type, model, usage, timestamp, isApiErrorMessage`. `readTranscript`
+also needs `parentUuid` and `isSidechain` to build threads, `isCompactSummary` /
+`compactMetadata` to find segment boundaries, `message.content` for `toolUse.id`,
+and `toolUseResult` for result bytes and the invocation join. Without them there
+are no threads, no segments, no positional multiplier and no provenance join —
+so "recomputes … EVERY admission condition **from the committed archive alone**"
+cannot be met from the fields the clause enumerates.
+
+**Resolved by quotation, from inside the same clause.** It reads "the admitted
+records reduced to **the fields the meter reads** (requestId, …)". The criterion
+is *the fields the meter reads*; the parenthetical is an enumeration OF that
+criterion, and it is incomplete against it — the meter demonstrably reads
+`parentUuid` and `toolUseResult`. The criterion governs and the list is short.
+Archiving the fields the meter actually reads applies the clause's own stated
+rule rather than inventing one, and it is the reading that is "demanding on the
+experiment, never permissive on the result" (`thresholdArgument`).
+
+**Four more obligations, none of them in the six:**
+
+- **`installedChars` is measured NOWHERE.** `TermsInput.installedChars` is "the
+  wire JSON of `tools/list` plus the CLAUDE.md block", and `holdsIf` 6 requires
+  `O_o` for every observation. Every occurrence in this repository is a test
+  fixture at `3_700`; `cost-meter.test.ts` records an actual measurement of
+  **15,227** in a comment. Only the harness can take it — at scoring time the
+  worktree is gone and the server is not running — and it is ARM-DEPENDENT, since
+  the control runs `--strict-mcp-config` and installs nothing. `tests/stdio.test.ts`
+  already speaks `tools/list` to the server over stdio, so this is measurable.
+- **`design.artifacts` 5 is incomplete too.** It wants the snapshot to carry
+  "per-file sha256"; `takeSnapshot` returns `files: files.length` — a count, with
+  no path list and no hashes.
+- **The harness does not restore the memory snapshot**, which `design.artifacts`
+  10 says it does, and records none of `design.covariates`' instruction hashes:
+  "the in-repo CLAUDE.md, the out-of-repo per-arm policy blob, .claude/settings.json
+  and settings.local.json, the MCP config passed, the tool allowlist actually
+  visible in the system prompt, and the memory directory — hashed PRE and POST per
+  session." **One of those seven is not measurable from outside the session** —
+  the allowlist visible in the system prompt — and that is registered here rather
+  than discovered on the day.
+- **Artifact 10 also owes a machine-written run row** "whose `ts` is read from the
+  system clock in the same command that writes it". Nothing appends one.
+
+**TWO DEFECTS FOUND IN PASSING, BOTH REAL, BOTH FIXED IN THIS SAME PASS** — so
+they take no finding number of their own:
+
+- **The acceptance result may not describe the commit the observation names.**
+  `acceptance` runs in the worktree against the possibly dirty working tree;
+  `endCommit` is `git rev-parse HEAD`. An arm that edits without committing —
+  the ordinary case for `claude --print` — records an exit code earned on files
+  no recorded commit contains. `accepted` is what separates a TASK from an
+  ATTEMPT, so this is the discriminator resting on unrecorded state.
+- **The treatment arm's default MCP config does not exist.** `observe()` falls
+  back to `path.join(REPO, ".mcp.json")` and there is no such file. Without a
+  valid config the server never starts, so there is no telemetry at all, and the
+  arm exits nonzero — classified `exited_nonzero`, INVALID, rather than the
+  legitimate zero-tool observation it resembles.
+
+**THE ARCHITECTURE IS DECIDED BY `voidConditions` 5 AND NOT BY TASTE.** The
+capture belongs in `src/cost/b12/`, compiled into `dist/`, and NOT in a new
+`scripts/b12-archive.mjs`. Clause 5 freezes exactly "`src/cost/**`,
+`src/telemetry.ts`, gate's or repair's telemetry emission, or
+`scripts/b12-run.mjs`" after the first scored observation. **A helper at a path
+the clause does not name could be edited afterwards without tripping the
+source-drift VOID** — a hole in the frozen guard, opened by a file layout.
+`b12-run.mjs` keeps the orchestration and the commit barrier.
+
+**And the capture uses the PRODUCTION parser, not a third copy of B20's rule.**
+`admittedRequestIds` in the harness is already a deliberate second copy, on the
+stated premise that the script "must run before `dist/` exists". That premise
+does not hold for `observe`: the preflight already fails without
+`dist/cost/cli.js`, and the treatment arm's MCP server **is** `dist/` — an
+observation cannot run without it. So `observe` may import `readTranscript`,
+`lineagesOf` and `scopeTelemetry`, and the copy stays only for `snapshot`.
+
 Two dependent gaps fall out of the same hole:
 
 - `design.artifacts` 7 (`counterfactual.json`) demands the version, base and end
@@ -92,6 +178,37 @@ Two dependent gaps fall out of the same hole:
 - `design.artifacts` 11 owes a replay test that recomputes every figure and
   "EVERY admission condition **from the committed archive alone**". That test
   cannot be written against an archive that does not carry the inputs.
+
+**Two readings of mine were REFUTED and are recorded as refuted:**
+
+- **"sha256 of every source file" does not resolve to a range.** I read it as the
+  end worktree, against `endCommit` capturing nothing uncommitted. The reading of
+  the TIME is fixed by the clause; the RANGE is not — the text nowhere equates
+  "source file" with every regular file, every tracked file, `task.fileScope`, or
+  the instrument's sources. Picking one as *the* scoring interpretation would
+  mint. So the capture hashes a SUPERSET with `task.fileScope` labelled inside it
+  and attaches no refusal to the extra material — extra evidence is not a new
+  admission rule.
+- **"the whole worktree telemetry file IS the window, with no ±60 s" was too
+  strong twice over.** The location is not proven by this repository: the MCP
+  server's root is its own `process.cwd()` (`server.ts:105` → `config.ts:172`)
+  and nothing here proves what cwd the launcher supplies, so the harness must
+  ASSERT the path rather than assume it — unconditionally in the preflight, which
+  calls `gate` and `repair` by design. And the ±60 s window is not the harness's
+  to remove: `admissionRule` 5 fixes it by hand, and it still runs at SCORING
+  time over whatever array the assembler builds.
+
+**That last point resolves the collision `UNIT-5.md` step 2 was heading for.**
+Step 2 fixes identity on "the run's telemetry log, read once" and forbids
+identifying the per-observation copies — **and there is no run-level log.** Each
+observation writes into its own worktree and `git worktree remove --force`
+destroys it, which is precisely why the frozen clause calls the archive the thing
+without which "the run cannot be corrected, only discarded". The copies are not a
+convenience; they are the only survivors. Identity stays global and
+collision-free by keying on the ARCHIVE PATH as `source`: ordinals restart per
+file, paths differ, so `JSON.stringify([source, ordinal])` is unique without
+making concatenation order load-bearing. What step 2 actually forbids — restarting
+ordinals inside a SCOPED SLICE of one source — is untouched.
 
 ### F23 — `voidConditions` 8 wants two BRACKETS and the artifact carries two byte sums
 

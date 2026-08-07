@@ -14,6 +14,14 @@ four units below it were designed to make it.
 > `cli-stdout.json`. **An assembler that promises to read a committed archive has
 > no compliant archive to read** (`FINDINGS.md` F24). The harness is the blocker,
 > not this unit.
+>
+> **AND THE CLAUSE'S OWN FIELD LIST IS SHORT OF ITS OWN CRITERION.** It says "the
+> admitted records reduced to **the fields the meter reads**" and then enumerates
+> eight that cannot rebuild a `Transcript` — no `parentUuid`, no `isSidechain`,
+> no `isCompactSummary`, no `message.content`, no `toolUseResult`. The criterion
+> governs and the enumeration is incomplete; see F24. Until the capture archives
+> the fields the meter *actually* reads, step 5 below has no lineage to hand
+> `computeTerms`.
 
 **NOT PART OF THE PHASE-3 EXPOSURE.** Phase 3 is closed at 1 of 3 and `repair`
 gets no further draw (`PREMISES.md § B12`). UNITs 1–3 were the measured task;
@@ -56,7 +64,7 @@ know it.
 |---|---|---|
 | `evidence/<run_id>.b12.tasks.json` | the ORDERED 30 task ids, and **the only declaration of `verificationStratum`** | `design.artifacts` 1 |
 | `evidence/<run_id>/obs-<taskId>-<arm>/` | the per-observation archive | **incomplete today — F24** |
-| the run's telemetry log | every `TelemetryRecord`, **read once** | identity source, step 2 |
+| each `obs-…/telemetry.jsonl` | every `TelemetryRecord`, identified **by archive path** | there is no run-level log — step 2 |
 | every session transcript of the run | `ambiguousIds`, and the lineage `computeTerms` needs | `invocationOwners` |
 | `.local-coder/rates.json` + the manifest | prices, and the MEASURED `clientTruncationCap` | `voidConditions` 8 |
 | `MEASUREMENTS.jsonl` + each prior `<run_id>.b12.result.json` | `priorRuns` | `voidConditions` 1 |
@@ -129,11 +137,31 @@ cannot see them at all.**
 If the universe is ALSO built from separately identified slices, even the
 `unsliced` reason stops firing, and the last protection is gone.
 
-**ONE LOG IS IDENTITY; THE PER-OBSERVATION COPIES ARE ARCHIVE.**
-`design.artifacts` 6 has each `obs-<NN>/` carry the window's telemetry rows
-verbatim. Identity is a property of the READ, so identifying the copies produces a
-second, disagreeing key space. Read the run-level log; the copies are evidence for
-a human and for re-emission, never input to identity.
+**CORRECTED 2026-08-07: THERE IS NO RUN-LEVEL LOG, AND THIS STEP NAMED ONE.**
+The paragraph that stood here said "ONE LOG IS IDENTITY; THE PER-OBSERVATION
+COPIES ARE ARCHIVE … read the run-level log; the copies are evidence for a human
+and for re-emission, never input to identity." **That rule had no referent.**
+Each observation runs in its own worktree, the MCP server's root is its own
+`process.cwd()` (`server.ts` → `config.ts`), and `git worktree remove --force`
+destroys `<worktree>/.local-coder/telemetry.jsonl` before the next task starts.
+The frozen clause says as much in its own words — without the archive "the run
+cannot be corrected, only discarded". **The copies are not evidence beside the
+log. They are the only survivors, and they ARE the identity source.**
+
+What the old rule was protecting survives intact, because the danger was never
+"two files" — it was restarting ordinals inside a SCOPED SLICE of one source.
+So: **key on the ARCHIVE PATH.** `identify(<obs archive path>, rows)` per
+observation file, ordinals restarting per file, paths distinct, therefore
+`JSON.stringify([source, ordinal])` globally unique — and concatenation order is
+NOT load-bearing, which it would have been had the copies been merged into one
+array first. Scope by filtering the IDENTIFIED rows; hand the union of every
+observation's identified rows to `runCoverage` as the universe.
+
+**The ±60 s window still applies at scoring time and is not the harness's to
+remove.** `admissionRule` 5 fixes it by hand. A row physically present in only
+one observation's file can still be admitted to a neighbouring observation's
+slice on timestamp, which is F12 exactly — and `runCoverage`'s identity is what
+resolves it, unchanged.
 
 ### 3. `ambiguousIds` once, run-level
 
@@ -212,7 +240,12 @@ cannot encode a run-level VOID at all.
 Clauses **4, 5, 6** (frozen-item drift, instrument-source drift, the conformance
 suite at the run commit) are an audit over git history rather than over the
 archive, and `assemble` should take their result as an input rather than compute
-it. Clauses **21, 22** are the A/B's. Clause **23** is the run registry's.
+it. **THAT IS IN TENSION WITH `design.artifacts` 11** — "EVERY admission
+condition **from the committed archive alone**" — and an audit result taken as an
+input is not in the archive. So the audit's VERDICT *and its inputs* must be
+committed with the run, or clauses 4–6 are exactly the conditions a later reader
+cannot replay. Recorded here; it belongs to whoever writes the audit.
+Clauses **21, 22** are the A/B's. Clause **23** is the run registry's.
 
 ### 8. Emit two artifacts, not one
 
