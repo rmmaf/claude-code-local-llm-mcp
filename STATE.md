@@ -16,8 +16,8 @@ pre-existing Windows CRLF/path; tsc green.
   not establish. The hold branch shipped on a direction never established.
 - **Its proposed predicate was too narrow too**: `report.ts` counts `ambiguous`
   before ownership exists, so BOTH ledgers decide.
-- **A guard sat three paragraphs under the rule against guards that cannot
-  fail** — clause 18's 30% half, subsumed by the conjuncts above it (F22).
+- **THREE guards in this file could not fire** — clause 18's 30% half (F22) and
+  both halves of `holdsIf` 5, each proved by the ordering above it.
 
 ## Next action
 
@@ -31,14 +31,16 @@ where `identify` gets its `source` and `aggregate` gets its caller.
 
 ## Do not redo
 
-- **A control never seen failing is not a control.** Seven new assertions passed
+- **A control never seen failing is not a control.** Eight new assertions passed
   on first run and every old one passed unchanged — the two domains coincide on
-  every fixture written before this pass. Six planted defects, one at a time.
+  every fixture written before this pass. Seven planted defects, one at a time.
+- **Ask of every new conjunct what run reaches it with the conjunct false.**
+  Fixing a guard that could not fire, I narrowed the clause to its low half —
+  and only a review caught it.
 - **Codex refuted three of my readings and was right each time.** Verify its
   citations, then concede — arguing the second one cost a round.
-- **Line-number citations rot.** Two in `FINDINGS.md` pointed at the wrong lines
+- **Line-number citations rot.** Two in `FINDINGS.md` pointed at wrong lines
   within two days, including the note whose whole job was correcting one.
-- **A stubbed `processRunner` does NOT stub `vcsRunner`** — and the 49× margin
-  that fix bought is not immunity: under load from four background jobs the same
-  test went 146 ms → 5196 ms and timed out. Check machine load before believing
-  a bare `STACK_TRACE_ERROR`.
+- **The 49× margin the `vcsRunner` fix bought is not immunity**: under load from
+  four background jobs the same test went 146 ms → 5196 ms and timed out. Check
+  machine load before believing a bare `STACK_TRACE_ERROR`.
