@@ -5,40 +5,37 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**F1, F2a, F2b, F3, F8, F15 and F16 are closed.** Mechanisms in `FINDINGS.md`;
-the condition change registered in `PREMISES` first.
+**The B12 scorer is implemented and green.** Gate is at 4 failures, and all four
+are the pre-existing Windows CRLF/path ones. Every b12 test passes; tsc green.
+Baseline was 27 this morning.
 
-- **`CreditedRow` gained `unitsLo` and `passed`** and became a union on
-  `disposition`, so a credited row's magnitudes are `number` and `?? 0` is
-  unwritable. Control: two `Assert` aliases, in `src/` on purpose.
-- **`ObservationTerms` gained `unattributedRefusals`** — two refusal classes
-  no window could own, so `rHiPlus` was short by them.
-- **`strata.ts` gained `unknownStratum`**, and `"fallen"` now needs all four
-  cells evaluable — Codex's amendment, confirmed in `fallsIf`.
-- **`tsconfig.json` is the CHECKING config now** — `src/**` + `tests/**`, no
-  emit; `tsconfig.build.json` emits and stays narrow. No test file in this
-  repository had ever been type-checked. `scripts/**` still is not.
-- **Gate: 27 = 18 baseline + 9.** tsc green, selftest 50. Pin → `3d27f08`.
+- **Phase 3 closed at 1 of 3, deliberately**, with a second opinion asked to
+  attack the decision. The cost is recorded: the registered rule says exactly
+  1 of 3 needs more exposure, so that question is left UNRESOLVED, not answered.
+- **F11 and F13 ship as findings, not amendments.** `R_other` reads
+  `unexercised` and `identityHolds` reads `false`, both declared in PREMISES
+  before the run. B20's rule repairs the INSTRUMENT, not the estimand.
+- **All nine `UNPROVED CONTROL` assertions were re-checked** by planting nine
+  defects in three groups. Every one fired for its own reason.
+- **F1, F2a, F2b, F3, F8, F15, F16 closed** earlier in the day.
 
 ## Next action
 
-**Two structural findings, neither an implementer's to fix.** `R_other` has no
-source data — only `gate` and `repair` write telemetry (F13). And
-`Σ_d R_d + R_other = R` is false by `O/(A+S)` when `O` ≠ 0 (F11).
+**F9, F10, F12, F14 remain** — ordinary implementation, no decision inside them.
+F12's run-level exactly-once ledger is the biggest and closes F9 with it.
 
-**Standing decision, still the owner's:** exposure C, or stop Phase 3.
+Nothing in `src/cost/b12/` is wired to a CLI or a reader yet: `observation.json`
+has no parser, and `verificationStratum` is not written by the harness at all.
 
 ## Do not redo
 
-- **`tests/` WAS UNCHECKED FOR THE WHOLE PROJECT'S LIFE**, and four comments in
-  `src/` recorded the hole as a reason to put things elsewhere rather than as
-  something to close. Cost to close: 14 errors, none a real mismatch.
-- **A control never seen failing is not a control** — nine new assertions test
-  stubs and fail on `not implemented` either way. **Three of the first seven were
-  defective**, each passing on the defect it was aimed at.
-- **"Duplication is the safe direction" was wrong** and I wrote it twice.
-  `wouldHaveAdded` is signed, so a duplicated NEGATIVE refusal pushes `R_hi+`
-  DOWN and manufactures a fall. Step 1b sees only the negative-class-sum case.
-- **A control that fires on the clock says nothing:** `repair.test.ts` compared
-  `JSON.stringify(result).length` across runs whose `model_ms` differ. And
-  `git add -A` after a tool run committed a stray one-byte `test` file.
+- **A control never seen failing is not a control.** THREE of the first seven new
+  assertions were defective when written, each passing on the defect it was aimed
+  at. A fourth defect was in the fixture: `withToolUse` dropped the
+  `cache_creation` split, so a write priced at 1.25x while the file promised 2.0x.
+- **`tests/` was unchecked for the project's whole life**, and CI still did not
+  run the checking config after I fixed the local gate. Both closed.
+- **"Duplication is the safe direction" was wrong** — `wouldHaveAdded` is signed,
+  so a duplicated NEGATIVE refusal manufactures a fall.
+- **Three casts in three files** stood between a type and the thing it should
+  constrain. Look for `as unknown as` before trusting any narrowing.

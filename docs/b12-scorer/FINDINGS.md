@@ -409,8 +409,11 @@ declared in `run 2026-08-07-mac-b12-phase3-c40e9f4`.
 | unit | authored by | reviewed | verdict |
 |---|---|---|---|
 | `strata.ts` | local model, `c40e9f4` | 2026-08-07 | **accepted**; correct against `UNIT-1.md` step for step. F3 fixed here by hand. |
-| `terms.ts` | — | — | still a stub |
-| `aggregate.ts` | — | — | still a stub |
+| `terms.ts` | orchestrator, 2026-08-07 | — | implemented after Phase 3 closed |
+| `aggregate.ts` | orchestrator, 2026-08-07 | — | implemented after Phase 3 closed |
+
+`terms.ts` and `aggregate.ts` stopped being measured work when Phase 3 closed at
+1 of 3. `repair` never closed either of them and gets no further draw.
 
 `strata.ts`'s two bodies are 34 lines; every comment, both interfaces and the
 imports were already in the stub. `UNIT-1.md`'s steps 1–7 are close to executable
@@ -420,28 +423,43 @@ pseudocode, which is worth remembering when reading the one unit that closed.
 the run's. `git log -p` is the only thing that keeps "what the local model wrote"
 legible once a human has touched the file.
 
-## Nine assertions that are not yet controls
+## Nine assertions, now proved as controls
 
 The scorer-correctness pass added seven assertions to
-`tests/b12-aggregate.test.ts` and two to `tests/b12-terms.test.ts`. Both files
-test stubs, so **every one of them fails on `not implemented` whether it is right
-or wrong** — none has ever been executed against any implementation. Their
-constants were derived by hand and their API shape is pinned by `tsc` — true
-since **F16** put `tests/**` in the config, and false for the hours before it.
-**Neither says the assertion is right**, which is the whole point: each is marked
-`UNPROVED CONTROL`, and only their behaviour against a real body is unproved now.
+`tests/b12-aggregate.test.ts` and two to `tests/b12-terms.test.ts`. They were
+written against stubs, so every one of them failed on `not implemented` whether
+it was right or wrong, and each carried an `UNPROVED CONTROL` marking saying so.
 
-**Three were already defective when written, which is the argument for the
-re-check rather than against it.** Re-deriving the fixtures against the specs
-found `strataCells`'s `typesOnly` assertion satisfied by the 5-observation floor
-alone, so it passed on the defect it was written to catch. Gate 2 found two more:
-the closure floor gave every fixture `closures` of 0 or 1, where summing rows and
-counting observations agree, so it did not test "observations, not rows"; and the
-closure test supplied only `true` and `null`, so `passed !== true` would have
-satisfied both arms while merging a repair that ran and failed with one that
-could not say. All three are fixed. **Three defects in seven assertions is the
-rate to expect from assertions nobody has watched fail.**
+**Re-checked 2026-08-07, the day the bodies landed**, in three groups of three
+defects planted in three different functions so attribution stayed clean. All
+nine fired, each for its own reason and no other:
 
-They must be re-checked the day a body lands, by breaking that body deliberately
-and watching each one fail for its own reason. Until then they are specifications
-in test syntax, not evidence.
+| assertion | defect planted | what fired |
+|---|---|---|
+| both ledgers in `R_hi+` | sum only `refusals` | 110/1110 against 160/1160 |
+| unsized in EITHER ledger | check only `refusals` | evaluable, should refuse |
+| negative unattributed magnitude | drop the guard | evaluable, should refuse |
+| per-horizon row jackknife | rank the low side by `units` | 70/270 against 60/260 |
+| both cells on a corrupt stratum | drop the rule | cells stayed evaluable |
+| closures per OBSERVATION | count closure rows | scored, should be `unexercised` |
+| `identityHolds` false on `O ≠ 0` | compare against `S` | true, should be false |
+| the second ledger in `computeTerms` | file everything as owned | unattributed count 0 |
+| `closureUnknown` on `null` only | treat `!== true` as unknown | counted a red repair |
+
+**Three of them were defective when written, which is the argument for the
+re-check rather than against it.** `strataCells`'s `typesOnly` arm was satisfied
+by the 5-observation floor with an empty cell, so it passed on the defect it was
+aimed at. The closure floor gave every fixture `closures` of 0 or 1, where
+summing rows and counting observations agree. The closure test supplied only
+`true` and `null`, so `passed !== true` satisfied both arms while merging a
+repair that ran and failed with one that could not say. All three were fixed
+before the bodies existed; **three defects in seven assertions is the rate to
+expect from assertions nobody has watched fail.**
+
+**A fourth defect surfaced on first execution, in the FIXTURE rather than in an
+assertion.** `withToolUse` overrode `message` wholesale and dropped the
+`cache_creation` split, so the transcript parser priced that request's write at
+the 5-minute TTL — its documented conservative guess — while `req`'s own comment
+promises 1h at 2.0x. Every constant hand-derived from that promise was 75 units
+out on a 100-token write, and `A_o` came back 5725 against 5800. A fixture that
+contradicts its own stated intent is invisible until something executes it.

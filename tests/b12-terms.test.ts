@@ -132,13 +132,10 @@ describe("computeTerms — every constant derived by hand", () => {
   });
 
   it("files the refusals no window can own in the SECOND ledger, not nowhere", async () => {
-    // UNPROVED CONTROL. `terms.ts` is a stub, so this fails on `not implemented`
-    // whether it is right or wrong -- it has NEVER been executed against any
-    // implementation. Two things ARE checked: the constants were derived by
-    // hand, and the API shape is pinned by `tsc`, which reaches this file since
-    // `tests/**` joined `tsconfig.json` on 2026-08-07. Neither says the
-    // assertion is right. RE-CHECK IT AS A CONTROL, by breaking the body
-    // deliberately, the day one lands.
+    // PROVED CONTROL, 2026-08-07. Written against a stub, where it failed on
+    // `not implemented` whether it was right or wrong; re-checked the day
+    // `terms.ts` got a body by filing every refused row into `refusals`, which
+    // leaves the unattributed counts at 0 and fires this exactly.
     //
     // A row with no `invocation_id` is `unverifiable`, and one whose id this
     // transcript never echoes is `excludedForeign`. Neither can be in `mine` --
@@ -175,7 +172,7 @@ describe("computeTerms — every constant derived by hand", () => {
   });
 
   it("counts a delivery's closures off the row's own verdict, and absence is not failure", async () => {
-    // UNPROVED CONTROL -- see the note in the test above.
+    // PROVED CONTROL -- see the note in the test above.
     //
     // `MIN_REPAIR_CLOSURES` needs this and nothing carried it. `false` is a
     // repair that ran and did not close; `null` is a row that could not say --

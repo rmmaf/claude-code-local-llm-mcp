@@ -98,14 +98,11 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
   });
 
   it("credits the classes NO window can own, which is where two of the four live", () => {
-    // UNPROVED CONTROL. `aggregate.ts` is a stub, so this fails on `not
-    // implemented` whether it is right or wrong -- it has NEVER been executed
-    // against any implementation. Two things ARE checked: its constants were
-    // derived by hand, and its API shape is pinned by `tsc`, which reaches this
-    // file since `tests/**` joined `tsconfig.json` on 2026-08-07. Neither says
-    // the assertion is right. RE-CHECK IT AS A CONTROL, by breaking the body
-    // deliberately, the day one lands. An oracle nobody has watched fail is not
-    // yet evidence of anything.
+    // PROVED CONTROL, 2026-08-07. Written against a stub, where it failed on
+    // `not implemented` whether it was right or wrong; re-checked the day
+    // `aggregate.ts` got a body by summing only the owned ledger, which brings
+    // it back as 110/1110 = 0.0991 against 160/1160 = 0.1379. It fires for its
+    // own reason and for no other.
     //
     // An `unverifiable` row has no `invocation_id` and an `excludedForeign` row's
     // id is absent from the transcript, so neither can ever be in a window's
@@ -139,7 +136,7 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
   });
 
   it("refuses on an unsized magnitude in EITHER ledger, not just the owned one", () => {
-    // NEVER SEEN FAILING FOR ITS OWN REASON -- see the note above.
+    // PROVED CONTROL -- see the note in the first rHiPlus block above.
     //
     // `unmatched` is unsized BY CONSTRUCTION: the request that is missing is the
     // one a magnitude would have been priced against. If that arrives through
@@ -156,7 +153,7 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
   });
 
   it("refuses a NEGATIVE unattributed magnitude, which duplication turns into a fall", () => {
-    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    // PROVED CONTROL -- see the note in the first rHiPlus block above.
     //
     // An unattributed row may be counted twice: `scopeTelemetry` admits anything
     // within 60 s, so one row can sit in two observations' slices and nothing in
@@ -188,7 +185,7 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
 
 describe("recompute — the row guard ranks per horizon, because the two disagree", () => {
   it("drops the LOW figure's biggest row from the low figure, not the high one's", () => {
-    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    // PROVED CONTROL -- see the note in the first rHiPlus block above.
     //
     // `holdsIf` 2: a hold must survive deleting "its best task, its best row".
     // *Its* -- per figure. `units` is the high horizon's contribution and
@@ -231,7 +228,7 @@ describe("strataCells — a corrupted declaration is not a measured absence", ()
     terms({ taskId, aO: 100, sLo: 50, sHi: 50, verificationStratum: stratum });
 
   it("refuses BOTH declared cells while any observation's stratum is unrecognised", () => {
-    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    // PROVED CONTROL -- see the note in the first rHiPlus block above.
     //
     // BOTH declared cells are stocked to five, which is the only way this test
     // says anything about `typesOnly`. With that cell left empty it would be
@@ -309,7 +306,7 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
   });
 
   it("counts CLOSURES per observation before scoring repair, and an unknown is not one", () => {
-    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    // PROVED CONTROL -- see the note in the first rHiPlus block above.
     //
     // `holdsIf`: R_repair is scored only if ">= 5 admitted observations carry a
     // `repair` row AND at least two of THOSE carry `passed: true`". Observations,
@@ -384,7 +381,7 @@ describe("aggregate — the artifact publishes the banned form and decides on th
   });
 
   it("reports identityHolds FALSE once the installation term is non-zero", () => {
-    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    // PROVED CONTROL -- see the note in the first rHiPlus block above.
     //
     // The frozen design asserts `Σ_d R_d + R_other = R` and `identityHolds` says
     // "compute it; do not assume it". Computing it gives false:
