@@ -282,12 +282,21 @@ optional one a rule they could forget.
 
   Then `voidConditions` 18's **other half**, which is NOT a void:
 
-  10a. any PUBLISHED recomputation on the opposite side of **30%** from the
-       published `rLo` → `"open"`, "with both figures recorded", and it "does NOT
-       consume the attempt cap". **Over the published figures, not the hold ones.**
+  10a. any of the SAME FIVE on the opposite side of **30%** from **its own
+       parent** — `rLo` for the three low forms, `rHi` for the two high ones —
+       → `"open"`, "with both figures recorded", and it "does NOT consume the
+       attempt cap". **Over the published figures, not the hold ones.**
+
+       Build the `[name, value, parent]` list ONCE and read it at both thresholds.
+       Clause 18 names one list and gives it two readings; two lists in the code
+       is two chances to disagree, and the first attempt did exactly that — five
+       recomputations at 15% and three at 30%, which narrowed a frozen clause to
+       its low-side half without saying so.
+
        Written as a conjunct of the hold it can never fire: the conjuncts below
        already force `rLo` and all three low recomputations onto the same side of
-       the line. `FINDINGS.md` F22.
+       the line, and **no hold condition reads `R_hi` at all**, so a high-side
+       straddle is invisible to every one of them. `FINDINGS.md` F22.
 
   Then the hold, and it is **always `"holding (unvalidated)"`**:
 

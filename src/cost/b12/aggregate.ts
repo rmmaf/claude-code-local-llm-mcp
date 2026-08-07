@@ -795,16 +795,24 @@ function decide(d: Decision): { verdict: B12Result["verdict"]; voidClause: strin
     );
   }
 
-  // CLAUSE 18, and ONLY the 15% line voids. Across 30% the run returns `open`
-  // with both figures recorded and does NOT consume the attempt cap.
-  const acrossFall: Array<[string, number, number]> = [
+  // CLAUSE 18's FIVE, EACH BESIDE THE PARENT IT IS A RECOMPUTATION OF — built
+  // ONCE and read at both thresholds below. The clause names one list ("R_lo-t,
+  // R_lo-r, R_hi-t, R_hi-r, R_all") and gives it two readings, 15% and 30%, so two
+  // lists here would be two chances to disagree. The first draft had exactly that:
+  // the 15% check ran over five and the 30% check over three, which silently
+  // narrowed a frozen clause to its low-side half.
+  const mandatory: Array<[string, number, number]> = [
     ["rLoMinusTask", d.recomputations.rLoMinusTask, d.rLo],
     ["rHiMinusTask", d.recomputations.rHiMinusTask, d.rHi],
     ["rLoMinusRow", d.recomputations.rLoMinusRow, d.rLo],
     ["rHiMinusRow", d.recomputations.rHiMinusRow, d.rHi],
     ["rAll", d.recomputations.rAll, d.rLo],
   ];
-  for (const [name, value, parent] of acrossFall) {
+
+  // ONLY the 15% line voids. Across 30% the run returns `open` with both figures
+  // recorded and does NOT consume the attempt cap — read further down, because a
+  // void must not be spent on it.
+  for (const [name, value, parent] of mandatory) {
     if (value < 0.15 !== parent < 0.15) {
       return voided(
         `voidConditions 18: ${name} (${value}) is on the opposite side of 15% from its parent (${parent})`
@@ -856,8 +864,7 @@ function decide(d: Decision): { verdict: B12Result["verdict"]; voidClause: strin
   // `voidConditions` 18's OTHER HALF, AND IT IS NOT A VOID: a recomputation across
   // 30% "returns `open` with both figures recorded and does NOT consume the attempt
   // cap — a run producing two defensible numbers straddling the hold line has
-  // measured something". Over the PUBLISHED recomputations against the PUBLISHED
-  // parent, which is the pair clause 18 names.
+  // measured something". THE SAME FIVE, against the same parents.
   //
   // **THIS USED TO BE THE LAST CONJUNCT OF THE HOLD, WHERE IT COULD NOT FAIL.**
   // The conjuncts above it already required `rLo >= 0.3` and all three low
@@ -866,12 +873,13 @@ function decide(d: Decision): { verdict: B12Result["verdict"]; voidClause: strin
   // fire, sitting directly beneath a comment explaining that the F9 guard was
   // removed for exactly that reason. Moved here, over figures the hold branch does
   // not constrain, it can. `FINDINGS.md` F22.
-  const straddles30 = [
-    d.recomputations.rLoMinusTask,
-    d.recomputations.rLoMinusRow,
-    d.recomputations.rAll,
-  ].some((v) => v >= 0.3 !== d.rLo >= 0.3);
-  if (straddles30) return { verdict: "open", voidClause: null };
+  //
+  // **AND IT COVERS THE HIGH SIDE, WHICH THE FIRST FIX DID NOT.** No hold condition
+  // reads `R_hi`, so a high-side straddle is invisible to every conjunct of
+  // `decideHold` — it is only ever this check that can catch one.
+  if (mandatory.some(([, value, parent]) => value >= 0.3 !== parent >= 0.3)) {
+    return { verdict: "open", voidClause: null };
+  }
 
   if (decideHold({ hold: d.hold, selection: s, admitted: d.admitted })) {
     return { verdict: "holding (unvalidated)", voidClause: null };
@@ -924,15 +932,26 @@ function decideHold(e: HoldEvidence): boolean {
     //    itself. `unexercised` was counted on the admitted set, the ratio was not.
     e.hold.gate.scored &&
     e.hold.gate.r >= 0.3 &&
-    // 5. The ledger is clean enough to read. No refused magnitude is null — implied
-    //    by the caller's `fallSide.evaluable` — and the excluded set does not
-    //    outweigh the admitted one, which the void above only proves in one
-    //    direction. **`selection` SPLITS ON DISPOSITION, NOT ON CLAUSE 6**, and
-    //    that is an implementation convention rather than a reading of the frozen
-    //    text, which does not say which sense of "excluded" these two comparisons
-    //    take. `FINDINGS.md` F20.
-    e.selection.excludedUnsized === 0 &&
-    e.selection.excludedWouldHaveAdded <= e.selection.admittedSumS &&
+    // 5. **`holdsIf` 5 IS NOT WRITTEN HERE, BECAUSE BOTH HALVES OF IT ARE ALREADY
+    //    TRUE OF EVERY RUN THAT REACHES THIS FUNCTION.** It asks that no refused
+    //    magnitude be null and that the excluded set not outweigh the admitted one.
+    //    `voidConditions` 16 voids on the exact complement of the second —
+    //    `excludedWouldHaveAdded > admittedSumS` — so reaching here proves `<=`;
+    //    and `rHiPlus` iterates admitted AND dropped and refuses on any unsized
+    //    owned refusal, so `excludedUnsized > 0` returns `open` before the hold is
+    //    considered. Both were written as conjuncts and neither could fail.
+    //
+    //    That is the third time this file has grown a guard that cannot fire
+    //    (`FINDINGS.md` F22, and the F9 conjunct before it), so it is recorded
+    //    rather than replaced by a comment saying the guard is there. **The
+    //    subsumption is exact for finite figures only**: a NaN would slip both the
+    //    void and the conjunct, and nothing here defends against one beyond `oO`.
+    //
+    //    Where `selection` splits admitted from excluded — on DISPOSITION, not on
+    //    clause 6 — is an implementation convention rather than a reading of the
+    //    frozen text, which does not say which sense of "excluded" these
+    //    comparisons take. `FINDINGS.md` F20.
+    //
     // 6. `unitsAddedByInstallation` computed for EVERY observation, not estimated
     //    and not omitted. A non-finite `oO` is the omission wearing a number. Over
     //    the ADMITTED set: it is a question about what the instrument computed, not

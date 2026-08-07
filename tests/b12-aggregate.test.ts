@@ -905,17 +905,66 @@ describe("the hold arithmetic — admissionRule 6 gives the run two domains", ()
     if (result.hold.gate.scored) expect(result.hold.gate.r).toBeCloseTo(176 / 2_736, 12);
   });
 
-  it("keeps a stratum cell EVALUABLE on five admitted while pricing it on four", () => {
+  it("catches a HIGH-side recomputation across 30%, which no hold condition reads", () => {
+    // `voidConditions` 18 names five recomputations — "R_lo-t, R_lo-r, R_hi-t,
+    // R_hi-r, R_all" — and gives them two readings, 15% and 30%. The first fix
+    // mirrored only the three LOW ones at 30%, which silently narrowed the clause
+    // to its low-side half.
+    //
+    // **NOTHING ELSE IN THE VERDICT CAN CATCH THIS.** Every `holdsIf` condition is
+    // a low-side figure, so a high-side straddle is invisible to `decideHold`;
+    // only this check sees it. No ambiguous refusal is needed either, which is why
+    // the fixture carries none: the defect is on the published side alone.
+    //
+    // BY HAND, twenty observations at `A = 100, S_lo = 50`, and observation 0
+    // carrying `S_hi = 700` against the others' 20:
+    //
+    //   R_lo, R_lo⁻ᵗ, R_lo⁻ʳ, R_all   all 33.33% — no low-side straddle at all
+    //   R_hi                          1080 / (2000 + 1080) = 35.06%  — above 30%
+    //   R_hi⁻ᵗ  (obs 0 deleted)         380 / (1900 +  380) = 16.67%  — BELOW
+    //
+    // 16.67% is still above 15%, so `voidConditions` 18's other reading does not
+    // fire and the run must return `open` rather than void.
+    const set = twenty((n) => ({
+      aO: 100,
+      sLo: 50,
+      sHi: n === 0 ? 700 : 20,
+      perDelivery: { gate: { sLo: 50, sHi: 50, rowCount: 1, closures: 1, closureUnknown: 0 } },
+    }));
+    const result = aggregate(aggregateInput(set));
+
+    expect(result.rHi).toBeCloseTo(1_080 / 3_080, 12);
+    expect(result.recomputations.rHiMinusTask).toBeCloseTo(380 / 2_280, 12);
+    // ABOVE THE FALL LINE, so this is the 30% reading and not the void.
+    expect(result.recomputations.rHiMinusTask).toBeGreaterThan(0.15);
+
+    // The whole low side is clean, so nothing the hold reads objects.
+    expect(result.rLo).toBeCloseTo(1 / 3, 12);
+    expect(result.hold.rLo).toBeCloseTo(1 / 3, 12);
+    expect(result.hold.recomputations.rLoMinusTask).toBeCloseTo(1 / 3, 12);
+    expect(result.hold.recomputations.rAll).toBeCloseTo(1 / 3, 12);
+    expect(result.hold.excludedForAmbiguity).toBe(0);
+
+    expect(result.verdict).toBe("open");
+    expect(result.voidClause).toBeNull();
+  });
+
+  it("keeps a stratum cell EVALUABLE on its admitted count while pricing it on fewer", () => {
     // `holdsIf` 3 asks for "All four declared strata evaluable (≥ 5 ADMITTED
     // observations each) and all four on the same side of 30%", and
     // `admissionRule` 8 repeats the floor in the same words. Clause 6 moves only
     // the arithmetic, so evaluability is an admitted-set property.
     //
     // SIX OF THE TEN `test-red` OBSERVATIONS CARRY AN AMBIGUOUS REFUSAL, leaving
-    // four to price the cell. Reading the floor off the hold domain would call the
-    // cell unevaluable and return `open` for a reason the design does not give.
-    // That the cell then blocks the hold on its RATIO is a different fact, and
-    // `FINDINGS.md` F21 records the gap the literal reading leaves open.
+    // four to price the cell — so what this proves is "evaluable on TEN, priced on
+    // four", and the title said five and four until Codex checked the fixture
+    // against `twenty()`, which puts ten observations in each cell. The point
+    // stands and the arithmetic did not change; the claim did.
+    //
+    // Reading the floor off the hold domain would call the cell unevaluable and
+    // return `open` for a reason the design does not give. That the cell then
+    // blocks the hold on its RATIO is a different fact, and `FINDINGS.md` F21
+    // records the gap the literal reading leaves open.
     const set = twenty((n) => ({
       aO: 100,
       sLo: 44,

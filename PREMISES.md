@@ -1621,9 +1621,11 @@ defect, and it pinned four of them in place.
       itself* read as *below the pool* — is what F1 and F9 were each corrected for.
     - **What does bound the direction is the dilution guard.** `hold.rAll`
       reinstates every clause-6 exclusion at `saved_o = 0` with its billing, so for
-      a non-negative excluded saving it is strictly below the published `R_lo` and
-      a hold now requires the full admitted set to clear 30% under dilution as
-      well. Stated with the qualification, not as a general claim.
+      a **strictly positive** excluded saving it is strictly below the published
+      `R_lo`, and a hold now requires the full admitted set to clear 30% under
+      dilution as well. At exactly zero the two are equal; this said "non-negative"
+      and was wrong at that one point, which is the same overstatement-by-one-word
+      the safety claim above died of.
     - **Two of my three readings were refuted by adjudication** — that a short
       hold set makes a hold impossible, and that "admitted" in `voidConditions` 16
       covers a clause-6 observation (I had quoted the clause with "to the FALL

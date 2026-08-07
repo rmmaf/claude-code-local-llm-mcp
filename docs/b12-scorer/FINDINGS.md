@@ -55,7 +55,10 @@ once, so not even the direction is obvious.
 observations each) and all four on the same side of 30%", and `admissionRule` 8
 defines the floor in the same words. `admissionRule` 6 moves only the arithmetic.
 So the floor counts admitted observations and the ratio does not, and a cell that
-clears five admitted may be priced over as few as one.
+clears five admitted may be priced over as few as NONE — at which point
+`poolRatio` returns 0, the cell fails the 30% conjunct, and the hold is refused.
+That last step is the only thing keeping the gap from being dangerous, and it is
+`poolRatio`'s empty-set guard rather than anything in this rule.
 
 **The obvious guard is refused.** Requiring five hold-eligible observations per
 cell as well is monotone-conservative — after the fall branch it can only turn a
@@ -232,12 +235,33 @@ same side of the line by the time it was evaluated and the expression was always
 removed for exactly this reason** — a guard that cannot fail, three paragraphs
 under the house rule against them.
 
-Moved to the PUBLISHED recomputations against the published parent, which is the
-pair clause 18 names, and placed after the fall branch. There it decides
-something: with the domains split, a published figure can straddle 30% while the
-hold domain does not. Deleting it before that fixture existed changed no test;
-deleting it after flips the verdict from `open` to `holding (unvalidated)`, which
-is how the guard was established as a guard.
+Moved to the PUBLISHED recomputations against their own parents, and placed after
+the fall branch. There it decides something: with the domains split, a published
+figure can straddle 30% while the hold domain does not. Deleting it before that
+fixture existed changed no test; deleting it after flips the verdict from `open`
+to `holding (unvalidated)`, which is how the guard was established as a guard.
+
+**THE FIRST FIX NARROWED THE CLAUSE WHILE FIXING IT, and the review caught that.**
+Clause 18 names five recomputations — `R_lo⁻ᵗ`, `R_lo⁻ʳ`, `R_hi⁻ᵗ`, `R_hi⁻ʳ`,
+`R_all` — and gives them two readings. The 15% void ran over all five; the new 30%
+check ran over three. **No hold condition reads `R_hi` at all**, so a high-side
+straddle is invisible to every conjunct of `decideHold` and only this check can
+catch one — a run could return `holding (unvalidated)` with `R_hi⁻ᵗ` at 16.7%
+against an `R_hi` of 35.1%. Both readings now share one `[name, value, parent]`
+list built once, and the eighth control pins the high-side case with no ambiguous
+observation anywhere in the fixture.
+
+**TWO MORE CONJUNCTS THAT COULD NOT FIRE went with it**, both of them `holdsIf` 5,
+one written in this pass and one carried over unexamined. `voidConditions` 16
+voids on the exact complement of `excludedWouldHaveAdded <= admittedSumS`, so
+reaching the hold proves it; and `rHiPlus` iterates admitted AND dropped and
+refuses on any unsized owned refusal, so `excludedUnsized === 0` is proved by the
+`open` above. Removed, with the ordering that subsumes them stated where they
+stood. **The subsumption is exact for finite figures only** — a NaN would slip
+both the void and the conjunct, and nothing defends against one beyond `oO`.
+Three guards-that-cannot-fire in one file is a pattern, not an accident: the check
+is now to ask of every new conjunct what run reaches it in a state where it is
+false.
 
 ### F14 — `B12Result` could say two of the six verdicts the design defines — FIXED
 
@@ -728,9 +752,9 @@ but not under "always pair with index 0", because index 0's key is correct for
 row 0 either way. The index rule is proved by the `unattributed` assertion beside
 it, which fired on exactly that defect.
 
-## Seven more, for F19 and F22
+## Eight more, for F19 and F22
 
-The F19 pass added seven assertions to `b12-aggregate.test.ts`. **All seven
+The F19 pass added eight assertions to `b12-aggregate.test.ts`. **All of them
 passed on first execution, and every existing b12 test passed unchanged** — which
 is the expected result and the reason none of it was evidence: the two domains are
 the same set on every fixture written before this pass, so a partition that does
@@ -741,12 +765,13 @@ could cancel:
 
 | defect planted | what fired | what did NOT |
 |---|---|---|
-| no partition at all — the pre-F19 body | 5 of the 7 | the clean-run identity test, correctly |
+| no partition at all — the pre-F19 body | 5 of the 8 | the clean-run identity test, correctly |
 | `ambiguousCount` reads the OWNED ledger only — F19's own proposal | the unowned-ambiguous control, alone | the other six |
 | Reading L: clause-6 exclusions kept out of `hold.rAll` | 2, with `R_all` at 30.56% against the correct 29.48% | — |
 | delivery populations collapsed onto hold-eligible | the exercise-floor control, alone | — |
 | strata floor collapsed onto hold-eligible | the cell-evaluability control, alone | — |
 | `strata: hold.strata` on the published face | the face control, alone | — |
+| the 30% reading narrowed to the three LOW recomputations | the high-side control, alone | — |
 
 **The second row is the one worth keeping.** F19 proposed that predicate itself,
 and the control written to separate the two readings fires on it and on nothing
