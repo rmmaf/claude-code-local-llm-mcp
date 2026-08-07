@@ -201,23 +201,28 @@ describe("strataCells — a corrupted declaration is not a measured absence", ()
   it("refuses BOTH declared cells while any observation's stratum is unrecognised", () => {
     // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
     //
-    // Five `test-red` observations clear the floor on their own. The sixth is a
-    // manifest typo: it belongs to one of the two cells and nobody can say
-    // which, so BOTH are deflated by an unknown amount. `holdsIf` 3 asks whether
-    // four cells are evaluable; it cannot ask whether they hold what they claim
-    // to, so a cell reporting a number here would pass a check it had failed.
+    // BOTH declared cells are stocked to five, which is the only way this test
+    // says anything about `typesOnly`. With that cell left empty it would be
+    // unevaluable on the 5-observation floor alone, and the assertion below
+    // would pass just as well against the defect it exists to catch — a check
+    // that cannot fail, inside the test written to catch checks that cannot
+    // fail. The eleventh observation is the manifest typo: it belongs to one of
+    // the two cells and nobody can say which, so BOTH are deflated by an unknown
+    // amount. `holdsIf` 3 asks whether four cells are evaluable; it cannot ask
+    // whether they hold what they claim to.
     const typo = "test_red" as ObservationTerms["verificationStratum"];
     const set = [
       ...[0, 1, 2, 3, 4].map((n) => soloTerms(`t${n}`, "test-red")),
+      ...[0, 1, 2, 3, 4].map((n) => soloTerms(`y${n}`, "types-only")),
       soloTerms("typo", typo),
     ];
     const cells = strataCells(set);
     expect(cells.testRed.evaluable).toBe(false);
     expect(cells.typesOnly.evaluable).toBe(false);
-    // AND THE RULE IS TARGETED, not a blanket refusal. All six windows have an
-    // evaluable share, so `solo` holds six and stays scored -- an implementation
-    // that voided every cell on any anomaly would pass the two assertions above
-    // and be wrong about what was actually damaged.
+    // AND THE RULE IS TARGETED, not a blanket refusal. All eleven windows have
+    // an evaluable share, so `solo` holds eleven and stays scored -- an
+    // implementation that voided every cell on any anomaly would pass the two
+    // assertions above and be wrong about what was actually damaged.
     expect(cells.solo.evaluable).toBe(true);
   });
 });
