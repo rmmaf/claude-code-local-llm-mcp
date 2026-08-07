@@ -167,13 +167,13 @@ head2 "The state decision, against every branch"
 # Driven with the same variable names the loop uses, under `set -u`, so a name
 # this block reads and the loop does not set would fail here rather than on the
 # Mac at unit 3 of a $40 run.
-state_of() { # state_of <vitest rc> <calls> <passed> <attempts> [model verdict] [ctx verdict]
+state_of() { # state_of <vitest rc> <calls> <passed> <attempts> [model verdict] [ctx verdict] [unit]
   (
     set -u
     ok()   { :; }
     info() { :; }
     warn() { :; }
-    N=1; UNIT="aggregate"; CLOSED=0; VOIDS=""
+    N=1; UNIT="${7:-aggregate}"; CLOSED=0; VOIDS=""
     MODEL_LOCAL="$MODEL"; CONTEXT_FILES="$CTXDECL"; UNIT_TELE_JSON="/dev/null"
     VITEST_RC="$1"; R_CALLS="$2"; R_PASSED="$3"; R_ATTEMPTS="$4"
     R_MODEL="${5:-ok}"; R_CTX="${6:-ok}"
@@ -307,6 +307,49 @@ LINE=$(read_window_of "$T" 0)
 set -- $LINE
 check "exposure B's aggregate reads as no_response, not red" "no_response|0|" \
   "$(state_of 1 "$1" "$2" "$3" "$4" "$5")"
+
+# ---------------------------------------------------------------------------
+head2 "The same thing again, on exposure B's REAL telemetry"
+# ---------------------------------------------------------------------------
+# Everything above this line is fabricated by `row`, which means everything
+# above this line tests the logic against a shape I chose. This section replays
+# the actual bytes `run 2026-08-06-mac-b12-phase3-f2932ff` wrote — five repair
+# rows, shipped in that run's archive and committed here unmodified — and checks
+# what the new logic makes of each unit. It is the only test in this file whose
+# input nobody designed.
+#
+# The rows arrived in call order: strata (1), terms (2), aggregate (2). Splitting
+# by row number is what the per-unit byte offsets do on a live run.
+SLICE="$HERE/fixtures/2026-08-06-mac-b12-phase3-f2932ff.telemetry-slice.jsonl"
+if [ ! -s "$SLICE" ]; then
+  printf '    FAIL  the exposure B fixture is missing: %s\n' "$SLICE"; FAIL=$((FAIL + 1))
+else
+  replay_state() { # replay_state <unit> <first row> <last row> <vitest exit that run recorded>
+    local unit="$1" vitest="$4" line c p a m x
+    sed -n "$2,$3p" "$SLICE" > "$TMP/real.jsonl"
+    line=$(B12_TELE="$TMP/real.jsonl" B12_FROM=0 B12_MODEL_EXPECT="$MODEL" \
+      B12_CTX_EXPECT="$CTXDECL" node "$WINDOW_JS" "$TMP/real.json" | head -1)
+    read -r c p a m x <<EOF
+$line
+EOF
+    state_of "$vitest" "$c" "$p" "$a" "$m" "$x" "$unit"
+  }
+  # strata closed for real: repair returned passed:true and its oracle went green.
+  check "real slice: strata -> closed" "closed|1| context-unverifiable:strata" \
+    "$(replay_state strata 1 1 0)"
+  # terms ran and failed: five attempts across two calls.
+  check "real slice: terms -> red" "red|0| context-unverifiable:terms" \
+    "$(replay_state terms 2 3 1)"
+  # THE ONE THIS WORK EXISTS FOR. Two calls, zero attempts, published as `red`.
+  check "real slice: aggregate -> no_response, NOT red" "no_response|0| context-unverifiable:aggregate" \
+    "$(replay_state aggregate 4 5 1)"
+  # And every row predates detail.context_files, so exposure B's own central VOID
+  # comes back UNVERIFIABLE from its own evidence — which is the reading
+  # PREMISES.md recorded by hand in 417fb0b, now reproducible from the bytes.
+  replay_state strata 1 1 0 >/dev/null
+  check "real slice: the context condition is unverifiable throughout" "unknown" \
+    "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).contextFilesVerdict' "$TMP/real.json")"
+fi
 
 # ---------------------------------------------------------------------------
 printf '\n'
