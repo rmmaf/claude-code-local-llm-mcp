@@ -407,6 +407,12 @@ export type RowDisposition =
  * is usually WHY it was refused. `units` carries the scored contribution of a
  * credited row and the would-have magnitude of a refused one, and it is `null`
  * when nothing could size it — which is not zero and may not be summed as one.
+ *
+ * `units` and `unitsLo` are the same row at B12's two horizons, and they are
+ * `null` TOGETHER. Both live here rather than being recomputed downstream
+ * because the scorer's `aggregate.ts` receives no `rates` and could not derive
+ * the second — and because two derivations of one number is the shape this file
+ * has already been burned by.
  */
 export interface CreditedRow {
   invocationId: string | null;
@@ -430,6 +436,22 @@ export interface CreditedRow {
   /** Reported here, in no scored total — see `ToolSaving.unitsFromTurnCollapse`. */
   turnsCollapsed: number;
   units: number | null;
+  /**
+   * The same row at `T-1-t = 0` — the write component alone, B12's `S_lo`.
+   *
+   * Separate from `units` because the two horizons rank rows DIFFERENTLY, and
+   * B12's `R_lo⁻ʳ` drops the low figure's own biggest row rather than the high
+   * figure's. One field for both would have made the low-side concentration
+   * guard a statement about the high side.
+   */
+  unitsLo: number | null;
+  /**
+   * The tool's own verdict, from `detail.passed`, or `null` when the row does
+   * not carry a boolean one. **`null` is not `false`** — see `verdictOf`.
+   * B12's `MIN_REPAIR_CLOSURES` is counted off this, because `turnsCollapsed` is
+   * `rounds.length` whether or not the failure closed.
+   */
+  passed: boolean | null;
 }
 
 export interface CounterfactualReport {
@@ -836,7 +858,7 @@ export function buildCounterfactual(
    * that reports "nothing was refused" is exactly the silent exclusion the
    * counter exists to make visible. Sessions here run to 78% subagent.
    */
-  const wouldHaveAdded = (entry: TelemetryRecord): number | null => {
+  const wouldHaveAdded = (entry: TelemetryRecord): { hi: number; lo: number } | null => {
     const source =
       entry.invocation_id !== undefined ? byInvocation.get(entry.invocation_id) : undefined;
     const at = source?.timestampMs ?? Date.parse(entry.ts);
@@ -865,12 +887,31 @@ export function buildCounterfactual(
     // inflated the doubt-credited figure that decides whether the project stops.
     // One quantity, one rule -- the same principle the comment above states and
     // this expression was breaking.
-    return (
-      ((Math.min(entry.bytes_raw, rates.clientTruncationCap) - entry.bytes_returned) /
-        rates.charsPerToken) *
-      wmult
-    );
+    //
+    // BOTH HORIZONS, so `units` and `unitsLo` are null together or neither. Only
+    // `hi` has a consumer today -- the refusal magnitudes feed `R_hi+`, which is
+    // a high-horizon figure -- but returning `lo` as null on a row that WAS
+    // sizeable would give `null` two meanings on the same field, and the ledger
+    // is built on `null` meaning exactly one thing: nobody could size it.
+    const tokens =
+      (Math.min(entry.bytes_raw, rates.clientTruncationCap) - entry.bytes_returned) /
+      rates.charsPerToken;
+    return { hi: tokens * wmult, lo: tokens * positionalMultiplier(0, 1, wm, wttl) };
   };
+  /**
+   * The tool's OWN verdict for this call, off an untyped optional bag.
+   *
+   * `detail` is `Record<string, unknown> | undefined` and nothing validates it,
+   * so this enumerates the good values and refuses the rest: only an actual
+   * boolean is a verdict. **Absent is `null`, never `false`.** Three different
+   * things produce no `passed` key and none of them is a call that ran and
+   * failed — `repair`'s abort path writes a detail without one, rows predating
+   * the field exist on disk, and a tool that never wrote a detail at all. B12's
+   * `MIN_REPAIR_CLOSURES` counts closures, and a floor fed by absences read as
+   * failures would report `unexercised` for a delivery that was exercised.
+   */
+  const verdictOf = (entry: TelemetryRecord): boolean | null =>
+    typeof entry.detail?.passed === "boolean" ? entry.detail.passed : null;
   /**
    * A refused row's ledger entry. Positional fields are null by construction: a
    * refused row has no request to be positioned against, and that is usually why
@@ -880,7 +921,7 @@ export function buildCounterfactual(
   const refusedRow = (
     entry: TelemetryRecord,
     disposition: RowDisposition,
-    units: number | null
+    magnitude: { hi: number; lo: number } | null
   ): CreditedRow => ({
     invocationId: entry.invocation_id ?? null,
     tool: entry.tool,
@@ -897,19 +938,21 @@ export function buildCounterfactual(
     signed: entry.bytes_raw - entry.bytes_returned,
     capped: Math.min(entry.bytes_raw, rates.clientTruncationCap) - entry.bytes_returned,
     turnsCollapsed: entry.turns_collapsed,
-    units,
+    units: magnitude?.hi ?? null,
+    unitsLo: magnitude?.lo ?? null,
+    passed: verdictOf(entry),
   });
   const addRefused = (
     into: RefusedMagnitude,
     entry: TelemetryRecord,
     disposition: RowDisposition
   ): void => {
-    const units = wouldHaveAdded(entry);
-    if (units === null) into.unsized++;
-    else into.units += units;
+    const magnitude = wouldHaveAdded(entry);
+    if (magnitude === null) into.unsized++;
+    else into.units += magnitude.hi;
     // The counter and the ledger row are written HERE, together, so a class can
     // never be counted without being listed or listed without being counted.
-    rows.push(refusedRow(entry, disposition, units));
+    rows.push(refusedRow(entry, disposition, magnitude));
   };
   /** Tools that matched at least one request whose model has no configured price. */
   const unpriced = new Set<string>();
@@ -1044,6 +1087,12 @@ export function buildCounterfactual(
       capped,
       turnsCollapsed: entry.turns_collapsed,
       units: (capped / rates.charsPerToken) * multiplier,
+      // The SAME row at `T-1-t = 0`, which is B12's low horizon. Through
+      // `positionalMultiplier` rather than by branching on `ttl` here, so the
+      // write component is spelled in one place and cannot drift from the one
+      // the high horizon is built on.
+      unitsLo: (capped / rates.charsPerToken) * positionalMultiplier(0, 1, m, ttl),
+      passed: verdictOf(entry),
     });
 
     // Priced against the model of the request this saving was matched to, not

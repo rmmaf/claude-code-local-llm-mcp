@@ -2876,6 +2876,108 @@ describe("the four B12 scoring seams", () => {
     expect(creditedUnits).toBeCloseTo((9_000 / 3.7) * 2.0, 6);
   });
 
+  /**
+   * The same shape over a LONGER segment: four requests, so the row matches at
+   * `t = 1` of `T = 4` and the positional multiplier is 2.2 while the write
+   * component alone is 2.0.
+   *
+   * `transcriptWithLaterRequest` cannot serve as the `unitsLo` control. It runs
+   * to `T = 2` and matches at `t = 1`, so `T-1-t` is 0 and the two figures
+   * coincide BY CONSTRUCTION — a wrong implementation that reused the positional
+   * multiplier would pass on it.
+   */
+  async function transcriptWithLongSegment(echoedId: string): Promise<string> {
+    clock = 0;
+    return writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: echoedId }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100, read: 50_000 }),
+      assistantRecord("req-3", { write1h: 100 }),
+      assistantRecord("req-4", { write1h: 100 }),
+    ]);
+  }
+
+  it("carries each row at BOTH horizons, because the low side has its own biggest row", async () => {
+    // B12's `R_lo⁻ʳ` drops "its best row" -- the low figure's, not the high
+    // figure's. `units` is the sHi contribution (`capped/3.7 x multiplier`), and
+    // the scorer's `aggregate.ts` receives no `rates`, so without a second field
+    // on the row the low-side jackknife had to be computed from the high side's
+    // ranking. A guard about a different figure than the one it reports reads as
+    // a passed guard.
+    //
+    // DERIVED BY HAND. The row matches `req-2` at t=1 of a 4-request 1h segment:
+    //   multiplier = 2.0 + 0.1 x (4-1-1) = 2.2
+    //   units   = (min(50000,30000) - 1000)/3.7 x 2.2 = 29000/3.7 x 2.2
+    //   unitsLo = the write component alone, x 2.0
+    const id = "cccccccc-0000-4000-8000-cccccccccccc";
+    const file = await transcriptWithLongSegment(id);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 50_000, bytes_returned: 1_000, turns_collapsed: 3, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const row = result.rows[0];
+    expect(row?.disposition).toBe("credited");
+    expect(row?.multiplier).toBeCloseTo(2.2, 9);
+    expect(row?.units).toBeCloseTo(17_243.243243243243, 6);
+    expect(row?.unitsLo).toBeCloseTo(15_675.675675675675, 6);
+    // THE NEGATIVE CONTROL. If these two are ever equal on this fixture, the low
+    // horizon is being computed with the positional multiplier and `R_lo⁻ʳ` is
+    // ranking rows by the wrong figure.
+    expect(row?.unitsLo).not.toBeCloseTo(row?.units ?? 0, 3);
+  });
+
+  it("says a row could not report whether it closed, rather than saying it did not", async () => {
+    // `MIN_REPAIR_CLOSURES` needs a per-row `passed`, and `detail` is an
+    // untyped optional bag. Two rows carry no `passed` for entirely different
+    // reasons -- `repair`'s abort path writes a detail without it, and rows
+    // written before the field exist on disk -- and NEITHER of them is a repair
+    // that ran and failed to close. Reading absence as `false` would count both
+    // as evidence against `R_repair` being exercised.
+    const id = "ffffffff-0000-4000-8000-ffffffffffff";
+    const file = await transcriptWithLaterRequest(id);
+    const transcript = await readTranscript(file);
+    const base = { ts: at(500), tool: "repair", bytes_raw: 5_000, bytes_returned: 500, turns_collapsed: 1, latency_ms: 1 };
+    const result = buildCounterfactual(
+      transcript,
+      [
+        { ...base, invocation_id: id, detail: { passed: true } },
+        // The abort path (`repair.ts`) writes exactly this: a detail, no verdict.
+        { ...base, detail: { aborted: true, stopped_because: "aborted" } },
+        { ...base, detail: { passed: false } },
+        // Rows this old predate `detail` entirely.
+        { ...base },
+        // Enumerate the good values and refuse the rest: a string is not a verdict.
+        { ...base, detail: { passed: "true" } },
+      ],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.rows.map((r) => r.passed)).toEqual([true, null, false, null, null]);
+    // Stated separately because it is the whole point: `false` and `null` are
+    // different answers, and the ledger that counts closures must not merge them.
+    expect(result.rows[1]?.passed).not.toBe(false);
+    expect(result.rows[2]?.passed).not.toBeNull();
+  });
+
   it("restricts breakdownOfRequests to the requestIds it was handed", async () => {
     // FOUND BY RUNNING THE CONTROLS, NOT BY READING. Deleting this filter left
     // the whole 93-test suite green -- and it is the seam `A_o` is computed
