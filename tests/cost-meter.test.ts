@@ -3047,6 +3047,85 @@ describe("the four B12 scoring seams", () => {
     expect(result.rows[2]?.passed).not.toBeNull();
   });
 
+  it("returns exactly one row per telemetry entry, in the entries' own order", async () => {
+    // THE INVARIANT B12'S RUN-LEVEL LEDGER PAIRS ON, and until now it was half
+    // stated: `report.ts` claimed the ORDER and never the CARDINALITY. A
+    // telemetry row carries no identity that survives a null `invocation_id` --
+    // legacy rows have no id at all -- so the only key the coverage ledger can
+    // use is (artifact, ordinal), stamped at read time and zipped back onto the
+    // priced rows by INDEX. If `buildCounterfactual` ever pushed zero or two rows
+    // for one entry, or reordered them, every key past that point would name the
+    // wrong row and the exactly-once invariant would report itself satisfied
+    // while attributing magnitudes to the wrong observations.
+    //
+    // ALL FIVE DISPOSITIONS, deliberately interleaved so the assertion is about
+    // the pairing and not about a coincidence of a sorted list.
+    clock = 0;
+    const credited = "aaaa1111-0000-4000-8000-aaaa11110000";
+    const unmatchedId = "bbbb2222-0000-4000-8000-bbbb22220000";
+    const foreign = "cccc3333-0000-4000-8000-cccc33330000";
+    const ambiguous = "dddd4444-0000-4000-8000-dddd44440000";
+    const echo = (toolUseId: string, invocationId: string, ms: number): string =>
+      JSON.stringify({
+        type: "user",
+        uuid: `res-${toolUseId}`,
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(ms),
+        message: { content: [{ type: "tool_result", tool_use_id: toolUseId }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: invocationId }) }] },
+      });
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [
+            { type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" },
+            { type: "tool_use", id: "tu-2", name: "mcp__local-coder__gate" },
+          ],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      echo("tu-1", credited, 500),
+      assistantRecord("req-2", { write1h: 100, read: 50_000 }),
+      // AFTER the last billed request, so nothing can be priced against it: this
+      // is what makes the first telemetry row below `unmatched` rather than
+      // credited, and `unmatched` is the one class that never reaches
+      // `wouldHaveAdded` at all.
+      echo("tu-2", unmatchedId, 9_000),
+    ]);
+    const transcript = await readTranscript(file);
+
+    const base = { tool: "gate", bytes_raw: 5_000, bytes_returned: 500, turns_collapsed: 0, latency_ms: 1 };
+    const telemetry = [
+      { ...base, ts: at(10), invocation_id: unmatchedId },
+      { ...base, ts: at(20) },
+      { ...base, ts: at(30), invocation_id: foreign },
+      { ...base, ts: at(40), invocation_id: ambiguous },
+      { ...base, ts: at(50), invocation_id: credited },
+    ];
+    const result = buildCounterfactual(
+      transcript,
+      telemetry,
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([ambiguous])
+    );
+
+    expect(result.rows).toHaveLength(telemetry.length);
+    expect(result.rows.map((r) => r.disposition)).toEqual([
+      "unmatched",
+      "unverifiable",
+      "excludedForeign",
+      "ambiguous",
+      "credited",
+    ]);
+    // THE PAIRING ITSELF. Each entry's `ts` is distinct and is copied onto its
+    // row verbatim, so this is the index-for-index correspondence the ledger
+    // relies on, asserted rather than assumed.
+    expect(result.rows.map((r) => r.ts)).toEqual(telemetry.map((e) => e.ts));
+  });
+
   it("restricts breakdownOfRequests to the requestIds it was handed", async () => {
     // FOUND BY RUNNING THE CONTROLS, NOT BY READING. Deleting this filter left
     // the whole 93-test suite green -- and it is the seam `A_o` is computed

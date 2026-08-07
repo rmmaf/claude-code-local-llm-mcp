@@ -24,50 +24,48 @@ return (S - O) / (A + S)
 is clamped; the result may be negative and that is a real measurement. Return `0`
 when `A + S === 0`.
 
-## `rHiPlus(all): Evaluable<number>`
+## `rHiPlus(all, coverage): Evaluable<number>`
 
-Over EVERY observation handed in, admitted and dropped alike.
+Over EVERY observation handed in, admitted and dropped alike, plus the run-level
+ledger `UNIT-4.md` builds.
 
-**BOTH LEDGERS, EVERY TIME.** Each observation carries `refusals` (the rows it
-owns) and `unattributedRefusals` (every other refused row in its slice). Every
-rule below reads the two together: `unverifiable` can never be owned and
-`excludedForeign` is unowned on any normal input, so a figure built from
-`refusals` alone is missing most of two of the four classes the frozen metric
-names.
+**OWNED REFUSALS PER OBSERVATION, UNOWNED ONES FROM THE RUN LEDGER**, so each
+physical row enters exactly once. `unverifiable` can never be owned and
+`excludedForeign` is unowned on any normal input, so those reach the figure
+through `coverage.unowned`; a figure built from `refusals` alone is missing most
+of two of the four classes the frozen metric names.
 
-1. If any class of EITHER ledger, on any observation, has `unsized > 0`, return
-   `{ evaluable: false, reason: "..." }` naming the unsized refusal. An unknown
-   may not be summed as zero, and the run returns `open` rather than falling.
-1b. **If any class of any `unattributedRefusals` has `units < 0`, refuse the same
-   way.** See the note under step 4: an unattributed row may be counted twice,
-   and a duplicated NEGATIVE magnitude pushes this figure DOWN — toward a fall
-   the data does not support. A negative sum is the one case the declared types
-   can see, and it is refused rather than credited.
-2. Otherwise `refused` = sum over all observations, over both ledgers, of
-   `ambiguous.units + unverifiable.units + excludedForeign.units + unmatched.units`
-   — **all four classes**. Three classes gives a different number.
-3. `S = sum of sHi`, `A = sum of aO`, `O = sum of oO`.
-4. Return `{ evaluable: true, value: (S + refused - O) / (A + S + refused) }`.
+1. If any class of any observation's OWNED `refusals` has `unsized > 0`, return
+   `{ evaluable: false, reason: "..." }` naming it. An unknown may not be summed
+   as zero, and the run returns `open` rather than falling.
+2. If `coverage.reasons` is non-empty, return `{ evaluable: false }` with the
+   first of them. Those cover every run-level cause: a row two observations
+   claim, a row no slice saw, a row nobody could size, and a credited row no
+   window owns.
+3. Otherwise `refused` = sum over observations of `refusals`' four classes, PLUS
+   `coverage.unowned`'s four classes. **All four on both sides.** Three classes
+   gives a different number.
+4. `S = sum of sHi`, `A = sum of aO`, `O = sum of oO`.
+5. Return `{ evaluable: true, value: (S + refused - O) / (A + S + refused) }`.
 
-**On duplication, and why step 1b exists.** One unattributed row can sit in two
-slices when two sessions ran within a minute of each other (`admissionRule` 5
-names that window), and nothing in the declared types can tell which. Counting it
-twice moves this figure in the direction of the DUPLICATED MAGNITUDE'S SIGN, and
-`wouldHaveAdded` is signed: a row whose returned bytes exceed its capped raw
-bytes has a negative magnitude, and this project has measured whole tools net
-negative.
+**`unattributedRefusals` IS NOT SUMMED, AND STEP 1b IS GONE.** They went together
+and the reason is one reason. That ledger is a per-observation TOTAL of rows no
+observation owns, and one physical row sits in two slices whenever two sessions
+ran within a minute of each other — `admissionRule` 5 names `scopeTelemetry`'s
+±60,000 ms window by hand. Adding those totals counted such a row twice, and
+`wouldHaveAdded` is signed:
 
-- **Positive** — the ordinary case — moves `R_hi+` up. Safe: it can turn a true
-  fall into `open` and can never manufacture a hold, which is decided by `R_lo`,
-  its recomputations, the strata and `R_gate`.
-- **Negative** moves it DOWN and can manufacture a fall the data does not
+- **Positive** — the ordinary case — moved `R_hi+` up. Safe on its own: it can
+  turn a true fall into `open` and can never manufacture a hold.
+- **Negative** moved it DOWN and could manufacture a fall the data does not
   support. That is the error the whole design is arranged to prevent.
 
-So: do not deduplicate, and refuse per step 1b when a class sum is negative.
-**That is not a complete guard and must not be described as one** — a class sum
-of zero can hide a +100 and a −100, and duplicating one of them moves the figure
-with nothing to see it. Only `FINDINGS.md` F12's run-level exactly-once ledger
-closes it. This unit refuses the case it can see and says so.
+Step 1b refused on a negative class sum and was declared incomplete in this file
+the day it was written: a class sum of zero hides a +100 and a −100. It is
+removed rather than kept alongside the new ledger, because a guard standing over
+a quantity nothing computes any more reads as protection while providing none.
+`runCoverage` deduplicates by row identity instead, and refuses what it cannot
+resolve.
 
 ## `deliveryScore(terms, tools, horizon, minClosures?): DeliveryScore`
 
@@ -163,6 +161,11 @@ Fill every field of `B12Result` from the functions above.
 - `cappedVsUncapped`, `clampedVsSigned`, `rowsNetNegative`: derive from the rows
   on the admitted observations.
 - `thresholds` is the literal `{ hold: 0.3, fall: 0.15 }`.
+- `coverage`: the `RunTelemetryCoverage` the caller passed in, verbatim, on the
+  artifact's face. Published whether or not `rHiPlus` was evaluable, and
+  especially when it was not, because it carries the reason — and a reader can
+  check the exactly-once claim against `unownedRows` instead of taking the
+  totals on trust.
 - `verdict`: `"open"` unless something clearly decides otherwise; never invent a
   hold. `"fallen"` requires `rHiPlus.evaluable === true`, its value `< 0.15`,
   **and all four `strata` cells evaluable.** `fallsIf` names the last one twice:
@@ -171,6 +174,15 @@ Fill every field of `B12Result` from the functions above.
   VOID or `open` — never a fall on a short set". An unevaluable cell is exactly
   that case, whether it came from the 5-observation floor or from
   `unknownStratum`.
+
+  **A HOLD BRANCH DOES NOT EXIST YET AND OWES ONE MORE GUARD WHEN IT IS WRITTEN.**
+  A credited row no window owns is omitted from `R_lo` and `R_hi`, and magnitudes
+  are SIGNED — so omitting a NEGATIVE one RAISES both figures, toward a hold.
+  "Omission deflates the hold, which is the safe direction" was written during
+  this fix and is false as stated. So `coverage.unattributedCredited.count > 0`
+  must block a hold exactly as it blocks a fall. Written down rather than
+  implemented, because a guard on a branch nothing reaches is a guard nobody has
+  seen fail.
 
 ## Done when
 

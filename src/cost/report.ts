@@ -918,6 +918,17 @@ export function buildCounterfactual(
   /**
    * Every row the join saw, credited or refused, in the order it was read.
    *
+   * **EXACTLY ONE ROW PER TELEMETRY ENTRY.** The order was already stated here;
+   * the cardinality was not, and B12's run-level coverage ledger PAIRS THESE BY
+   * INDEX with the `telemetry` argument to recover a row identity that survives a
+   * null `invocation_id`. Every branch of the loop below pushes one row and then
+   * `continue`s, and the credited path reaches no second push, so
+   * `rows.length === telemetry.length` holds on every input. Nothing sorts or
+   * splices this array — `byTool` is sorted on the way out, `rows` is not.
+   * `tests/cost-meter.test.ts` proves it over a fixture carrying all five
+   * dispositions, because an invariant relied on across a module boundary and
+   * checked by nobody is a comment, not a guarantee.
+   *
    * B12 needs this for two independent reasons and neither is display. Its unit
    * of observation is a TASK WINDOW, not a session, and a window cannot be scored
    * by restricting the transcript: `positionalMultiplier` reads `index` and

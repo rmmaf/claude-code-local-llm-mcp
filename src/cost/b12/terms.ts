@@ -28,13 +28,14 @@ import {
 import type { CreditedRow } from "../report.js";
 import { rateKey } from "../rates.js";
 import type { Rates } from "../rates.js";
-import type { TelemetryRecord } from "../../telemetry.js";
 import type { Transcript } from "../transcript.js";
 import { subagentShare } from "./strata.js";
 import type {
   B12Observation,
   DeliveryTerms,
   Disposition,
+  IdentifiedRow,
+  KeyedRow,
   ObservationTerms,
   RefusalLedger,
 } from "./types.js";
@@ -43,8 +44,19 @@ export interface TermsInput {
   observation: B12Observation;
   /** The FULL lineage — continuation and fork children included, never one file. */
   transcript: Transcript;
-  /** Rows already narrowed to this session by `scopeTelemetry`. */
-  telemetry: TelemetryRecord[];
+  /**
+   * Rows already narrowed to this session by `scopeTelemetry`, each carrying the
+   * run identity `identify` stamped on it.
+   *
+   * IDENTIFIED, BECAUSE THE SLICES OVERLAP. `scopeTelemetry` admits a row on a
+   * ±60,000 ms window as well as on an exact id match, so one physical row sits
+   * in two observations' slices whenever two arms ran within a minute — and
+   * nothing on `TelemetryRecord` can tell the run-level ledger that the two
+   * sightings are one row. `invocation_id` cannot: it is optional, absent on
+   * every row written before it existed, and shared by design across a resumed
+   * session's descendants.
+   */
+  telemetry: readonly IdentifiedRow[];
   /**
    * Carries the MEASURED `clientTruncationCap` for the build that ran. VOID 8
    * requires it measured per version; `.local-coder/rates.json` is frozen
@@ -148,20 +160,39 @@ export function computeTerms(input: TermsInput): ObservationTerms {
   // and deflate every multiplier — see the header.
   const counterfactual = buildCounterfactual(
     input.transcript,
-    input.telemetry,
+    input.telemetry.map((r) => r.record),
     input.rates,
     buildSessionReport(input.transcript, input.rates),
     input.ambiguousIds
   );
 
-  const rows: CreditedRow[] = [];
+  // THE PAIRING, ASSERTED RATHER THAN ASSUMED. `buildCounterfactual` returns
+  // exactly one row per telemetry entry, in input order — every branch of its
+  // loop pushes one and continues, nothing sorts the array, and
+  // `tests/cost-meter.test.ts` proves it over all five dispositions. That is the
+  // only way back from a priced row to the run identity of the telemetry row it
+  // came from, so if the invariant ever breaks, every key past the break would
+  // name the wrong row and the run-level ledger would report itself satisfied
+  // while attributing magnitudes to the wrong observations. Loud is the only
+  // acceptable failure here.
+  if (counterfactual.rows.length !== input.telemetry.length) {
+    throw new Error(
+      `computeTerms: the counterfactual returned ${counterfactual.rows.length} row(s) for ${input.telemetry.length} telemetry entr(ies), so no row can be paired with its run identity`
+    );
+  }
+
+  const rows: KeyedRow[] = [];
+  const unattributed: KeyedRow[] = [];
   const refusals = emptyLedger();
   const unattributedRefusals = emptyLedger();
   const perDelivery: Record<string, DeliveryTerms> = {};
   let sLo = 0;
   let sHi = 0;
 
-  for (const row of counterfactual.rows) {
+  for (const [i, row] of counterfactual.rows.entries()) {
+    const key = input.telemetry[i]?.key;
+    if (key === undefined) throw new Error(`computeTerms: no telemetry entry at index ${i}`);
+
     // OWNERSHIP, and nothing else, decides which side a row falls on. Writing
     // the rule this way rather than as a list of dispositions is what keeps it
     // correct: `unverifiable` can never be owned (it has no invocation id by
@@ -169,11 +200,18 @@ export function computeTerms(input: TermsInput): ObservationTerms {
     // two sets are not exact complements (`FINDINGS.md` F10).
     const isMine = row.invocationId !== null && mine.has(row.invocationId);
     if (!isMine) {
+      // INDIVIDUALLY AND AS A SUMMARY, in one pass so the two cannot drift. The
+      // list is what `runCoverage` deduplicates by key; the ledger beside it is
+      // this window's own diagnostic and no figure reads it. A CREDITED row
+      // reaches here too — `addRefusal` ignores it — and that is `FINDINGS.md`
+      // F9: until the list existed it was dropped from every `S_o` and from
+      // every refusal class at once.
+      unattributed.push({ key, row });
       addRefusal(unattributedRefusals, row);
       continue;
     }
 
-    rows.push(row);
+    rows.push({ key, row });
     if (row.disposition !== "credited") {
       addRefusal(refusals, row);
       continue;
@@ -212,6 +250,7 @@ export function computeTerms(input: TermsInput): ObservationTerms {
     oO,
     rows,
     refusals,
+    unattributed,
     unattributedRefusals,
     subagentShare: subagentShare(input.observation, input.transcript),
     perDelivery,

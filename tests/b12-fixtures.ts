@@ -15,8 +15,16 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import type { CreditedLedgerRow, CreditedRow } from "../src/cost/report.js";
-import type { Arm, B12Observation, ObservationTerms } from "../src/cost/b12/types.js";
+import type { CreditedLedgerRow, RefusedLedgerRow, RowDisposition } from "../src/cost/report.js";
+import type {
+  Arm,
+  B12Observation,
+  IdentifiedRow,
+  KeyedRow,
+  ObservationTerms,
+  RunTelemetryCoverage,
+} from "../src/cost/b12/types.js";
+import { identify, runCoverage } from "../src/cost/b12/coverage.js";
 import { makeTempRoot } from "./helpers.js";
 
 /** Epoch base shared by every fixture, so timestamps are comparable across files. */
@@ -212,6 +220,72 @@ export function ledger(over: Partial<ObservationTerms["refusals"]> = {}): Observ
   };
 }
 
+/**
+ * A keyed row. The key is what the run-level ledger identifies a physical
+ * telemetry row by, so a fixture that wants two observations to hold the SAME row
+ * gives them the same key, and one that wants two different rows must not.
+ */
+export function keyed(key: string, over: Partial<CreditedLedgerRow> = {}): KeyedRow {
+  return { key, row: creditedRow(over) };
+}
+
+/**
+ * A keyed REFUSED row. `units` and `unitsLo` are null together — the union says
+ * so — and `null` here means nobody could size it, which is the only thing it
+ * ever means.
+ */
+export function refused(
+  key: string,
+  disposition: Exclude<RowDisposition, "credited">,
+  units: number | null
+): KeyedRow {
+  const row: RefusedLedgerRow = {
+    invocationId: null,
+    tool: "gate",
+    ts: at(0),
+    disposition,
+    thread: null,
+    index: null,
+    segmentSize: null,
+    ttl: null,
+    multiplier: null,
+    rateKey: null,
+    bytesRaw: 10_000,
+    bytesReturned: 1_000,
+    signed: 9_000,
+    capped: 9_000,
+    turnsCollapsed: 0,
+    units,
+    unitsLo: units,
+    passed: null,
+  };
+  return { key, row };
+}
+
+/** The universe argument of `runCoverage`, from keys alone. */
+export function universeOf(...keys: string[]): IdentifiedRow[] {
+  return keys.map((key) => ({
+    key,
+    record: { ts: at(0), tool: "gate", bytes_raw: 0, bytes_returned: 0, turns_collapsed: 0, latency_ms: 0 },
+  }));
+}
+
+/**
+ * A coverage that blocks nothing, for the arm of a test that is not the subject.
+ *
+ * Built by running the REAL `runCoverage` over the observations rather than by
+ * hand-writing a clean-looking object: a fixture that fabricates
+ * `exactlyOnce: true` would let every `rHiPlus` assertion in the suite pass while
+ * the ledger it depends on was broken.
+ */
+export function coverageOf(all: readonly ObservationTerms[]): RunTelemetryCoverage {
+  const keys = all.flatMap((t) => [...t.rows, ...t.unattributed].map((r) => r.key));
+  return runCoverage(universeOf(...new Set(keys)), all);
+}
+
+/** `identify`, re-exported so an oracle can stamp its own artifact's rows. */
+export { identify };
+
 export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
   return {
     taskId: "t-1",
@@ -221,10 +295,11 @@ export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
     sLo: 0,
     sHi: 0,
     oO: 0,
-    rows: [] as CreditedRow[],
+    rows: [] as KeyedRow[],
     refusals: ledger(),
     // Empty by default so an existing expectation still describes the same
-    // arithmetic. A test about the unattributed classes has to say so.
+    // arithmetic. A test about the unattributed rows has to say so.
+    unattributed: [] as KeyedRow[],
     unattributedRefusals: ledger(),
     subagentShare: { evaluable: true, value: { own: 1, sidechain: 0, share: 0, stratum: "solo" } },
     perDelivery: {},

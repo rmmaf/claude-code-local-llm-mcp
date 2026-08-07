@@ -56,13 +56,28 @@ In order:
 2. `aO` = `breakdownOfRequests(input.transcript.requests, input.rates, owned).units.total`.
 3. `oO` = `unitsAddedByInstallation(input.transcript, input.rates, input.installedChars, owned)`.
 4. `const mine = windowInvocationIds(input.observation, input.transcript)`.
-5. Call `buildCounterfactual(input.transcript, input.telemetry, input.rates,
-   buildSessionReport(input.transcript, input.rates), input.ambiguousIds)`.
+5. Call `buildCounterfactual(input.transcript, input.telemetry.map(r => r.record),
+   input.rates, buildSessionReport(input.transcript, input.rates),
+   input.ambiguousIds)`.
    **Pass the WHOLE transcript.** Never a filtered one: `positionalMultiplier`
    reads `t` and `T` off the full segment, and shortening it changes the answer.
-6. Keep only the returned `rows` whose `invocationId` is non-null and in `mine`.
-   Those are this window's rows; put them in `rows`.
-7. For each kept row with `disposition === "credited"`:
+5b. **Pair the returned rows with the telemetry BY INDEX, and check the lengths
+   first.** `input.telemetry` is `IdentifiedRow[]` — each entry carries the run
+   identity `identify` stamped on it — and `buildCounterfactual` returns exactly
+   one row per entry, in input order. That pairing is the only route from a
+   priced row back to the physical telemetry row it came from, and an
+   `invocationId` cannot serve: it is optional, absent on every legacy row, and
+   shared across a resumed session's descendants. Throw if the two lengths
+   differ. If the invariant ever breaks, every key past the break names the wrong
+   row and the run-level ledger reports itself satisfied while attributing
+   magnitudes to the wrong observations.
+6. Split the returned rows on OWNERSHIP: `invocationId` non-null and in `mine`.
+   - owned → `rows`, as `{ key, row }`;
+   - everything else → `unattributed`, as `{ key, row }`, **credited rows
+     included**. A credited row no window owns is `FINDINGS.md` F9; before this
+     list existed it was dropped from `S_o` and from every refusal class at once,
+     and no void condition saw it.
+7. For each row in `rows` with `disposition === "credited"`:
    - `sHi += row.units` and `sLo += row.unitsLo`. **Both are already on the row**
      — `units` is the observed segment, `unitsLo` the write component alone
      (`T - 1 - t = 0`). Do not recompute either from `capped` and a multiplier:
@@ -88,9 +103,15 @@ In order:
     way: for each of the four classes, count the rows with that `disposition`;
     sum `row.units` into `units` when it is a number; increment `unsized` for
     each whose `units` is `null`.
-    - `refusals` — over the KEPT rows, as step 6 defines them. This window's own.
-    - `unattributedRefusals` — every OTHER refused row the counterfactual
-      returned: `invocationId` null, or an id not in `mine`.
+    - `refusals` — over the OWNED rows, as step 6 defines them. This window's own.
+    - `unattributedRefusals` — the refused part of `unattributed`, filled in the
+      SAME PASS as the list so the two cannot drift.
+
+    **`unattributedRefusals` is a diagnostic and no figure reads it.** It used to
+    be what `rHiPlus` summed, and that is the F12 defect: a per-observation total
+    of rows no observation owns double-counts every row two slices share, and
+    `wouldHaveAdded` is signed, so a duplicated negative magnitude pushes the
+    fall-side figure DOWN. `runCoverage` deduplicates the LIST by key instead.
 
     Do not special-case any class. **`unverifiable` is the one that can never be
     owned** — it is refused precisely because it has no `invocation_id`, so it is
@@ -105,7 +126,11 @@ In order:
     short.
 
     Do not try to attribute the second group to a window. Nothing in the data
-    can, and `aggregate.ts` credits it whole.
+    can. **This line used to end "and `aggregate.ts` credits it whole", which is
+    no longer true and was never safe:** `runCoverage` deduplicates the group by
+    key across the whole run, and `rHiPlus` refuses outright when the run cannot
+    say what a row was or what it was worth. Crediting it whole is precisely the
+    double count F12 records.
 11. `subagentShare` = `subagentShare(input.observation, input.transcript)` from
     `./strata.js`.
 12. `billedRequestCount` = the number of `transcript.requests` in `owned`.

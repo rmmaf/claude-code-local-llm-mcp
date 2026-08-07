@@ -11,8 +11,12 @@
 import { describe, expect, it } from "vitest";
 
 import { aggregate, deliveryScore, poolRatio, recompute, rHiPlus, strataCells } from "../src/cost/b12/aggregate.js";
+import { runCoverage } from "../src/cost/b12/coverage.js";
 import type { ObservationTerms } from "../src/cost/b12/types.js";
-import { creditedRow, ledger, terms } from "./b12-fixtures.js";
+import { coverageOf, keyed, ledger, refused, terms, universeOf } from "./b12-fixtures.js";
+
+/** `rHiPlus` over a set, with the coverage the set itself implies. */
+const fallSide = (all: readonly ObservationTerms[]) => rHiPlus(all, coverageOf(all));
 
 describe("poolRatio — the one arithmetic every figure in the artifact goes through", () => {
   it("is a RATIO OF SUMS, which is not the mean of per-observation ratios", () => {
@@ -69,7 +73,7 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
         unmatched: { count: 0, units: 0, unsized: 0 },
       },
     });
-    const result = rHiPlus([withUnsized]);
+    const result = fallSide([withUnsized]);
     expect(result.evaluable).toBe(false);
     if (!result.evaluable) expect(result.reason.length).toBeGreaterThan(0);
   });
@@ -89,7 +93,7 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
         unmatched: { count: 1, units: 40, unsized: 0 },
       },
     });
-    const result = rHiPlus([sized]);
+    const result = fallSide([sized]);
     expect(result.evaluable).toBe(true);
     if (result.evaluable) {
       expect(result.value).toBeCloseTo(200 / 1_200, 12);
@@ -110,19 +114,16 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
     // `R_hi+` is defined over four -- the fall-side figure was short by
     // construction, in the direction that stops the project.
     //
-    // By hand: sHi 100 on aO 1000. Owned `ambiguous` 10; unattributed
-    // `unverifiable` 20 and `excludedForeign` 30. refused = 60, so
-    // (100+60)/(1000+100+60) = 160/1160.
+    // By hand: sHi 100 on aO 1000. Owned `ambiguous` 10; UNOWNED `unverifiable`
+    // 20 and `excludedForeign` 30, reaching the figure through the run ledger.
+    // refused = 60, so (100+60)/(1000+100+60) = 160/1160.
     const both = terms({
       aO: 1_000,
       sHi: 100,
       refusals: ledger({ ambiguous: { count: 1, units: 10, unsized: 0 } }),
-      unattributedRefusals: ledger({
-        unverifiable: { count: 1, units: 20, unsized: 0 },
-        excludedForeign: { count: 1, units: 30, unsized: 0 },
-      }),
+      unattributed: [refused("u1", "unverifiable", 20), refused("u2", "excludedForeign", 30)],
     });
-    const result = rHiPlus([both]);
+    const result = fallSide([both]);
     expect(result.evaluable).toBe(true);
     if (result.evaluable) {
       expect(result.value).toBeCloseTo(160 / 1_160, 12);
@@ -135,51 +136,144 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
     }
   });
 
-  it("refuses on an unsized magnitude in EITHER ledger, not just the owned one", () => {
-    // PROVED CONTROL -- see the note in the first rHiPlus block above.
+  it("refuses an unsized UNOWNED magnitude, not just an unsized owned one", () => {
+    // PROVED CONTROL -- see the note in the first rHiPlus block above. Rewritten
+    // 2026-08-07: the unowned side now arrives as ROWS through `runCoverage`
+    // rather than as a second per-observation ledger, because summing that
+    // ledger across observations counted every shared row twice (F12).
     //
     // `unmatched` is unsized BY CONSTRUCTION: the request that is missing is the
-    // one a magnitude would have been priced against. If that arrives through
-    // the unattributed ledger and the refusal check only reads the owned one,
-    // `R_hi+` returns a confident number built on an unknown summed as zero.
+    // one a magnitude would have been priced against. If the refusal check reads
+    // only the owned ledger, `R_hi+` returns a confident number built on an
+    // unknown summed as zero.
     const unsizedElsewhere = terms({
       aO: 1_000,
       sHi: 100,
-      unattributedRefusals: ledger({ unmatched: { count: 1, units: 0, unsized: 1 } }),
+      unattributed: [refused("u1", "unmatched", null)],
     });
-    const result = rHiPlus([unsizedElsewhere]);
+    const result = fallSide([unsizedElsewhere]);
     expect(result.evaluable).toBe(false);
     if (!result.evaluable) expect(result.reason.length).toBeGreaterThan(0);
   });
 
-  it("refuses a NEGATIVE unattributed magnitude, which duplication turns into a fall", () => {
-    // PROVED CONTROL -- see the note in the first rHiPlus block above.
+  it("counts a row two observations both hold ONCE, which is the whole of F12", () => {
+    // THE FIX ITSELF, and it replaces the guard that used to stand here. That
+    // guard refused on a NEGATIVE unattributed class sum and was declared
+    // incomplete in writing the day it landed -- a class sum of zero hides a +100
+    // and a -100. It is gone with the sum it guarded.
     //
-    // An unattributed row may be counted twice: `scopeTelemetry` admits anything
-    // within 60 s, so one row can sit in two observations' slices and nothing in
-    // the declared types can tell. Duplication moves this figure in the
-    // direction of the duplicated magnitude's SIGN, and `wouldHaveAdded` is
-    // signed -- a row whose returned bytes exceed its capped raw bytes has a
-    // negative magnitude, and this project has measured whole tools net negative.
-    // A duplicated positive is safe (it can only prevent a fall); a duplicated
-    // NEGATIVE manufactures one.
-    const negative = terms({
-      aO: 1_000,
-      sHi: 100,
-      unattributedRefusals: ledger({ excludedForeign: { count: 1, units: -400, unsized: 0 } }),
-    });
-    expect(rHiPlus([negative]).evaluable).toBe(false);
+    // `scopeTelemetry` admits a row on a ±60,000 ms window as well as on an exact
+    // id match, so one physical row sits in BOTH observations' slices whenever
+    // two arms ran within a minute. `admissionRule` 5 names that window by hand.
+    // Here both hold the same key `u1` at -400.
+    //
+    // By hand: A = 2000, S_hi = 200, refused = -400 counted once.
+    //   (200 - 400) / (2000 + 200 - 400) = -200/1800 = -0.1111...
+    // Counted twice it is (200 - 800) / (2000 + 200 - 800) = -600/1400 = -0.4286,
+    // which is 3.9x further below the 15% fall line -- a fall manufactured out of
+    // one row being read twice.
+    const shared = refused("u1", "excludedForeign", -400);
+    const two = [
+      terms({ taskId: "a", aO: 1_000, sHi: 100, unattributed: [shared] }),
+      terms({ taskId: "b", aO: 1_000, sHi: 100, unattributed: [shared] }),
+    ];
+    const result = fallSide(two);
+    expect(result.evaluable).toBe(true);
+    if (result.evaluable) {
+      expect(result.value).toBeCloseTo(-200 / 1_800, 12);
+      expect(result.value).not.toBeCloseTo(-600 / 1_400, 3);
+    }
 
-    // THE ANTI-VACUITY ARM. The same shape with the sign flipped is evaluable --
-    // otherwise this test would be satisfied by an implementation that refuses
-    // every non-empty unattributed ledger, which would make `R_hi+` unevaluable
-    // on nearly every real run and quietly kill the fall side.
-    const positive = terms({
+    // AND THE ANTI-VACUITY ARM: two DIFFERENT rows are still two rows. The
+    // assertion above already catches an implementation that dropped the unowned
+    // side entirely -- that returns 200/2200, not -200/1800 -- but not one that
+    // deduplicates too hard, by disposition or by tool instead of by row
+    // identity. Distinct keys at -400 each give
+    // (200 - 800)/(2000 + 200 - 800) = -600/1400, the twice-counted number the
+    // first arm refuses.
+    const distinct = [
+      terms({ taskId: "a", aO: 1_000, sHi: 100, unattributed: [refused("u1", "excludedForeign", -400)] }),
+      terms({ taskId: "b", aO: 1_000, sHi: 100, unattributed: [refused("u2", "excludedForeign", -400)] }),
+    ];
+    const spread = fallSide(distinct);
+    expect(spread.evaluable).toBe(true);
+    if (spread.evaluable) expect(spread.value).toBeCloseTo(-600 / 1_400, 12);
+  });
+
+  it("refuses when a CREDITED row belongs to no window, which is the whole of F9", () => {
+    // The row is real, its magnitude is known, and it is in no `S_o` and in none
+    // of the four refusal classes -- so it was summed ZERO times and no void
+    // condition saw it. `design.metric` defines `S_o` over "o's credited rows"
+    // and limits `R_hi+`'s additions to the four classes, so crediting it here
+    // would amend the estimand. The figure refuses instead.
+    const orphan = terms({
       aO: 1_000,
       sHi: 100,
-      unattributedRefusals: ledger({ excludedForeign: { count: 1, units: 400, unsized: 0 } }),
+      unattributed: [keyed("c1", { units: 500, unitsLo: 300 })],
     });
-    expect(rHiPlus([positive]).evaluable).toBe(true);
+    const result = fallSide([orphan]);
+    expect(result.evaluable).toBe(false);
+    // Reported with its size, so the artifact says how much was omitted rather
+    // than only that something was.
+    const coverage = coverageOf([orphan]);
+    expect(coverage.unattributedCredited.count).toBe(1);
+    expect(coverage.unattributedCredited.units).toBe(500);
+
+    // THE ANTI-VACUITY ARM. The same shape with a REFUSED unowned row is
+    // evaluable -- otherwise this would be satisfied by an implementation that
+    // refuses on any unowned row at all, which would make `R_hi+` unevaluable on
+    // nearly every real run and quietly kill the fall side.
+    const refusedInstead = terms({
+      aO: 1_000,
+      sHi: 100,
+      unattributed: [refused("r1", "excludedForeign", 500)],
+    });
+    expect(fallSide([refusedInstead]).evaluable).toBe(true);
+  });
+
+  it("refuses a row two observations both CLAIM, rather than picking one", () => {
+    // An `invocation_id` is CALL identity, and `windowInvocationIds` maps tool-use
+    // ids onto it with no one-to-one guarantee, so two windows can both own a
+    // key. Assigning it to either would credit one task with another's saving;
+    // assigning it to neither would drop it. It is refused and named.
+    const shared = keyed("c1", { units: 500, unitsLo: 300 });
+    const two = [
+      terms({ taskId: "a", aO: 1_000, sHi: 100, rows: [shared] }),
+      terms({ taskId: "b", aO: 1_000, sHi: 100, rows: [shared] }),
+    ];
+    expect(fallSide(two).evaluable).toBe(false);
+    expect(coverageOf(two).contested).toHaveLength(1);
+  });
+
+  it("refuses a row of the run that fell into no observation's slice at all", () => {
+    // THE ARGUMENT THAT MAKES `runCoverage` TAKE A UNIVERSE. `computeTerms` is
+    // handed a slice `scopeTelemetry` has already narrowed, so a row outside
+    // every window is absent from every `ObservationTerms` -- a coverage built
+    // from the observations alone cannot see that it exists, and it has neither a
+    // disposition nor a magnitude.
+    const one = terms({ aO: 1_000, sHi: 100 });
+    const coverage = runCoverage(universeOf("orphan-key"), [one]);
+    expect(coverage.unsliced).toEqual(["orphan-key"]);
+    expect(rHiPlus([one], coverage).evaluable).toBe(false);
+
+    // ANTI-VACUITY: the same call with an empty universe is evaluable.
+    expect(rHiPlus([one], runCoverage([], [one])).evaluable).toBe(true);
+  });
+
+  it("refuses an unowned row two slices priced differently, and does not average them", () => {
+    // The two slices are two different transcripts. `wouldHaveAdded` prices
+    // against the next billed request IN THAT TRANSCRIPT, so one physical row can
+    // be worth 400 in one session's arithmetic and 900 in another's, and nothing
+    // in the data says which transcript pays. Averaging, or taking either, would
+    // publish a guess as a measurement.
+    const two = [
+      terms({ taskId: "a", aO: 1_000, sHi: 100, unattributed: [refused("u1", "excludedForeign", 400)] }),
+      terms({ taskId: "b", aO: 1_000, sHi: 100, unattributed: [refused("u1", "excludedForeign", 900)] }),
+    ];
+    expect(fallSide(two).evaluable).toBe(false);
+    const row = coverageOf(two).unownedRows[0];
+    expect(row?.units).toBeNull();
+    expect(row?.conflict).toContain("priced it differently");
   });
 });
 
@@ -203,14 +297,14 @@ describe("recompute — the row guard ranks per horizon, because the two disagre
         aO: 100,
         sHi: 100,
         sLo: 60,
-        rows: [creditedRow({ units: 100, unitsLo: 60 })],
+        rows: [keyed("hi-row", { units: 100, unitsLo: 60 })],
       }),
       terms({
         taskId: "lo-heavy",
         aO: 100,
         sHi: 80,
         sLo: 70,
-        rows: [creditedRow({ units: 80, unitsLo: 70 })],
+        rows: [keyed("lo-row", { units: 80, unitsLo: 70 })],
       }),
     ];
     const r = recompute(admitted, []);
@@ -370,7 +464,7 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
 describe("aggregate — the artifact publishes the banned form and decides on the other one", () => {
   it("reports the mean beside the pooled figure, and the two disagree by design", () => {
     const set = [terms({ taskId: "a", aO: 100, sLo: 50, sHi: 50 }), terms({ taskId: "b", aO: 900 })];
-    const result = aggregate({ runId: "run-1", admitted: set, dropped: [] });
+    const result = aggregate({ runId: "run-1", admitted: set, dropped: [], coverage: coverageOf(set) });
     expect(result.rLo).toBeCloseTo(0.047619047619047616, 12);
     expect(result.meanOfPerObservationRatios).toBeCloseTo(0.16666666666666666, 12);
     // If these two are ever equal on this fixture, something started reading the
@@ -405,7 +499,12 @@ describe("aggregate — the artifact publishes the banned form and decides on th
         },
       })
     );
-    const result = aggregate({ runId: "run-1", admitted: withInstall, dropped: [] });
+    const result = aggregate({
+      runId: "run-1",
+      admitted: withInstall,
+      dropped: [],
+      coverage: coverageOf(withInstall),
+    });
     expect(result.identityHolds).toBe(false);
     // And the pooled figure is the one with O subtracted, so a reader can see
     // WHICH of the two the artifact decided on.
@@ -415,8 +514,29 @@ describe("aggregate — the artifact publishes the banned form and decides on th
   it("leaves a stratum below the floor unevaluable rather than scoring it", () => {
     // `holdsIf` 3 wants four evaluable cells. Two observations is not a cell.
     const set = [terms({ taskId: "a", aO: 100, sLo: 50 }), terms({ taskId: "b", aO: 900 })];
-    const result = aggregate({ runId: "run-1", admitted: set, dropped: [] });
+    const result = aggregate({ runId: "run-1", admitted: set, dropped: [], coverage: coverageOf(set) });
     expect(result.strata.testRed.evaluable).toBe(false);
     expect(result.strata.solo.evaluable).toBe(false);
+  });
+
+  it("publishes the coverage on the artifact's face even when it is what refused", () => {
+    // `design.artifacts` owes a result file "whether it scores or voids", and the
+    // reason a run returned `open` is the most useful thing on it. Carrying the
+    // ledger rather than a boolean also lets a reader check the exactly-once
+    // claim against `unownedRows` instead of taking the totals on trust.
+    const orphan = terms({ aO: 1_000, sHi: 100, unattributed: [keyed("c1", { units: 500 })] });
+    const result = aggregate({
+      runId: "run-1",
+      admitted: [orphan],
+      dropped: [],
+      coverage: coverageOf([orphan]),
+    });
+    expect(result.rHiPlus.evaluable).toBe(false);
+    expect(result.coverage.exactlyOnce).toBe(false);
+    expect(result.coverage.unownedRows).toHaveLength(1);
+    expect(result.coverage.reasons[0]).toBe(
+      result.rHiPlus.evaluable ? undefined : result.rHiPlus.reason
+    );
+    expect(result.verdict).toBe("open");
   });
 });

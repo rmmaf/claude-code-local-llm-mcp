@@ -13,8 +13,18 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { computeTerms, windowInvocationIds } from "../src/cost/b12/terms.js";
 import { DEFAULT_RATES } from "../src/cost/rates.js";
+import type { TelemetryRecord } from "../src/telemetry.js";
 import { readTranscript } from "../src/cost/transcript.js";
-import { at, makeScratch, observation, req, toolResult, withToolUse, writeSession } from "./b12-fixtures.js";
+import { at, identify, makeScratch, observation, req, toolResult, withToolUse, writeSession } from "./b12-fixtures.js";
+
+/**
+ * Stamp the run identity `computeTerms` now requires.
+ *
+ * The key is (artifact, ordinal) because nothing on a `TelemetryRecord` can
+ * identify a physical row: `invocation_id` is optional, absent on every legacy
+ * row, and shared across a resumed session's descendants.
+ */
+const rowsOf = (...records: TelemetryRecord[]) => identify("telemetry.jsonl", records);
 
 const scratch = makeScratch();
 afterEach(async () => scratch.cleanup());
@@ -72,7 +82,7 @@ describe("computeTerms — every constant derived by hand", () => {
     const result = computeTerms({
       observation: observation({ originatedRequestIds: ALL_FOUR }),
       transcript,
-      telemetry: [row],
+      telemetry: rowsOf(row),
       rates: DEFAULT_RATES,
       installedChars: 3_700,
       ambiguousIds: new Set(),
@@ -107,7 +117,12 @@ describe("computeTerms — every constant derived by hand", () => {
 
     expect(result.billedRequestCount).toBe(4);
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0]?.disposition).toBe("credited");
+    expect(result.rows[0]?.row.disposition).toBe("credited");
+    // AND THE KEY IS THE ONE THE READER STAMPED. The pairing between a priced
+    // row and its telemetry entry is by index, so a row carrying the wrong key
+    // would attribute a magnitude to the wrong observation at run level with
+    // nothing to see it.
+    expect(result.rows[0]?.key).toBe(JSON.stringify(["telemetry.jsonl", 0]));
   });
 
   it("credits nothing to a window that did not make the call", async () => {
@@ -119,7 +134,7 @@ describe("computeTerms — every constant derived by hand", () => {
     const result = computeTerms({
       observation: observation({ originatedRequestIds: ["req-3", "req-4"] }),
       transcript,
-      telemetry: [row],
+      telemetry: rowsOf(row),
       rates: DEFAULT_RATES,
       installedChars: 3_700,
       ambiguousIds: new Set(),
@@ -147,11 +162,11 @@ describe("computeTerms — every constant derived by hand", () => {
     const result = computeTerms({
       observation: observation({ originatedRequestIds: ALL_FOUR }),
       transcript,
-      telemetry: [
+      telemetry: rowsOf(
         row,
         { ...row, invocation_id: undefined },
-        { ...row, invocation_id: "99999999-9999-4999-8999-999999999999" },
-      ],
+        { ...row, invocation_id: "99999999-9999-4999-8999-999999999999" }
+      ),
       rates: DEFAULT_RATES,
       installedChars: 3_700,
       ambiguousIds: new Set(),
@@ -169,6 +184,20 @@ describe("computeTerms — every constant derived by hand", () => {
     expect(result.unattributedRefusals.unverifiable.units).toBeGreaterThan(0);
     // The credited arithmetic is untouched by either of them.
     expect(result.sHi).toBeCloseTo(17_243.243243243243, 6);
+
+    // AND THE ROWS THEMSELVES, KEYED, which is what the run-level ledger reads.
+    // The summary above is a per-window diagnostic that nothing sums any more:
+    // adding it across observations counted every row two slices share twice
+    // (F12), so `runCoverage` deduplicates this LIST by key instead. Their keys
+    // are ordinals 1 and 2 of the artifact, and the window's own row is 0.
+    expect(result.unattributed.map((r) => r.key)).toEqual([
+      JSON.stringify(["telemetry.jsonl", 1]),
+      JSON.stringify(["telemetry.jsonl", 2]),
+    ]);
+    expect(result.unattributed.map((r) => r.row.disposition)).toEqual([
+      "unverifiable",
+      "excludedForeign",
+    ]);
   });
 
   it("counts a delivery's closures off the row's own verdict, and absence is not failure", async () => {
@@ -183,7 +212,7 @@ describe("computeTerms — every constant derived by hand", () => {
     const closed = computeTerms({
       observation: observation({ originatedRequestIds: ALL_FOUR }),
       transcript,
-      telemetry: [{ ...row, tool: "repair", detail: { passed: true } }],
+      telemetry: rowsOf({ ...row, tool: "repair", detail: { passed: true } }),
       rates: DEFAULT_RATES,
       installedChars: 3_700,
       ambiguousIds: new Set(),
@@ -195,7 +224,7 @@ describe("computeTerms — every constant derived by hand", () => {
     const silent = computeTerms({
       observation: observation({ originatedRequestIds: ALL_FOUR }),
       transcript,
-      telemetry: [{ ...row, tool: "repair", detail: { aborted: true } }],
+      telemetry: rowsOf({ ...row, tool: "repair", detail: { aborted: true } }),
       rates: DEFAULT_RATES,
       installedChars: 3_700,
       ambiguousIds: new Set(),
@@ -215,7 +244,7 @@ describe("computeTerms — every constant derived by hand", () => {
     const red = computeTerms({
       observation: observation({ originatedRequestIds: ALL_FOUR }),
       transcript,
-      telemetry: [{ ...row, tool: "repair", detail: { passed: false } }],
+      telemetry: rowsOf({ ...row, tool: "repair", detail: { passed: false } }),
       rates: DEFAULT_RATES,
       installedChars: 3_700,
       ambiguousIds: new Set(),
@@ -236,7 +265,7 @@ describe("computeTerms — every constant derived by hand", () => {
     const windowed = computeTerms({
       observation: observation({ originatedRequestIds: ["req-1", "req-2"] }),
       transcript,
-      telemetry: [row],
+      telemetry: rowsOf(row),
       rates: DEFAULT_RATES,
       installedChars: 3_700,
       ambiguousIds: new Set(),

@@ -15,8 +15,8 @@ import type {
   DeliveryScore,
   Evaluable,
   ObservationTerms,
-  RefusalLedger,
   Recomputations,
+  RunTelemetryCoverage,
   StrataCells,
 } from "./types.js";
 
@@ -55,7 +55,9 @@ function creditedRows(
 ): Array<{ owner: number; row: CreditedRow & { disposition: "credited" } }> {
   const out: Array<{ owner: number; row: CreditedRow & { disposition: "credited" } }> = [];
   terms.forEach((t, owner) => {
-    for (const row of t.rows) {
+    // `t.rows` is keyed since the run-level ledger landed; the key is identity
+    // for `runCoverage` and nothing here ranks or sums by it.
+    for (const { row } of t.rows) {
       if (row.disposition !== "credited") continue;
       out.push({ owner, row });
     }
@@ -95,47 +97,50 @@ export function poolRatio(terms: readonly ObservationTerms[], horizon: "lo" | "h
  * deflated instrument stops the project permanently, which is strictly the worse
  * of the two errors.
  *
- * OVER BOTH LEDGERS ON EVERY OBSERVATION. `unverifiable` rows can never belong
- * to a window and `excludedForeign` rows do not on any normal input, so they
- * reach here through `unattributedRefusals`, and a figure summed from `refusals`
- * alone is missing most of two of the four classes it claims to cover.
+ * OWNED REFUSALS PER OBSERVATION, UNOWNED ONES FROM THE RUN LEDGER, so each
+ * physical row enters exactly once. `unverifiable` rows can never belong to a
+ * window and `excludedForeign` rows do not on any normal input, so they reach
+ * here through `coverage.unowned` — and a figure summed from `refusals` alone is
+ * missing most of two of the four classes it claims to cover.
  *
- * ALSO NOT EVALUABLE on a negative `unattributedRefusals` class sum: those rows
- * may be counted twice and `wouldHaveAdded` is signed, so a duplicated negative
- * magnitude pushes this figure DOWN, toward a fall the data does not support.
+ * **`unattributedRefusals` IS NOT SUMMED HERE, AND THAT IS THE F12 FIX.** It is a
+ * per-observation TOTAL of rows no observation owns, and `scopeTelemetry` admits
+ * a row on a ±60,000 ms window as well as on an exact id match, so adding those
+ * totals across observations counted every row two slices share twice.
+ * `wouldHaveAdded` is signed, so a duplicated negative magnitude pushed this
+ * figure DOWN, toward a fall the data does not support.
+ *
+ * **The old step 1b — refuse on a negative unattributed class sum — is GONE with
+ * the sum it guarded.** It was declared incomplete the day it was written (a
+ * class sum of zero hides a +100 and a -100), and a guard standing over a
+ * quantity nothing computes any more reads as protection while providing none.
  */
-export function rHiPlus(all: readonly ObservationTerms[]): Evaluable<number> {
+export function rHiPlus(
+  all: readonly ObservationTerms[],
+  coverage: RunTelemetryCoverage
+): Evaluable<number> {
   for (const t of all) {
-    const ledgers: Array<[string, RefusalLedger]> = [
-      ["refusals", t.refusals],
-      ["unattributedRefusals", t.unattributedRefusals],
-    ];
-    for (const [which, ledger] of ledgers) {
-      for (const name of CLASSES) {
-        if (ledger[name].unsized > 0) {
-          return {
-            evaluable: false,
-            reason: `${t.taskId}/${t.arm}: ${ledger[name].unsized} ${name} refusal(s) in ${which} could not be sized, and an unknown may not be summed as zero`,
-          };
-        }
-      }
-    }
-    // The one duplication case the declared types can see. NOT a complete
-    // guard — a class sum of zero can hide a +100 and a -100 — and
-    // `FINDINGS.md` F12 is the run-level ledger that would close it.
     for (const name of CLASSES) {
-      if (t.unattributedRefusals[name].units < 0) {
+      if (t.refusals[name].unsized > 0) {
         return {
           evaluable: false,
-          reason: `${t.taskId}/${t.arm}: unattributed ${name} magnitude is negative (${t.unattributedRefusals[name].units}), and such a row may be counted twice, which would push this figure toward a fall the data does not support`,
+          reason: `${t.taskId}/${t.arm}: ${t.refusals[name].unsized} owned ${name} refusal(s) could not be sized, and an unknown may not be summed as zero`,
         };
       }
     }
   }
+  // EVERY RUN-LEVEL CAUSE IN ONE PLACE. A row counted twice, a row counted zero
+  // times, a row nobody could size, and a credited row no window owns are the
+  // same failure at this level: the run cannot enumerate the set this figure is
+  // defined over. `coverage.reasons` carries each one in its own sentence, and
+  // the first is reported rather than a count, because a reason a reader cannot
+  // act on is a number.
+  const blocked = coverage.reasons[0];
+  if (blocked !== undefined) return { evaluable: false, reason: blocked };
 
-  const refused = sumOf(all, (t) =>
-    sumOf(CLASSES, (name) => t.refusals[name].units + t.unattributedRefusals[name].units)
-  );
+  const refused =
+    sumOf(all, (t) => sumOf(CLASSES, (name) => t.refusals[name].units)) +
+    sumOf(CLASSES, (name) => coverage.unowned[name].units);
   const S = sumOf(all, (t) => t.sHi);
   const A = sumOf(all, (t) => t.aO);
   const O = sumOf(all, (t) => t.oO);
@@ -274,6 +279,17 @@ export interface AggregateInput {
   admitted: readonly ObservationTerms[];
   /** Everything else the run produced, needed for `rHiPlus` and `rAll`. */
   dropped: readonly ObservationTerms[];
+  /**
+   * `runCoverage(universe, [...admitted, ...dropped])` — the exactly-once ledger.
+   *
+   * A RUN-LEVEL ARGUMENT, because the defect is run-level. No function taking one
+   * observation at a time can see that a row sits in two slices, or that a
+   * credited row sits in none; `computeTerms` is handed one observation and
+   * `rHiPlus` is handed totals. Built by the caller because only the caller reads
+   * the telemetry artifact, which is the same reason `ambiguousIds` is passed in
+   * rather than derived.
+   */
+  coverage: RunTelemetryCoverage;
 }
 
 /**
@@ -314,9 +330,13 @@ export function strataCells(admitted: readonly ObservationTerms[]): StrataCells 
 
 /** The artifact. Owed by every registered run, whether it scores or voids. */
 export function aggregate(input: AggregateInput): B12Result {
-  const { admitted, dropped } = input;
+  const { admitted, dropped, coverage } = input;
   const rLo = poolRatio(admitted, "lo");
   const rHi = poolRatio(admitted, "hi");
+  // Computed ONCE and read twice below. It used to be called twice, which is the
+  // shape that lets a figure and the verdict built on it disagree.
+  const fallSide = rHiPlus([...admitted, ...dropped], coverage);
+  const strata = strataCells(admitted);
 
   const gate = deliveryScore(admitted, ["gate"], "lo");
   const repair = deliveryScore(admitted, ["repair"], "lo", MIN_REPAIR_CLOSURES);
@@ -358,9 +378,10 @@ export function aggregate(input: AggregateInput): B12Result {
     runId: input.runId,
     rLo,
     rHi,
-    rHiPlus: rHiPlus([...admitted, ...dropped]),
+    rHiPlus: fallSide,
+    coverage,
     recomputations: recompute(admitted, dropped),
-    strata: strataCells(admitted),
+    strata,
     gate,
     repair,
     other,
@@ -386,7 +407,7 @@ export function aggregate(input: AggregateInput): B12Result {
     // here reads it, and the field's name is the guard.
     meanOfPerObservationRatios:
       ratios.length === 0 ? 0 : sumOf(ratios, (x) => x) / ratios.length,
-    verdict: verdictOf(rHiPlus([...admitted, ...dropped]), strataCells(admitted)),
+    verdict: verdictOf(fallSide, strata),
     thresholds: { hold: 0.3, fall: 0.15 },
   };
 }
@@ -397,6 +418,16 @@ export function aggregate(input: AggregateInput): B12Result {
  * `fallsIf` says twice: a fall stands unappealed only if "both subagent strata
  * are evaluable", and "a run with fewer than 20 admitted observations, or any
  * stratum below 5, is VOID or `open` — never a fall on a short set".
+ *
+ * **THERE IS NO HOLD BRANCH HERE YET, and when one is written it owes a guard
+ * this function cannot carry today.** A credited row no window owns is omitted
+ * from `R_lo` and `R_hi`, and magnitudes are SIGNED — so omitting a NEGATIVE one
+ * RAISES both figures and moves them toward a hold. "Omission deflates the hold,
+ * which is the safe direction" was written during this fix and is false as
+ * stated. `coverage.unattributedCredited.count > 0` must therefore block a hold
+ * as well, exactly as it blocks a fall through `rHiPlus`. It is stated here
+ * rather than implemented because a guard on a branch that does not exist is a
+ * branch nobody has seen fail.
  */
 function verdictOf(fallSide: Evaluable<number>, strata: StrataCells): B12Result["verdict"] {
   const cellsEvaluable =

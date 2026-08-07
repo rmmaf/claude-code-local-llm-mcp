@@ -18,7 +18,8 @@
  * cannot be forgotten.
  */
 
-import type { CreditedRow } from "../report.js";
+import type { CreditedRow, RowDisposition } from "../report.js";
+import type { TelemetryRecord } from "../../telemetry.js";
 
 /**
  * A quantity that may not exist, where the absence is a RESULT and not a
@@ -84,6 +85,118 @@ export interface B12Observation {
    * than trusting the type.
    */
   verificationStratum: "test-red" | "types-only";
+}
+
+/**
+ * A telemetry row plus an identity that survives a null `invocation_id`.
+ *
+ * `TelemetryRecord` carries nothing usable as run-level identity: `invocation_id`
+ * is optional and absent on every row written before it existed, and two rows can
+ * otherwise be byte-identical. So identity is (ARTIFACT, ORDINAL), stamped when
+ * the run reads the log, and it is a property of the READ rather than of the row.
+ *
+ * `key` is `JSON.stringify([source, ordinal])` and not `${source}#${ordinal}`,
+ * because a path may contain `#` and two different rows would then share a key —
+ * which is the one thing an identity may not do.
+ */
+export interface IdentifiedRow {
+  key: string;
+  record: TelemetryRecord;
+}
+
+/** A priced row with the identity of the telemetry row it came from. */
+export interface KeyedRow {
+  key: string;
+  row: CreditedRow;
+}
+
+/**
+ * One physical telemetry row that NO observation owns, resolved once.
+ *
+ * THE SOURCE OF TRUTH FOR THE RUN-LEVEL LEDGER, which is derived from a list of
+ * these rather than accumulated alongside one. Counts and sums cannot say WHICH
+ * rows they hold, so an artifact carrying only totals cannot be checked against
+ * the claim that each physical row entered exactly once — and that claim is the
+ * whole of the fix.
+ */
+export interface CoveredRow {
+  key: string;
+  /**
+   * The class it was entered under. When `conflict` is non-null this is the
+   * disposition of its first occurrence in sorted observation order — ARBITRARY,
+   * DETERMINISTIC, AND DECIDING NOTHING, because a conflicted row is unsized and
+   * `rHiPlus` refuses on it either way.
+   */
+  disposition: RowDisposition;
+  /** Null when nothing could size it, or when the slices disagreed. Never 0 for either. */
+  units: number | null;
+  /** Why it could not be resolved. Null when every occurrence agreed. */
+  conflict: string | null;
+  /** The observations whose slices held it, as `taskId/arm`. */
+  slices: readonly string[];
+}
+
+/**
+ * The run-level answer to "was every telemetry row counted exactly once".
+ *
+ * WITHOUT IT `R_hi⁺` IS WRONG IN BOTH DIRECTIONS AT ONCE. `scopeTelemetry` admits
+ * a row on a ±60,000 ms window as well as on an exact id match, so one physical
+ * row can sit in two observations' slices and be summed twice; and a credited row
+ * no window owns is dropped from every `S_o` and from every refusal class, so it
+ * is summed zero times. The first inflates or deflates by the row's sign, the
+ * second deflates the fall-side figure — `FINDINGS.md` F12 and F9.
+ *
+ * Every field here is COMPUTED AND REPORTED. None of them silently repairs
+ * anything: the ledger's job is to say what it could not account for, and
+ * `rHiPlus`'s job is to refuse rather than to publish a figure over a set it
+ * cannot enumerate.
+ */
+export interface RunTelemetryCoverage {
+  /** Keys exactly one observation owns, mapped to that observation's `taskId/arm`. */
+  ownedBy: ReadonlyMap<string, string>;
+  /**
+   * Keys two or more observations claim, assigned to NONE of them. Reachable:
+   * `windowInvocationIds` maps tool-use ids to invocation ids with no one-to-one
+   * guarantee, and a resumed or forked session carries the original records
+   * forward. Reported rather than thrown — `aggregate()` owes an artifact whether
+   * it scores or voids, and a throw produces none.
+   */
+  contested: ReadonlyArray<{ key: string; claimants: readonly string[] }>;
+  /**
+   * Keys in the run's telemetry that no observation's slice ever saw.
+   *
+   * THE REASON THE UNIVERSE IS AN ARGUMENT. A coverage built from the
+   * observations alone cannot see these at all: `computeTerms` receives a slice
+   * that `scopeTelemetry` has already narrowed, so a row outside every window is
+   * absent from every input. It has neither a disposition nor a magnitude, which
+   * is exactly why it may not be summed as zero.
+   */
+  unsliced: readonly string[];
+  /** Every unowned key, one entry each. The two ledgers below are derived from it. */
+  unownedRows: readonly CoveredRow[];
+  /** The four classes over `unownedRows`, each physical row entered ONCE. */
+  unowned: RefusalLedger;
+  /**
+   * F9: unowned rows whose disposition is `credited`. They are in no `S_o`, in no
+   * refusal class, and no void condition sees them.
+   *
+   * NOT ADDED TO ANY FIGURE. `design.metric` defines `S_o` over "`o`'s credited
+   * rows" and limits `R_hi⁺`'s additions to the four refusal classes, so crediting
+   * one here would amend the estimand rather than repair the instrument. It
+   * refuses `R_hi⁺` instead, and it is published so the omission is visible.
+   */
+  unattributedCredited: ClassLedger;
+  /** Why the ledger could not be formed. Empty means it was. */
+  reasons: readonly string[];
+  /**
+   * Every physical row of the run entered the ledger exactly once, AND with a
+   * magnitude the ledger could state. `reasons.length === 0`.
+   *
+   * The second half belongs in the name: a row counted once but unsized has not
+   * been accounted for either, and summing it as zero is the collapse this whole
+   * type file exists to forbid. Computed, never assumed.
+   */
+  exactlyOnce: boolean;
 }
 
 /** One refusal class: its count, its summed magnitude, and what it could not size. */
@@ -171,33 +284,43 @@ export interface ObservationTerms {
   sHi: number;
   /** `unitsAddedByInstallation` restricted to the segments this window originated. */
   oO: number;
-  /** This window's rows, credited and refused, for the artifact's face. */
-  rows: CreditedRow[];
+  /**
+   * This window's OWN rows, credited and refused, for the artifact's face.
+   *
+   * Keyed since 2026-08-07: the run-level ledger has to tell one physical
+   * telemetry row from another across observations, and an `invocationId` cannot
+   * do it — a row can have none, and two observations can hold the same one.
+   */
+  rows: KeyedRow[];
   /** Refused rows this window OWNS — their `invocationId` is one of its own. */
   refusals: RefusalLedger;
   /**
-   * Every OTHER refused row in this observation's telemetry slice: `invocationId`
-   * null, or an id this window does not own.
+   * Every OTHER row in this observation's telemetry slice, credited and refused
+   * alike: `invocationId` null, or an id this window does not own.
    *
-   * WITHOUT IT `R_hi+` IS SHORT. An `unverifiable` row is refused precisely
-   * because it has no `invocation_id`, so it is structurally unownable; an
-   * `excludedForeign` row is refused because its id is absent from the
-   * gate/repair-filtered map, which is *nearly* but not exactly the set the
-   * window join reads (see `FINDINGS.md` F10), so it is unownable on any normal
-   * input rather than provably. A ledger built from owned rows alone therefore
-   * holds `ambiguous` and `unmatched` and little else, while the frozen metric
-   * defines `R_hi+` over ALL FOUR — and the whole point of `R_hi+` is that a
-   * fall must survive the most generous arithmetic the data admits.
+   * INDIVIDUALLY, NOT SUMMED, and that is the F12 fix. The same physical row sits
+   * in two observations' slices whenever two sessions ran within a minute
+   * (`admissionRule` 5 names `scopeTelemetry`'s ±60,000 ms window by hand), so a
+   * per-observation TOTAL of these cannot be added up across observations without
+   * counting that row twice — and `wouldHaveAdded` is signed, so a duplicated
+   * negative magnitude pushes `R_hi⁺` DOWN, toward a fall the data does not
+   * support. `runCoverage` deduplicates these by key and `rHiPlus` reads the
+   * result; nothing sums this list directly.
    *
-   * IT MAY DOUBLE-COUNT, AND THE DIRECTION FOLLOWS THE SIGN. `admissionRule` 5
-   * says `scopeTelemetry`'s ±60,000 ms window pulls a neighbouring arm's rows in
-   * whenever two sessions run within a minute, so one row can appear in two
-   * slices. `wouldHaveAdded` is SIGNED, so duplication moves
-   * `(S + refused - O) / (A + S + refused)` up for a positive magnitude — safe,
-   * since `R_hi+` gates only the fall — and DOWN for a negative one, which
-   * manufactures a fall. `rHiPlus` therefore refuses on a negative class sum
-   * here; that closes the case this shape can see and not the case it cannot
-   * (a zero sum hiding +100 and -100). F12 is the real fix.
+   * CREDITED ROWS ARE HERE TOO, which the four-class ledger below cannot express.
+   * A credited row no window owns is `FINDINGS.md` F9: it is in no `S_o` and in
+   * no refusal class, so it was summed zero times and no void condition saw it.
+   */
+  unattributed: KeyedRow[];
+  /**
+   * The four-class summary of the REFUSED part of `unattributed`, for this
+   * window's own artifact page.
+   *
+   * A DIAGNOSTIC THAT DECIDES NOTHING. It is filled in the same pass as
+   * `unattributed` — one loop, one rule, so the two cannot drift — and no figure
+   * reads it. It used to be what `rHiPlus` summed, which is the defect F12
+   * records: summing a per-observation total of rows no observation owns
+   * double-counts every row two slices share.
    */
   unattributedRefusals: RefusalLedger;
   /** Unevaluable when the window carried no billed request of its own. */
@@ -258,6 +381,14 @@ export interface B12Result {
    * the project permanently and that is the worse of the two errors.
    */
   rHiPlus: Evaluable<number>;
+  /**
+   * What the run could and could not account for, on the artifact's face.
+   *
+   * Published whether or not `rHiPlus` was evaluable, and especially when it was
+   * not: it carries the reason. A reader can check the exactly-once claim against
+   * `unownedRows` rather than taking the totals on trust.
+   */
+  coverage: RunTelemetryCoverage;
   recomputations: Recomputations;
   strata: StrataCells;
   gate: DeliveryScore;
