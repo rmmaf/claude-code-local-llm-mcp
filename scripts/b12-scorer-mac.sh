@@ -10,7 +10,11 @@
 #                              Phase 4
 #   exactly 1 of 3          -> INCONCLUSIVE; the manifest may not be sealed on it
 # A unit counts as CLOSED only if `repair` returns passed:true AND this script's
-# own vitest run exits 0. The tool's word is not the measurement.
+# own vitest run exits 0. The tool's word is not the measurement -- and neither
+# is vitest's on its own, which is what this script used to read. Both conjuncts
+# now come from their own instrument, and a unit that produced no observation at
+# all (`no_response`, `no_repair_call`, `could_not_run`) counts toward NEITHER
+# side and makes the run's reading `incomplete`.
 #
 # WHAT IT CHANGES IN YOUR CLONE, stated plainly rather than implied:
 #   - writes implementation bodies into src/cost/b12/{strata,terms,aggregate}.ts
@@ -29,6 +33,20 @@
 # bash 3.2 compatible: no associative arrays, no mapfile, no ${x,,}.
 #
 # Usage:  bash scripts/b12-scorer-mac.sh [/path/to/repo]
+#
+# Environment:
+#   B12_ONLY=<unit>          attempt ONE unit (strata|terms|aggregate) and record
+#                            the others as carried, not scored. Requires
+#                            B12_CARRIED_FROM.
+#   B12_CARRIED_FROM=<runId> the run that measured the units this one skips.
+#   B12_RESUME=1             this is the same exposure resuming after a crash, so
+#                            a body already on disk is expected and an
+#                            already-green unit is skipped as
+#                            inherited-unverified.
+#
+# The decision logic in step 7 and the telemetry-window reader are exercised by
+# scripts/b12-scorer-selftest.sh, which extracts them VERBATIM from this file
+# and drives them against fabricated windows. Run it after editing either.
 
 set -u
 set -o pipefail
@@ -145,12 +163,30 @@ project has already lost once:
 
   mkdir -p ~/lc-results
   git diff src/cost/b12/ > ~/lc-results/leftover-bodies.diff
-  git checkout -- src/cost/b12/<the file tsc named above>
 HINT
+  # A BARE `git checkout --` IS A NO-OP HERE and this text used to print one.
+  # The last step of this script COMMITS whatever the local model wrote, so on
+  # any machine that has run it once the "clean" state git restores IS the body.
+  # The stub exists only at the pinned commit. Printed rather than folded into
+  # the quoted heredoc above, which must stay quoted: the text is full of
+  # backticks and would otherwise be run as commands.
+  printf '  git checkout %s -- src/cost/b12/<the file tsc named above>\n\n' "$STUBS_FROZEN_AT"
 }
 
 # The frozen inputs. A run that cannot prove it started from these proves nothing.
 RATES_FROZEN_AT="3541625"
+# THE STUBS THIS EXPOSURE STARTS FROM, pinned to a commit instead of inferred
+# from the working tree -- because the tree cannot answer the question. The last
+# step of this script COMMITS the bodies the local model wrote, so on the next
+# run `git status` is clean while all three answers are already on disk, the
+# fresh-exposure guard sees nothing to object to, and the already-green skip
+# reports ">= 2 of 3" having called `repair` zero times. That is the whole
+# measurement produced by a run that measured nothing.
+#
+# The check below re-verifies that these really are stubs rather than trusting
+# this comment: a pin at the wrong commit makes every comparison meaningless in
+# the direction that passes.
+STUBS_FROZEN_AT="d0253e1"
 # EXPOSURE B. `src/cost/report.ts` joins context_files, and the floor doubles
 # BECAUSE of it: that file is 51,747 B ~ 14,800 tokens, which puts aggregate's
 # corrective retry near 29,000 against 32,768's ~29,491 usable budget -- inside
@@ -167,6 +203,39 @@ CONTEXT_FILES='"src/cost/b12/types.ts", "src/cost/rates.ts", "src/cost/report.ts
 # machine killed MID-exposure is the opposite case and is what B12_RESUME=1 is
 # for -- same condition, so an already-green unit is legitimately skipped.
 RESUME="${B12_RESUME:-0}"
+# ONE UNIT, NAMED. Exposure B gave `strata` and `terms` a fair draw and gave
+# `aggregate` none at all -- both of its `repair` calls died in the LM Studio
+# backend with zero tokens generated. Re-running all three to finish it would
+# hand those two a SECOND draw at the same bar, which inflates the chance of
+# reaching ">= 2 of 3" without anything about `repair` having changed. This
+# attempts only the unit that has no observation; the others are recorded as
+# carried from the run that measured them, and are not scored again here.
+ONLY="${B12_ONLY:-}"
+CARRIED_FROM="${B12_CARRIED_FROM:-}"
+case "$ONLY" in
+  "")                     UNITS_TO_ATTEMPT="strata terms aggregate" ;;
+  strata|terms|aggregate) UNITS_TO_ATTEMPT="$ONLY" ;;
+  *) refuse "B12_ONLY=\"$ONLY\" does not name a unit. Expected one of: strata, terms, aggregate." ;;
+esac
+# A partial run that cannot say where the rest was measured is a partial run
+# presenting itself as a whole one. The id goes INTO the artifact, so a later
+# reader assembling the exposure has both halves by name rather than by memory.
+if [ -n "$ONLY" ] && [ -z "$CARRIED_FROM" ]; then
+  refuse "B12_ONLY=$ONLY needs B12_CARRIED_FROM=<the run id that measured the other units>.
+
+This run will attempt ONE unit. Its artifact must name the run holding the
+others, or the >= 2 of 3 reading has no second source and the artifact reads as
+though one unit were the whole exposure. Example:
+
+  B12_ONLY=$ONLY B12_CARRIED_FROM=2026-08-06-mac-b12-phase3-f2932ff \\
+    bash scripts/b12-scorer-mac.sh"
+fi
+# It goes into a JSON string in the artifact by direct interpolation, so a quote
+# or a backslash in it would produce a file that parses as something else --
+# and the artifact is verified by reading it back, not by hoping.
+case "$CARRIED_FROM" in
+  *[\"\\]*) refuse "B12_CARRIED_FROM contains a quote or a backslash. It is written into the artifact as a JSON string, and this one would not survive the round trip." ;;
+esac
 BUDGET_USD="${B12_BUDGET_USD:-40}"
 MODEL_CLAUDE="${B12_CLAUDE_MODEL:-claude-sonnet-5}"
 MODEL_LOCAL="${B12_LOCAL_MODEL:-qwen3-coder-30b-a3b-instruct-dwq-v2}"
@@ -245,30 +314,79 @@ if [ -n "$FOREIGN" ]; then
   refuse "the working tree has TRACKED changes outside src/cost/b12/. This script commits what the local model writes, so every other tracked change must be dealt with first.
 $FOREIGN"
 fi
-if [ -n "$TRACKED" ]; then
-  if [ "$RESUME" = "1" ]; then
-    warn "B12_RESUME=1: bodies under src/cost/b12/ are treated as THIS exposure's own. Each unit's tests are re-run below and an already-green unit is SKIPPED, not re-attempted."
-  else
-    refuse "there are bodies under src/cost/b12/ and this is a FRESH exposure ($EXPOSURE).
+# types.ts SHARES THE DIRECTORY AND IS NOT A UNIT. The allowance above is for
+# bodies the local model wrote; the type module is contract, authored on the
+# other machine and arriving by `git pull`. A local edit to it changes what every
+# unit is measured against, so it refuses like anything else tracked.
+CONTRACT=$(printf '%s\n' "$TRACKED" | grep -E ' src/cost/b12/types\.ts$' || true)
+if [ -n "$CONTRACT" ]; then
+  refuse "src/cost/b12/types.ts is modified locally. It is CONTRACT, not result: every unit is measured against it, and this script will not score a unit against a type module it cannot attribute.
+$CONTRACT"
+fi
 
-Exposure $EXPOSURE may not inherit a unit closed under the previous condition:
-carrying one forward lets a single closure reach the \">= 2 of 3\" bar and
-loosens a threshold PREMISES.md refuses to move. Three units, one condition,
-denominator three.
+# THE FRESH-EXPOSURE GUARD, ANCHORED ON THE CONTRACT RATHER THAN ON THE TREE.
+# What it used to do was read `git status` — which cannot see a body this script
+# COMMITTED at the end of an earlier run. A second run on a clean tree therefore
+# passed this guard with all three answers already on disk, skipped all three as
+# already-green, and printed ">= 2 of 3" with zero `repair` calls made. The
+# escape hatch it offered was a no-op for the same reason: `git checkout --`
+# restores the committed body, not the stub.
+#
+# Per FILE, because types.ts lives in the same directory and is real code. Per
+# ATTEMPTED unit, because a unit this run does not score cannot bias its count —
+# which is exactly what makes B12_ONLY legitimate rather than a loophole.
+git -C "$REPO" rev-parse --verify "$STUBS_FROZEN_AT^{commit}" >/dev/null 2>&1 ||
+  refuse "$STUBS_FROZEN_AT is not a commit in this clone, and it is what the stubs are pinned to. Nothing below can be verified against it. Try \`git fetch\` first."
+if [ "$RESUME" = "1" ]; then
+  warn "B12_RESUME=1: the stub check is SKIPPED, because resuming means bodies from THIS exposure are expected. An already-green unit is recorded inherited-unverified and counted as neither closed nor red — this run holds no repair evidence for it."
+else
+  DIRTY=""
+  for u in $UNITS_TO_ATTEMPT; do
+    FROZEN_BLOB=$(git -C "$REPO" rev-parse "$STUBS_FROZEN_AT:src/cost/b12/$u.ts" 2>/dev/null)
+    [ -n "$FROZEN_BLOB" ] ||
+      refuse "src/cost/b12/$u.ts does not exist at $STUBS_FROZEN_AT, so this run has no stub to start it from."
+    git -C "$REPO" show "$STUBS_FROZEN_AT:src/cost/b12/$u.ts" 2>/dev/null | grep -q 'not implemented' ||
+      refuse "src/cost/b12/$u.ts at $STUBS_FROZEN_AT does not contain \"not implemented\", so it is not a stub. STUBS_FROZEN_AT points at the wrong commit, and every comparison here would pass for the wrong reason."
+    NOW_BLOB=$(git -C "$REPO" hash-object "$REPO/src/cost/b12/$u.ts" 2>/dev/null)
+    [ -n "$NOW_BLOB" ] || refuse "could not hash src/cost/b12/$u.ts"
+    [ "$NOW_BLOB" = "$FROZEN_BLOB" ] || DIRTY="$DIRTY $u"
+  done
+  if [ -n "$DIRTY" ]; then
+    RESET_PATHS=""
+    for u in $DIRTY; do RESET_PATHS="$RESET_PATHS src/cost/b12/$u.ts"; done
+    refuse "unit(s) this run will attempt already carry a body:$DIRTY
 
-Reset all three, then re-run:
-  git checkout -- src/cost/b12/
+They differ from their stub at $STUBS_FROZEN_AT. Committed or not, a pre-filled
+answer is not something \`repair\` closed here — and carrying one into a fresh
+exposure lets a single closure reach the \">= 2 of 3\" bar, loosening a threshold
+PREMISES.md refuses to move. Three units, one condition, denominator three.
+
+Keep what the local model wrote before resetting; this project has lost it once:
+
+  mkdir -p ~/lc-results
+  git diff $STUBS_FROZEN_AT -- src/cost/b12/ > ~/lc-results/leftover-bodies.diff
+  git checkout $STUBS_FROZEN_AT --$RESET_PATHS
+
+NOT a bare \`git checkout --\`: this script commits the bodies it produces, so
+the state git would restore is the body itself.
 
 If instead you are RESUMING a run this machine killed mid-exposure — same
 condition throughout, so an already-green unit is legitimately skipped:
-  B12_RESUME=1 bash scripts/b12-scorer-mac.sh
-$TRACKED"
+  B12_RESUME=1 bash scripts/b12-scorer-mac.sh"
   fi
+  ok "every unit this run attempts is byte-identical to its stub at $STUBS_FROZEN_AT"
 fi
 if [ "${UNTRACKED_N:-0}" -gt 0 ]; then
   warn "$UNTRACKED_N untracked path(s) present. They are LEFT ALONE and never committed: this run commits src/cost/b12/ and its own artifact, nothing else."
 fi
-ok "no tracked changes"
+# NOT "no tracked changes", which this line used to claim while allowing bodies
+# under src/cost/b12/ straight past it. What was actually established is
+# narrower, and saying the narrow thing is the point.
+if [ -n "$TRACKED" ]; then
+  info "tracked changes present, all under src/cost/b12/ — allowed here, and judged per attempted unit above"
+else
+  ok "no tracked changes"
+fi
 
 LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
 case "$LOCAL_SHA" in
@@ -535,6 +653,108 @@ SPENT="0"
 CLOSED=0
 ATTEMPTED=0
 INHERITED=0
+NOT_HERE=0
+VOIDS=""
+
+# ---------------------------------------------------------------------------
+# THE PER-UNIT TELEMETRY WINDOW, and the reason this file has one at all.
+#
+# A unit's state used to come from `npx vitest`'s exit code alone. That code
+# answers "are the tests green?" and nothing else, so it reports the SAME `red`
+# for a model that generated three attempts and got them wrong and for a model
+# that generated nothing at all. Exposure B's `aggregate` was the second kind --
+# both `repair` calls died inside the LM Studio backend, zero tokens, HTTP 400 --
+# and the artifact printed it as an observation. It was not one, and the whole
+# run's "1 of 3" was wrong on the strength of it.
+#
+# The evidence that separates them is `repair`'s own row in
+# .local-coder/telemetry.jsonl, which the tool writes whatever happens. This
+# reads the bytes appended between the offset taken just before a unit's
+# `claude` call and now: the unit staged every other oracle aside and its prompt
+# permits exactly one editable file, so every repair row in that window is this
+# unit's.
+#
+# It also answers, from the same rows, the two things exposure B pre-registered
+# as VOID conditions and had no way to check: which local model actually served
+# the call, and which context files the prompt actually carried.
+# ---------------------------------------------------------------------------
+UNIT_WINDOW_JS="$TMP_DIR/unit-window.cjs"
+cat > "$UNIT_WINDOW_JS" <<'JS'
+const fs = require("fs");
+const e = process.env;
+const out = process.argv[2];
+let buf;
+try { buf = fs.readFileSync(e.B12_TELE); } catch { buf = Buffer.alloc(0); }
+const rows = [];
+for (const line of buf.subarray(Number(e.B12_FROM) || 0).toString("utf8").split("\n")) {
+  if (line.trim() === "") continue;
+  let r; try { r = JSON.parse(line); } catch { continue; }
+  rows.push(r);
+}
+const repairs = rows.filter((r) => r && r.tool === "repair");
+// CONJUNCT ONE of the pre-registered rule. The other is vitest, taken by the
+// shell; neither substitutes for the other.
+const passed = repairs.filter((r) => r.detail && r.detail.passed === true).length;
+// Did the model produce ANYTHING? An attempt is one request that came back with
+// a body. Zero attempts across every round of every call is the signature of a
+// backend that died before generation, which B15 already rules is not an
+// observation -- it just had no way to say so here.
+let attempts = 0;
+for (const r of repairs) {
+  const rounds = (r.detail && Array.isArray(r.detail.rounds)) ? r.detail.rounds : [];
+  for (const rd of rounds) attempts += Array.isArray(rd.attempts) ? rd.attempts.length : 0;
+}
+// The model that SERVED the call, against the one this run declares. The
+// preflight has recorded this since `b12-preflight-mac.sh:682` and never
+// compared it; a scorer that does not compare it is scoring an unnamed model.
+const models = [...new Set(repairs.map((r) => r.detail && r.detail.model).filter((m) => typeof m === "string"))];
+const modelVerdict = models.length === 0 ? "unknown"
+  : models.every((m) => m === e.B12_MODEL_EXPECT) ? "ok" : "mismatch";
+// The context files the prompt CARRIED. An absent key is `unknown`, never a
+// pass: the row predates the field, so the condition is unverifiable -- and
+// unverifiable is a VOID, not a green light. Enumerate the good values and
+// refuse everything the rule does not name, as the frozen-rates compare does.
+const want = JSON.parse("[" + e.B12_CTX_EXPECT + "]");
+const withKey = repairs.filter((r) =>
+  r.detail && Object.prototype.hasOwnProperty.call(r.detail, "context_files") && r.detail.context_files !== null);
+const seen = new Set();
+for (const r of withKey) for (const p of (r.detail.context_files || [])) seen.add(p);
+const ctxVerdict = repairs.length === 0 ? "no-rows"
+  : withKey.length < repairs.length ? "unknown"
+  : want.every((p) => seen.has(p)) ? "ok" : "missing";
+fs.writeFileSync(out, JSON.stringify({
+  repairCalls: repairs.length,
+  repairPassed: passed,
+  attemptsSeen: attempts,
+  localModelObserved: models,
+  localModelVerdict: modelVerdict,
+  contextFilesExpected: want,
+  contextFilesObserved: [...seen].sort(),
+  contextFilesVerdict: ctxVerdict,
+  rowsWithoutContextKey: repairs.length - withKey.length,
+  invocationIds: repairs.map((r) => r.invocation_id).filter(Boolean),
+}, null, 2) + "\n");
+// One line, five fields, for the shell. Anything else on stdout is a failure to
+// produce it, and the shell checks the shape rather than trusting the exit code.
+process.stdout.write([repairs.length, passed, attempts, modelVerdict, ctxVerdict].join(" ") + "\n");
+JS
+[ -s "$UNIT_WINDOW_JS" ] || refuse "the telemetry-window reader is empty; every unit below would be scored on the vitest exit code alone, which is the defect this run exists to fix"
+
+# ONE ROW PER UNIT, and the only place rows are written. Called with the unit's
+# state and, when there is one, the path to its telemetry-window JSON.
+record_unit() {
+  node -e '
+    const fs = require("fs");
+    const [units, n, name, state, extraJson, windowFile] = process.argv.slice(1);
+    let row = { unit: Number(n), name, state };
+    try { row = Object.assign(row, JSON.parse(extraJson)); } catch {}
+    if (windowFile) {
+      try { row.telemetryWindow = JSON.parse(fs.readFileSync(windowFile, "utf8")); }
+      catch { row.telemetryWindow = "unreadable"; }
+    }
+    fs.appendFileSync(units, JSON.stringify(row) + "\n");
+  ' "$UNITS_JSON" "$1" "$2" "$3" "$4" "${5:-}"
+}
 
 # DEPENDENCY ORDER, not alphabetical. `strata` depends on nothing; `terms` calls
 # `subagentShare` from it; `aggregate` calls `partitionByStrata`. A unit that
@@ -551,23 +771,48 @@ for N in 1 2 3; do
   TESTFILE="tests/b12-$UNIT.test.ts"
   [ -f "$REPO/$TESTFILE" ] || refuse "$TESTFILE is missing; this unit has no oracle"
 
+  # NOT SCORED HERE. Recorded rather than skipped silently: a denominator of
+  # three with one unit measured is the reading, and the artifact has to carry
+  # the name of the run that holds the others so a later reader can assemble the
+  # exposure from both instead of from one and a memory.
+  case " $UNITS_TO_ATTEMPT " in
+    *" $UNIT "*) : ;;
+    *)
+      info "unit $N/$UNIT — not attempted here (B12_ONLY=$ONLY); carried from $CARRIED_FROM"
+      NOT_HERE=$((NOT_HERE + 1))
+      record_unit "$N" "$UNIT" "not-attempted-here" \
+        "{\"carriedFrom\":\"$CARRIED_FROM\",\"note\":\"this run neither attempted nor scored this unit\"}"
+      continue
+      ;;
+  esac
+
   # RESUMPTION. A unit an earlier attempt already closed is skipped, not
   # re-attempted: `repair` closing it once is the fact this run exists to
-  # establish, and a crash afterwards did not un-close it. Recorded as
-  # `already-green` and counted apart, so the reading can say which attempt
-  # closed what instead of presenting inherited work as this run's.
+  # establish, and a crash afterwards did not un-close it.
   npx vitest run "$TESTFILE" >"$OUT/unit-$N-$UNIT.pre.vitest.txt" 2>&1
   if [ $? -eq 0 ]; then
-    ok "unit $N/$UNIT is ALREADY GREEN — skipped, not re-attempted"
-    CLOSED=$((CLOSED + 1))
+    # ON A FRESH EXPOSURE THIS IS NOT GOOD NEWS. The guard above verified this
+    # file byte-identical to its stub at $STUBS_FROZEN_AT, and the stub throws
+    # `not implemented`. An oracle that a stub satisfies cannot fail -- and a
+    # check that cannot fail is worse than no check, because every unit measured
+    # against it closes for free and the run reports a reachability it never saw.
+    if [ "$RESUME" != "1" ]; then
+      refuse "unit $N/$UNIT is byte-identical to its stub at $STUBS_FROZEN_AT, and $TESTFILE PASSES anyway.
+
+The stub throws \"not implemented\". An oracle it satisfies cannot fail, so it
+cannot measure anything: every unit scored against it would close for free.
+
+Fix the oracle before scoring a single unit on it. Its output is in:
+  $OUT/unit-$N-$UNIT.pre.vitest.txt"
+    fi
+    # Under B12_RESUME=1 it IS legitimate -- same condition, a unit this
+    # exposure already closed. But this run holds no repair evidence for it, and
+    # the pre-registered rule needs BOTH conjuncts. So it counts as neither
+    # closed nor red, and says which of the two it is missing.
+    warn "unit $N/$UNIT is already green (B12_RESUME=1) — skipped. This run has no repair row for it, so it is recorded inherited-unverified and counted toward NEITHER side."
     INHERITED=$((INHERITED + 1))
-    node -e '
-      const fs = require("fs");
-      fs.appendFileSync(process.argv[1], JSON.stringify({
-        unit: Number(process.argv[2]), name: process.argv[3], state: "already-green",
-        note: "closed by an earlier attempt; this run did not call repair for it",
-      }) + "\n");
-    ' "$UNITS_JSON" "$N" "$UNIT"
+    record_unit "$N" "$UNIT" "inherited-unverified" \
+      "{\"note\":\"green under B12_RESUME=1; closed by an earlier run within this exposure. This run called repair for it zero times and therefore verified only one of the two conjuncts.\"}"
     continue
   fi
 
@@ -619,6 +864,12 @@ write closes the gate and destroys the measurement this run exists to produce."
   stage_only "$UNIT"
   info "staged aside:$STAGED"
 
+  # THE WINDOW OPENS HERE, immediately before the call, in bytes -- the same
+  # idiom the run-wide baseline uses. Everything appended past this offset is
+  # this unit's, because only this unit runs between here and the read below.
+  UNIT_TELE_BEFORE=$(wc -c < "$TELEMETRY" 2>/dev/null | tr -d ' ')
+  [ -n "$UNIT_TELE_BEFORE" ] || UNIT_TELE_BEFORE=0
+
   UNIT_LOG="$OUT/unit-$N-$UNIT.claude.json"
   # TWO GUARDS, BOTH REQUIRED. --allowed-tools and --mcp-config are variadic and
   # swallow every following argument until one starts with `-`: the last option
@@ -657,25 +908,105 @@ write closes the gate and destroys the measurement this run exists to produce."
   SPENT=$(node -e 'process.stdout.write(String(Number(process.argv[1]) + Number(process.argv[2])))' "$SPENT" "$UNIT_USD")
   info "unit cost \$$UNIT_USD  (running total \$$SPENT)"
 
+  # THE WINDOW CLOSES HERE, and it is read BEFORE vitest runs: vitest writes no
+  # telemetry, but reading first keeps the window bounded by the call it names.
+  UNIT_TELE_JSON="$OUT/unit-$N-$UNIT.repair.json"
+  WINDOW_LINE=$(B12_TELE="$TELEMETRY" B12_FROM="$UNIT_TELE_BEFORE" \
+    B12_MODEL_EXPECT="$MODEL_LOCAL" B12_CTX_EXPECT="$CONTEXT_FILES" \
+    node "$UNIT_WINDOW_JS" "$UNIT_TELE_JSON" 2>&1 | head -1)
+  R_CALLS=""; R_PASSED=""; R_ATTEMPTS=""; R_MODEL=""; R_CTX=""
+  read -r R_CALLS R_PASSED R_ATTEMPTS R_MODEL R_CTX <<WINDOW
+$WINDOW_LINE
+WINDOW
+  # SHAPE, NOT EXIT CODE. An unreadable window is recorded as one: every count
+  # goes to zero, which lands the unit in `no_repair_call` or
+  # `vitest_green_unverified` -- both of which mean "no observation", which is
+  # exactly what an unreadable window leaves behind.
+  TELE_OK=1
+  # Each field on its own. Concatenating them first would let "2" with two empty
+  # siblings read as a valid all-digits string, and the empties would then reach
+  # `[ "" -ge 1 ]` below as a silent false.
+  for v in "$R_CALLS" "$R_PASSED" "$R_ATTEMPTS"; do
+    case "$v" in
+      ''|*[!0-9]*) TELE_OK=0 ;;
+    esac
+  done
+  [ -n "$R_MODEL" ] && [ -n "$R_CTX" ] || TELE_OK=0
+  if [ "$TELE_OK" != "1" ]; then
+    warn "could not read this unit's telemetry window (\"$WINDOW_LINE\"). Recorded as no observation rather than guessed at."
+    R_CALLS=0; R_PASSED=0; R_ATTEMPTS=0; R_MODEL="unknown"; R_CTX="unknown"
+  fi
+  info "repair rows $R_CALLS, passed $R_PASSED, generation attempts $R_ATTEMPTS"
+
   # THE MEASUREMENT, TAKEN BY THIS SCRIPT AND NOT READ OFF CLAUDE'S NARRATION.
   # This unit's oracle alone — the pre-registration says "that unit's tests", and
   # the first attempt handed it everyone's.
   npx vitest run "$TESTFILE" >"$OUT/unit-$N-$UNIT.vitest.txt" 2>&1
   VITEST_RC=$?
+  # BOTH CONJUNCTS, EACH FROM ITS OWN INSTRUMENT, and a closed list of outcomes
+  # in which every member is distinguishable from the evidence actually held.
+  # Only `closed` counts toward the pre-registered bar; `no_response`,
+  # `no_repair_call` and `could_not_run` count toward NEITHER side, because a
+  # round with no response is not an observation.
+  #
+  # The markers are load-bearing: scripts/b12-scorer-selftest.sh extracts the
+  # region between them VERBATIM and drives it against fabricated windows. A
+  # copy of this logic in a test file would be a test of the copy -- and this
+  # project has already shipped four refusals whose text was read and never run.
+  # >>> B12-STATE-BLOCK
   case $VITEST_RC in
-    0) UNIT_STATE="closed"; CLOSED=$((CLOSED + 1)); ok "unit $N closed — vitest exit 0" ;;
-    1) UNIT_STATE="red"; warn "unit $N still red" ;;
+    0)
+      if [ "$R_PASSED" -ge 1 ]; then
+        UNIT_STATE="closed"; CLOSED=$((CLOSED + 1))
+        ok "unit $N CLOSED — vitest exit 0 AND repair returned passed:true"
+      else
+        UNIT_STATE="vitest_green_unverified"
+        warn "unit $N: vitest exit 0, but no repair row in this unit's window returned passed:true. Green and UNVERIFIED — not counted as a closure. (This is the state that used to be silently counted as one.)"
+      fi
+      ;;
+    1)
+      if [ "$R_ATTEMPTS" -gt 0 ]; then
+        UNIT_STATE="red"; warn "unit $N still red after $R_ATTEMPTS generation attempt(s) — the model ran and did not close it"
+      elif [ "$R_CALLS" -gt 0 ]; then
+        UNIT_STATE="no_response"
+        warn "unit $N: repair was called $R_CALLS time(s) and the model generated NOTHING — zero attempts across every round. This is not a failed repair, it is NO OBSERVATION, and it counts toward neither side."
+      else
+        UNIT_STATE="no_repair_call"
+        warn "unit $N: not one repair row appeared in this unit's telemetry window. The tool under measurement was never invoked."
+      fi
+      ;;
     *) UNIT_STATE="could_not_run"; warn "vitest exited $VITEST_RC — could not run, which is NOT the same as red" ;;
   esac
 
-  node -e '
-    const fs = require("fs");
-    fs.appendFileSync(process.argv[1], JSON.stringify({
-      unit: Number(process.argv[2]), name: process.argv[3], sessionId: process.argv[4],
-      claudeExit: Number(process.argv[5]), vitestExit: Number(process.argv[6]),
-      state: process.argv[7], usd: process.argv[8], model: process.argv[9],
-    }) + "\n");
-  ' "$UNITS_JSON" "$N" "$UNIT" "$SESSION_ID" "$CLAUDE_RC" "$VITEST_RC" "$UNIT_STATE" "$UNIT_USD" "$MODEL_CLAUDE"
+  # THE TWO VOID CONDITIONS EXPOSURE B PRE-REGISTERED AND COULD NOT CHECK.
+  # Recorded per unit and never refused mid-run: a run that stops here stops
+  # without saying what it measured, and the VOID belongs in the reading.
+  case "$R_MODEL" in
+    ok) ok "local model verified in telemetry: $MODEL_LOCAL" ;;
+    mismatch)
+      warn "VOID: a repair row names a local model other than $MODEL_LOCAL. See $UNIT_TELE_JSON."
+      VOIDS="$VOIDS local-model-mismatch:$UNIT" ;;
+    *)
+      warn "VOID: no repair row carried a model name, so the local model is UNVERIFIED for this unit."
+      VOIDS="$VOIDS local-model-unverified:$UNIT" ;;
+  esac
+  case "$R_CTX" in
+    ok) ok "context files verified in telemetry: $CONTEXT_FILES" ;;
+    missing)
+      warn "VOID: a context file this exposure declares never reached the model. See $UNIT_TELE_JSON."
+      VOIDS="$VOIDS context-file-missing:$UNIT" ;;
+    no-rows)
+      warn "VOID: no repair row, so the context condition is unverifiable for this unit."
+      VOIDS="$VOIDS context-unverifiable:$UNIT" ;;
+    *)
+      warn "VOID: detail.context_files is absent from a repair row — that row predates the field, so this exposure's context condition is UNVERIFIABLE. Unverifiable is not satisfied."
+      VOIDS="$VOIDS context-unverifiable:$UNIT" ;;
+  esac
+  # <<< B12-STATE-BLOCK
+
+  record_unit "$N" "$UNIT" "$UNIT_STATE" \
+    "{\"sessionId\":\"$SESSION_ID\",\"claudeExit\":$CLAUDE_RC,\"vitestExit\":$VITEST_RC,\"usd\":\"$UNIT_USD\",\"model\":\"$MODEL_CLAUDE\"}" \
+    "$UNIT_TELE_JSON"
 
   if [ "${BUDGET_BLIND:-0}" = "1" ]; then
     warn "stopping after unit $N: the budget gate is blind and continuing would be unbounded"
@@ -736,10 +1067,34 @@ const file = process.argv[2];
 const units = existsSync(e.B12_UNITS)
   ? readFileSync(e.B12_UNITS, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
   : [];
-const closed = units.filter((u) => u.state === "closed" || u.state === "already-green").length;
-const inherited = units.filter((u) => u.state === "already-green").length;
+// CLOSED MEANS BOTH CONJUNCTS. `already-green` used to be counted here, which
+// is how a run that called `repair` zero times could report ">= 2 of 3".
+const closed = units.filter((u) => u.state === "closed").length;
+const red = units.filter((u) => u.state === "red").length;
+const inherited = units.filter((u) => u.state === "inherited-unverified").length;
+const notHere = units.filter((u) => u.state === "not-attempted-here");
+// STATES THAT ARE NOT OBSERVATIONS. Each one means the model did not get a fair
+// draw at this unit, so it counts toward neither side of the pre-registered rule
+// and it stops the run from rendering a verdict at all. Exposure B's `aggregate`
+// was `no_response` and was published as `red`, and `red` is an observation.
+const NO_OBSERVATION = ["no_response", "no_repair_call", "could_not_run", "vitest_green_unverified"];
+const blind = units.filter((u) => NO_OBSERVATION.includes(u.state));
+const voids = (e.B12_VOIDS || "").split(/\s+/).filter(Boolean);
+// The artifact does NOT combine runs. Every reading this project has published
+// was written by hand into PREMISES.md with the artifact as its evidence, and a
+// script that arithmetics across two runs would be inventing the one number the
+// whole pre-registration exists to protect.
 const reading =
-  units.length < 3 ? "incomplete — fewer than three units attempted"
+  e.B12_ONLY
+    ? "partial — " + (closed + red + blind.length) + " unit(s) attempted here (" + e.B12_ONLY +
+      "), " + notHere.length + " carried from " + e.B12_CARRIED_FROM + ". NO verdict is rendered: " +
+      "the >= 2 of 3 reading spans both runs and is written by hand into PREMISES.md with both " +
+      "artifacts as evidence."
+  : blind.length > 0
+    ? "incomplete — " + blind.length + " unit(s) produced no observation (" +
+      blind.map((u) => u.name + ": " + u.state).join(", ") + "). A unit the model never got a fair " +
+      "draw at counts toward neither side, so this run cannot be read against the 2/1/0 rule."
+  : units.length < 3 ? "incomplete — fewer than three units attempted"
   : closed >= 2 ? "R_repair reachable (>= 2 of 3)"
   : closed === 0 ? "R_repair unreachable (0 of 3) — B12's text must say it measures gate alone BEFORE Phase 4"
   : "INCONCLUSIVE (exactly 1 of 3) — the manifest may not be sealed on this";
@@ -755,10 +1110,21 @@ const o = {
   resumedWithinExposure: e.B12_RESUME === "1",
   preRegisteredIn:
     "PREMISES.md § B12 — PHASE-3 EXPOSURE " + e.B12_EXPOSURE,
-  unitsAttempted: units.length,
-  unitsClosed: closed,
-  unitsClosedThisRun: closed - inherited,
-  unitsInheritedFromEarlierAttempt: inherited,
+  // Scoped to this run, and each state counted where it belongs rather than
+  // folded into a single number that reads as a result.
+  onlyUnit: e.B12_ONLY || null,
+  carriedFrom: e.B12_ONLY ? e.B12_CARRIED_FROM : null,
+  unitsAttemptedHere: closed + red + blind.length,
+  unitsClosedHere: closed,
+  unitsRedHere: red,
+  unitsWithNoObservation: blind.map((u) => ({ name: u.name, state: u.state })),
+  unitsInheritedUnverified: inherited,
+  unitsNotAttemptedHere: notHere.map((u) => u.name),
+  // Pre-registered VOID conditions, evaluated against telemetry rather than
+  // declared. An empty array means every one of them was checked and held; it
+  // does NOT mean none were checked -- the per-unit telemetryWindow below says
+  // which verdict each check returned.
+  voids,
   reading,
   units,
   spendUsd: e.B12_SPENT,
@@ -772,7 +1138,16 @@ const o = {
     claudeVersion: e.B12_CLAUDE_VER,
     claudeBinarySha256: e.B12_CLAUDE_SHA,
     claudeModel: e.B12_MODEL,
-    localModel: e.B12_LOCAL_MODEL,
+    // REQUESTED AND OBSERVED, split. The preflight has recorded the served
+    // model since `b12-preflight-mac.sh:672-682`; the scorer declared one and
+    // never looked. A run whose rows name a different model is scoring a model
+    // it cannot name, which `voids` above now says out loud.
+    localModel: {
+      requested: e.B12_LOCAL_MODEL,
+      observed: [...new Set(units.flatMap((u) =>
+        (u.telemetryWindow && Array.isArray(u.telemetryWindow.localModelObserved))
+          ? u.telemetryWindow.localModelObserved : []))],
+    },
     ratesSha256: e.B12_RATES,
     host: "mac",
     // Recorded because they are suspects, not decoration. Two attempts on
@@ -794,7 +1169,8 @@ const o = {
 writeFileSync(file, JSON.stringify(o, null, 2) + "\n");
 const back = JSON.parse(readFileSync(file, "utf8"));
 if (!back.context || !back.context.commit) { console.error("provenance did not land in " + file); process.exit(1); }
-process.stdout.write("B12-SCORER-OK closed=" + closed + "/" + units.length + "\n");
+process.stdout.write("B12-SCORER-OK closed=" + closed + " red=" + red + " no-observation=" + blind.length +
+  " inherited=" + inherited + " not-here=" + notHere.length + " voids=" + voids.length + "\n");
 JS
 [ -s "$MERGE_JS" ] || refuse "the merge script is empty; the artifact would have been finalised with no provenance"
 
@@ -806,6 +1182,7 @@ MERGE_OUT=$(B12_RUN_ID="$RUN_ID" B12_UNITS="$UNITS_JSON" B12_SPENT="$SPENT" B12_
   B12_OS="$OS_PRODUCT" B12_OS_BUILD="$OS_BUILD" B12_KERNEL="$KERNEL" B12_RUNTIME="$MLX_RUNTIME" \
   B12_PANIC_N="$PANIC_N" B12_PANIC_LAST="$PANIC_LAST" \
   B12_EXPOSURE="$EXPOSURE" B12_CONTEXT_FILES="$CONTEXT_FILES" B12_RESUME="$RESUME" \
+  B12_ONLY="$ONLY" B12_CARRIED_FROM="$CARRIED_FROM" B12_VOIDS="$VOIDS" \
   node "$MERGE_JS" "$ART" 2>&1)
 case "$MERGE_OUT" in
   *B12-SCORER-OK*) ART_FINALISED=1; ok "$MERGE_OUT" ;;
@@ -839,7 +1216,7 @@ if [ -n "$(git status --porcelain -- src/cost/b12 2>/dev/null)" ] || [ -f "$ART"
   [ -f "$ART" ] && git add "$ART" >/dev/null 2>&1
   git commit -q -m "wip: scorer bodies authored by repair on the Mac ($RUN_ID)
 
-$CLOSED of $ATTEMPTED units closed. Written by scripts/b12-scorer-mac.sh; the
+$CLOSED of $ATTEMPTED attempted units closed here. Written by scripts/b12-scorer-mac.sh; the
 bodies under src/cost/b12/ are the local model's, not a human's. Reviewed on the
 other machine before this reaches main." >/dev/null 2>&1 &&
     ok "committed $(git rev-parse --short HEAD)" || warn "commit failed; the diff is still in the archive"
@@ -870,12 +1247,27 @@ fi
 
 # "%s of %s" with CLOSED over ATTEMPTED read "1 of 2" on a run that closed
 # NOTHING: the 1 was `strata`, inherited and skipped, so it was never one of the
-# 2. The artifact had it right the whole time (unitsClosedThisRun: 0) and the
-# terminal line -- the only number most readings will ever see -- presented
-# inherited work as this run's. The denominator of the pre-registered rule is
-# THREE, and the split has to be on its face.
-printf '\n\033[1mDONE\033[0m — %s of 3 units closed: %s by THIS run, %s inherited from an earlier attempt. %s attempted here.\n' \
-  "$CLOSED" "$((CLOSED - INHERITED))" "$INHERITED" "$ATTEMPTED"
+# 2. The artifact had it right the whole time and the terminal line -- the only
+# number most readings will ever see -- presented inherited work as this run's.
+# The denominator of the pre-registered rule is THREE, and the split has to be
+# on its face. It now also has to show the units that produced NO observation,
+# which is the distinction that made exposure B's reading wrong.
+printf '\n\033[1mDONE\033[0m — %s of 3 units CLOSED here (repair passed:true AND vitest 0).\n' "$CLOSED"
+printf '   %s attempted here, %s inherited-unverified, %s not attempted here.\n' \
+  "$ATTEMPTED" "$INHERITED" "$NOT_HERE"
+node -e '
+  const fs = require("fs");
+  let rows = [];
+  try { rows = fs.readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map(JSON.parse); } catch {}
+  for (const r of rows) {
+    const w = r.telemetryWindow;
+    const detail = (w && typeof w === "object")
+      ? "  (repair calls " + w.repairCalls + ", passed " + w.repairPassed + ", attempts " + w.attemptsSeen + ")"
+      : "";
+    process.stdout.write("   unit " + r.unit + " " + r.name + ": " + r.state + detail + "\n");
+  }
+' "$UNITS_JSON" 2>/dev/null || true
+[ -n "$VOIDS" ] && printf '   \033[1mVOID conditions triggered:\033[0m%s\n' "$VOIDS"
 printf '\nSend back exactly this one file:\n  %s\n' "$ARCHIVE"
 printf '\nIt carries: the run artifact with provenance, the git bundle and diff of\n'
 printf 'what the local model wrote, the telemetry slice, the corpus captures, and\n'
