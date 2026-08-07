@@ -134,9 +134,11 @@ describe("computeTerms — every constant derived by hand", () => {
   it("files the refusals no window can own in the SECOND ledger, not nowhere", async () => {
     // UNPROVED CONTROL. `terms.ts` is a stub, so this fails on `not implemented`
     // whether it is right or wrong -- it has NEVER been executed against any
-    // implementation. The constants were derived by hand and the API shape is
-    // pinned by `tsc`; nothing else about it has been checked. RE-CHECK IT AS A
-    // CONTROL, by breaking the body deliberately, the day one lands.
+    // implementation. Its constants were derived by hand, and THAT IS ALL that
+    // has been checked: `tsconfig.json` includes `src/**` alone, so nothing here
+    // is type-checked and vitest transpiles without checking. Not even the API
+    // shape is pinned. RE-CHECK IT AS A CONTROL, by breaking the body
+    // deliberately, the day one lands.
     //
     // A row with no `invocation_id` is `unverifiable`, and one whose id this
     // transcript never echoes is `excludedForeign`. Neither can be in `mine` --

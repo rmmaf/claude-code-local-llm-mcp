@@ -68,13 +68,12 @@ In order:
      (`T - 1 - t = 0`). Do not recompute either from `capped` and a multiplier:
      the row is where that arithmetic lives, and a second derivation of one
      number is how two figures from one rule drift apart.
-   - They are typed `number | null` because a REFUSED row may be unsizeable. On a
-     credited row both are always numbers, but **`disposition === "credited"`
-     does not narrow them** — the type does not encode the invariant. So do not
-     write `?? 0`: that sums an unknown as zero, which is the one thing this
-     scorer forbids everywhere else, and every oracle would still pass. **Throw,
-     naming the row**, if a credited row arrives with either field null. A
-     defect upstream is worth a crash here; it is not worth a silent zero.
+   - `CreditedRow` is a **union discriminated on `disposition`**. Narrow it —
+     `if (row.disposition !== "credited") continue;` — and both fields are plain
+     `number` afterwards. Never write `?? 0`: on a refused row that sums an
+     unknown as zero, which is the one thing this scorer forbids everywhere else,
+     and on a credited row it is now unnecessary. If you find yourself reaching
+     for it, the narrowing is in the wrong place.
    - Add the same two numbers into `perDelivery[row.tool]`, creating the entry on
      first sight. Key by `row.tool` verbatim — never map a tool name onto another
      delivery's bucket. The entry is

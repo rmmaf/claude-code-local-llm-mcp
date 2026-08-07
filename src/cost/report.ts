@@ -408,12 +408,20 @@ export type RowDisposition =
   | "unmatched";
 
 /**
- * One telemetry row as the join saw it, credited or refused.
+ * One telemetry row as the join saw it, credited or refused. **A UNION
+ * DISCRIMINATED ON `disposition`**, and the name is legacy: it holds refused
+ * rows too, as the two arms below say.
  *
  * ONE ARRAY RATHER THAN TWO DERIVATIONS. The aggregates above answer "how much,
  * per tool"; this answers "which rows, and what happened to each". A consumer
  * that has to re-derive the second from the first is the shape this file has
  * already been burned by — two numbers from one rule drift apart.
+ *
+ * THE UNION IS AN ENFORCEMENT, NOT A TIDY-UP. Flat, with every field nullable,
+ * the contract below lived in this comment: `disposition === "credited"` narrowed
+ * nothing, so `row.units ?? 0` compiled, passed every oracle in the repository,
+ * and summed an unknown as zero — the one collapse this scorer forbids
+ * everywhere else. Do not flatten it back to make a literal easier to write.
  *
  * The positional fields are populated for `credited` rows and are `null` on a
  * refusal, because a refused row was not credited AGAINST a request — it has no
@@ -434,19 +442,10 @@ export type RowDisposition =
  * the second — and because two derivations of one number is the shape this file
  * has already been burned by.
  */
-export interface CreditedRow {
+interface LedgerRowCommon {
   invocationId: string | null;
   tool: string;
   ts: string;
-  disposition: RowDisposition;
-  thread: string | null;
-  /** `t` in `positionalMultiplier(t, T)`. */
-  index: number | null;
-  /** `T` in `positionalMultiplier(t, T)`. */
-  segmentSize: number | null;
-  ttl: "1h" | "5m" | null;
-  multiplier: number | null;
-  rateKey: string | null;
   bytesRaw: number;
   bytesReturned: number;
   /** `raw - returned`, unclamped and uncapped. */
@@ -455,7 +454,35 @@ export interface CreditedRow {
   capped: number;
   /** Reported here, in no scored total — see `ToolSaving.unitsFromTurnCollapse`. */
   turnsCollapsed: number;
-  units: number | null;
+  /**
+   * The tool's own verdict, from `detail.passed`, or `null` when the row does
+   * not carry a boolean one. **`null` is not `false`** — see `verdictOf`.
+   * B12's `MIN_REPAIR_CLOSURES` is counted off this, because `turnsCollapsed` is
+   * `rounds.length` whether or not the failure closed.
+   *
+   * On BOTH arms, because a refused row's tool still ran and still reported.
+   */
+  passed: boolean | null;
+}
+
+/**
+ * A row the join credited. Every positional field and both magnitudes are
+ * NON-NULL here, and that is the whole point of the split: `disposition ===
+ * "credited"` narrows them, so a consumer summing `row.units` cannot reach for
+ * `?? 0` and cannot be tempted to.
+ */
+export interface CreditedLedgerRow extends LedgerRowCommon {
+  disposition: "credited";
+  thread: string;
+  /** `t` in `positionalMultiplier(t, T)`. */
+  index: number;
+  /** `T` in `positionalMultiplier(t, T)`. */
+  segmentSize: number;
+  ttl: "1h" | "5m";
+  multiplier: number;
+  rateKey: string;
+  /** The scored contribution at the observed segment. */
+  units: number;
   /**
    * The same row at `T-1-t = 0` — the write component alone, B12's `S_lo`.
    *
@@ -464,15 +491,47 @@ export interface CreditedRow {
    * figure's. One field for both would have made the low-side concentration
    * guard a statement about the high side.
    */
-  unitsLo: number | null;
-  /**
-   * The tool's own verdict, from `detail.passed`, or `null` when the row does
-   * not carry a boolean one. **`null` is not `false`** — see `verdictOf`.
-   * B12's `MIN_REPAIR_CLOSURES` is counted off this, because `turnsCollapsed` is
-   * `rounds.length` whether or not the failure closed.
-   */
-  passed: boolean | null;
+  unitsLo: number;
 }
+
+/**
+ * A row the join refused, in one of the four classes. The positional fields are
+ * `null` because the row was not credited against a request, and the two
+ * magnitudes are `null` TOGETHER when nothing could size it.
+ */
+export interface RefusedLedgerRow extends LedgerRowCommon {
+  disposition: Exclude<RowDisposition, "credited">;
+  thread: null;
+  index: null;
+  segmentSize: null;
+  ttl: null;
+  multiplier: null;
+  rateKey: null;
+  /** The would-have magnitude, or `null` when nothing could size it. */
+  units: number | null;
+  /** The same, at `T-1-t = 0`. `null` exactly when `units` is. */
+  unitsLo: number | null;
+}
+
+export type CreditedRow = CreditedLedgerRow | RefusedLedgerRow;
+
+/** `Assert<false>` does not satisfy the constraint, so it is a `tsc` error. */
+type Assert<T extends true> = T;
+
+/**
+ * THE CONTROL FOR THE UNION, AND IT HAS TO LIVE IN `src/`.
+ *
+ * `tsconfig.json` includes `src/**` alone, so nothing under `tests/` is
+ * type-checked at all — vitest transpiles without checking. An assertion written
+ * there would be read by no compiler and would pass forever. `contract-probe.ts`
+ * is in this directory tree for the same reason, and says so in its own header.
+ *
+ * Widen either magnitude on the credited arm and these two stop compiling. That
+ * is the whole of the enforcement: the invariant used to live in a doc comment,
+ * where `row.units ?? 0` could ignore it silently.
+ */
+type _CreditedUnitsNonNull = Assert<null extends CreditedLedgerRow["units"] ? false : true>;
+type _CreditedUnitsLoNonNull = Assert<null extends CreditedLedgerRow["unitsLo"] ? false : true>;
 
 export interface CounterfactualReport {
   byTool: ToolSaving[];
@@ -953,9 +1012,9 @@ export function buildCounterfactual(
    */
   const refusedRow = (
     entry: TelemetryRecord,
-    disposition: RowDisposition,
+    disposition: Exclude<RowDisposition, "credited">,
     magnitude: { hi: number; lo: number } | null
-  ): CreditedRow => ({
+  ): RefusedLedgerRow => ({
     invocationId: entry.invocation_id ?? null,
     tool: entry.tool,
     ts: entry.ts,
@@ -978,7 +1037,7 @@ export function buildCounterfactual(
   const addRefused = (
     into: RefusedMagnitude,
     entry: TelemetryRecord,
-    disposition: RowDisposition
+    disposition: Exclude<RowDisposition, "credited">
   ): void => {
     const magnitude = wouldHaveAdded(entry);
     if (magnitude === null) into.unsized++;

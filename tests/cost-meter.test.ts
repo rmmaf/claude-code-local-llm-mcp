@@ -18,6 +18,7 @@ import {
   scopeTelemetry,
   unitsAddedByInstallation,
 } from "../src/cost/report.js";
+import type { CreditedRow } from "../src/cost/report.js";
 import {
   DEFAULT_MULTIPLIERS,
   DEFAULT_RATES,
@@ -2942,6 +2943,59 @@ describe("the four B12 scoring seams", () => {
     // horizon is being computed with the positional multiplier and `R_lo⁻ʳ` is
     // ranking rows by the wrong figure.
     expect(row?.unitsLo).not.toBeCloseTo(row?.units ?? 0, 3);
+  });
+
+  it("narrows a credited row's magnitudes by its disposition, so `?? 0` is unwritable", async () => {
+    // THE ENFORCEMENT, AND IT IS THE COMPILER'S. With `CreditedRow` flat and
+    // every field nullable, `disposition === "credited"` narrowed NOTHING: the
+    // sum below would have had to write `row.units ?? 0`, which compiles, passes
+    // every oracle in this repository, and sums an unknown as zero -- the one
+    // collapse this scorer forbids everywhere else. The invariant lived in a doc
+    // comment, and a doc comment cannot stop an implementer.
+    //
+    // The two reads in the loop carry NO coalescing and NO assertion — but THIS
+    // FILE IS NOT TYPE-CHECKED BY ANYTHING. `tsconfig.json` includes `src/**`
+    // alone and vitest transpiles without checking, so flattening the union
+    // would not be caught here. The real control is the pair of `Assert` type
+    // aliases beside the union in `report.ts`, which is inside `src/` for
+    // exactly that reason, as `contract-probe.ts` already is. This test is the
+    // RUNTIME half: it proves the two horizons come out of a real
+    // `buildCounterfactual` at the right values.
+    const sumCredited = (rows: readonly CreditedRow[]): { hi: number; lo: number } => {
+      let hi = 0;
+      let lo = 0;
+      for (const row of rows) {
+        if (row.disposition !== "credited") continue;
+        hi += row.units;
+        lo += row.unitsLo;
+      }
+      return { hi, lo };
+    };
+
+    const id = "bbbbbbbb-0000-4000-8000-bbbbbbbbbbbb";
+    const file = await transcriptWithLongSegment(id);
+    const transcript = await readTranscript(file);
+    const base = { ts: at(500), tool: "gate", bytes_raw: 50_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 };
+    const result = buildCounterfactual(
+      transcript,
+      [{ ...base, invocation_id: id }, { ...base }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.rows.map((r) => r.disposition)).toEqual(["credited", "unverifiable"]);
+    // Only the credited row is in the sum, at both horizons, by the hand
+    // derivation in the test above: t=1 of T=4, so 2.2 and 2.0.
+    const { hi, lo } = sumCredited(result.rows);
+    expect(hi).toBeCloseTo(17_243.243243243243, 6);
+    expect(lo).toBeCloseTo(15_675.675675675675, 6);
+
+    // And the refused arm KEEPS its nullability -- it is the arm where `null`
+    // means something. Sized here, through the timestamp fallback, but the type
+    // still admits `null` and a consumer still has to say what it does about it.
+    const refused = result.rows[1];
+    if (refused?.disposition === "credited") throw new Error("fixture changed");
+    expect(refused?.units).toBeCloseTo(17_243.243243243243, 6);
   });
 
   it("says a row could not report whether it closed, rather than saying it did not", async () => {

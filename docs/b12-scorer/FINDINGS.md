@@ -150,20 +150,33 @@ observations' `gate`/`repair` call counts, which `AggregateInput` does carry via
 clause and the register of prior runs that `design.artifacts` requires on the
 artifact's face.
 
-### F15 — `CreditedRow`'s null invariant is not encoded, so `?? 0` passes everything
+### F16 — no file under `tests/` is type-checked by anything
 
-`units` and `unitsLo` are `number | null`, non-null on every credited row and
-possibly null on a refused one. **`disposition === "credited"` narrows neither**
-— the interface is flat, so an implementation writing `row.unitsLo ?? 0` compiles
-and passes every oracle in the repository while committing the exact
-unknown-summed-as-zero collapse this scorer forbids everywhere else.
+`tsconfig.json` is `"include": ["src/**/*.ts"]`, and vitest transpiles without
+checking. So every oracle, every fixture and every helper in this repository is
+**unchecked TypeScript**: a fixture that stops matching its type, an assertion
+against a field that no longer exists, a factory missing a newly required
+property — none of it is caught until an assertion happens to read the value, and
+often not then.
 
-`UNIT-2.md` step 7 now prescribes a throw naming the row instead, which is a
-statement in a document and not an enforcement. The enforcement is to make
-`CreditedRow` a disposition-discriminated union — a credited row's two magnitude
-fields become `number`, a refused row's stay nullable. That touches the two
-literals in `report.ts` and every reader, so it is recorded rather than done in
-the pass that found it.
+The repository already knew and wrote it down twice — `src/contract-probe.ts`'s
+header and `src/cost/b12/types.ts`'s — as the reason those files live in `src/`.
+It was not carried into the test tree's own claims: several comments added by the
+scorer-correctness pass said an oracle's "API shape is pinned by `tsc`", which is
+false. Corrected.
+
+**Measured before proposing anything:** compiling `src/**` and `tests/**` under
+the existing `strict` settings produces **14 errors across 3 files** —
+`repair.test.ts` (12, all union access without narrowing: `ToolError |
+RepairResult` and `RepairDeps | undefined`), `helpers.ts` (1, a missing DOM lib
+name), `cost-meter.test.ts` (1, no declarations for `scripts/b12-run.mjs`). None
+is a real type mismatch, and **none is in the b12 oracles or fixtures**. So
+turning this on is a small, bounded job — a `tsconfig.tests.json` plus a gate
+step plus those 14.
+
+Not done here because it changes `gate`, which is this project's primary
+verification instrument, and that is a decision to take deliberately rather than
+as a side effect of a type fix.
 
 ### A stale citation in the frozen design, recorded because it cannot be fixed
 
@@ -264,6 +277,29 @@ window that originated no billed request belongs to neither `solo` nor `multi`
 and deflates neither, while an observation with a corrupt stratum belongs to one
 of the two declared cells and nobody can say which.
 
+### F15 — `CreditedRow`'s null invariant was not encoded, so `?? 0` passed everything — FIXED
+
+`units` and `unitsLo` were `number | null` on a flat interface, so
+`disposition === "credited"` narrowed neither and `row.unitsLo ?? 0` compiled,
+passed every oracle in the repository, and committed the exact
+unknown-summed-as-zero collapse this scorer forbids everywhere else. The
+invariant lived in a doc comment, and a doc comment cannot stop an implementer.
+
+**Fixed** by making `CreditedRow` a union discriminated on `disposition`:
+`CreditedLedgerRow` has `units`, `unitsLo` and every positional field as
+non-null; `RefusedLedgerRow` keeps them nullable and `units`/`unitsLo` null
+together. `UNIT-2.md` step 7 now says to narrow on the disposition instead of
+prescribing a throw — the compiler does the work the throw was standing in for.
+The positional fields came along for free: "null on a refusal" is now a type
+rather than a paragraph.
+
+**The control is two `Assert` type aliases beside the union, and it is in `src/`
+deliberately** — see **F16**: a compile-time assertion written in `tests/` is
+read by no compiler. Seen failing: widening `CreditedLedgerRow["units"]` gives
+`TS2344: Type 'false' does not satisfy the constraint 'true'`. A runtime half
+sits in `cost-meter.test.ts`, summing a real `buildCounterfactual`'s credited
+rows at both horizons with no coalescing anywhere.
+
 ### F8 — the unit headers were swapped — FIXED
 
 `strata.ts` said "UNIT 2" and is UNIT 1; `terms.ts` said "UNIT 1" and is UNIT 2.
@@ -358,8 +394,9 @@ The scorer-correctness pass added seven assertions to
 `tests/b12-aggregate.test.ts` and two to `tests/b12-terms.test.ts`. Both files
 test stubs, so **every one of them fails on `not implemented` whether it is right
 or wrong** — none has ever been executed against any implementation. Their
-constants were derived by hand and their API shape is pinned by `tsc`; nothing
-else about them has been checked, and each is marked `UNPROVED CONTROL`.
+constants were derived by hand, and **that is all that has been checked** — not
+even their API shape, because of **F16**: nothing under `tests/` is type-checked.
+Each is marked `UNPROVED CONTROL`.
 
 **Three were already defective when written, which is the argument for the
 re-check rather than against it.** Re-deriving the fixtures against the specs

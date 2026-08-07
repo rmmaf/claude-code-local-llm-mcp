@@ -100,10 +100,12 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
   it("credits the classes NO window can own, which is where two of the four live", () => {
     // UNPROVED CONTROL. `aggregate.ts` is a stub, so this fails on `not
     // implemented` whether it is right or wrong -- it has NEVER been executed
-    // against any implementation. The constants were derived by hand and the API
-    // shape is pinned by `tsc`; nothing else about it has been checked. RE-CHECK
-    // IT AS A CONTROL, by breaking the body deliberately, the day one lands. An
-    // oracle nobody has watched fail is not yet evidence of anything.
+    // against any implementation. Its constants were derived by hand, and THAT
+    // IS ALL that has been checked: `tsconfig.json` includes `src/**` alone, so
+    // no file under `tests/` is type-checked by anything and vitest transpiles
+    // without checking. Not even the API shape here is pinned. RE-CHECK IT AS A
+    // CONTROL, by breaking the body deliberately, the day one lands. An oracle
+    // nobody has watched fail is not yet evidence of anything.
     //
     // An `unverifiable` row has no `invocation_id` and an `excludedForeign` row's
     // id is absent from the transcript, so neither can ever be in a window's

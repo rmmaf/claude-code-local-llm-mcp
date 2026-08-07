@@ -15,7 +15,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import type { CreditedRow } from "../src/cost/report.js";
+import type { CreditedLedgerRow, CreditedRow } from "../src/cost/report.js";
 import type { Arm, B12Observation, ObservationTerms } from "../src/cost/b12/types.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -164,7 +164,7 @@ export function observation(over: Partial<B12Observation> = {}): B12Observation 
  * horizons and default apart on purpose — a fixture where they coincide cannot
  * tell a per-horizon ranking from a shared one, which is the whole of `R_lo⁻ʳ`.
  */
-export function creditedRow(over: Partial<CreditedRow> = {}): CreditedRow {
+export function creditedRow(over: Partial<CreditedLedgerRow> = {}): CreditedLedgerRow {
   return {
     invocationId: null,
     tool: "gate",
