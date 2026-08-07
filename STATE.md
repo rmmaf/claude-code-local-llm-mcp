@@ -5,37 +5,38 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**The B12 scorer is implemented and green.** Gate is at 4 failures, and all four
-are the pre-existing Windows CRLF/path ones. Every b12 test passes; tsc green.
-Baseline was 27 this morning.
+**F12 and F9 are closed.** Gate at 4 failures, all four the pre-existing Windows
+CRLF/path ones; tsc green; `SELFTEST OK — 50 checks passed`.
 
-- **Phase 3 closed at 1 of 3, deliberately**, with a second opinion asked to
-  attack the decision. The cost is recorded: the registered rule says exactly
-  1 of 3 needs more exposure, so that question is left UNRESOLVED, not answered.
-- **F11 and F13 ship as findings, not amendments.** `R_other` reads
-  `unexercised` and `identityHolds` reads `false`, both declared in PREMISES
-  before the run. B20's rule repairs the INSTRUMENT, not the estimand.
-- **All nine `UNPROVED CONTROL` assertions were re-checked** by planting nine
-  defects in three groups. Every one fired for its own reason.
-- **F1, F2a, F2b, F3, F8, F15, F16 closed** earlier in the day.
+- **A fourth unit exists**, `src/cost/b12/coverage.ts` + `UNIT-4.md`. Row
+  identity is `[artifact, ordinal]` because nothing on a telemetry row survives a
+  null `invocation_id`. `rHiPlus(all, coverage)` now has FIVE refusals.
+- **Step 1b is retired with the sum it guarded** — it was declared incomplete
+  the day it landed, and a guard over a quantity nothing computes reads as
+  protection while providing none.
+- **Codex changed the design twice, and both were blockers.** `runCoverage`
+  cannot take `ObservationTerms[]` alone (a row in no slice is invisible), and
+  "one distinct non-null value" silently discarded the unknown beside it.
+- **22 new assertions, all seen failing** on planted defects in six groups. Two
+  landed on numbers written down first: `110/1110` and `−600/1400`.
 
 ## Next action
 
-**F9, F10, F12, F14 remain** — ordinary implementation, no decision inside them.
-F12's run-level exactly-once ledger is the biggest and closes F9 with it.
-
-Nothing in `src/cost/b12/` is wired to a CLI or a reader yet: `observation.json`
-has no parser, and `verificationStratum` is not written by the harness at all.
+**F10, F14 and F17 remain**, none of them blocking. The bigger gap is that the
+scorer is wired to NOTHING: `observation.json` has no parser,
+`verificationStratum` is written by no harness, and the run-level assembler that
+would call `runCoverage` and `aggregate` does not exist. That assembler is the
+next real piece of work, and it is where `identify` gets its `source`.
 
 ## Do not redo
 
-- **A control never seen failing is not a control.** THREE of the first seven new
-  assertions were defective when written, each passing on the defect it was aimed
-  at. A fourth defect was in the fixture: `withToolUse` dropped the
-  `cache_creation` split, so a write priced at 1.25x while the file promised 2.0x.
-- **`tests/` was unchecked for the project's whole life**, and CI still did not
-  run the checking config after I fixed the local gate. Both closed.
-- **"Duplication is the safe direction" was wrong** — `wouldHaveAdded` is signed,
-  so a duplicated NEGATIVE refusal manufactures a fall.
-- **Three casts in three files** stood between a type and the thing it should
-  constrain. Look for `as unknown as` before trusting any narrowing.
+- **A control never seen failing is not a control.** Every one of the 22 passed
+  on first execution. Three of an earlier seven were defective when written.
+- **Two things I asserted and had backwards**, both caught by adjudication:
+  omission does NOT reliably deflate the hold (magnitudes are signed, so an
+  omitted negative row raises it), and a clean preflight does NOT imply the new
+  refusals stay quiet — the frozen preflight screens for none of them (F17).
+- **`tests/` was unchecked for the project's whole life**, and CI did not run the
+  checking config after the local gate was fixed. Both closed.
+- **Look for `as unknown as` before trusting any narrowing** — three casts in
+  three files once stood between a type and the thing it should constrain.

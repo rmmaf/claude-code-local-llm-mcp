@@ -21,69 +21,25 @@ cannot fail on a defect is not evidence the defect is absent.
 
 ## OPEN
 
-### F9 — a credited row no window owns vanishes from every `S_o`
+### F17 — the frozen preflight screens for none of `R_hi⁺`'s new refusals
 
-REACHABLE, with a concrete path, not a hypothetical:
+Raised by the second adjudication on 2026-08-07, against a claim I had made and
+could not support: that a clean run trips none of the five conditions F9 and F12
+added to `rHiPlus`.
 
-1. A transcript holds a local `gate`/`repair` result whose payload carries no
-   invocation id. Then `localResults.length > 0` and `byInvocation.size === 0`,
-   so `provenanceUnavailable` is true (`report.ts:783-797`).
-2. An id-bearing telemetry row is admitted through the timestamp fallback
-   (`report.ts:964-970`).
-3. With a later request present it becomes a **credited** row (`report.ts:1030`).
-4. No local result carries that id, so it is in no observation's `mine`, and
-   `UNIT-2.md` step 6 drops it before `S_o` and before either ledger.
+`design.artifacts` fixes what the preflight asserts — `provenanceUnavailable ===
+false`, `ambiguous === 0`, `unmatched === 0`, `excludedForeign === 0`,
+`savedFraction !== null`, non-zero snapshot counts. It asserts **nothing** about
+`unverifiable`, about unique window ownership, about credited rows no window
+owns, about slices disagreeing, or about full slice coverage. And
+`savedFraction !== null` excludes only `provenanceUnavailable` and `ambiguous`;
+`report.ts:1240` deliberately does not withhold it for `unverifiable`.
 
-`computeTerms` structurally cannot detect this — it is handed one observation at
-a time. For a positive row this deflates R; for a signed-negative one it inflates
-it. `admissionRule` 5 withholds `savedFraction` on `provenanceUnavailable`, which
-protects the hold side and **not** the fall side: `R_hi+` is defined over the
-full observation set, and this row is in neither `S` nor any refusal class. No
-void condition detects it.
-
-The fix is the run-level coverage invariant in **F12**, not anything `terms.ts`
-can do.
-
-### F12 — `unattributedRefusals` can double-count, and the real fix is run-level
-
-The F1 fix below puts every unownable refused row into a second per-observation
-ledger. `scopeTelemetry` admits any row within ±60,000 ms of the transcript
-(`report.ts:717-734`), and `admissionRule` 5 says so by hand, so one physical row
-can sit in two observations' slices and be summed twice by `rHiPlus`.
-
-**Bounded, not solved, and the direction FOLLOWS THE SIGN.**
-`d/dF [(S+F−O)/(A+S+F)] = (A+O)/(A+S+F)² ≥ 0`, so `R_hi+` moves with `F` — and
-`F` can be negative, because `wouldHaveAdded` is signed and a row whose returned
-bytes exceed its capped raw bytes has a negative magnitude. So:
-
-- **positive** (the ordinary case) → `R_hi+` up. Safe: it can turn a true fall
-  into `open` and can never manufacture a hold, which is decided by `R_lo`, its
-  recomputations, the strata and `R_gate`.
-- **negative** → `R_hi+` down, which **manufactures a fall**.
-
-**Corrected at gate 2, where it was raised as a blocker.** "Duplication is the
-safe direction" was written here and in `types.ts` and was wrong in exactly the
-case the codebase has measured — whole tools net negative, `rowsNetNegative` on
-the row. `UNIT-3.md` step 1b now refuses `rHiPlus` on a negative
-`unattributedRefusals` class sum, which is the only case the declared types can
-see. **It is not a complete guard:** a class sum of zero can hide a +100 and a
-−100, and duplicating one of those moves the figure with nothing to detect it.
-
-The residue that remains even for positive magnitudes: duplicated units enter
-`holdsIf` 5's cleanliness ceiling, so duplication can also **block a legitimate
-hold**.
-
-Codex's design, recorded whole because it also closes F9: a run-level
-`RunTelemetryCoverage`, deduplicated by source artifact plus line ordinal (an
-`invocationId` cannot identify legacy null-id rows), holding the union of every
-observation's `mine`, with an **exactly-once invariant** — every telemetry row is
-either owned by exactly one observation or entered exactly once in the run-level
-ledger. `rHiPlus` would consume that, and `ObservationTerms.refusals` would go
-back to being a window-local diagnostic.
-
-Out of scope for the pass that produced it: `rHiPlus`'s signature takes
-`ObservationTerms[]`, `AggregateInput` has no run-level field, and the assembler
-does not exist and has no spec.
+So a run can pass its ten-minute preflight and still return `open` at scoring
+time on a condition the preflight never looked at. **That is the safe direction**
+— `open`, never a wrong fall — but it is a cost, and it is registered here rather
+than discovered on the day it happens. The preflight is a frozen artifact and is
+not amended; see F11 for the rule.
 
 ### F11 — `Σ_d R_d + R_other = R` is false, and the oracle hides it
 
@@ -175,6 +131,88 @@ note exists so the next reader does not follow the line number.
 
 ## CLOSED
 
+### F12 — `unattributedRefusals` double-counted, and the fix had to be run-level — FIXED
+
+`scopeTelemetry` admits a row on an exact invocation-id match **or** on a
+±60,000 ms window (`report.ts:828-846`), and `admissionRule` 5 names that window
+by hand, so one physical row sits in two observations' slices whenever two arms
+ran within a minute. `rHiPlus` summed each observation's `unattributedRefusals`,
+so that row was counted twice.
+
+**The direction follows the sign.** `d/dF [(S+F−O)/(A+S+F)] = (A+O)/(A+S+F)² ≥ 0`,
+and `F` can be negative because `wouldHaveAdded` is signed — a row whose returned
+bytes exceed its capped raw bytes has a negative magnitude, and this project has
+measured whole tools net negative. Positive duplication moved `R_hi⁺` up, which
+is safe; **negative duplication moved it down and manufactured a fall.**
+
+**Fixed** by `src/cost/b12/coverage.ts` (UNIT 4): row identity is
+`JSON.stringify([artifact, ordinal])`, stamped by `identify` at read time,
+because `TelemetryRecord` carries nothing that survives a null `invocation_id`.
+`ObservationTerms.rows` and the new `ObservationTerms.unattributed` are keyed;
+`runCoverage(universe, all)` resolves every physical row once; `rHiPlus` reads
+owned refusals per observation and unowned ones from the run ledger.
+
+**Step 1b is retired with the sum it guarded.** It refused on a negative
+unattributed class sum and this file declared it incomplete the day it landed —
+a class sum of zero hides a +100 and a −100. A guard standing over a quantity
+nothing computes any more reads as protection while providing none.
+`unattributedRefusals` survives as a per-window diagnostic that no figure sums.
+
+**Two corrections from the adjudication, both adopted:**
+
+- **`runCoverage` cannot take `ObservationTerms[]` alone.** `computeTerms`
+  receives a slice `scopeTelemetry` has already narrowed, so a row outside every
+  window is absent from every observation and invisible to a coverage built from
+  them. The run's full identified row set is an argument, and `unsliced` is the
+  state for a row the run produced that no window saw.
+- **"Exactly one distinct non-null value" was too weak.** One number beside one
+  `null` counted as agreement and discarded the unknown. Every occurrence must be
+  sized AND equal, or the row is `unsized`.
+
+Two slices can also disagree about what a row IS — `credited` in one transcript
+and `excludedForeign` in another (`report.ts:1081-1107`). `unverifiable` and
+`ambiguous` cannot vary that way; the other three can. No frozen class means "the
+transcripts disagree", so such a row is unsized and carries a `conflict` string.
+It needs no refusal rule of its own: every reachable disagreement either contains
+`credited`, which trips F9's condition, or contains `unmatched`, which is unsized
+by construction.
+
+### F9 — a credited row no window owns vanished from every `S_o` — FIXED
+
+REACHABLE, with a concrete path, not a hypothetical:
+
+1. A transcript holds a local `gate`/`repair` result whose payload carries no
+   invocation id. Then `localResults.length > 0` and `byInvocation.size === 0`,
+   so `provenanceUnavailable` is true (`report.ts:908`).
+2. An id-bearing telemetry row is admitted through the timestamp fallback
+   (`report.ts:1100-1107`).
+3. With a later request present it becomes a **credited** row.
+4. No local result carries that id, so it is in no observation's `mine`, and
+   `computeTerms` dropped it before `S_o` and before every refusal class.
+
+`computeTerms` structurally cannot detect this — it is handed one observation at
+a time, which is why the fix is UNIT 4's and not UNIT 2's.
+
+**Fixed by REPORTING AND REFUSING, not by crediting.** `design.metric` defines
+`S_o` over "`o`'s credited rows" and limits `R_hi⁺`'s additions to the four
+refusal classes, so adding such a row to the numerator would amend the ESTIMAND —
+which B20's repair rule does not license, on the same reading that decided F11 and
+F13. `coverage.unattributedCredited` publishes the count and the size, and
+`rHiPlus` returns `open`.
+
+**The refusal is unconditional, not sign-aware, and the first draft had that
+wrong.** Omitting a credited magnitude `U` moves the figure by
+`U(A+O) / (D(D+U))` with `D = A + S + refused`, so "a negative `U` is the safe
+direction" needs `D > 0` and `D + U > 0` — and `rHiPlus` checks only
+`denominator === 0`.
+
+**And the hold side is NOT protected by omission, which is the other thing I had
+backwards.** "Omission deflates the hold, which is the safe direction" is false
+as written: magnitudes are signed, so an omitted NEGATIVE credited row RAISES
+`R_lo` and `R_hi`, toward a hold. `verdictOf` has no hold branch today, so there
+is nothing to guard yet; the requirement is written into `UNIT-3.md`'s verdict
+rule and into `aggregate.ts` beside the function, for whoever writes it.
+
 ### F1 — two of the four refusal classes could never be populated — FIXED
 
 `UNIT-2.md` step 6 kept only rows whose `invocationId` was non-null and in
@@ -199,8 +237,15 @@ figure was short by two of them.
 
 **Fixed** by a second ledger, `ObservationTerms.unattributedRefusals`, holding
 every refused row in the slice whose `invocationId` is null or not in `mine`.
-`rHiPlus` sums both and refuses on `unsized > 0` in either. The duplication this
-admits is bounded and declared in **F12**.
+`rHiPlus` summed both and refused on `unsized > 0` in either.
+
+**Superseded 2026-08-07 by F12's fix, and this paragraph used to end here.** That
+shape double-counted every row two slices share, so the second ledger is now a
+per-window diagnostic nothing sums: the unowned rows are carried INDIVIDUALLY in
+`ObservationTerms.unattributed`, deduplicated by row identity in `runCoverage`,
+and `rHiPlus` reads the run-level result. The fix to F1 stands — the fall-side
+figure was short by two classes and no longer is — but the route it took to get
+there did not.
 
 ### F2a — `MIN_REPAIR_CLOSURES` was not implementable from the declared types — FIXED
 
@@ -411,6 +456,7 @@ declared in `run 2026-08-07-mac-b12-phase3-c40e9f4`.
 | `strata.ts` | local model, `c40e9f4` | 2026-08-07 | **accepted**; correct against `UNIT-1.md` step for step. F3 fixed here by hand. |
 | `terms.ts` | orchestrator, 2026-08-07 | — | implemented after Phase 3 closed |
 | `aggregate.ts` | orchestrator, 2026-08-07 | — | implemented after Phase 3 closed |
+| `coverage.ts` | orchestrator, 2026-08-07 | — | UNIT 4, written for F12/F9, never part of the exposure |
 
 `terms.ts` and `aggregate.ts` stopped being measured work when Phase 3 closed at
 1 of 3. `repair` never closed either of them and gets no further draw.
@@ -463,3 +509,40 @@ the 5-minute TTL — its documented conservative guess — while `req`'s own com
 promises 1h at 2.0x. Every constant hand-derived from that promise was 75 units
 out on a 100-token write, and `A_o` came back 5725 against 5800. A fixture that
 contradicts its own stated intent is invisible until something executes it.
+
+## Twenty-two more, for F12 and F9
+
+The F12/F9 pass added twenty-two assertions across `b12-coverage.test.ts` (new),
+`b12-aggregate.test.ts`, `b12-terms.test.ts` and `cost-meter.test.ts`. **All
+twenty-two passed on first execution, which is the state that says nothing.**
+Each was then checked against a planted defect, in six groups of at most one
+defect per function so attribution stayed clean:
+
+| defect planted | in | what fired |
+|---|---|---|
+| drop the `unmatched` row push | `buildCounterfactual` | rows 4 for 5 telemetry entries |
+| key as `${source}#${ordinal}` | `identify` | the encoding test, and the key on a priced row |
+| never push to `unattributed` | `computeTerms` | the unowned rows came back empty |
+| pair every row with `telemetry[0]` | `computeTerms` | two rows keyed ordinal 0 |
+| sum only the owned refusals | `rHiPlus` | 110/1110 against 160/1160, and 200/2200 |
+| one `CoveredRow` per occurrence | `runCoverage` | −600/1400 against −200/1800 |
+| report a generic reason | `rHiPlus` | the artifact stopped carrying the cause |
+| assign a contested key to its first claimant | `runCoverage` | contested came back empty |
+| filter the nulls before the sizing check | `resolve` | 400 where the answer is unknown |
+| drop the price-spread check | `resolve` | 400 chosen out of 400 and 900 |
+| drop the disposition-disagreement check | `resolve` | 400 on a row nobody can class |
+| drop the F9 reason | `runCoverage` | a credited orphan scored |
+| drop the `unsliced` reason | `runCoverage` | a row nobody saw scored |
+| drop the unsized-unowned reasons | `runCoverage` | an unknown summed as zero |
+| take ownership out of the claims map | `runCoverage` | an owned row entered the run ledger |
+| remove the sort in `resolve` | `resolve` | two callers, two different ledgers |
+
+**Two fired on numbers written into the comments before any body existed** —
+`110/1110` for the owned-only sum and `−600/1400` for the twice-counted row —
+which is the only form of prediction this file counts.
+
+**One assertion of the twenty-two could not be proved by its own defect and is
+marked as such:** `rows[0].key` on a priced row fired under the ENCODING defect
+but not under "always pair with index 0", because index 0's key is correct for
+row 0 either way. The index rule is proved by the `unattributed` assertion beside
+it, which fired on exactly that defect.

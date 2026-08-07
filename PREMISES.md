@@ -1588,10 +1588,11 @@ defect, and it pinned four of them in place.
       this section is taken with: from here on a green gate means more than it
       did, and no earlier run's gate reading may be compared with a later one on
       the strength of the number alone. `scripts/**` is still unchecked.
-    - **Nine of the new assertions are not controls yet.** They test stubs, so
-      they fail on `not implemented` whether they are right or wrong. Marked
-      `UNPROVED CONTROL` in the files and to be re-checked by breaking a real
-      body the day one exists. Registered now because "the oracle agreed" is
+    - **Nine of the new assertions were not controls when this was written, and
+      all nine have since been proved** (2026-08-07, the day the bodies landed;
+      the defect table is in `FINDINGS.md`). They tested stubs, so they failed on
+      `not implemented` whether they were right or wrong. Registered because
+      "the oracle agreed" is
       exactly the claim a green run would invite, and these oracles have not been
       watched fail — **three of the first seven were defective when written**,
       each passing on the very defect it was aimed at, and were caught only by
@@ -1643,15 +1644,56 @@ defect, and it pinned four of them in place.
   - Declared in advance so neither field is later mistaken for a measurement.
     This is disclosure, not a threshold change: nothing about what would count as
     a hold or a fall moves.
+- **F12 AND F9 ARE FIXED, AND `R_hi⁺` NOW HAS FIVE WAYS TO REFUSE THAT THE FROZEN
+  PREFLIGHT DOES NOT SCREEN FOR.** Registered 2026-08-07, after two rounds of
+  adversarial adjudication, before any later run.
+  - **What was wrong.** `scopeTelemetry` admits a telemetry row on a ±60,000 ms
+    window as well as on an exact id match, so one physical row sat in two
+    observations' slices and `R_hi⁺` summed it twice — and `wouldHaveAdded` is
+    signed, so a duplicated NEGATIVE magnitude pushed the fall-side figure DOWN,
+    toward a fall the data does not support (F12). Separately, a CREDITED row no
+    window owns was in no `S_o` and in none of the four refusal classes, so it was
+    summed zero times and no void condition saw it (F9).
+  - **What changed.** A fourth unit, `src/cost/b12/coverage.ts`, keyed on
+    (artifact, ordinal) because nothing on a telemetry row survives a null
+    `invocation_id`. It takes the run's WHOLE row set — not the union of the
+    slices, since a row outside every window is invisible to the observations —
+    and resolves each row once. `rHiPlus` reads it. **The old step 1b is retired
+    with the sum it guarded**, having been declared incomplete on the day it
+    landed.
+  - **THE COST, and it is the one I tried to argue away and could not.** The
+    frozen `preflight` artifact asserts `provenanceUnavailable === false`,
+    `ambiguous === 0`, `unmatched === 0`, `excludedForeign === 0` and
+    `savedFraction !== null`. It asserts NOTHING about `unverifiable`, about
+    unique window ownership, about credited rows no window owns, about slices
+    disagreeing, or about full slice coverage. **So a run can pass its preflight
+    and still return `open` at scoring time on a condition the preflight never
+    looked at.** That is the safe direction — `open`, never a wrong fall — but it
+    is a cost, and the preflight is frozen and is not amended. `FINDINGS.md` F17.
+  - **A second thing I had backwards, corrected here rather than quietly.**
+    "Omission deflates the hold, which is the safe direction" is FALSE:
+    magnitudes are signed, so an omitted NEGATIVE credited row raises `R_lo` and
+    `R_hi`, toward a hold. `verdictOf` has no hold branch yet, so the requirement
+    is recorded in `UNIT-3.md` and in `aggregate.ts` for whoever writes one.
+  - **This is instrument repair, not an amendment**, on the same reading that
+    decided F11 and F13: the ratio, the horizons, the four classes and the
+    thresholds are untouched. What moved is which multiset the sum runs over, and
+    it moved toward the one `design.metric` already describes.
+  - **UNIT-3 grew again** — a run-level argument and five refusal conditions —
+    and there is now a UNIT 4 that never existed during any exposure. An exposure
+    C would measure a task further still from A's and B's.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
   `c40e9f4` (`aggregate` red). Attempt 1 void. No exposure has reached the bar.
 - **Status:** open · **both exposures INCONCLUSIVE at 1 of 3** · `R_repair`
   neither reachable nor ruled out. The limits are pinned and verified (F7) and
-  the scorer's four spec defects are fixed (F1/F2a/F2b/F3), so nothing blocks an
-  exposure C — but it would measure a changed task, and whether to spend one is
-  open. F9–F14 remain, two of them structural.
+  the scorer's spec defects are fixed (F1/F2a/F2b/F3, then F9/F12), so nothing
+  blocks an exposure C — but it would measure a changed task, and whether to
+  spend one is open. **F10, F14 and F17 remain**, and the scorer is still wired
+  to nothing: `observation.json` has no parser, `verificationStratum` is written
+  by no harness, and the run-level assembler that would call `runCoverage` does
+  not exist.
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 
