@@ -83,10 +83,11 @@ export interface StrataPartition {
  * and is read off the observation; it is never inferred from what the gate did,
  * because inferring it after the fact lets the result choose its own cell.
  *
- * Declared is not the same as validated. Nothing in this repository checks that
- * field against its two legal values — the reader for `observation.json` has not
- * been written — so a typo arrives here as an ordinary string and leaves in
- * `unknownStratum` rather than nowhere at all.
+ * Declared is not the same as validated, and this one is not even written yet:
+ * `scripts/b12-run.mjs` puts no `verificationStratum` into `observation.json`,
+ * so the value reaches here through a manifest join nobody has built and nothing
+ * checks it against its two legal spellings on the way. A typo therefore arrives
+ * as an ordinary string, and leaves in `unknownStratum` rather than nowhere.
  */
 export function partitionByStrata(terms: readonly ObservationTerms[]): StrataPartition {
   const testRed: ObservationTerms[] = [];
