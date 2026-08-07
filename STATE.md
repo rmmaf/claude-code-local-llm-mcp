@@ -5,8 +5,8 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**F1, F2a, F2b, F3, F8 and F15 are closed**, each moving a spec, an oracle and a
-body together. Mechanisms in `FINDINGS.md`; registered in `PREMISES` first.
+**F1, F2a, F2b, F3, F8, F15 and F16 are closed.** Mechanisms in `FINDINGS.md`;
+the condition change registered in `PREMISES` first.
 
 - **`CreditedRow` gained `unitsLo` and `passed`** and became a union on
   `disposition`, so a credited row's magnitudes are `number` and `?? 0` is
@@ -15,12 +15,12 @@ body together. Mechanisms in `FINDINGS.md`; registered in `PREMISES` first.
   no window could own, so `rHiPlus` was short by them.
 - **`strata.ts` gained `unknownStratum`**, and `"fallen"` now needs all four
   cells evaluable — Codex's amendment, confirmed in `fallsIf`.
+- **`tsconfig.json` is the CHECKING config now** — `src/**` + `tests/**`, no
+  emit; `tsconfig.build.json` emits and stays narrow. No test file in this
+  repository had ever been type-checked. `scripts/**` still is not.
 - **Gate: 27 = 18 baseline + 9.** tsc green, selftest 50. Pin → `3d27f08`.
 
 ## Next action
-
-**Cheapest real win: type-check `tests/`** (F16). Measured at 14 errors in 3
-files, none in the b12 oracles. Left undone because it changes `gate`.
 
 **Two structural findings, neither an implementer's to fix.** `R_other` has no
 source data — only `gate` and `repair` write telemetry (F13). And
@@ -30,9 +30,9 @@ source data — only `gate` and `repair` write telemetry (F13). And
 
 ## Do not redo
 
-- **NOTHING UNDER `tests/` IS TYPE-CHECKED.** `tsconfig.json` is `src/**` only
-  and vitest transpiles, so "the API shape is pinned by tsc" was false wherever
-  I wrote it. A compile-time control must live in `src/`.
+- **`tests/` WAS UNCHECKED FOR THE WHOLE PROJECT'S LIFE**, and four comments in
+  `src/` recorded the hole as a reason to put things elsewhere rather than as
+  something to close. Cost to close: 14 errors, none a real mismatch.
 - **A control never seen failing is not a control** — nine new assertions test
   stubs and fail on `not implemented` either way. **Three of the first seven were
   defective**, each passing on the defect it was aimed at.

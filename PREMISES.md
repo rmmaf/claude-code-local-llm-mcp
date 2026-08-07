@@ -1578,6 +1578,16 @@ defect, and it pinned four of them in place.
       design and computed by the artifact — is **false** by `O/(A+S)` on every
       run with a non-zero installation term. Neither is fixable by an
       implementer; both need the design to say something it does not say.
+    - **`tests/**` joined `tsconfig.json` in the same pass.** No test file in
+      this repository had ever been type-checked — vitest transpiles without
+      checking — so every fixture, oracle and helper was unchecked TypeScript,
+      and four comments in `src/` recorded the hole as a reason to put things
+      elsewhere rather than as something to close. Cost, measured before the
+      change: 14 errors in 3 files, none a real mismatch and none in the b12
+      oracles. **This is a change to `gate`,** the instrument every reading in
+      this section is taken with: from here on a green gate means more than it
+      did, and no earlier run's gate reading may be compared with a later one on
+      the strength of the number alone. `scripts/**` is still unchecked.
     - **Nine of the new assertions are not controls yet.** They test stubs, so
       they fail on `not implemented` whether they are right or wrong. Marked
       `UNPROVED CONTROL` in the files and to be re-checked by breaking a real

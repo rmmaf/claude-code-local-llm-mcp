@@ -4,9 +4,12 @@
  * This file exists so the three units under `src/cost/b12/` agree about what
  * they are passing each other before any of them is implemented, and so `tsc`
  * enforces that agreement while the bodies are still `throw`. It sits under
- * `src/` on purpose: `tsconfig.json` covers `src/**` alone, so a scoring type
- * defined in `scripts/` or `tests/` would be checked by nothing, and this
- * repository already put `contract-probe.ts` here for exactly that reason.
+ * `src/` on purpose: `tsconfig.json` covers `src/**` and `tests/**` but not
+ * `scripts/**`, so a scoring type defined in a script would be checked by
+ * nothing — and this vocabulary is production code besides. `contract-probe.ts`
+ * is here for the same reason. **Until 2026-08-07 the config covered `src/**`
+ * ALONE and this sentence named `tests/` too, which was the true reason then:
+ * no test file in the repository was type-checked by anything.**
  *
  * Two shapes below encode a rule rather than a value, and both are deliberate:
  * `Evaluable<T>` makes "not evaluable" unrepresentable as a number, and

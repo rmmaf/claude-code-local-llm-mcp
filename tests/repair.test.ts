@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { contextExhausted } from "../src/contract-probe.js";
 import type { ProcessResult, ProcessRunner } from "../src/exec.js";
-import type { ToolError } from "../src/fs-safety.js";
+import { ToolError } from "../src/fs-safety.js";
 import { readTelemetry } from "../src/telemetry.js";
 import { runRepair } from "../src/tools/repair.js";
 import { chatBody, fileBlock, makeTempRoot, noLmsRunner, queuedFetch, testConfig, writeFileTree } from "./helpers.js";
@@ -59,6 +59,26 @@ async function setup(root: string): Promise<void> {
 }
 
 const baseArgs = { files: ["src/math.ts"], spec: "add() must return the sum, not the difference" };
+
+/**
+ * The rejection, narrowed to what the assertions below actually read.
+ *
+ * `.catch((e: unknown) => e as ToolError)` types the result as
+ * `RepairResult | ToolError`, so every `error.message` and `error.code` after it
+ * was an unchecked property access — invisible for as long as nothing
+ * type-checked this tree, and silently `undefined` on the day the call stopped
+ * rejecting. `not.toMatch(...)` against `undefined` throws with a message about
+ * the matcher rather than about the call, which is the wrong thing to read at
+ * 2am. This says what went wrong instead.
+ */
+async function rejectionOf(call: Promise<unknown>): Promise<ToolError> {
+  const outcome: unknown = await call.then(
+    (value) => value,
+    (error: unknown) => error
+  );
+  if (outcome instanceof ToolError) return outcome;
+  throw new Error(`expected the call to reject with a ToolError; it produced ${String(outcome)}`);
+}
 
 describe("repair loop", () => {
   it("does nothing when the checks are already green", async () => {
@@ -595,7 +615,7 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 300, max_rounds: 1 },
@@ -827,7 +847,7 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair({ ...baseArgs, budget_seconds: 1, max_rounds: 1 }, testConfig(root), {
       processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
@@ -855,7 +875,7 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 300, max_rounds: 1 },
@@ -889,7 +909,7 @@ describe("repair loop", () => {
           elapsed = 5_000; // the deadline is now long past
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 1, max_rounds: 1 },
@@ -924,7 +944,7 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 1, max_rounds: 1 },
@@ -1262,12 +1282,14 @@ describe("repair loop", () => {
     await fs.writeFile(path.join(root, ".local-coder", "checks.json"), "{ not json", "utf8");
     const { fetchImpl } = queuedFetch([]);
 
-    const error = await runRepair(baseArgs, testConfig(root), {
-      processRunner: sequencedProcess([]),
-      fetchImpl,
-      runner: noLmsRunner(),
-      vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
-    }).catch((e: unknown) => e as ToolError);
+    const error = await rejectionOf(
+      runRepair(baseArgs, testConfig(root), {
+        processRunner: sequencedProcess([]),
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
+      })
+    );
 
     // The first gate threw while reading its config, so nothing executed and
     // nothing can have touched the tree. Warning here would be a false alarm,
@@ -1291,11 +1313,13 @@ describe("repair loop", () => {
       throw new Error("command not found: npx");
     };
 
-    const error = await runRepair({ ...baseArgs, max_rounds: 2 }, testConfig(root), {
-      processRunner,
-      fetchImpl,
-      runner: noLmsRunner(),
-    }).catch((e: unknown) => e as ToolError);
+    const error = await rejectionOf(
+      runRepair({ ...baseArgs, max_rounds: 2 }, testConfig(root), {
+        processRunner,
+        fetchImpl,
+        runner: noLmsRunner(),
+      })
+    );
 
     // Setting the flag on the gate merely RETURNING would have claimed the tree
     // state was unknown after checks that never started.
@@ -1323,12 +1347,14 @@ describe("repair loop", () => {
       return { stdout: "", stderr: "", code: 0, timedOut: false };
     };
 
-    const error = await runRepair(baseArgs, testConfig(root), {
-      processRunner: sequencedProcess([]),
-      fetchImpl,
-      runner: noLmsRunner(),
-      vcsRunner,
-    }).catch((e: unknown) => e as ToolError);
+    const error = await rejectionOf(
+      runRepair(baseArgs, testConfig(root), {
+        processRunner: sequencedProcess([]),
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner,
+      })
+    );
 
     // A real difference, but no check ever executed — so it cannot have been
     // caused by one, and saying "your checks changed this" would be a lie.

@@ -1,8 +1,8 @@
 /**
  * Scoring for the whole-file output contract — the rules `scripts/contract-stability.ts`
  * applies to each response, kept here rather than in the script for two reasons:
- * `tsconfig.json` covers `src/**` only, so scripts are outside `tsc` and outside
- * `gate`; and a detector with false positives silently corrupts every number the
+ * `tsconfig.json` covers `src/**` and `tests/**`, so scripts are STILL outside
+ * `tsc` and outside `gate`; and a detector with false positives silently corrupts every number the
  * diagnostic reports, which makes it exactly the kind of thing that needs tests.
  *
  * The contract is IMPLEMENT_SYSTEM_PROMPT's: "Return the COMPLETE final content

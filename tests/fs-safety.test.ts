@@ -277,7 +277,9 @@ describe("file content safety", () => {
    * An unknown window must FAIL OPEN. The asymmetry is the point: skipping the
    * check risks one bad response, while a NaN budget makes every `<=` false and
    * refuses every generation in the process. The undefined case is not
-   * hypothetical — Config literals are unchecked, `tsconfig` covering src/ only.
+   * hypothetical: it came from a `Config` literal in this tree, back when
+   * `tsconfig.json` covered `src/**` only and nothing here was type-checked. That
+   * route is closed. A `Config` still arrives from JSON at runtime unchecked.
    */
   it("skips the check rather than refusing when the window is unknown", () => {
     const editable = [{ rel: "a.ts", bytes: 35_656 }];

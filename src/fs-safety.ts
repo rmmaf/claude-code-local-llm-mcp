@@ -313,10 +313,13 @@ export function enforceOutputCap(
   //
   // The guard tests for a finite positive NUMBER rather than `!== null`, because
   // the failure it prevents is asymmetric and was observed: a Config literal
-  // built without `contextTokens` (nothing type-checks those — `tsconfig`
-  // covers `src/**` only) arrives as `undefined`, makes the budget NaN, and
+  // built without `contextTokens` arrives as `undefined`, makes the budget NaN, and
   // every `<=` against NaN is false, so a check meant to refuse ONE oversized
   // request refuses EVERY request instead. An unknown window must fail open.
+  //
+  // The literal that produced it was in `tests/`, which `tsconfig.json` did not
+  // cover until 2026-08-07 and now does. That route is closed; the guard stays,
+  // because a `Config` also arrives from JSON at runtime and no compiler sees it.
   if (window === undefined) return;
   const { contextTokens } = window;
   if (typeof contextTokens !== "number" || !Number.isFinite(contextTokens) || contextTokens <= 0) {

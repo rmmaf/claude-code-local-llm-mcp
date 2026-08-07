@@ -27,11 +27,13 @@ export function testConfig(root: string, overrides: Partial<Config> = {}): Confi
     timeoutMs: 30_000,
     maxFileKb: 256,
     maxContextKb: 512,
-    // Must be spelled out even though they match DEFAULTS: tsconfig includes
-    // src/**/*.ts only, so nothing type-checks this literal against Config. A
-    // missing numeric field does not fail here — it reaches the output cap as
-    // undefined, makes the budget NaN, and every comparison against NaN is
-    // false, so the pre-flight would refuse every generation in the suite.
+    // Spelled out even though they match DEFAULTS. The original reason was that
+    // `tsconfig.json` included `src/**` only, so NOTHING type-checked this
+    // literal against `Config` — a missing numeric field reached the output cap
+    // as undefined, made the budget NaN, and every comparison against NaN is
+    // false, so the pre-flight refused every generation in the suite. `tests/**`
+    // is in the config now and `tsc` would catch it, which is why that is worth
+    // saying rather than deleting: the explicitness is no longer the guard.
     outputBytesPerToken: 3.5,
     inputBytesPerToken: 3.9,
     outputUsableFraction: 0.9,
@@ -129,7 +131,11 @@ export interface QueuedFetch {
 export function queuedFetch(bodies: object[]): QueuedFetch {
   const queue = [...bodies];
   const calls: RecordedCall[] = [];
-  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  // `Parameters<FetchLike>` rather than `RequestInfo`, which is a DOM lib name
+  // and `lib` is `["ES2022"]`. This read as valid for as long as nothing
+  // type-checked this tree; it is the same type either way, taken from the alias
+  // the server itself passes around.
+  const fetchImpl = (async (input: Parameters<FetchLike>[0], init?: RequestInit) => {
     const url = String(input);
     const rawBody = typeof init?.body === "string" ? init.body : undefined;
     calls.push({ url, init, body: rawBody !== undefined ? JSON.parse(rawBody) : undefined });

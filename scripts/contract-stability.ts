@@ -18,8 +18,9 @@
  * file listed in the request". Every response is sorted into exactly one of
  * `complete` / `elided` / `truncated` by `src/contract-probe.ts` — the rules
  * live there, under `tsc` and under the test suite, because `tsconfig.json`
- * covers `src/**` only and a scoring bug here would corrupt every number
- * silently. This file is the runner: corpus, requests, aggregation, artifact.
+ * covers `src/**` and `tests/**` but NOT `scripts/**` — this file is unchecked —
+ * and a scoring bug here would corrupt every number silently. This file is the
+ * runner: corpus, requests, aggregation, artifact.
  *
  * A request that never produced a response (timeout, HTTP, unreachable) is
  * counted as `errored` and kept out of the three categories — a timeout is not

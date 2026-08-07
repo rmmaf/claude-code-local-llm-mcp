@@ -2953,14 +2953,14 @@ describe("the four B12 scoring seams", () => {
     // collapse this scorer forbids everywhere else. The invariant lived in a doc
     // comment, and a doc comment cannot stop an implementer.
     //
-    // The two reads in the loop carry NO coalescing and NO assertion — but THIS
-    // FILE IS NOT TYPE-CHECKED BY ANYTHING. `tsconfig.json` includes `src/**`
-    // alone and vitest transpiles without checking, so flattening the union
-    // would not be caught here. The real control is the pair of `Assert` type
-    // aliases beside the union in `report.ts`, which is inside `src/` for
-    // exactly that reason, as `contract-probe.ts` already is. This test is the
-    // RUNTIME half: it proves the two horizons come out of a real
-    // `buildCounterfactual` at the right values.
+    // The two reads in the loop carry NO coalescing and NO assertion, and since
+    // `tests/**` joined `tsconfig.json` on 2026-08-07 that IS enforced here:
+    // flattening the union stops this file compiling. It did not when the union
+    // landed — nothing in this tree was type-checked then — which is why the
+    // primary control is still the pair of `Assert` aliases beside the union in
+    // `report.ts`, where the type is. This test is the RUNTIME half: it proves
+    // the two horizons come out of a real `buildCounterfactual` at the right
+    // values, which no type can say.
     const sumCredited = (rows: readonly CreditedRow[]): { hi: number; lo: number } => {
       let hi = 0;
       let lo = 0;

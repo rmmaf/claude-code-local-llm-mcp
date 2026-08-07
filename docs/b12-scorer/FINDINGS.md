@@ -150,34 +150,6 @@ observations' `gate`/`repair` call counts, which `AggregateInput` does carry via
 clause and the register of prior runs that `design.artifacts` requires on the
 artifact's face.
 
-### F16 — no file under `tests/` is type-checked by anything
-
-`tsconfig.json` is `"include": ["src/**/*.ts"]`, and vitest transpiles without
-checking. So every oracle, every fixture and every helper in this repository is
-**unchecked TypeScript**: a fixture that stops matching its type, an assertion
-against a field that no longer exists, a factory missing a newly required
-property — none of it is caught until an assertion happens to read the value, and
-often not then.
-
-The repository already knew and wrote it down twice — `src/contract-probe.ts`'s
-header and `src/cost/b12/types.ts`'s — as the reason those files live in `src/`.
-It was not carried into the test tree's own claims: several comments added by the
-scorer-correctness pass said an oracle's "API shape is pinned by `tsc`", which is
-false. Corrected.
-
-**Measured before proposing anything:** compiling `src/**` and `tests/**` under
-the existing `strict` settings produces **14 errors across 3 files** —
-`repair.test.ts` (12, all union access without narrowing: `ToolError |
-RepairResult` and `RepairDeps | undefined`), `helpers.ts` (1, a missing DOM lib
-name), `cost-meter.test.ts` (1, no declarations for `scripts/b12-run.mjs`). None
-is a real type mismatch, and **none is in the b12 oracles or fixtures**. So
-turning this on is a small, bounded job — a `tsconfig.tests.json` plus a gate
-step plus those 14.
-
-Not done here because it changes `gate`, which is this project's primary
-verification instrument, and that is a decision to take deliberately rather than
-as a side effect of a type fix.
-
 ### A stale citation in the frozen design, recorded because it cannot be fixed
 
 `admissionRule` 5 cites `savedFraction` at `report.ts:684`. It is at
@@ -276,6 +248,50 @@ Without it the F3 fix would have produced unevaluable cells that nothing read.
 window that originated no billed request belongs to neither `solo` nor `multi`
 and deflates neither, while an observation with a corrupt stratum belongs to one
 of the two declared cells and nobody can say which.
+
+### F16 — no file under `tests/` was type-checked by anything — FIXED
+
+`tsconfig.json` is `"include": ["src/**/*.ts"]`, and vitest transpiles without
+checking. So every oracle, every fixture and every helper in this repository is
+**unchecked TypeScript**: a fixture that stops matching its type, an assertion
+against a field that no longer exists, a factory missing a newly required
+property — none of it is caught until an assertion happens to read the value, and
+often not then.
+
+The repository already knew and wrote it down twice — `src/contract-probe.ts`'s
+header and `src/cost/b12/types.ts`'s — as the reason those files live in `src/`.
+It was not carried into the test tree's own claims: several comments added by the
+scorer-correctness pass said an oracle's "API shape is pinned by `tsc`", which is
+false. Corrected.
+
+**Measured before proposing anything:** compiling `src/**` and `tests/**` under
+the existing `strict` settings produces **14 errors across 3 files** —
+`repair.test.ts` (12, all union access without narrowing: `ToolError |
+RepairResult` and `RepairDeps | undefined`), `helpers.ts` (1, a missing DOM lib
+name), `cost-meter.test.ts` (1, no declarations for `scripts/b12-run.mjs`). None
+is a real type mismatch, and **none is in the b12 oracles or fixtures**.
+
+**Fixed by swapping which config is which, rather than by adding a third.**
+`tsconfig.json` is now the CHECKING config — `src/**` plus `tests/**`,
+`noEmit` — and emitting moved to `tsconfig.build.json`, whose `include` stays
+narrow so `dist/` and the published package never carry the tests. That was the
+only shape that needed no change to `gate`: its autodetection hardcodes
+`tsc -p tsconfig.json --noEmit` (`src/checks/config.ts:165`), and so does
+`scripts/b12-preflight-mac.sh`, and so does every editor. A `tsconfig.tests.json`
+that nothing invoked would have been the same hole with a config file in front
+of it.
+
+The 14: `NonNullable<Parameters<typeof runRepair>[2]>` for five `fetchImpl`
+casts; a `rejectionOf` helper narrowing `RepairResult | ToolError` at three sites
+that were reading `.message` off the union and would have read `undefined` the
+day the call stopped rejecting; `Parameters<FetchLike>[0]` for a `RequestInfo`
+that is a DOM name under `lib: ["ES2022"]`; and `scripts/b12-run.d.mts` for the
+one harness function a test calls.
+
+Seen failing: `billedRequestCount: "one"` in `tests/b12-fixtures.ts` now gives
+`TS2322` from the gate. **`scripts/**` is still unchecked** — deliberately, and
+`contract-probe.ts` and `contract-stability.ts` say so in their headers, which
+were corrected here along with six other comments that named the old scope.
 
 ### F15 — `CreditedRow`'s null invariant was not encoded, so `?? 0` passed everything — FIXED
 

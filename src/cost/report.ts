@@ -519,16 +519,17 @@ export type CreditedRow = CreditedLedgerRow | RefusedLedgerRow;
 type Assert<T extends true> = T;
 
 /**
- * THE CONTROL FOR THE UNION, AND IT HAS TO LIVE IN `src/`.
- *
- * `tsconfig.json` includes `src/**` alone, so nothing under `tests/` is
- * type-checked at all — vitest transpiles without checking. An assertion written
- * there would be read by no compiler and would pass forever. `contract-probe.ts`
- * is in this directory tree for the same reason, and says so in its own header.
+ * THE CONTROL FOR THE UNION, BESIDE THE UNION.
  *
  * Widen either magnitude on the credited arm and these two stop compiling. That
  * is the whole of the enforcement: the invariant used to live in a doc comment,
  * where `row.units ?? 0` could ignore it silently.
+ *
+ * It was written here because when the union landed, `tsconfig.json` covered
+ * `src/**` alone and an assertion in `tests/` would have been read by no
+ * compiler — the hole is closed now (`tests/**` is in the config), but the
+ * assertion still belongs next to the type it constrains rather than in a file
+ * that happens to import it.
  */
 type _CreditedUnitsNonNull = Assert<null extends CreditedLedgerRow["units"] ? false : true>;
 type _CreditedUnitsLoNonNull = Assert<null extends CreditedLedgerRow["unitsLo"] ? false : true>;

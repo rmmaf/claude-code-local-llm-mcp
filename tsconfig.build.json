@@ -1,0 +1,19 @@
+{
+  // THE EMITTING CONFIG, and the only one that emits.
+  //
+  // `tsconfig.json` is the CHECKING config: it covers `src/**` and `tests/**`
+  // and emits nothing, so the default config — the one editors load, the one
+  // `gate` autodetects (`src/checks/config.ts`), the one the B12 preflight runs
+  // — describes the whole surface that has to type-check. This file exists only
+  // because `dist/` must contain `src/` and nothing else.
+  //
+  // Keep `include` here narrow. Widening it puts the test tree in the published
+  // package, and `prepare` runs the build on install.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"]
+}

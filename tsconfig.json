@@ -1,11 +1,27 @@
 {
+  // THE CHECKING CONFIG. It covers `src/**` AND `tests/**`, and emits nothing.
+  //
+  // It used to include `src/**` alone, which meant NO test file in this
+  // repository was type-checked by anything: vitest transpiles without checking,
+  // so a fixture that stopped matching its type, an assertion against a field
+  // that no longer existed, or a factory missing a newly required property was
+  // caught by nobody. Four comments in `src/` recorded the hole as a reason to
+  // put things elsewhere rather than as something to close.
+  //
+  // It is THIS file rather than a side config because everything that matters
+  // reads this one by default: editors, `gate`'s autodetection
+  // (`src/checks/config.ts` hardcodes `tsc -p tsconfig.json --noEmit`), and
+  // `scripts/b12-preflight-mac.sh`. A `tsconfig.tests.json` nothing invokes
+  // would be the same hole with a config file in front of it.
+  //
+  // Emitting lives in `tsconfig.build.json`, which narrows `include` back to
+  // `src/**` so `dist/` and the published package never carry the tests.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
-    "outDir": "dist",
-    "rootDir": "src",
+    "noEmit": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -15,5 +31,5 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
