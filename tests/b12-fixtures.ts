@@ -99,21 +99,34 @@ export function subRequest(requestId: string, ms: number, uuid: string): string 
   });
 }
 
-/** The `tool_use` block that makes a request the CALLER of an invocation. */
+/**
+ * The `tool_use` block that makes a request the CALLER of an invocation.
+ *
+ * THE `cache_creation` SPLIT IS NOT OPTIONAL HERE. This overrides `message`
+ * wholesale, so anything `req` put there is gone — and without the split the
+ * transcript parser attributes the whole cache write to the 5-minute TTL, which
+ * is its documented conservative guess. That silently priced this request at
+ * 1.25x while `req`'s comment above promises 1h at 2.0x, and every constant
+ * hand-derived from that promise was 75 units out on a 100-token write. Nothing
+ * caught it because no oracle over this fixture had ever been executed.
+ */
 export function withToolUse(
   requestId: string,
   ms: number,
   usage: { write1h?: number },
   toolUseId: string
 ): string {
+  const write1h = usage.write1h ?? 0;
   return req(requestId, ms, usage, {
     message: {
       model: "test-model",
       content: [{ type: "tool_use", id: toolUseId, name: "mcp__local-coder__gate" }],
       usage: {
-        cache_creation_input_tokens: usage.write1h ?? 0,
+        input_tokens: 0,
+        cache_creation_input_tokens: write1h,
         cache_read_input_tokens: 0,
         output_tokens: 0,
+        cache_creation: { ephemeral_1h_input_tokens: write1h, ephemeral_5m_input_tokens: 0 },
       },
     },
   });

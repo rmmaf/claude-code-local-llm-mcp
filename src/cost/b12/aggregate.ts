@@ -8,11 +8,14 @@
  * so it is carried in a field whose name says what it is.
  */
 
+import type { CreditedRow } from "../report.js";
+import { partitionByStrata } from "./strata.js";
 import type {
   B12Result,
   DeliveryScore,
   Evaluable,
   ObservationTerms,
+  RefusalLedger,
   Recomputations,
   StrataCells,
 } from "./types.js";
@@ -37,6 +40,29 @@ export const MIN_DELIVERY_OBSERVATIONS = 5;
  */
 export const MIN_REPAIR_CLOSURES = 2;
 
+/** The four class names, in one place, so no figure is built from three. */
+const CLASSES = ["ambiguous", "unverifiable", "excludedForeign", "unmatched"] as const;
+
+const sumOf = <T>(xs: readonly T[], f: (x: T) => number): number =>
+  xs.reduce((total, x) => total + f(x), 0);
+
+const savedAt = (t: ObservationTerms, horizon: "lo" | "hi"): number =>
+  horizon === "lo" ? t.sLo : t.sHi;
+
+/** Every credited row on these observations, paired with the index that owns it. */
+function creditedRows(
+  terms: readonly ObservationTerms[]
+): Array<{ owner: number; row: CreditedRow & { disposition: "credited" } }> {
+  const out: Array<{ owner: number; row: CreditedRow & { disposition: "credited" } }> = [];
+  terms.forEach((t, owner) => {
+    for (const row of t.rows) {
+      if (row.disposition !== "credited") continue;
+      out.push({ owner, row });
+    }
+  });
+  return out;
+}
+
 /**
  * The pooled ratio: `(sum S - sum O) / (sum A + sum S)`.
  *
@@ -51,9 +77,12 @@ export const MIN_REPAIR_CLOSURES = 2;
  * at -467.1 units.
  */
 export function poolRatio(terms: readonly ObservationTerms[], horizon: "lo" | "hi"): number {
-  void terms;
-  void horizon;
-  throw new Error("not implemented");
+  const S = sumOf(terms, (t) => savedAt(t, horizon));
+  const A = sumOf(terms, (t) => t.aO);
+  const O = sumOf(terms, (t) => t.oO);
+  // An empty set has no ratio, and NaN propagates into every figure downstream.
+  if (A + S === 0) return 0;
+  return (S - O) / (A + S);
 }
 
 /**
@@ -76,8 +105,43 @@ export function poolRatio(terms: readonly ObservationTerms[], horizon: "lo" | "h
  * magnitude pushes this figure DOWN, toward a fall the data does not support.
  */
 export function rHiPlus(all: readonly ObservationTerms[]): Evaluable<number> {
-  void all;
-  throw new Error("not implemented");
+  for (const t of all) {
+    const ledgers: Array<[string, RefusalLedger]> = [
+      ["refusals", t.refusals],
+      ["unattributedRefusals", t.unattributedRefusals],
+    ];
+    for (const [which, ledger] of ledgers) {
+      for (const name of CLASSES) {
+        if (ledger[name].unsized > 0) {
+          return {
+            evaluable: false,
+            reason: `${t.taskId}/${t.arm}: ${ledger[name].unsized} ${name} refusal(s) in ${which} could not be sized, and an unknown may not be summed as zero`,
+          };
+        }
+      }
+    }
+    // The one duplication case the declared types can see. NOT a complete
+    // guard — a class sum of zero can hide a +100 and a -100 — and
+    // `FINDINGS.md` F12 is the run-level ledger that would close it.
+    for (const name of CLASSES) {
+      if (t.unattributedRefusals[name].units < 0) {
+        return {
+          evaluable: false,
+          reason: `${t.taskId}/${t.arm}: unattributed ${name} magnitude is negative (${t.unattributedRefusals[name].units}), and such a row may be counted twice, which would push this figure toward a fall the data does not support`,
+        };
+      }
+    }
+  }
+
+  const refused = sumOf(all, (t) =>
+    sumOf(CLASSES, (name) => t.refusals[name].units + t.unattributedRefusals[name].units)
+  );
+  const S = sumOf(all, (t) => t.sHi);
+  const A = sumOf(all, (t) => t.aO);
+  const O = sumOf(all, (t) => t.oO);
+  const denominator = A + S + refused;
+  if (denominator === 0) return { evaluable: true, value: 0 };
+  return { evaluable: true, value: (S + refused - O) / denominator };
 }
 
 /**
@@ -105,9 +169,48 @@ export function recompute(
   admitted: readonly ObservationTerms[],
   dropped: readonly ObservationTerms[]
 ): Recomputations {
-  void admitted;
-  void dropped;
-  throw new Error("not implemented");
+  const withoutLargestTask = (): ObservationTerms[] => {
+    if (admitted.length === 0) return [];
+    let worst = 0;
+    admitted.forEach((t, i) => {
+      if (t.aO > (admitted[worst]?.aO ?? -Infinity)) worst = i;
+    });
+    return admitted.filter((_, i) => i !== worst);
+  };
+
+  const rows = creditedRows(admitted);
+  /** `admitted` with one row's contribution removed from the observation that owns it. */
+  const withoutLargestRow = (horizon: "lo" | "hi"): ObservationTerms[] => {
+    const magnitude = (r: (typeof rows)[number]): number =>
+      horizon === "lo" ? r.row.unitsLo : r.row.units;
+    if (rows.length === 0) return [...admitted];
+    let best = 0;
+    rows.forEach((r, i) => {
+      const incumbent = rows[best];
+      if (incumbent !== undefined && magnitude(r) > magnitude(incumbent)) best = i;
+    });
+    const chosen = rows[best];
+    if (chosen === undefined) return [...admitted];
+    return admitted.map((t, i) =>
+      i !== chosen.owner
+        ? t
+        : horizon === "lo"
+          ? { ...t, sLo: t.sLo - chosen.row.unitsLo }
+          : { ...t, sHi: t.sHi - chosen.row.units }
+    );
+  };
+
+  const minusTask = withoutLargestTask();
+  // Reinstated with NO saving and its billing intact: the dilution guard.
+  const reinstated = [...admitted, ...dropped.map((t) => ({ ...t, sLo: 0, sHi: 0 }))];
+
+  return {
+    rLoMinusTask: poolRatio(minusTask, "lo"),
+    rHiMinusTask: poolRatio(minusTask, "hi"),
+    rLoMinusRow: poolRatio(withoutLargestRow("lo"), "lo"),
+    rHiMinusRow: poolRatio(withoutLargestRow("hi"), "hi"),
+    rAll: poolRatio(reinstated, "lo"),
+  };
 }
 
 /**
@@ -133,11 +236,36 @@ export function deliveryScore(
   horizon: "lo" | "hi",
   minClosures?: number
 ): DeliveryScore {
-  void terms;
-  void tools;
-  void horizon;
-  void minClosures;
-  throw new Error("not implemented");
+  const bucketsOf = (t: ObservationTerms) =>
+    tools.map((tool) => t.perDelivery[tool]).filter((b) => b !== undefined);
+  const carrying = terms.filter((t) => bucketsOf(t).some((b) => b.rowCount > 0));
+
+  // `unexercised` is a THIRD STATE and carries no `r` at all: a delivery nobody
+  // exercised has not failed to pay for itself, it has not been asked, and a 0
+  // would put it under 15% and fire the stopping criterion on an absence.
+  if (carrying.length < MIN_DELIVERY_OBSERVATIONS) {
+    return { scored: false, reason: "unexercised", observations: carrying.length };
+  }
+  if (minClosures !== undefined && minClosures > 0) {
+    // OBSERVATIONS, not rows: `holdsIf` says "at least two of THOSE", so one
+    // window that closed twice is one closure. `closureUnknown` counts toward
+    // neither side, which can only push this floor toward `unexercised`.
+    const closed = carrying.filter((t) => bucketsOf(t).some((b) => b.closures > 0));
+    if (closed.length < minClosures) {
+      return { scored: false, reason: "unexercised", observations: carrying.length };
+    }
+  }
+
+  const numerator = sumOf(terms, (t) =>
+    sumOf(bucketsOf(t), (b) => (horizon === "lo" ? b.sLo : b.sHi))
+  );
+  const A = sumOf(terms, (t) => t.aO);
+  const S = sumOf(terms, (t) => savedAt(t, horizon));
+  return {
+    scored: true,
+    r: A + S === 0 ? 0 : numerator / (A + S),
+    observations: carrying.length,
+  };
 }
 
 export interface AggregateInput {
@@ -159,12 +287,123 @@ export interface AggregateInput {
  * by its absence. Measured absence, corrupted declaration: not the same fact.
  */
 export function strataCells(admitted: readonly ObservationTerms[]): StrataCells {
-  void admitted;
-  throw new Error("not implemented");
+  const p = partitionByStrata(admitted);
+  const cell = (of: readonly ObservationTerms[], name: string): Evaluable<number> =>
+    of.length < MIN_DELIVERY_OBSERVATIONS
+      ? {
+          evaluable: false,
+          reason: `${name} holds ${of.length} admitted observation(s), below the floor of ${MIN_DELIVERY_OBSERVATIONS}`,
+        }
+      : { evaluable: true, value: poolRatio(of, "lo") };
+
+  const corrupted =
+    p.unknownStratum.length > 0
+      ? {
+          evaluable: false as const,
+          reason: `${p.unknownStratum.length} observation(s) carry an unrecognised verificationStratum, so both declared cells are deflated by an unknown amount`,
+        }
+      : null;
+
+  return {
+    testRed: corrupted ?? cell(p.testRed, "test-red"),
+    typesOnly: corrupted ?? cell(p.typesOnly, "types-only"),
+    solo: cell(p.solo, "solo"),
+    multi: cell(p.multi, "multi"),
+  };
 }
 
 /** The artifact. Owed by every registered run, whether it scores or voids. */
 export function aggregate(input: AggregateInput): B12Result {
-  void input;
-  throw new Error("not implemented");
+  const { admitted, dropped } = input;
+  const rLo = poolRatio(admitted, "lo");
+  const rHi = poolRatio(admitted, "hi");
+
+  const gate = deliveryScore(admitted, ["gate"], "lo");
+  const repair = deliveryScore(admitted, ["repair"], "lo", MIN_REPAIR_CLOSURES);
+  // `R_other` reads `unexercised` on every run this venue can produce: none of
+  // these five tools writes a telemetry row. Declared in advance in
+  // `PREMISES.md § B12` so the field is not mistaken for a measurement.
+  // `FINDINGS.md` F13.
+  const other = deliveryScore(
+    admitted,
+    ["fix", "implement", "models", "scaffold", "status"],
+    "lo"
+  );
+
+  // COMPUTED, NOT ASSUMED, and it comes out false whenever `O` is non-zero —
+  // which `holdsIf` 6 requires for every observation. See `deliveryScore`.
+  const A = sumOf(admitted, (t) => t.aO);
+  const S = sumOf(admitted, (t) => t.sLo);
+  const O = sumOf(admitted, (t) => t.oO);
+  const numeratorOf = (tools: readonly string[]): number =>
+    sumOf(admitted, (t) =>
+      sumOf(
+        tools.map((tool) => t.perDelivery[tool]).filter((b) => b !== undefined),
+        (b) => b.sLo
+      )
+    );
+  const deliverySum =
+    numeratorOf(["gate"]) +
+    numeratorOf(["repair"]) +
+    numeratorOf(["fix", "implement", "models", "scaffold", "status"]);
+  const identityHolds = Math.abs(deliverySum - (S - O)) < 1e-9;
+
+  const rows = creditedRows(admitted).map((r) => r.row);
+  const ratios = admitted
+    .map((t) => ({ numerator: t.sLo - t.oO, denominator: t.aO + t.sLo }))
+    .filter((x) => x.denominator !== 0)
+    .map((x) => x.numerator / x.denominator);
+
+  return {
+    runId: input.runId,
+    rLo,
+    rHi,
+    rHiPlus: rHiPlus([...admitted, ...dropped]),
+    recomputations: recompute(admitted, dropped),
+    strata: strataCells(admitted),
+    gate,
+    repair,
+    other,
+    identityHolds,
+    admitted: admitted.length,
+    dispositions: [...admitted, ...dropped].map((t) => ({
+      taskId: t.taskId,
+      arm: t.arm,
+      disposition: t.disposition,
+    })),
+    // Both instrument-bias pairs, over the CREDITED rows — the ones that carry a
+    // scored contribution. Reported, deciding nothing.
+    cappedVsUncapped: {
+      capped: sumOf(rows, (r) => r.capped),
+      uncapped: sumOf(rows, (r) => r.signed),
+    },
+    clampedVsSigned: {
+      clamped: sumOf(rows, (r) => Math.max(0, r.signed)),
+      signed: sumOf(rows, (r) => r.signed),
+    },
+    rowsNetNegative: rows.filter((r) => r.signed < 0).length,
+    // THE BANNED FORM, published because the design says to publish it. Nothing
+    // here reads it, and the field's name is the guard.
+    meanOfPerObservationRatios:
+      ratios.length === 0 ? 0 : sumOf(ratios, (x) => x) / ratios.length,
+    verdict: verdictOf(rHiPlus([...admitted, ...dropped]), strataCells(admitted)),
+    thresholds: { hold: 0.3, fall: 0.15 },
+  };
+}
+
+/**
+ * `"open"` unless something clearly decides otherwise, and NEVER an invented
+ * hold. A fall additionally requires all four strata cells evaluable, which
+ * `fallsIf` says twice: a fall stands unappealed only if "both subagent strata
+ * are evaluable", and "a run with fewer than 20 admitted observations, or any
+ * stratum below 5, is VOID or `open` — never a fall on a short set".
+ */
+function verdictOf(fallSide: Evaluable<number>, strata: StrataCells): B12Result["verdict"] {
+  const cellsEvaluable =
+    strata.testRed.evaluable &&
+    strata.typesOnly.evaluable &&
+    strata.solo.evaluable &&
+    strata.multi.evaluable;
+  if (fallSide.evaluable && fallSide.value < 0.15 && cellsEvaluable) return "fallen";
+  return "open";
 }

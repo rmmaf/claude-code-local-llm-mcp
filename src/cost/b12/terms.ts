@@ -19,10 +19,25 @@
  * matched to, as well as for `t` and `T`.
  */
 
-import type { TelemetryRecord } from "../../telemetry.js";
+import {
+  breakdownOfRequests,
+  buildCounterfactual,
+  buildSessionReport,
+  unitsAddedByInstallation,
+} from "../report.js";
+import type { CreditedRow } from "../report.js";
+import { rateKey } from "../rates.js";
 import type { Rates } from "../rates.js";
+import type { TelemetryRecord } from "../../telemetry.js";
 import type { Transcript } from "../transcript.js";
-import type { B12Observation, Disposition, ObservationTerms } from "./types.js";
+import { subagentShare } from "./strata.js";
+import type {
+  B12Observation,
+  DeliveryTerms,
+  Disposition,
+  ObservationTerms,
+  RefusalLedger,
+} from "./types.js";
 
 export interface TermsInput {
   observation: B12Observation;
@@ -63,9 +78,50 @@ export function windowInvocationIds(
   observation: B12Observation,
   transcript: Transcript
 ): Set<string> {
-  void observation;
-  void transcript;
-  throw new Error("not implemented");
+  const owned = new Set(observation.originatedRequestIds);
+  const ownedToolUseIds = new Set<string>();
+  for (const request of transcript.requests) {
+    if (!owned.has(request.requestId)) continue;
+    for (const use of request.toolUses) ownedToolUseIds.add(use.id);
+  }
+
+  const mine = new Set<string>();
+  for (const result of transcript.toolResults) {
+    // BOTH ids required, and the membership test is the point of the hop. A
+    // result whose `toolUseId` is null cannot be traced back to a request, so no
+    // window can claim it — dropping it here is what stops one task's saving
+    // from being credited to another.
+    if (result.invocationId === null || result.toolUseId === null) continue;
+    if (!ownedToolUseIds.has(result.toolUseId)) continue;
+    mine.add(result.invocationId);
+  }
+  return mine;
+}
+
+/** A four-class ledger with every counter at zero. */
+function emptyLedger(): RefusalLedger {
+  return {
+    ambiguous: { count: 0, units: 0, unsized: 0 },
+    unverifiable: { count: 0, units: 0, unsized: 0 },
+    excludedForeign: { count: 0, units: 0, unsized: 0 },
+    unmatched: { count: 0, units: 0, unsized: 0 },
+  };
+}
+
+/**
+ * File one refused row into whichever ledger it belongs to.
+ *
+ * `units` is summed when it is a number and counted as `unsized` when it is
+ * null — never summed as zero. That distinction is the reason `RefusedMagnitude`
+ * has two fields instead of one, and `R_hi+` refuses outright on a non-zero
+ * `unsized` rather than reporting a floor as a total.
+ */
+function addRefusal(into: RefusalLedger, row: CreditedRow): void {
+  if (row.disposition === "credited") return;
+  const cell = into[row.disposition];
+  cell.count++;
+  if (row.units === null) cell.unsized++;
+  else cell.units += row.units;
 }
 
 /**
@@ -78,6 +134,89 @@ export function windowInvocationIds(
  * call is not a measurement.
  */
 export function computeTerms(input: TermsInput): ObservationTerms {
-  void input;
-  throw new Error("not implemented");
+  const owned = new Set(input.observation.originatedRequestIds);
+  const aO = breakdownOfRequests(input.transcript.requests, input.rates, owned).units.total;
+  const oO = unitsAddedByInstallation(
+    input.transcript,
+    input.rates,
+    input.installedChars,
+    owned
+  );
+  const mine = windowInvocationIds(input.observation, input.transcript);
+
+  // THE WHOLE TRANSCRIPT, never a filtered one. Filtering here would shorten `T`
+  // and deflate every multiplier — see the header.
+  const counterfactual = buildCounterfactual(
+    input.transcript,
+    input.telemetry,
+    input.rates,
+    buildSessionReport(input.transcript, input.rates),
+    input.ambiguousIds
+  );
+
+  const rows: CreditedRow[] = [];
+  const refusals = emptyLedger();
+  const unattributedRefusals = emptyLedger();
+  const perDelivery: Record<string, DeliveryTerms> = {};
+  let sLo = 0;
+  let sHi = 0;
+
+  for (const row of counterfactual.rows) {
+    // OWNERSHIP, and nothing else, decides which side a row falls on. Writing
+    // the rule this way rather than as a list of dispositions is what keeps it
+    // correct: `unverifiable` can never be owned (it has no invocation id by
+    // definition) and `excludedForeign` is unowned on any normal input, but the
+    // two sets are not exact complements (`FINDINGS.md` F10).
+    const isMine = row.invocationId !== null && mine.has(row.invocationId);
+    if (!isMine) {
+      addRefusal(unattributedRefusals, row);
+      continue;
+    }
+
+    rows.push(row);
+    if (row.disposition !== "credited") {
+      addRefusal(refusals, row);
+      continue;
+    }
+
+    // Narrowed above, so both magnitudes are plain numbers here and no `?? 0` is
+    // reachable. `turnsCollapsed` is on the row and in NEITHER sum.
+    sHi += row.units;
+    sLo += row.unitsLo;
+
+    const bucket = (perDelivery[row.tool] ??= {
+      sLo: 0,
+      sHi: 0,
+      rowCount: 0,
+      closures: 0,
+      closureUnknown: 0,
+    });
+    bucket.sHi += row.units;
+    bucket.sLo += row.unitsLo;
+    bucket.rowCount++;
+    // THREE STATES, and `false` increments neither counter: a delivery that ran
+    // and did not close is not a delivery whose rows could not answer.
+    if (row.passed === true) bucket.closures++;
+    else if (row.passed === null) bucket.closureUnknown++;
+  }
+
+  const ownRequests = input.transcript.requests.filter((r) => owned.has(r.requestId));
+
+  return {
+    taskId: input.observation.taskId,
+    arm: input.observation.arm,
+    disposition: input.disposition,
+    aO,
+    sLo,
+    sHi,
+    oO,
+    rows,
+    refusals,
+    unattributedRefusals,
+    subagentShare: subagentShare(input.observation, input.transcript),
+    perDelivery,
+    billedRequestCount: ownRequests.length,
+    rateKeys: [...new Set(ownRequests.map((r) => rateKey(r.model, r.speed)))].sort(),
+    verificationStratum: input.observation.verificationStratum,
+  };
 }
