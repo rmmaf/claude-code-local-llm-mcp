@@ -130,6 +130,24 @@ export interface ToolDeps {
    */
   onModelResolved?: (model: string) => void;
   /**
+   * The context files that actually went INTO the prompt, reported once the
+   * message is assembled — not the `context_files` argument.
+   *
+   * The two differ: a path passed as both context and editable is dropped here
+   * and treated as editable only, and a caller recording its own argument would
+   * report a file the model never saw as context. That is the same class of
+   * error as `run 2026-08-04-mac-19-32k`'s declared-vs-loaded window, and B12's
+   * PHASE-3 EXPOSURE B registers a VOID condition on this exact fact — which,
+   * until this callback existed, no artifact could evaluate.
+   *
+   * Fired AFTER `loadFiles`, deliberately, unlike `onModelResolved`: a request
+   * refused by the caps never assembled a prompt, and recording paths for it
+   * would record an intent as an observation. A caller that never hears from
+   * this had no round put a prompt together at all, which is different from a
+   * round that assembled one carrying no context files.
+   */
+  onContextResolved?: (paths: string[]) => void;
+  /**
    * Called with each model response the moment it is parsed — before the diff,
    * the compare-and-swap or the write, any of which can throw.
    *
@@ -452,6 +470,12 @@ export async function runGeneration(
 
   const editable = await loadFiles(config.root, editablePaths, config.maxFileKb);
   const context = await loadFiles(config.root, contextPaths, config.maxFileKb);
+  // Read off what was LOADED, not off `contextPaths`, for the same reason
+  // `editableStats` above is selected by membership rather than by position:
+  // `rel` is spelled as the loader resolved it, and a list rebuilt from the
+  // argument would drift from the prompt the first time the two spellings
+  // differ. This is exactly what `buildUserMessage` is about to send.
+  deps.onContextResolved?.(context.map((f) => f.rel));
 
   const declared = new Map(editable.map((f) => [normalizeRel(f.rel), f]));
   const messages: ChatMessage[] = [

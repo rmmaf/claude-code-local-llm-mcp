@@ -631,6 +631,134 @@ describe("repair loop", () => {
     expect(detail.model).toBeNull();
   });
 
+  it("writes the context files to telemetry, which `files` cannot hold", async () => {
+    // `detail.files` is the diff's changed list, so it is structurally editable
+    // files only — a read-only reference file can never appear in it. B12's
+    // PHASE-3 EXPOSURE B voids itself if `src/cost/report.ts` did not reach the
+    // model, and it named `detail.files`/`context_files` as the evidence: one
+    // could not answer and the other did not exist.
+    const root = tempRoot();
+    await setup(root);
+    await writeFileTree(root, { "src/reference.ts": "export const K = 1;\n" });
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair(
+      { ...baseArgs, context_files: ["src/reference.ts"], max_rounds: 1 },
+      testConfig(root),
+      {
+        processRunner: sequencedProcess([
+          { stdout: tscErrors(2), code: 2 },
+          { stdout: "", code: 0 },
+        ]),
+        fetchImpl,
+        runner: noLmsRunner(),
+      }
+    );
+
+    const detail = (await readTelemetry(root))[0]?.detail as { context_files?: unknown };
+    expect(detail.context_files).toEqual(["src/reference.ts"]);
+  });
+
+  it("records the context files SENT, not the ones asked for", async () => {
+    // The control, and the only test that separates this field from a copy of
+    // `args.context_files`: a path passed as both context and editable is
+    // dropped from the context list by runGeneration and goes into the prompt
+    // once, as editable. Recording the argument would name a file as context
+    // that the model never saw as one — the same class of error as a run
+    // reporting its DECLARED window instead of its loaded one.
+    const root = tempRoot();
+    await setup(root);
+    await writeFileTree(root, { "src/reference.ts": "export const K = 1;\n" });
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    const result = await runRepair(
+      // src/math.ts is in BOTH lists.
+      { ...baseArgs, context_files: ["src/math.ts", "src/reference.ts"], max_rounds: 1 },
+      testConfig(root),
+      {
+        processRunner: sequencedProcess([
+          { stdout: tscErrors(2), code: 2 },
+          { stdout: "", code: 0 },
+        ]),
+        fetchImpl,
+        runner: noLmsRunner(),
+      }
+    );
+
+    expect(result.files_changed).toEqual(["src/math.ts"]);
+    const detail = (await readTelemetry(root))[0]?.detail as {
+      files?: unknown;
+      context_files?: unknown;
+    };
+    expect(detail.files).toEqual(["src/math.ts"]);
+    expect(detail.context_files).toEqual(["src/reference.ts"]);
+  });
+
+  it("records an empty context list rather than omitting the key", async () => {
+    // `[]` and absent have to mean different things: `[]` is a prompt that
+    // carried no context files, absent is a row written before this field
+    // existed. A reader that cannot tell them apart cannot decide a VOID — it
+    // would read "we never recorded this" as "none were sent".
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as { context_files?: unknown };
+    expect(detail).toHaveProperty("context_files");
+    expect(detail.context_files).toEqual([]);
+  });
+
+  it("leaves every byte figure B12 meters untouched by the new field", async () => {
+    // `repair` is the tool under measurement, so a field added to observe it
+    // must not move its numerator. `bytes_returned` is the size of the RESULT
+    // payload (repair.ts), which is why this field goes in `detail` and nowhere
+    // near `result` — two runs of one fixture, one with context files and one
+    // without, have to agree on all three metered figures.
+    const run = async (context: string[] | undefined) => {
+      const target = tempRoot();
+      await setup(target);
+      await writeFileTree(target, { "src/reference.ts": "export const K = 1;\n" });
+      const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+      const result = await runRepair(
+        { ...baseArgs, ...(context === undefined ? {} : { context_files: context }), max_rounds: 1 },
+        testConfig(target),
+        {
+          processRunner: sequencedProcess([
+            { stdout: tscErrors(2), code: 2 },
+            { stdout: "", code: 0 },
+          ]),
+          fetchImpl,
+          runner: noLmsRunner(),
+        }
+      );
+      const row = (await readTelemetry(target))[0];
+      return { result, row };
+    };
+
+    const without = await run(undefined);
+    const with_ = await run(["src/reference.ts"]);
+
+    // The field reached telemetry — otherwise this test passes vacuously.
+    expect((with_.row?.detail as { context_files?: unknown }).context_files).toEqual([
+      "src/reference.ts",
+    ]);
+    // And changed nothing that B12 divides by.
+    expect(with_.row?.bytes_raw).toBe(without.row?.bytes_raw);
+    expect(with_.row?.bytes_returned).toBe(without.row?.bytes_returned);
+    expect(with_.row?.turns_collapsed).toBe(without.row?.turns_collapsed);
+    expect(with_.result.bytes_returned).toBe(without.result.bytes_returned);
+    expect(with_.result).not.toHaveProperty("context_files");
+  });
+
   it("calls a generation the deadline cut off `budget`, not the model's fault", async () => {
     const root = tempRoot();
     await setup(root);

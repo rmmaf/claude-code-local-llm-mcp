@@ -597,6 +597,15 @@ async function repairLoop(
    * `model: null` about a request that had a model all along.
    */
   let model: string | null = null;
+  /**
+   * Its sibling, and `null` for the same reason: `null` means no round ever got
+   * as far as assembling a prompt, which is a different fact from `[]` — a
+   * prompt assembled carrying no context files. Read off `onContextResolved`
+   * rather than off `args.context_files`, because a path passed as both context
+   * and editable is dropped by `runGeneration` and never reaches the model;
+   * reporting the argument would report a file it never saw.
+   */
+  let contextFiles: string[] | null = null;
   const generationDeps: RepairDeps = {
     ...deps,
     onFileWritten: (rel, content) => {
@@ -605,6 +614,9 @@ async function repairLoop(
     },
     onModelResolved: (resolved) => {
       model = resolved;
+    },
+    onContextResolved: (paths) => {
+      contextFiles = paths;
     },
   };
 
@@ -922,6 +934,15 @@ async function repairLoop(
       // call ended before any generation started, not that the name was lost.
       model,
       files: changed,
+      // The read-only files the model was actually GIVEN, which `files` above
+      // structurally cannot hold: `changed` comes from the diff, so it lists
+      // editable files only. Recorded unconditionally, so an absent key means
+      // the row predates this field and `[]` means none were sent — a
+      // distinction a reader needs, because "the context file was there" and
+      // "we cannot tell" are different answers. B12's PHASE-3 EXPOSURE B voids
+      // itself on `src/cost/report.ts` not reaching the model, and until this
+      // key existed that VOID was a check that could not fail.
+      context_files: contextFiles,
       stats: diff === "" ? null : diffStats(diff),
       checks: summarizeGate(gate).map((c) => ({ name: c.name, passed: c.passed })),
       // The per-round trace, which until now went only to the caller. B7 asks
