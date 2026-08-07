@@ -170,6 +170,26 @@ does not hold for `observe`: the preflight already fails without
 observation cannot run without it. So `observe` may import `readTranscript`,
 `lineagesOf` and `scopeTelemetry`, and the copy stays only for `snapshot`.
 
+**SHIPPED 2026-08-07 — THE ARCHIVE HALF, AND F24 STAYS OPEN.**
+`src/cost/b12/capture.ts` builds artifact 6 as a value: the lineage reduced to
+`RawRecord`, the telemetry window verbatim with the archive path as its identity
+source, the owned `invocation_id` set, and the end worktree hashed as a labelled
+superset. `observe()` calls it after acceptance and before
+`git worktree remove`, then STAGES, refuses on an empty index, COMMITS and
+refuses again if `HEAD` does not carry the path — so "committed at each task's
+END" is a fact rather than an intention. `takeSnapshot` gained artifact 5's
+per-file sha256. The dead `.mcp.json` fallback is a refusal now, and
+`dirtyAtAcceptance` is read at acceptance time and decides nothing.
+
+**What F24 still owes, so the entry is not mistaken for closed:**
+
+- **`installedChars`**, above — the harness is the only place it can be taken.
+- **The memory snapshot restore** (`design.artifacts` 10) and the seven
+  `design.covariates` instruction hashes, one of which — the tool allowlist
+  visible in the system prompt — is not measurable from outside the session.
+- **Artifacts 7 and 11**, which belong to UNIT 5 and cannot be written until the
+  above lands.
+
 Two dependent gaps fall out of the same hole:
 
 - `design.artifacts` 7 (`counterfactual.json`) demands the version, base and end

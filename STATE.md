@@ -5,40 +5,40 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**F19 is closed and the run now has TWO domains.** Gate at 4 failures, all
-pre-existing Windows CRLF/path; tsc green; SELFTEST OK.
+**F24's archive half is written, wired and committed.** Gate at the baseline 4;
+tsc green. `src/cost/b12/capture.ts` builds `design.artifacts` 6 as a value;
+`observe()` calls it before `git worktree remove` destroys the tree, then COMMITS
+the directory and verifies `HEAD` carries it.
 
-- **`admissionRule` 6 was not implemented at all.** An `ambiguous > 0` observation
-  is "admitted to the FALL arithmetic only" and was in the hold too. `rLo` and
-  `hold.rLo` are two numbers now; whoever quotes one must say which.
-- **The finding's own safety claim was FALSE** — removal raises a ratio of sums
-  iff the removed local ratio is below the pool, which a refusal does not say.
-- **THREE guards here could not fire** — clause 18's 30% half (F22) and both
-  halves of `holdsIf` 5, each proved by the ordering above it.
+- **The reduction is `RawRecord`, the parser's own parse target.** Clause 6 says
+  "the fields the meter reads" and enumerates eight that cannot rebuild a
+  `Transcript`. The criterion governs; a type assert names any key that drifts.
+- **There is no run-level telemetry log** — every arm writes into its own
+  worktree. Identity keys on the ARCHIVE PATH, so ordinals restart per file and
+  concatenation order never becomes load-bearing. `UNIT-5.md` step 2 is corrected.
+- **The open list is three headings now.** Five findings are REGISTERED LIMITS
+  that will never close; reading them as backlog was the mistake.
 
 ## Next action
 
-**F17, F20, F21, F23, F25 OPEN** — five routes to closing them adjudicated, all
-refused. F23: clause 8 wants two BRACKETS, the artifact carries two byte sums.
+**F24 IS NOT CLOSED.** Still owed: `installedChars` (measured nowhere, only the
+harness can take it, arm-dependent), the memory restore and the seven
+`design.covariates` instruction hashes (one — the allowlist visible in the system
+prompt — is not measurable from outside), and artifacts 7 and 11, UNIT 5's.
 
-**F24 BLOCKS EVERYTHING ELSE.** `design.artifacts` 6 wants the lineage records,
-the telemetry window verbatim, the id set and per-file sha256 per observation;
-`b12-run.mjs` writes four files and none of it. **A run executed today cannot be
-re-scored** — the failure the archive exists to prevent. Harness, not scorer.
-
-`UNIT-5.md` is gated and revised: REFUTE, now split archive/assemble/emitter, and
-nothing in it throws — `admissionRule` 1 owes a result artifact even on a VOID.
+**No test exercises `observe()`** — not the capture call, the config refusal, the
+run row, or the commit barrier. All need a manifest that cannot be sealed until
+Phase 3 closes.
 
 ## Do not redo
 
-- **A control never seen failing is not a control.** Ten new assertions all green
-  on first run; eleven planted defects, one at a time.
-- **Ask of every new conjunct what run reaches it with the conjunct false.**
-  Fixing a guard that could not fire, I narrowed the clause to its low half.
-- **A test title is a claim**, and one of mine covered the wrong branch.
-- **Codex refuted seven of my readings across five rounds, correctly each time.**
-  Verify its citations, then concede — arguing one cost a whole round.
-- **Line-number citations rot**: two in `FINDINGS.md` were wrong within two days,
-  one of them the note whose job was correcting a line number.
-- **Under load the `vcsRunner` fix's 49× margin vanishes**: 146 ms → 5196 ms with
-  four background jobs. Check load before believing a `STACK_TRACE_ERROR`.
+- **Four `expect`s in a row is one control and three decorations.** The first
+  failure ends the test; the rest look checked and never execute. Use
+  `expect.soft` wherever a fixture proves several facts at once.
+- **A defect can accidentally implement the correct behaviour.** `.reverse()` on
+  a two-file walk produced the SORTED order, because `.` sorts before the path
+  separator. The assertion looked unprovable; the defect was wrong.
+- **Two fixture defects beat every code defect to the punch**: a missing
+  `tool_use` block, and an invocation id that was not a UUID. Neither was a bug.
+- **Codex has been right nine times running** — verify its citations, then
+  concede. **And the gate is the verification route**, never vitest through Bash.
