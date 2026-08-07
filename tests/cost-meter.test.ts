@@ -19,6 +19,7 @@ import {
   unitsAddedByInstallation,
 } from "../src/cost/report.js";
 import type { CreditedRow } from "../src/cost/report.js";
+import type { ClassifiedOutcome } from "../scripts/b12-run.d.mts";
 import {
   DEFAULT_MULTIPLIERS,
   DEFAULT_RATES,
@@ -2089,7 +2090,10 @@ describe("the cost-meter CLI", () => {
 describe("the B12 harness", () => {
   const runNode = promisify(execFile);
   const BUDGET = 45 * 60 * 1000;
-  const classify = async (over: Record<string, unknown>): Promise<{ outcome: string; censored: boolean; valid: boolean; reasons: string[] }> => {
+  // Return type INFERRED, so the closed `ClassifiedOutcome` union reaches every
+  // assertion below. Annotating it `outcome: string` — as this did — widens it
+  // back and lets an assertion name a spelling no branch produces.
+  const classify = async (over: Record<string, unknown>) => {
     // NO CAST. It used to read `mod as { classifyRun: (o: unknown) => ... }`,
     // which typed the argument as `unknown` and made this call site unchecked —
     // and it was carrying `wallMs: 1_000`, a field `classifyRun` does not take.
@@ -2261,7 +2265,12 @@ describe("the B12 harness", () => {
     // easily also true of one that is not. The rule is now decided by case, and
     // every branch is named in the artifact rather than left as a fall-through
     // nobody chose.
-    const cases: Array<[Record<string, unknown>, string]> = [
+    // TYPED TO THE CLOSED LIST, and neither side is cast. The expectations are
+    // `ClassifiedOutcome`, so a spelling no branch produces is a compile error
+    // rather than a red assertion — and `classify` returns the same union, so
+    // the day a sixth outcome is added this table stops compiling until it is
+    // listed here. That is the property the test's own title claims.
+    const cases: Array<[Record<string, unknown>, ClassifiedOutcome]> = [
       [{}, "completed"],
       [{ exitCode: 0, errorCode: "ETIMEDOUT" }, "completed"],
       [{ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" }, "censored"],
@@ -2270,7 +2279,7 @@ describe("the B12 harness", () => {
       [{ exitCode: null, errorCode: "ENOENT" }, "spawn_failed"],
     ];
     for (const [over, expected] of cases) {
-      const got = (await classify(over)) as unknown as { outcome: string };
+      const got = await classify(over);
       expect(got.outcome).toBe(expected);
     }
     // Exactly one outcome is both valid and not a completion.

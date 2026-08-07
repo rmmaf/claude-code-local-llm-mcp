@@ -72,12 +72,23 @@ const baseArgs = { files: ["src/math.ts"], spec: "add() must return the sum, not
  * 2am. This says what went wrong instead.
  */
 async function rejectionOf(call: Promise<unknown>): Promise<ToolError> {
-  const outcome: unknown = await call.then(
-    (value) => value,
-    (error: unknown) => error
+  // TAGGED, because collapsing both paths into one value cannot tell them
+  // apart. The first draft was `call.then(v => v, e => e)` followed by an
+  // `instanceof ToolError` — which accepts a call that RESOLVES with a
+  // ToolError, i.e. exactly the "it returned the error instead of throwing it"
+  // regression this helper is here to catch. A control that passes on the
+  // failure it was written for is the defect, not the guard.
+  const settled = await call.then(
+    (value) => ({ rejected: false as const, value }),
+    (reason: unknown) => ({ rejected: true as const, reason })
   );
-  if (outcome instanceof ToolError) return outcome;
-  throw new Error(`expected the call to reject with a ToolError; it produced ${String(outcome)}`);
+  if (!settled.rejected) {
+    throw new Error(`expected the call to REJECT; it resolved with ${String(settled.value)}`);
+  }
+  if (!(settled.reason instanceof ToolError)) {
+    throw new Error(`expected a ToolError; it rejected with ${String(settled.reason)}`);
+  }
+  return settled.reason;
 }
 
 describe("repair loop", () => {
