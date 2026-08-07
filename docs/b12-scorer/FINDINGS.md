@@ -100,9 +100,13 @@ population later used to price that stratum. The literal reading ships.
 **SHIPPED 2026-08-07: every cell now publishes BOTH its populations.**
 `StratumCell` is `Evaluable<number> & { counted, priced }` — an intersection, so
 `.evaluable` still narrows, no existing reader changed, and the counts survive on
-an UNEVALUABLE cell, which is where a reader most wants them. `counted` is the
-population that decided evaluability; `priced` is the one the ratio was pooled
-over. On the published face they coincide; on `hold.strata` they are ten and four.
+BOTH unevaluable branches — the 5-observation floor and the corrupted declaration
+— which is where a reader most wants them. `counted` is the cell's size in the
+FLOOR partition and `priced` its size in the RATIO one. Not "the population that
+decided evaluability", which this said first and is false on the corrupted branch:
+there the cell is unevaluable because `unknownStratum` is non-empty, whatever its
+own size. On the published face the two coincide; on `hold.strata` they are ten
+and four.
 A bracket resting on four observations was previously indistinguishable from one
 resting on ten, because a cell was an `Evaluable<number>` and nothing else.
 
@@ -798,7 +802,8 @@ it, which fired on exactly that defect.
 ## Ten more, for F19, F20, F21 and F22
 
 The F19 pass added eight assertions to `b12-aggregate.test.ts` and the F20/F21
-pass two more. **All of them
+pass two more — ten in one describe block, of which **nine are controls and one is
+a label** that pins a literal and is recorded as pinning nothing else. **All ten
 passed on first execution, and every existing b12 test passed unchanged** — which
 is the expected result and the reason none of it was evidence: the two domains are
 the same set on every fixture written before this pass, so a partition that does
@@ -818,6 +823,8 @@ could cancel:
 | the 30% reading narrowed to the three LOW recomputations | the high-side control, alone | — |
 | `priced` counted off the FLOOR population | the two cell-count controls | — |
 | one shared object for both corrupted cells | the unevaluable-cell control, alone | — |
+| `priced` off the floor population in the CORRUPTED branch ONLY | the corrupted-branch control | the published-face fixture, where the two populations coincide |
+| `counted` off the RATIO population | both cell-count controls | — |
 
 **The second row is the one worth keeping.** F19 proposed that predicate itself,
 and the control written to separate the two readings fires on it and on nothing

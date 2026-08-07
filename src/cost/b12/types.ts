@@ -256,7 +256,15 @@ export interface SubagentShare {
  * UNEVALUABLE cell, which is the one case where a reader most wants them.
  */
 export type StratumCell = Evaluable<number> & {
-  /** The population that decided evaluability: admitted observations in this cell. */
+  /**
+   * This cell's size in the FLOOR partition — admitted observations, the
+   * population `holdsIf` 3's "≥ 5 admitted observations each" counts.
+   *
+   * NOT "the population that decided evaluability", which is what this said and
+   * is false on one branch: a cell whose run carries an unrecognised
+   * `verificationStratum` is unevaluable because `unknownStratum` is non-empty,
+   * whatever its own size. `counted` is a size, and only sometimes the reason.
+   */
   counted: number;
   /** The population the ratio was pooled over. Equal to `counted` on the published face. */
   priced: number;

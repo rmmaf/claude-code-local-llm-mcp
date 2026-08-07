@@ -1004,15 +1004,45 @@ describe("the hold arithmetic — admissionRule 6 gives the run two domains", ()
     }
   });
 
-  it("carries both counts on a cell that is NOT evaluable, which is where they matter most", () => {
-    // A cell reports its populations whether or not it has a bracket. An
-    // unevaluable cell is exactly the case a reader needs the numbers for — the
-    // reason string says "below the floor of 5" and the counts say how far below,
-    // and on the hold domain they say which of the two populations ran out.
+  it("carries both counts on BOTH unevaluable branches, which is where they matter most", () => {
+    // A cell reports its populations whether or not it has a bracket, and there
+    // are TWO ways to have no bracket. Called directly rather than through
+    // `aggregate`, because a 20-observation fixture cannot put a cell under the
+    // 5-observation floor and `twenty()` fills every cell with ten.
     //
-    // TWO SHAPES IN ONE TEST, because they take different branches in the code:
-    // the 5-observation floor, and the corrupted-declaration branch that makes
-    // BOTH declared cells unevaluable regardless of size.
+    // THE FLOOR BRANCH. Four `test-red` against five `types-only`, and the ratio
+    // population is smaller still — so the unevaluable cell reports 4 and 2, and a
+    // reader can see both that it was short and that it would have been priced on
+    // fewer again.
+    const cells = (n: number, stratum: "test-red" | "types-only") =>
+      Array.from({ length: n }, () => terms({ aO: 100, sLo: 44, sHi: 44, verificationStratum: stratum }));
+    const floor = [...cells(4, "test-red"), ...cells(5, "types-only")];
+    const byFloor = strataCells({ floor, ratio: floor.slice(0, 2) });
+    expect(byFloor.testRed.evaluable).toBe(false);
+    expect(byFloor.testRed.counted).toBe(4);
+    expect(byFloor.testRed.priced).toBe(2);
+    expect(byFloor.typesOnly.evaluable).toBe(true);
+    expect(byFloor.typesOnly.counted).toBe(5);
+    expect(byFloor.typesOnly.priced).toBe(0);
+
+    // THE CORRUPTED BRANCH, over populations that DIFFER — which the published-face
+    // fixture below cannot test, because there floor and ratio are the same set and
+    // a defect confined to this branch would report the right numbers by accident.
+    const corruptedFloor = [
+      ...cells(5, "test-red"),
+      ...cells(5, "types-only"),
+      terms({ aO: 100, verificationStratum: "test_red" as unknown as "test-red" }),
+    ];
+    const split = strataCells({ floor: corruptedFloor, ratio: corruptedFloor.slice(0, 3) });
+    expect(split.testRed.evaluable).toBe(false);
+    expect(split.typesOnly.evaluable).toBe(false);
+    expect(split.testRed.counted).toBe(5);
+    expect(split.testRed.priced).toBe(3);
+    // The two declared cells report DIFFERENT numbers, which one shared object
+    // could not have done.
+    expect(split.typesOnly.counted).toBe(5);
+    expect(split.typesOnly.priced).toBe(0);
+
     const short = aggregate(
       aggregateInput(
         twenty((n) => ({
@@ -1063,10 +1093,16 @@ describe("the hold arithmetic — admissionRule 6 gives the run two domains", ()
     // extension (`FINDINGS.md` F20), so the artifact says which one produced its
     // numbers instead of leaving a reader to assume the design chose.
     //
-    // **A LABEL, NOT A CONTROL, AND IT IS RECORDED AS ONE.** It is a literal that
-    // nothing compares; this assertion cannot fail on any input and is not counted
-    // among the proved controls in `FINDINGS.md`. It is here so that changing the
-    // convention without changing the label breaks a test.
+    // **A LABEL, NOT A CONTROL, AND WHAT IT CANNOT DO IS THE PART WORTH WRITING.**
+    // It pins the emitted literal against being dropped, and nothing more. It is
+    // blind to the thing a reader would most want caught: change `selectionOf` to
+    // the hold-arithmetic reading and leave the label alone, and this assertion
+    // still passes. No test can close that — a label is only as true as the person
+    // who last edited the function beside it, which is why F20 stays OPEN and why
+    // this is not counted among the proved controls in `FINDINGS.md`.
+    //
+    // An earlier version of this comment claimed the opposite, that the assertion
+    // "breaks a test if the convention changes without the label". It does not.
     const result = aggregate(aggregateInput(twoDomains()));
     expect(result.selection.basis).toBe("disposition");
   });
