@@ -14,16 +14,16 @@ pre-existing Windows CRLF/path; tsc green.
 - **The finding's own safety claim was FALSE** — removal raises a ratio of sums
   iff the removed local ratio is below the pool, which a refused magnitude does
   not establish. The hold branch shipped on a direction never established.
-- **Its proposed predicate was too narrow too**: `report.ts` counts `ambiguous`
-  before ownership exists, so BOTH ledgers decide.
+- **Its predicate was too narrow too**: `report.ts` counts `ambiguous` before
+  ownership exists, so BOTH ledgers decide.
 - **THREE guards in this file could not fire** — clause 18's 30% half (F22) and
   both halves of `holdsIf` 5, each proved by the ordering above it.
 
 ## Next action
 
-**F17, F20 and F21 remain, recorded as unresolved rather than closed.** F20 is
-genuine underdetermination in the frozen text and the shipped behaviour is
-labelled an implementation convention in the code itself.
+**F17, F20 and F21 remain, unresolved rather than closed.** F20 is genuine
+underdetermination in the frozen text; the shipped behaviour is labelled an
+implementation convention in the code itself.
 
 The scorer is still wired to NOTHING: no parser for `observation.json`, nothing
 writes `verificationStratum`, no run-level assembler — the next real work, and
