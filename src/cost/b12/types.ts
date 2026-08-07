@@ -233,11 +233,40 @@ export interface SubagentShare {
 }
 
 /** The four cells `holdsIf` 3 requires to be evaluable and on one side of 30%. */
+/**
+ * One cell's bracket, WITH THE TWO POPULATIONS IT WAS BUILT FROM.
+ *
+ * **`admissionRule` 6 made a cell's evaluability and its ratio come from
+ * different sets, and the artifact could not say so.** `holdsIf` 3 asks for cells
+ * "evaluable (≥ 5 ADMITTED observations each) and all four on the same side of
+ * 30%", so the floor counts admitted observations while the hold-side ratio is
+ * pooled over the hold-eligible ones — a cell can be evaluable on ten and priced
+ * on four, and a reader of `Evaluable<number>` alone would see a bracket with no
+ * way to tell. `FINDINGS.md` F21.
+ *
+ * **REPORTED, DECIDING NOTHING.** Neither count is compared with anything. The
+ * frozen floor stays on `counted`, and adding a second floor on `priced` was
+ * adjudicated and REFUSED — it mints no new constant but it does mint a second
+ * predicate over a population `admissionRule` 8 does not name. Publishing the
+ * numbers is what the design's "reported, deciding nothing" category is for; the
+ * gap itself stays open.
+ *
+ * An INTERSECTION with `Evaluable<number>` rather than a wrapper, so `.evaluable`
+ * still narrows and no existing reader changes — and so the counts survive on an
+ * UNEVALUABLE cell, which is the one case where a reader most wants them.
+ */
+export type StratumCell = Evaluable<number> & {
+  /** The population that decided evaluability: admitted observations in this cell. */
+  counted: number;
+  /** The population the ratio was pooled over. Equal to `counted` on the published face. */
+  priced: number;
+};
+
 export interface StrataCells {
-  testRed: Evaluable<number>;
-  typesOnly: Evaluable<number>;
-  solo: Evaluable<number>;
-  multi: Evaluable<number>;
+  testRed: StratumCell;
+  typesOnly: StratumCell;
+  solo: StratumCell;
+  multi: StratumCell;
 }
 
 /** One delivery's share of the numerator, partitioned over the telemetry `tool` field. */
@@ -597,6 +626,26 @@ export interface B12Result {
    * attributability" is a claim a reader must be able to check.
    */
   selection: {
+    /**
+     * **WHICH SENSE OF "EXCLUDED" THESE FIVE NUMBERS WERE BUILT UNDER, ON THE
+     * ARTIFACT AND NOT ONLY IN A COMMENT.**
+     *
+     * `voidConditions` 16 and `holdsIf` 5 compare "the EXCLUDED observations"
+     * against "the ADMITTED set". Since `admissionRule` 6 an observation can be
+     * admission-admitted and hold-excluded at once, and the frozen text does not
+     * say which extension those comparisons take (`FINDINGS.md` F20). This label
+     * is `"disposition"` because that is the reading the scorer applies — **an
+     * implementation convention, not the frozen rule**, and a reader who cannot
+     * see which was used cannot check the void.
+     *
+     * A LABEL, NOT A GUARD. It is a literal and nothing compares it; it is here so
+     * the artifact carries its own basis, in the same spirit as `HoldFigures.basis`.
+     * The DUAL, non-deciding figures a reader would need to recompute the other
+     * reading belong to `counterfactual.json` (`design.artifacts` 7), which is
+     * per-observation and which nothing writes yet — `result.json` (artifact 8)
+     * has the narrower inventory and is what this type maps to.
+     */
+    basis: "disposition";
     /**
      * A FLOOR whenever `excludedUnsized > 0`, never a total: a null magnitude is
      * counted there and deliberately not summed here. So `excludedWouldHaveAdded

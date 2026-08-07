@@ -21,6 +21,7 @@ import type {
   Recomputations,
   RunTelemetryCoverage,
   StrataCells,
+  StratumCell,
 } from "./types.js";
 
 /**
@@ -440,6 +441,11 @@ function selectionOf(
   const toolCalls = (of: readonly ObservationTerms[]): number =>
     sumOf(of, (t) => t.rows.filter(({ row }) => TOOL_CALL_NAMES.has(row.tool)).length);
   return {
+    // THE READING, ON THE ARTIFACT. `admissionRule` 6 gave "excluded" two possible
+    // extensions and the frozen text picks neither (`FINDINGS.md` F20); this says
+    // which one produced these numbers, so a void built on them can be checked
+    // rather than trusted.
+    basis: "disposition",
     excludedWouldHaveAdded: sumOf(dropped, (t) =>
       sumOf(CLASSES, (name) => t.refusals[name].units)
     ),
@@ -489,33 +495,50 @@ export interface StrataPopulations {
 export function strataCells(pop: StrataPopulations): StrataCells {
   const floor = partitionByStrata(pop.floor);
   const ratio = partitionByStrata(pop.ratio);
+  // BOTH POPULATIONS ON EVERY CELL, evaluable or not — `FINDINGS.md` F21. They
+  // are reported and compared with nothing; the floor still reads `counted`.
+  const sizes = (
+    counted: readonly ObservationTerms[],
+    priced: readonly ObservationTerms[]
+  ): { counted: number; priced: number } => ({ counted: counted.length, priced: priced.length });
+
   const cell = (
     counted: readonly ObservationTerms[],
     priced: readonly ObservationTerms[],
     name: string
-  ): Evaluable<number> =>
+  ): StratumCell =>
     counted.length < MIN_DELIVERY_OBSERVATIONS
       ? {
           evaluable: false,
           reason: `${name} holds ${counted.length} admitted observation(s), below the floor of ${MIN_DELIVERY_OBSERVATIONS}`,
+          ...sizes(counted, priced),
         }
-      : { evaluable: true, value: poolRatio(priced, "lo") };
+      : { evaluable: true, value: poolRatio(priced, "lo"), ...sizes(counted, priced) };
 
   // COUNTED ON THE FLOOR POPULATION, because an unrecognised declaration is a
   // fact about the admitted set. A run reaches the hold only after every cell is
   // already evaluable, so reading it off the ratio population would ask the
   // question again of a set that cannot answer it differently.
+  //
+  // THE COUNTS ARE STILL THIS CELL'S OWN, not the corruption's — a reader whose
+  // `test-red` reads unevaluable still needs to know how big it was, and a shared
+  // object would have given both declared cells the same two numbers.
   const corrupted =
     floor.unknownStratum.length > 0
-      ? {
-          evaluable: false as const,
-          reason: `${floor.unknownStratum.length} observation(s) carry an unrecognised verificationStratum, so both declared cells are deflated by an unknown amount`,
-        }
+      ? `${floor.unknownStratum.length} observation(s) carry an unrecognised verificationStratum, so both declared cells are deflated by an unknown amount`
       : null;
+  const declared = (
+    counted: readonly ObservationTerms[],
+    priced: readonly ObservationTerms[],
+    name: string
+  ): StratumCell =>
+    corrupted === null
+      ? cell(counted, priced, name)
+      : { evaluable: false, reason: corrupted, ...sizes(counted, priced) };
 
   return {
-    testRed: corrupted ?? cell(floor.testRed, ratio.testRed, "test-red"),
-    typesOnly: corrupted ?? cell(floor.typesOnly, ratio.typesOnly, "types-only"),
+    testRed: declared(floor.testRed, ratio.testRed, "test-red"),
+    typesOnly: declared(floor.typesOnly, ratio.typesOnly, "types-only"),
     solo: cell(floor.solo, ratio.solo, "solo"),
     multi: cell(floor.multi, ratio.multi, "multi"),
   };

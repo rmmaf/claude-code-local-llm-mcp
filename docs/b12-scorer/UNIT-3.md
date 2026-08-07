@@ -152,6 +152,21 @@ the four cells: if the **`floor`** partition holds fewer than
 `MIN_DELIVERY_OBSERVATIONS` observations, the cell is `{ evaluable: false, reason }`;
 otherwise `{ evaluable: true, value: poolRatio(ratioCell, "lo") }`.
 
+**EVERY CELL ALSO CARRIES BOTH POPULATION SIZES — `counted` and `priced` — whether
+or not it is evaluable.** `counted` is the `floor` cell's length and `priced` is
+the `ratio` cell's; they coincide on the published face and diverge on the hold
+domain. A cell was an `Evaluable<number>` and nothing else until F21, so a bracket
+pooled from four observations was indistinguishable from one pooled from ten.
+**Reported, deciding nothing** — the floor still reads `counted`, and a second
+floor on `priced` was adjudicated twice and refused: it would mint no constant but
+it would mint a second predicate over a population `admissionRule` 8 does not name.
+
+Carry them by INTERSECTING with `Evaluable<number>` rather than wrapping it, so
+`.evaluable` still narrows and the counts survive on the unevaluable arm — which
+is the case a reader most wants them for. The corrupted-declaration branch below
+must build a cell PER CELL rather than share one object, or both declared cells
+report the same two numbers.
+
 **The floor is an admitted-set property and the ratio is not.** `holdsIf` 3 asks
 for "All four declared strata evaluable (≥ 5 **admitted** observations each) and
 all four on the same side of 30%", and `admissionRule` 8 repeats the floor in the
@@ -220,6 +235,13 @@ optional one a rule they could forget.
   `holdsIf` 2 asks a hold to survive "reinstating everything it dropped". Leaving
   them out entirely takes a billed denominator off the hold side, which is the one
   direction a dilution guard must not move.
+- `selection.basis` is the literal `"disposition"`. `voidConditions` 16 and
+  `holdsIf` 5 compare "the EXCLUDED observations" against "the ADMITTED set", and
+  since `admissionRule` 6 an observation can be both admission-admitted and
+  hold-excluded; the frozen text picks neither extension. **The label is on the
+  artifact so a void built on these numbers can be checked rather than trusted**,
+  and it says the reading is the scorer's convention rather than the design's.
+  `FINDINGS.md` F20. A LABEL, NOT A GUARD — nothing compares it.
 - `identityHolds`: true when the three numerators sum to the pooled numerator
   within `1e-9`. Compute it; do not assume it.
 - `meanOfPerObservationRatios`: the mean of `(t.sLo - t.oO) / (t.aO + t.sLo)` over

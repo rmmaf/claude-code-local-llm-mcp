@@ -49,6 +49,31 @@ excluded side would add their `wouldHaveAdded` to `excludedWouldHaveAdded` and
 remove their `S_o` from `admittedSumS` — both directions of one comparison at
 once, so not even the direction is obvious.
 
+**SHIPPED 2026-08-07: the convention is now on the artifact, not only in a
+comment.** `B12Result.selection.basis` is the literal `"disposition"`, so a reader
+of a committed `result.json` can see which extension of "excluded" produced the
+numbers a void was built on. A label, not a guard — nothing compares it, and the
+assertion that pins it is recorded in the oracle as not being a control.
+
+**TWO ROUTES WERE ADJUDICATED AND BOTH REFUSED**, so the finding stays open:
+
+- **Publishing BOTH readings is not required.** I argued `design.artifacts` 11 —
+  "An admission rule the artifacts cannot replay is unfalsifiable after the fact"
+  — forces it, since one `selection` block cannot let a reader replay clause 16
+  under the other reading. REFUTED: replay means reproducing the rule actually
+  applied, and replayability cannot manufacture a semantic choice the text never
+  made. It is PERMITTED as "reported, deciding nothing" — but the per-observation
+  inputs belong to `counterfactual.json` (`design.artifacts` 7), not to
+  `result.json` (artifact 8, the narrower inventory this type maps to). **So the
+  dual reporting is owed by the counterfactual/replay emitter, which nothing
+  writes yet**, and is recorded here as owed rather than bolted onto `B12Result`.
+- **Returning `open` when the two readings disagree is an amendment.** It mints no
+  constant, and `open`-on-undecidability has three precedents — but each is
+  NAMED, and that specificity is evidence against reading `open` as a general
+  principle. Worse, clause 16 says "VOID (never a fall)" and `voidConditions` 23
+  makes every non-enumerated void consume an attempt, so the rule would also
+  create a route around attempt consumption. Refused.
+
 ### F21 — a hold cell can be evaluable on five observations and priced on three
 
 `holdsIf` 3 wants "All four declared strata evaluable (≥ 5 **admitted**
@@ -60,16 +85,34 @@ clears five admitted may be priced over as few as NONE — at which point
 That last step is the only thing keeping the gap from being dangerous, and it is
 `poolRatio`'s empty-set guard rather than anything in this rule.
 
-**The obvious guard is refused.** Requiring five hold-eligible observations per
-cell as well is monotone-conservative — after the fall branch it can only turn a
-hold into `open` — but it is still a verdict threshold the frozen design does not
-contain, and disclosing it would prevent misattribution without preserving the
-pre-registered rule. It is the objection `design.metric` raises against reusing
-30% on a jackknifed quantity: "minting a stricter number in the frozen one's
-clothes". The literal reading ships and the gap is recorded here instead.
+**The obvious guard is refused, and the refusal was re-tested against text I had
+not read the first time.** Requiring five hold-eligible observations per cell as
+well is monotone-conservative — after the fall branch it can only turn a hold into
+`open`. `design.thresholdArgument` even says "**5** — the per-stratum and
+per-delivery floor. B20's own set floor, taken unchanged", so applying it again
+would mint no fourth constant. **REFUTED TWICE ALL THE SAME**, and the second
+answer is sharper than the first: *"Applying five again would not mint a fourth
+constant, but it would mint a second PREDICATE over a different population."*
+`holdsIf` 3 and `admissionRule` 8 both name the population — "≥ 5 ADMITTED
+observations each" — and "per-stratum" describes the floor's scope, not every
+population later used to price that stratum. The literal reading ships.
 
-The exposure is bounded in practice by `hold.rAll`, which reinstates every
-clause-6 exclusion at `saved_o = 0` with its billing — see F19's closing note.
+**SHIPPED 2026-08-07: every cell now publishes BOTH its populations.**
+`StratumCell` is `Evaluable<number> & { counted, priced }` — an intersection, so
+`.evaluable` still narrows, no existing reader changed, and the counts survive on
+an UNEVALUABLE cell, which is where a reader most wants them. `counted` is the
+population that decided evaluability; `priced` is the one the ratio was pooled
+over. On the published face they coincide; on `hold.strata` they are ten and four.
+A bracket resting on four observations was previously indistinguishable from one
+resting on ten, because a cell was an `Evaluable<number>` and nothing else.
+
+**Reported, deciding nothing.** Neither count is compared with anything, which is
+the whole point: the gap is now visible on every artifact and is still open.
+
+The exposure is bounded at the degenerate end only. `poolRatio` returns 0 for an
+empty cell, which then fails the 30% conjunct — but that is an implementation
+guard, not the frozen design handling the case, and it does nothing when one to
+four hold-eligible observations produce a ratio above 30%.
 
 ### F17 — the frozen preflight screens for none of `R_hi⁺`'s new refusals
 
@@ -752,9 +795,10 @@ but not under "always pair with index 0", because index 0's key is correct for
 row 0 either way. The index rule is proved by the `unattributed` assertion beside
 it, which fired on exactly that defect.
 
-## Eight more, for F19 and F22
+## Ten more, for F19, F20, F21 and F22
 
-The F19 pass added eight assertions to `b12-aggregate.test.ts`. **All of them
+The F19 pass added eight assertions to `b12-aggregate.test.ts` and the F20/F21
+pass two more. **All of them
 passed on first execution, and every existing b12 test passed unchanged** — which
 is the expected result and the reason none of it was evidence: the two domains are
 the same set on every fixture written before this pass, so a partition that does
@@ -772,6 +816,8 @@ could cancel:
 | strata floor collapsed onto hold-eligible | the cell-evaluability control, alone | — |
 | `strata: hold.strata` on the published face | the face control, alone | — |
 | the 30% reading narrowed to the three LOW recomputations | the high-side control, alone | — |
+| `priced` counted off the FLOOR population | the two cell-count controls | — |
+| one shared object for both corrupted cells | the unevaluable-cell control, alone | — |
 
 **The second row is the one worth keeping.** F19 proposed that predicate itself,
 and the control written to separate the two readings fires on it and on nothing

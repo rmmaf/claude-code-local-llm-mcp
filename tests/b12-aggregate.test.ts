@@ -983,6 +983,92 @@ describe("the hold arithmetic — admissionRule 6 gives the run two domains", ()
       // ratio did not.
       expect(result.hold.strata.testRed.value).toBeCloseTo(176 / 576, 12);
     }
+
+    // **AND THE CELL SAYS SO ON THE ARTIFACT.** Until F21 a cell was an
+    // `Evaluable<number>` and nothing more, so a bracket resting on four
+    // observations was indistinguishable from one resting on ten. Reported,
+    // compared with nothing: the floor still reads `counted`, and adding a second
+    // floor on `priced` was adjudicated and refused.
+    expect(result.hold.strata.testRed.counted).toBe(10);
+    expect(result.hold.strata.testRed.priced).toBe(4);
+
+    // The published face is one population, so the pair coincides there — which is
+    // what makes the divergence above legible rather than ambient.
+    for (const cell of [
+      result.strata.testRed,
+      result.strata.typesOnly,
+      result.strata.solo,
+      result.strata.multi,
+    ]) {
+      expect(cell.counted).toBe(cell.priced);
+    }
+  });
+
+  it("carries both counts on a cell that is NOT evaluable, which is where they matter most", () => {
+    // A cell reports its populations whether or not it has a bracket. An
+    // unevaluable cell is exactly the case a reader needs the numbers for — the
+    // reason string says "below the floor of 5" and the counts say how far below,
+    // and on the hold domain they say which of the two populations ran out.
+    //
+    // TWO SHAPES IN ONE TEST, because they take different branches in the code:
+    // the 5-observation floor, and the corrupted-declaration branch that makes
+    // BOTH declared cells unevaluable regardless of size.
+    const short = aggregate(
+      aggregateInput(
+        twenty((n) => ({
+          aO: 100,
+          sLo: 44,
+          sHi: 44,
+          // Every `types-only` observation but one carries an ambiguous refusal:
+          // ten admitted, one priced.
+          ...(n % 2 === 1 && n !== 1
+            ? { refusals: ledger({ ambiguous: { count: 1, units: 1, unsized: 0 } }) }
+            : {}),
+        }))
+      )
+    );
+    expect(short.hold.strata.typesOnly.counted).toBe(10);
+    expect(short.hold.strata.typesOnly.priced).toBe(1);
+    // Ten admitted clears the frozen floor, so the cell is evaluable on a bracket
+    // pooled from ONE observation. That is `FINDINGS.md` F21 stated as a number
+    // rather than as a paragraph.
+    expect(short.hold.strata.typesOnly.evaluable).toBe(true);
+
+    // AND THE CORRUPTED BRANCH. `strata.ts` sends an unrecognised declaration to
+    // `unknownStratum`, which makes both declared cells unevaluable — and each
+    // still carries its OWN two counts, not a shared pair.
+    const corrupted = aggregate(
+      aggregateInput(
+        twenty((n) => ({
+          aO: 100,
+          sLo: 44,
+          sHi: 44,
+          ...(n === 0 ? { verificationStratum: "test_red" as unknown as "test-red" } : {}),
+        }))
+      )
+    );
+    expect(corrupted.strata.testRed.evaluable).toBe(false);
+    expect(corrupted.strata.typesOnly.evaluable).toBe(false);
+    // Nine, not ten: observation 0's declaration was not recognised, so it is in
+    // neither declared cell. The two cells differ, which a shared object could not
+    // have shown.
+    expect(corrupted.strata.testRed.counted).toBe(9);
+    expect(corrupted.strata.typesOnly.counted).toBe(10);
+  });
+
+  it("names the basis its selection figures were built under", () => {
+    // `voidConditions` 16 and `holdsIf` 5 compare "the EXCLUDED observations"
+    // against "the ADMITTED set", and since `admissionRule` 6 an observation can be
+    // both admission-admitted and hold-excluded. The frozen text picks neither
+    // extension (`FINDINGS.md` F20), so the artifact says which one produced its
+    // numbers instead of leaving a reader to assume the design chose.
+    //
+    // **A LABEL, NOT A CONTROL, AND IT IS RECORDED AS ONE.** It is a literal that
+    // nothing compares; this assertion cannot fail on any input and is not counted
+    // among the proved controls in `FINDINGS.md`. It is here so that changing the
+    // convention without changing the label breaks a test.
+    const result = aggregate(aggregateInput(twoDomains()));
+    expect(result.selection.basis).toBe("disposition");
   });
 
   it("returns `open` when a PUBLISHED recomputation straddles 30% and the hold domain does not", () => {
