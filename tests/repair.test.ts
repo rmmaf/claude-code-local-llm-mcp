@@ -35,6 +35,36 @@ function tscErrors(count: number): string {
   ).join("\n");
 }
 
+/**
+ * The VCS inventory, answering what a fresh temp directory really answers.
+ *
+ * **`vcsRunner` IS SEPARATE FROM `processRunner` AND HAS TO BE INJECTED TOO.**
+ * `runRepair` falls back to `defaultProcessRunner` for it (`repair.ts:407`), so a
+ * test that stubs only the check runner still shells out to REAL `git` —
+ * `status --porcelain` and `diff --numstat`, twice each, four subprocesses per
+ * call. Measured on this machine: an already-green call, zero rounds and zero
+ * model calls, cost **179 ms** with the fallback and **12 ms** with this stub.
+ * That was most of the runtime of this file, and it is why one test could blow
+ * vitest's 5 s default under load and fail with a bare runner error naming no
+ * assertion.
+ *
+ * Speed is the smaller half. The fallback made every such test depend on git
+ * being installed and on where the OS puts temp directories: `git status` walks
+ * UPWARD looking for a repository, so if `%TEMP%` ever sat inside one, these
+ * tests would read that repository's working tree. A unit test that consults the
+ * developer's VCS is not isolated, however fast it runs.
+ *
+ * Exit 128 is what real git returns outside a repository, so the behaviour under
+ * test is unchanged: `treeFingerprint` sees a non-zero code and returns null,
+ * exactly as it did before.
+ */
+const NOT_A_REPO: ProcessRunner = async () => ({
+  stdout: "",
+  stderr: "fatal: not a git repository (or any of the parent directories): .git",
+  code: 128,
+  timedOut: false,
+});
+
 /** A ProcessRunner that walks a queue, so each gate run can differ. */
 function sequencedProcess(results: Array<Partial<ProcessResult>>): ProcessRunner {
   const queue = [...results];
@@ -101,6 +131,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -120,6 +151,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(1), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -147,6 +179,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -173,6 +206,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -196,6 +230,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("model_failed");
@@ -220,6 +255,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess(Array.from({ length: 6 }, () => ({ stdout: tscErrors(2), code: 2 }))),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       now: () => (clock += 1000),
     });
 
@@ -246,6 +282,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const entries = await readTelemetry(root);
@@ -276,6 +313,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as {
@@ -318,6 +356,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -365,6 +404,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -405,6 +445,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -445,6 +486,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -482,6 +524,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 32_768,
     });
 
@@ -510,6 +553,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -551,6 +595,7 @@ describe("repair loop", () => {
           processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
           fetchImpl,
           runner: noLmsRunner(),
+          vcsRunner: NOT_A_REPO,
           contextTokens: 8_192,
         }
       )
@@ -585,6 +630,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -607,6 +653,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as { model?: unknown };
@@ -635,6 +682,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -654,6 +702,7 @@ describe("repair loop", () => {
     const result = await runRepair(baseArgs, testConfig(root), {
       processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("passed");
@@ -678,6 +727,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
@@ -700,6 +750,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
@@ -728,6 +779,7 @@ describe("repair loop", () => {
         ]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -758,6 +810,7 @@ describe("repair loop", () => {
         ]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -786,6 +839,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as { context_files?: unknown };
@@ -822,6 +876,7 @@ describe("repair loop", () => {
           ]),
           fetchImpl,
           runner: noLmsRunner(),
+          vcsRunner: NOT_A_REPO,
           now: () => (tick += 1_000),
         }
       );
@@ -864,6 +919,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("budget");
@@ -895,6 +951,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -932,6 +989,7 @@ describe("repair loop", () => {
         },
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
         now: () => 1_000_000 + elapsed,
       }
     );
@@ -967,6 +1025,7 @@ describe("repair loop", () => {
         },
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
         now: () => 1_000_000 + elapsed,
       }
     );
@@ -986,6 +1045,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const body = calls[0]?.body as { messages: Array<{ role: string; content: string }> };
@@ -1014,6 +1074,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -1043,6 +1104,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl: racingFetch,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     // Generation is the longest part of a round, so this is the window that
@@ -1073,6 +1135,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -1102,6 +1165,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -1129,6 +1193,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -1180,7 +1245,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
-      vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
+      vcsRunner: NOT_A_REPO,
     });
 
     // "We could not look" must never render as "nothing changed".
@@ -1282,7 +1347,7 @@ describe("repair loop", () => {
         processRunner,
         fetchImpl,
         runner: noLmsRunner(),
-        vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
+        vcsRunner: NOT_A_REPO,
       })
     ).rejects.toThrow(/UNKNOWN/);
   });
@@ -1298,7 +1363,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([]),
         fetchImpl,
         runner: noLmsRunner(),
-        vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
+        vcsRunner: NOT_A_REPO,
       })
     );
 
@@ -1329,6 +1394,7 @@ describe("repair loop", () => {
         processRunner,
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       })
     );
 
@@ -1391,6 +1457,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(1), code: 2 }]),
       fetchImpl: racingFetch,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("concurrent_edit");
@@ -1418,6 +1485,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(1), code: 2 }]),
       fetchImpl: slowFetch,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       now: () => clock,
     });
 
@@ -1445,6 +1513,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       });
       throw new Error("expected a ToolError");
     } catch (error) {
@@ -1477,6 +1546,7 @@ describe("repair loop", () => {
         ]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -1494,6 +1564,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       })
     ).rejects.toThrow(/per-file limit/);
 
@@ -1526,6 +1597,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     // Round 1's attempt is still reported as an unapplied diff...
@@ -1560,6 +1632,7 @@ describe("repair loop", () => {
         processRunner,
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       })
     ).rejects.toThrow(/not valid JSON/);
 
@@ -1584,6 +1657,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       now: () => clock,
     });
 
