@@ -30,6 +30,10 @@ export const MIN_DELIVERY_OBSERVATIONS = 5;
  * whether or not the failure closed, so an unconditioned `R_repair` is maximised
  * by `repair` flailing for its full round budget and returning red — a repair
  * that did not close the failure did not collapse the turns that would have.
+ *
+ * OBSERVATIONS, NOT ROWS, and it is counted off `DeliveryTerms.closures`. This
+ * constant named a quantity nothing carried until `CreditedRow.passed` existed;
+ * a floor that cannot be computed is not a floor.
  */
 export const MIN_REPAIR_CLOSURES = 2;
 
@@ -61,6 +65,11 @@ export function poolRatio(terms: readonly ObservationTerms[], horizon: "lo" | "h
  * be summed as zero, and the run returns `open` rather than falling: a fall on a
  * deflated instrument stops the project permanently, which is strictly the worse
  * of the two errors.
+ *
+ * OVER BOTH LEDGERS ON EVERY OBSERVATION. `unverifiable` and `excludedForeign`
+ * rows cannot belong to any window — that is what makes them what they are — so
+ * they reach here only through `unattributedRefusals`, and a figure summed from
+ * `refusals` alone is missing two of the four classes it claims to cover.
  */
 export function rHiPlus(all: readonly ObservationTerms[]): Evaluable<number> {
   void all;
@@ -68,14 +77,25 @@ export function rHiPlus(all: readonly ObservationTerms[]): Evaluable<number> {
 }
 
 /**
- * The five recomputations, each of which must land on the same side of both
- * thresholds as its parent or the run is VOID.
+ * The five recomputations. **Only the 15% line voids.**
+ *
+ * `voidConditions` 18: a recomputation on the opposite side of 15% from its
+ * parent is VOID; across 30% the run returns `open` with both figures recorded
+ * and does NOT consume the attempt cap — "a run producing two defensible numbers
+ * straddling the hold line has measured something". This comment said "both
+ * thresholds", which would have voided runs the design deliberately keeps.
  *
  * Two are CONCENTRATION guards (drop the best task, drop the best row) and one
  * is a DILUTION guard (`rAll` reinstates every dropped observation at
  * `saved_o = 0` with its `billed_o` still in the denominator). The source
  * designs all carried the first kind and none carried the second, so discarding
  * a zero-saving observation tripped nothing.
+ *
+ * THE ROW GUARD RANKS PER HORIZON. `holdsIf` 2 asks a hold to survive deleting
+ * "its best row" — the low figure's for `rLoMinusRow` (`unitsLo`), the high
+ * figure's for `rHiMinusRow` (`units`). One shared ranking would make the
+ * low-side guard a statement about the high side, and it would still produce a
+ * number, which is how a wrong guard reads as a passed one.
  */
 export function recompute(
   admitted: readonly ObservationTerms[],
@@ -118,7 +138,16 @@ export interface AggregateInput {
   dropped: readonly ObservationTerms[];
 }
 
-/** Fill the four cells, leaving any below the 5-observation floor unevaluable. */
+/**
+ * Fill the four cells, leaving any below the 5-observation floor unevaluable.
+ *
+ * A non-empty `unknownStratum` makes `testRed` AND `typesOnly` unevaluable
+ * regardless of their sizes: each of those observations belongs to one of the
+ * two and nobody can say which, so both are deflated by an unknown amount.
+ * `unevaluableShare` does not do this to `solo`/`multi` — a window that
+ * originated no billed request belongs to neither cell, and neither is deflated
+ * by its absence. Measured absence, corrupted declaration: not the same fact.
+ */
 export function strataCells(admitted: readonly ObservationTerms[]): StrataCells {
   void admitted;
   throw new Error("not implemented");

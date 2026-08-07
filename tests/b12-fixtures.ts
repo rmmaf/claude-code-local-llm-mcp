@@ -159,6 +159,46 @@ export function observation(over: Partial<B12Observation> = {}): B12Observation 
   };
 }
 
+/**
+ * One credited ledger row. `units` and `unitsLo` are the SAME row at the two
+ * horizons and default apart on purpose — a fixture where they coincide cannot
+ * tell a per-horizon ranking from a shared one, which is the whole of `R_lo⁻ʳ`.
+ */
+export function creditedRow(over: Partial<CreditedRow> = {}): CreditedRow {
+  return {
+    invocationId: null,
+    tool: "gate",
+    ts: at(0),
+    disposition: "credited",
+    thread: "main",
+    index: 0,
+    segmentSize: 2,
+    ttl: "1h",
+    multiplier: 2.1,
+    rateKey: "test-model",
+    bytesRaw: 10_000,
+    bytesReturned: 1_000,
+    signed: 9_000,
+    capped: 9_000,
+    turnsCollapsed: 0,
+    units: 100,
+    unitsLo: 60,
+    passed: null,
+    ...over,
+  };
+}
+
+/** An empty four-class ledger, for the arm of a test that is not the subject. */
+export function ledger(over: Partial<ObservationTerms["refusals"]> = {}): ObservationTerms["refusals"] {
+  return {
+    ambiguous: { count: 0, units: 0, unsized: 0 },
+    unverifiable: { count: 0, units: 0, unsized: 0 },
+    excludedForeign: { count: 0, units: 0, unsized: 0 },
+    unmatched: { count: 0, units: 0, unsized: 0 },
+    ...over,
+  };
+}
+
 export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
   return {
     taskId: "t-1",
@@ -169,12 +209,10 @@ export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
     sHi: 0,
     oO: 0,
     rows: [] as CreditedRow[],
-    refusals: {
-      ambiguous: { count: 0, units: 0, unsized: 0 },
-      unverifiable: { count: 0, units: 0, unsized: 0 },
-      excludedForeign: { count: 0, units: 0, unsized: 0 },
-      unmatched: { count: 0, units: 0, unsized: 0 },
-    },
+    refusals: ledger(),
+    // Empty by default so an existing expectation still describes the same
+    // arithmetic. A test about the unattributed classes has to say so.
+    unattributedRefusals: ledger(),
     subagentShare: { evaluable: true, value: { own: 1, sidechain: 0, share: 0, stratum: "solo" } },
     perDelivery: {},
     billedRequestCount: 1,

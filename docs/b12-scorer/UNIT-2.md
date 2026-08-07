@@ -14,20 +14,20 @@ implemented — call it, do not reimplement it.
 
 **EVERY IMPORT THIS UNIT NEEDS, AND THEY ARE NOT ALL FROM THE SAME MODULE.**
 This list is here because the one worked example above used to be the document's
-only module hint, and generalising from it is wrong for two of the six:
+only module hint, and generalising from it is wrong for `rateKey`:
 
 ```ts
 import {
   breakdownOfRequests, buildCounterfactual, buildSessionReport,
   positionalMultiplier, unitsAddedByInstallation,
 } from "../report.js";
-import { multipliersFor, rateKey } from "../rates.js";
+import { rateKey } from "../rates.js";
 import { subagentShare } from "./strata.js";
 ```
 
-`multipliersFor` and `rateKey` live in `../rates.js`. `../report.js` imports them
-and does **not** re-export them, so importing either from `../report.js` is a
-`TS2459` — which is exactly what `run 2026-08-06-mac-b12-phase3-f2932ff` did
+`rateKey` lives in `../rates.js`. `../report.js` imports it and does **not**
+re-export it, so importing it from `../report.js` is a `TS2459` — which is
+exactly what `run 2026-08-06-mac-b12-phase3-f2932ff` did with `multipliersFor`
 before spending its remaining budget on the error.
 
 ## `windowInvocationIds(observation, transcript): Set<string>`
@@ -60,20 +60,43 @@ In order:
 6. Keep only the returned `rows` whose `invocationId` is non-null and in `mine`.
    Those are this window's rows; put them in `rows`.
 7. For each kept row with `disposition === "credited"`:
-   - `sHi += (row.capped / rates.charsPerToken) * row.multiplier`
-   - `sLo += (row.capped / rates.charsPerToken) * writeComponent`, where
-     `writeComponent` is `m.cacheWrite1h` when `row.ttl === "1h"` and
-     `m.cacheWrite5m` when `"5m"`, with `m = multipliersFor(rates, row.rateKey)`
-     — `multipliersFor` **from `../rates.js`**, see the import block above.
-     That is `positionalMultiplier` at `T - 1 - t = 0`.
-   - Add the same two numbers into `perDelivery[row.tool]`
-     (`{sLo, sHi, rowCount}`), creating the entry on first sight. Key by
-     `row.tool` verbatim — never map a tool name onto another delivery's bucket.
+   - `sHi += row.units` and `sLo += row.unitsLo`. **Both are already on the row**
+     — `units` is the observed segment, `unitsLo` the write component alone
+     (`T - 1 - t = 0`). Do not recompute either from `capped` and a multiplier:
+     the row is where that arithmetic lives, and a second derivation of one
+     number is how two figures from one rule drift apart.
+   - They are typed `number | null` because a REFUSED row may be unsizeable. On a
+     credited row both are always numbers. **Narrow, do not default** — a `?? 0`
+     here would sum an unknown as zero, which is the one thing this scorer
+     forbids everywhere else.
+   - Add the same two numbers into `perDelivery[row.tool]`, creating the entry on
+     first sight. Key by `row.tool` verbatim — never map a tool name onto another
+     delivery's bucket. The entry is
+     `{sLo, sHi, rowCount, closures, closureUnknown}`: increment `closures` when
+     `row.passed === true` and `closureUnknown` when `row.passed === null`.
+     `false` increments neither — it is a delivery that ran and did not close,
+     which is a third thing. Credited rows only, exactly like the two sums: a row
+     outside the numerator is outside the closure count as well.
 8. **`turnsCollapsed` contributes NOTHING** to `sLo`, `sHi` or `perDelivery`.
 9. **Never clamp.** A negative `row.capped` stays negative through every sum.
-10. `refusals`: for each of the four classes, count the kept rows with that
-    `disposition`; sum `row.units` into `units` when it is a number; increment
-    `unsized` for each whose `units` is `null`.
+10. **TWO ledgers, and the split is by whether the row can be owned at all.**
+    Build each the same way: for each of the four classes, count the rows with
+    that `disposition`; sum `row.units` into `units` when it is a number;
+    increment `unsized` for each whose `units` is `null`.
+    - `refusals` — over the KEPT rows, as step 6 defines them. This window's own.
+    - `unattributedRefusals` — over every OTHER refused row the counterfactual
+      returned: `invocationId` null, or an id not in `mine`.
+
+    **Two of the four classes can only ever appear in the second one, and that is
+    why it exists.** An `unverifiable` row is refused precisely because it has no
+    `invocation_id`, so it can never be in `mine`; an `excludedForeign` row is
+    refused precisely because its id is absent from this transcript, which is
+    where `mine` comes from. A single ledger over kept rows holds `ambiguous` and
+    `unmatched` and nothing else — while `R_hi+` is defined over ALL FOUR, so the
+    fall-side figure would be short by construction.
+
+    Do not try to attribute the second group to a window. Nothing in the data
+    can, and `aggregate.ts` credits it whole.
 11. `subagentShare` = `subagentShare(input.observation, input.transcript)` from
     `./strata.js`.
 12. `billedRequestCount` = the number of `transcript.requests` in `owned`.

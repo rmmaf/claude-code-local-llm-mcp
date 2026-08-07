@@ -131,6 +131,85 @@ describe("computeTerms — every constant derived by hand", () => {
     expect(result.rows.length).toBe(0);
   });
 
+  it("files the refusals no window can own in the SECOND ledger, not nowhere", async () => {
+    // UNPROVED CONTROL. `terms.ts` is a stub, so this fails on `not implemented`
+    // whether it is right or wrong -- it has NEVER been executed against any
+    // implementation. The constants were derived by hand and the API shape is
+    // pinned by `tsc`; nothing else about it has been checked. RE-CHECK IT AS A
+    // CONTROL, by breaking the body deliberately, the day one lands.
+    //
+    // A row with no `invocation_id` is `unverifiable`, and one whose id this
+    // transcript never echoes is `excludedForeign`. Neither can be in `mine` --
+    // that is what makes them what they are -- so a ledger built only from the
+    // window's own rows holds two of the four classes and `R_hi+`, which the
+    // frozen metric defines over all four, comes out short in the direction that
+    // stops the project.
+    const transcript = await readTranscript(await fixture());
+    const result = computeTerms({
+      observation: observation({ originatedRequestIds: ALL_FOUR }),
+      transcript,
+      telemetry: [
+        row,
+        { ...row, invocation_id: undefined },
+        { ...row, invocation_id: "99999999-9999-4999-8999-999999999999" },
+      ],
+      rates: DEFAULT_RATES,
+      installedChars: 3_700,
+      ambiguousIds: new Set(),
+      disposition: "scored",
+    });
+
+    // The owned ledger stays empty: neither refusal belongs to this window.
+    expect(result.refusals.unverifiable.count).toBe(0);
+    expect(result.refusals.excludedForeign.count).toBe(0);
+    // And they are not lost.
+    expect(result.unattributedRefusals.unverifiable.count).toBe(1);
+    expect(result.unattributedRefusals.excludedForeign.count).toBe(1);
+    // Sized, not merely counted -- a refusal reported without its magnitude is
+    // the silent exclusion the counters exist to prevent.
+    expect(result.unattributedRefusals.unverifiable.units).toBeGreaterThan(0);
+    // The credited arithmetic is untouched by either of them.
+    expect(result.sHi).toBeCloseTo(17_243.243243243243, 6);
+  });
+
+  it("counts a delivery's closures off the row's own verdict, and absence is not failure", async () => {
+    // UNPROVED CONTROL -- see the note in the test above.
+    //
+    // `MIN_REPAIR_CLOSURES` needs this and nothing carried it. `false` is a
+    // repair that ran and did not close; `null` is a row that could not say --
+    // `repair`'s abort path writes a detail with no verdict, and rows predating
+    // the field exist on disk. Merging them would count "we did not look" as
+    // evidence against the delivery.
+    const transcript = await readTranscript(await fixture());
+    const closed = computeTerms({
+      observation: observation({ originatedRequestIds: ALL_FOUR }),
+      transcript,
+      telemetry: [{ ...row, tool: "repair", detail: { passed: true } }],
+      rates: DEFAULT_RATES,
+      installedChars: 3_700,
+      ambiguousIds: new Set(),
+      disposition: "scored",
+    });
+    expect(closed.perDelivery.repair?.closures).toBe(1);
+    expect(closed.perDelivery.repair?.closureUnknown).toBe(0);
+
+    const silent = computeTerms({
+      observation: observation({ originatedRequestIds: ALL_FOUR }),
+      transcript,
+      telemetry: [{ ...row, tool: "repair", detail: { aborted: true } }],
+      rates: DEFAULT_RATES,
+      installedChars: 3_700,
+      ambiguousIds: new Set(),
+      disposition: "scored",
+    });
+    expect(silent.perDelivery.repair?.closures).toBe(0);
+    // THE NEGATIVE CONTROL. A row that could not answer is counted HERE and
+    // nowhere else; an implementation that ignored `null` would leave this at 0
+    // and the artifact could not tell an unexercised delivery from an unreadable
+    // one.
+    expect(silent.perDelivery.repair?.closureUnknown).toBe(1);
+  });
+
   it("meters the WHOLE lineage — a shortened transcript would shorten T and deflate R", async () => {
     // The multiplier comes off the full segment. If an implementation filtered
     // `transcript.requests` down to the window before pricing, `segmentSize`

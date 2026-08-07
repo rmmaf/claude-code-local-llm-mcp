@@ -30,8 +30,11 @@ First in the chain because it depends on nothing: `terms.ts` imports
 Return six arrays, preserving input order within each.
 
 - `testRed` / `typesOnly`: split on `t.verificationStratum`, which is DECLARED in
-  the manifest and read off the observation. Never infer it from what the gate
-  did — inferring it after the fact lets a result choose its own cell.
+  the manifest. Never infer it from what the gate did — inferring it after the
+  fact lets a result choose its own cell. **`scripts/b12-run.mjs` does not write
+  it into `observation.json`**, so it reaches the scorer through a join nobody
+  has written yet, and nothing validates it on the way. That is the whole reason
+  for the bucket below.
 - `unknownStratum`: any other value goes here, and into **NEITHER** `testRed` nor
   `typesOnly`. The field is typed as a two-value union, but it is read from
   unvalidated JSON and nothing in the repository checks it, so **write the

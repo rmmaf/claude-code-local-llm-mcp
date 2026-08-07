@@ -47,8 +47,9 @@ export type Arm = "treatment" | "control";
 
 /**
  * The fields of `evidence/<runId>/obs-<taskId>-<arm>/observation.json` that the
- * scorer reads. `scripts/b12-run.mjs` writes more than this; the extra fields
- * are provenance the artifact carries and the arithmetic never touches.
+ * scorer reads. `scripts/b12-run.mjs` writes more than this AND LESS: the extra
+ * fields are provenance the arithmetic never touches, but `verificationStratum`
+ * below is not written by it at all and has to be joined from the manifest.
  *
  * `originatedRequestIds` IS THE UNIT. Everything else here is a guard on it.
  */
@@ -69,7 +70,16 @@ export interface B12Observation {
   baseCommit: string;
   endCommit: string;
   treeHashAtStart: string;
-  /** Declared in the manifest before the run — never inferred from the result. */
+  /**
+   * Declared in the manifest before the run — never inferred from the result.
+   *
+   * **NOTHING WRITES IT YET, and nothing validates it.** `scripts/b12-run.mjs`
+   * emits no such field into `observation.json` (grep it), so whoever wires the
+   * reader will be joining this from the manifest by `taskId`. Until then the
+   * union below is a claim about a document, not a guarantee from the compiler,
+   * which is why `partitionByStrata` carries an `unknownStratum` bucket rather
+   * than trusting the type.
+   */
   verificationStratum: "test-red" | "types-only";
 }
 
@@ -121,6 +131,22 @@ export interface DeliveryTerms {
   /** `S_o` at the observed segment for this tool's rows only. */
   sHi: number;
   rowCount: number;
+  /**
+   * Rows whose `passed` is `true` — what `MIN_REPAIR_CLOSURES` counts.
+   *
+   * REQUIRED, not optional. An optional field read as 0 when absent is the
+   * unknown-summed-as-zero collapse the rest of this file exists to forbid, and
+   * it would silently turn "we did not look" into "nothing closed".
+   */
+  closures: number;
+  /**
+   * Rows whose `passed` is `null` — the tool did not say. REPORTED, DECIDING
+   * NOTHING: they are not counted as closures, which pushes a delivery toward
+   * `unexercised`, and `unexercised` is neither a hold nor a fall. Carried so a
+   * reader can tell "the delivery was exercised and did not close" from "the
+   * rows could not answer", which the closure count alone cannot express.
+   */
+  closureUnknown: number;
 }
 
 /**
@@ -144,7 +170,31 @@ export interface ObservationTerms {
   oO: number;
   /** This window's rows, credited and refused, for the artifact's face. */
   rows: CreditedRow[];
+  /** Refused rows this window OWNS — their `invocationId` is one of its own. */
   refusals: RefusalLedger;
+  /**
+   * Refused rows in this observation's telemetry slice that belong to NO window:
+   * `invocationId` null, or an id this window does not own.
+   *
+   * WITHOUT THIS, TWO OF THE FOUR CLASSES ARE STRUCTURALLY EMPTY AND `R_hi+` IS
+   * DEFLATED TOWARD THE FALL LINE. An `unverifiable` row is refused precisely
+   * because it has no `invocation_id`, so it can never be in any window's owned
+   * set; an `excludedForeign` row is refused precisely because its id is absent
+   * from this transcript, which is where owned ids come from. A ledger built
+   * only from owned rows can hold `ambiguous` and `unmatched` and nothing else,
+   * while the frozen metric defines `R_hi+` over ALL FOUR — so the fall-side
+   * figure was short by construction, and the whole point of `R_hi+` is that a
+   * fall must survive the most generous arithmetic the data admits.
+   *
+   * IT MAY DOUBLE-COUNT, AND THAT IS THE SAFE DIRECTION. `admissionRule` 5 says
+   * `scopeTelemetry`'s ±60,000 ms window pulls a neighbouring arm's rows in
+   * whenever two sessions run within a minute, so one such row can appear in two
+   * observations' slices. Over-crediting `refused` moves
+   * `(S + refused - O) / (A + S + refused)` UP, and `R_hi+` gates only the fall
+   * — it can prevent one and can never manufacture a hold. Omission is the error
+   * that stops the project; duplication is not.
+   */
+  unattributedRefusals: RefusalLedger;
   /** Unevaluable when the window carried no billed request of its own. */
   subagentShare: Evaluable<SubagentShare>;
   /** Partitioned by the telemetry `tool` field, never by this project's prose. */
@@ -159,11 +209,18 @@ export interface ObservationTerms {
  * One delivery's verdict. `unexercised` is a THIRD state, not a low score.
  *
  * The floor is the design's: fewer than 5 admitted observations carrying this
- * tool's rows and it is not scored. `repair` carries a second condition — at
- * least two of those must have `passed: true` — because `turns_collapsed` is
- * `rounds.length` whether or not the failure closed, so an unconditioned
- * `R_repair` is maximised by `repair` flailing for its full budget and
- * returning red.
+ * tool's rows and it is not scored. `repair` carries a second condition —
+ * `holdsIf` requires "at least two of those carry `passed: true`" — because
+ * `turns_collapsed` is `rounds.length` whether or not the failure closed, so an
+ * unconditioned `R_repair` is maximised by `repair` flailing for its full budget
+ * and returning red.
+ *
+ * THE FLOOR COUNTS OBSERVATIONS, NOT ROWS: at least two of the carrying
+ * observations must hold a closure, which is `DeliveryTerms.closures > 0` on
+ * this delivery's bucket. It is stated here because the second condition was
+ * written into `UNIT-3.md` before anything carried `passed` at all, so it named
+ * a quantity that did not exist and could not be implemented from the declared
+ * types.
  */
 export type DeliveryScore =
   | { scored: true; r: number; observations: number }

@@ -1,12 +1,19 @@
 /**
- * UNIT 1 — one observation's terms: `A_o`, `S_o` at both horizons, and `O_o`.
+ * UNIT 2 — one observation's terms: `A_o`, `S_o` at both horizons, and `O_o`.
+ * Specified by `docs/b12-scorer/UNIT-2.md`; this header said "UNIT 1" until
+ * 2026-08-07 and `strata.ts` said "UNIT 2", which is the wrong way round in both.
  *
- * THE WHOLE LINEAGE IS METERED AND ONLY THE CREDIT IS NARROWED. B12's unit is a
- * task window, and the window cannot be scored by shortening the transcript:
- * `positionalMultiplier` reads `t` and `T` off the full segment, so a shortened
- * transcript shortens `T` and deflates the deciding number by roughly an order
- * of magnitude — in the direction that stops the project. So this unit calls the
- * meter over everything and then selects rows.
+ * THE WHOLE LINEAGE IS METERED AND THE SELECTION HAPPENS AFTERWARDS. B12's unit
+ * is a task window, and the window cannot be scored by shortening the
+ * transcript: `positionalMultiplier` reads `t` and `T` off the full segment, so
+ * a shortened transcript shortens `T` and deflates the deciding number by
+ * roughly an order of magnitude — in the direction that stops the project. So
+ * this unit calls the meter over everything and then narrows.
+ *
+ * IT NARROWS THREE THINGS, NOT ONE. This header used to say "only the credit is
+ * narrowed", which is wrong: `A_o` and `O_o` are computed over `owned` too
+ * (`breakdownOfRequests` and `unitsAddedByInstallation` both take the id set).
+ * What the full lineage is for is SEGMENT POSITIONING, and nothing else.
  */
 
 import type { TelemetryRecord } from "../../telemetry.js";

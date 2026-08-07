@@ -403,10 +403,16 @@ export type RowDisposition =
  * already been burned by — two numbers from one rule drift apart.
  *
  * The positional fields are populated for `credited` rows and are `null` on a
- * refusal, because a refused row has no request to be positioned against; that
- * is usually WHY it was refused. `units` carries the scored contribution of a
- * credited row and the would-have magnitude of a refused one, and it is `null`
- * when nothing could size it — which is not zero and may not be summed as one.
+ * refusal, because a refused row was not credited AGAINST a request — it has no
+ * position of its own. This is not the same as there being no request anywhere:
+ * `wouldHaveAdded` selects a counterfactual one for three of the four classes in
+ * order to size them, and those fields are discarded rather than absent. Only
+ * `unmatched` is unpositioned in the literal sense, and that is why it is the
+ * class that is unsized by construction.
+ *
+ * `units` carries the scored contribution of a credited row and the would-have
+ * magnitude of a refused one, and it is `null` when nothing could size it —
+ * which is not zero and may not be summed as one.
  *
  * `units` and `unitsLo` are the same row at B12's two horizons, and they are
  * `null` TOGETHER. Both live here rather than being recomputed downstream
@@ -470,7 +476,16 @@ export interface CounterfactualReport {
    * project, and this is the one direction of error the meter exists to prevent.
    */
   savedFraction: number | null;
-  /** Telemetry rows whose invocation never appears in this transcript — another session's. */
+  /**
+   * Telemetry rows whose invocation is absent from `byInvocation` — usually
+   * another session's.
+   *
+   * "Absent from this transcript" is the shorthand and it is not exact:
+   * `byInvocation` is built from `toolResults.filter(isLocalToolResult)`, so a
+   * row whose id appears ONLY inside some other tool's serialised output lands
+   * here too. The distinction matters to B12, whose window join reads every
+   * `toolResult` and not just the local ones.
+   */
   excludedForeign: number;
   /**
    * What those rows WOULD have added. This class shipped as a bare counter while
@@ -843,9 +858,13 @@ export function buildCounterfactual(
   const rows: CreditedRow[] = [];
 
   /**
-   * What a row WOULD have added had it been creditable. Both refusal paths
-   * report their magnitude, and they must report it the same way — computing it
-   * twice is how two numbers derived from one rule drift apart.
+   * What a row WOULD have added had it been creditable. THREE of the four
+   * classes are sized here — `unverifiable`, `ambiguous` and `excludedForeign`,
+   * all through `addRefused` — and they must report it the same way, because
+   * computing it twice is how two numbers derived from one rule drift apart.
+   * `unmatched` never reaches this function: it is entered separately below and
+   * is unsized by construction, since the request a magnitude would be priced
+   * against is exactly the one that is missing.
    *
    * **`null` is not 0.** No matchable request means the magnitude is UNKNOWN, and
    * summing an unknown as zero is the same error as printing a withheld fraction

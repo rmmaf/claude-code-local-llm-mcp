@@ -10,8 +10,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { aggregate, deliveryScore, poolRatio, rHiPlus } from "../src/cost/b12/aggregate.js";
-import { terms } from "./b12-fixtures.js";
+import { aggregate, deliveryScore, poolRatio, recompute, rHiPlus, strataCells } from "../src/cost/b12/aggregate.js";
+import type { ObservationTerms } from "../src/cost/b12/types.js";
+import { creditedRow, ledger, terms } from "./b12-fixtures.js";
 
 describe("poolRatio — the one arithmetic every figure in the artifact goes through", () => {
   it("is a RATIO OF SUMS, which is not the mean of per-observation ratios", () => {
@@ -95,6 +96,130 @@ describe("rHiPlus — the fall-side figure, and the one thing that makes it refu
       expect(result.value).not.toBeCloseTo(160 / 1_160, 6);
     }
   });
+
+  it("credits the classes NO window can own, which is where two of the four live", () => {
+    // UNPROVED CONTROL. `aggregate.ts` is a stub, so this fails on `not
+    // implemented` whether it is right or wrong -- it has NEVER been executed
+    // against any implementation. The constants were derived by hand and the API
+    // shape is pinned by `tsc`; nothing else about it has been checked. RE-CHECK
+    // IT AS A CONTROL, by breaking the body deliberately, the day one lands. An
+    // oracle nobody has watched fail is not yet evidence of anything.
+    //
+    // An `unverifiable` row has no `invocation_id` and an `excludedForeign` row's
+    // id is absent from the transcript, so neither can ever be in a window's
+    // owned set. A ledger built only from owned rows holds two classes, and
+    // `R_hi+` is defined over four -- the fall-side figure was short by
+    // construction, in the direction that stops the project.
+    //
+    // By hand: sHi 100 on aO 1000. Owned `ambiguous` 10; unattributed
+    // `unverifiable` 20 and `excludedForeign` 30. refused = 60, so
+    // (100+60)/(1000+100+60) = 160/1160.
+    const both = terms({
+      aO: 1_000,
+      sHi: 100,
+      refusals: ledger({ ambiguous: { count: 1, units: 10, unsized: 0 } }),
+      unattributedRefusals: ledger({
+        unverifiable: { count: 1, units: 20, unsized: 0 },
+        excludedForeign: { count: 1, units: 30, unsized: 0 },
+      }),
+    });
+    const result = rHiPlus([both]);
+    expect(result.evaluable).toBe(true);
+    if (result.evaluable) {
+      expect(result.value).toBeCloseTo(160 / 1_160, 12);
+      // THE NEGATIVE CONTROL, and it points DOWNWARD. Summing only the owned
+      // ledger gives 110/1110 = 0.0991 against 0.1379 -- both under the 15% fall
+      // line here, but the defective one is 28% lower, and this figure exists
+      // precisely to decide whether a fall survives the most generous arithmetic
+      // the data admits.
+      expect(result.value).not.toBeCloseTo(110 / 1_110, 3);
+    }
+  });
+
+  it("refuses on an unsized magnitude in EITHER ledger, not just the owned one", () => {
+    // NEVER SEEN FAILING FOR ITS OWN REASON -- see the note above.
+    //
+    // `unmatched` is unsized BY CONSTRUCTION: the request that is missing is the
+    // one a magnitude would have been priced against. If that arrives through
+    // the unattributed ledger and the refusal check only reads the owned one,
+    // `R_hi+` returns a confident number built on an unknown summed as zero.
+    const unsizedElsewhere = terms({
+      aO: 1_000,
+      sHi: 100,
+      unattributedRefusals: ledger({ unmatched: { count: 1, units: 0, unsized: 1 } }),
+    });
+    const result = rHiPlus([unsizedElsewhere]);
+    expect(result.evaluable).toBe(false);
+    if (!result.evaluable) expect(result.reason.length).toBeGreaterThan(0);
+  });
+});
+
+describe("recompute — the row guard ranks per horizon, because the two disagree", () => {
+  it("drops the LOW figure's biggest row from the low figure, not the high one's", () => {
+    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    //
+    // `holdsIf` 2: a hold must survive deleting "its best task, its best row".
+    // *Its* -- per figure. `units` is the high horizon's contribution and
+    // `unitsLo` the low one's, so the rankings part company whenever rows sit at
+    // different segment positions.
+    //
+    // Built so they disagree: obs `hi-heavy` owns the biggest `units` (100 vs
+    // 80), obs `lo-heavy` the biggest `unitsLo` (70 vs 60).
+    //   A = 200. S_hi = 180, S_lo = 130.
+    //   rHiMinusRow drops 100 from `hi-heavy`:  80/(200+80)  = 0.285714...
+    //   rLoMinusRow drops  70 from `lo-heavy`:  60/(200+60)  = 0.230769...
+    const admitted = [
+      terms({
+        taskId: "hi-heavy",
+        aO: 100,
+        sHi: 100,
+        sLo: 60,
+        rows: [creditedRow({ units: 100, unitsLo: 60 })],
+      }),
+      terms({
+        taskId: "lo-heavy",
+        aO: 100,
+        sHi: 80,
+        sLo: 70,
+        rows: [creditedRow({ units: 80, unitsLo: 70 })],
+      }),
+    ];
+    const r = recompute(admitted, []);
+    expect(r.rHiMinusRow).toBeCloseTo(80 / 280, 12);
+    expect(r.rLoMinusRow).toBeCloseTo(60 / 260, 12);
+    // THE NEGATIVE CONTROL. Ranking the low side by `units` drops `hi-heavy`'s
+    // row from `sLo` instead, giving 70/270 = 0.2593 -- a number, which is why
+    // the defect reads as a passed guard rather than as a missing one.
+    expect(r.rLoMinusRow).not.toBeCloseTo(70 / 270, 3);
+  });
+});
+
+describe("strataCells — a corrupted declaration is not a measured absence", () => {
+  const soloTerms = (taskId: string, stratum: ObservationTerms["verificationStratum"]) =>
+    terms({ taskId, aO: 100, sLo: 50, sHi: 50, verificationStratum: stratum });
+
+  it("refuses BOTH declared cells while any observation's stratum is unrecognised", () => {
+    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    //
+    // Five `test-red` observations clear the floor on their own. The sixth is a
+    // manifest typo: it belongs to one of the two cells and nobody can say
+    // which, so BOTH are deflated by an unknown amount. `holdsIf` 3 asks whether
+    // four cells are evaluable; it cannot ask whether they hold what they claim
+    // to, so a cell reporting a number here would pass a check it had failed.
+    const typo = "test_red" as ObservationTerms["verificationStratum"];
+    const set = [
+      ...[0, 1, 2, 3, 4].map((n) => soloTerms(`t${n}`, "test-red")),
+      soloTerms("typo", typo),
+    ];
+    const cells = strataCells(set);
+    expect(cells.testRed.evaluable).toBe(false);
+    expect(cells.typesOnly.evaluable).toBe(false);
+    // AND THE RULE IS TARGETED, not a blanket refusal. All six windows have an
+    // evaluable share, so `solo` holds six and stays scored -- an implementation
+    // that voided every cell on any anomaly would pass the two assertions above
+    // and be wrong about what was actually damaged.
+    expect(cells.solo.evaluable).toBe(true);
+  });
 });
 
 describe("deliveryScore — unexercised is a third state, never a low number", () => {
@@ -104,7 +229,10 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
       aO: 100,
       sLo: 50,
       sHi: 50,
-      perDelivery: { gate: { sLo: 30, sHi: 30, rowCount: 1 }, repair: { sLo: 20, sHi: 20, rowCount: 1 } },
+      perDelivery: {
+        gate: { sLo: 30, sHi: 30, rowCount: 1, closures: 1, closureUnknown: 0 },
+        repair: { sLo: 20, sHi: 20, rowCount: 1, closures: 1, closureUnknown: 0 },
+      },
     });
 
   it("refuses to score below the observation floor, and returns NO number at all", () => {
@@ -141,6 +269,46 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
       expect(repair.r).toBeCloseTo(100 / 750, 12);
       expect(gate.r + repair.r).toBeCloseTo(poolRatio(five, "lo"), 12);
     }
+  });
+
+  it("counts CLOSURES per observation before scoring repair, and an unknown is not one", () => {
+    // UNPROVED CONTROL -- see the note in the first rHiPlus block above.
+    //
+    // `holdsIf`: R_repair is scored only if ">= 5 admitted observations carry a
+    // `repair` row AND at least two of THOSE carry `passed: true`". Observations,
+    // not rows. `turns_collapsed` is `rounds.length` whether or not the failure
+    // closed, so an unconditioned R_repair is maximised by `repair` flailing for
+    // its full budget and returning red -- which is close to what B12's own
+    // Phase-3 exposures actually measured.
+    const withClosures = (n: number, closures: number, closureUnknown: number) =>
+      terms({
+        taskId: `c${n}`,
+        aO: 100,
+        sLo: 50,
+        sHi: 50,
+        perDelivery: { repair: { sLo: 50, sHi: 50, rowCount: 1, closures, closureUnknown } },
+      });
+
+    // Five carrying observations, ONE of which closed. Over the observation
+    // floor, under the closure floor.
+    const one = [withClosures(0, 1, 0), ...[1, 2, 3, 4].map((n) => withClosures(n, 0, 0))];
+    const short = deliveryScore(one, ["repair"], "lo", 2);
+    expect(short.scored).toBe(false);
+    if (!short.scored) expect(short.reason).toBe("unexercised");
+    expect((short as { r?: number }).r).toBeUndefined();
+
+    // Two closures: scored.
+    const two = [withClosures(0, 1, 0), withClosures(1, 1, 0), ...[2, 3, 4].map((n) => withClosures(n, 0, 0))];
+    expect(deliveryScore(two, ["repair"], "lo", 2).scored).toBe(true);
+
+    // THE NEGATIVE CONTROL. Four observations whose rows could not say whether
+    // they closed are NOT four closures. An implementation counting any repair
+    // row, or reading `closureUnknown` as a closure, scores this set -- and
+    // `unexercised` is the safe answer because it is neither a hold nor a fall,
+    // while a scored R_repair built on unreadable rows is a number nobody can
+    // defend.
+    const unknowns = [withClosures(0, 1, 0), ...[1, 2, 3, 4].map((n) => withClosures(n, 0, 1))];
+    expect(deliveryScore(unknowns, ["repair"], "lo", 2).scored).toBe(false);
   });
 });
 
