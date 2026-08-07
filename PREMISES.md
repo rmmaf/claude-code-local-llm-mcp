@@ -1530,7 +1530,7 @@ defect, and it pinned four of them in place.
   - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
     hedge that this would be its first real observation and not necessarily a bad
     one. Both halves resolved: real, and bad.
-- **THREE CONDITION CHANGES REGISTERED AFTER EXPOSURE B AND BEFORE ANY LATER
+- **FOUR CONDITION CHANGES REGISTERED AFTER EXPOSURE B AND BEFORE ANY LATER
   RUN.** All are instrument repairs — they fix specs that were wrong and a limit
   that was never registered — but all change what the model is handed, so **no
   run under them is comparable with exposure A or B** and any later exposure is a
@@ -1603,6 +1603,40 @@ defect, and it pinned four of them in place.
       commit, so the harness now refuses any run that attempts it — enforcing the
       rule this section already carries, that a unit with an observation may not
       be drawn again.
+  - **THE HOLD ARITHMETIC NOW RUNS OVER A DIFFERENT SET FROM THE PUBLISHED
+    BRACKET (F19), and this is the change most likely to be misread later.**
+    `admissionRule` 6 admits an `ambiguous > 0` observation "to the FALL
+    arithmetic only, at both bounds" and excludes it from the hold; the scorer put
+    it in both. `B12Result` now carries a second family of figures under `hold`,
+    and **a run's `rLo` and its hold's `rLo` are two numbers, not one.** Anyone
+    quoting "R_lo" off a future artifact has to say which.
+    - **THE SAFETY CLAIM THAT LICENSED SHIPPING THE HOLD BRANCH FIRST WAS FALSE.**
+      `FINDINGS.md` recorded that including such an observation "drags `R_lo` DOWN,
+      making a hold harder", so fixing it later was safe. Removing an observation
+      from a ratio of sums raises the pool **iff** its own `(s−o)/(a+s)` is below
+      the pool, which a refused magnitude says nothing about. The hold branch
+      therefore shipped on 2026-08-07 under a direction that had never been
+      established. It is registered here rather than quietly corrected in the
+      findings file, because the same reasoning error — *deflated relative to
+      itself* read as *below the pool* — is what F1 and F9 were each corrected for.
+    - **What does bound the direction is the dilution guard.** `hold.rAll`
+      reinstates every clause-6 exclusion at `saved_o = 0` with its billing, so for
+      a non-negative excluded saving it is strictly below the published `R_lo` and
+      a hold now requires the full admitted set to clear 30% under dilution as
+      well. Stated with the qualification, not as a general claim.
+    - **Two of my three readings were refuted by adjudication** — that a short
+      hold set makes a hold impossible, and that "admitted" in `voidConditions` 16
+      covers a clause-6 observation (I had quoted the clause with "to the FALL
+      arithmetic only" dropped). And **one conservative guard I proposed was
+      refused as post-freeze threshold-minting**: requiring 5 hold-eligible
+      observations per stratum cell. It would only ever turn a hold into `open`,
+      and it is still a number the frozen design does not contain. Recorded as
+      F21 instead.
+    - **UNIT-3 is harder again**: a second family of figures, two functions taking
+      a population PAIR where neither member may default to the other, and a
+      verdict step that must not see the published domain. Any exposure C was
+      already measuring a different task; it is now measuring a different task
+      again.
 - **PHASE 3 IS CLOSED AT 1 OF 3, DELIBERATELY, WITHOUT A THIRD EXPOSURE.**
   Decided 2026-08-07 with an adversarial second opinion that was asked to attack
   the decision and agreed with it.

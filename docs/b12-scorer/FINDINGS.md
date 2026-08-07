@@ -11,42 +11,62 @@ default to REFUTED absent positive evidence); all 15 confirmed. F6–F8 were fou
 afterwards. **F9–F14 came from a second Codex adjudication on 2026-08-07**, run
 as gate 1 of the scorer-correctness pass; every mechanism below was re-checked
 against the files before being written down, and two of Codex's claims were
-sharpened in the process rather than copied.
+sharpened in the process rather than copied. **F19–F22 came from three more
+rounds the same day**, and those went the other way: three of my own readings
+were refuted, including a safety claim this file had already published (see F19)
+and a resolution I offered by quotation with the qualifier dropped (F20).
 
-**None of these is a reachability blocker.** The three units' oracles pass green
-on all of them, which is exactly why they need writing down: an oracle that
-cannot fail on a defect is not evidence the defect is absent.
+**None of these is a reachability blocker.** The four units' oracles pass green on
+all of them — `coverage.ts` joined the three when the run-level ledger landed —
+which is exactly why they need writing down: an oracle that cannot fail on a
+defect is not evidence the defect is absent.
 
 ---
 
 ## OPEN
 
-### F19 — the hold arithmetic includes observations the admission rule excludes from it
+### F20 — which sense of "excluded" the selection guard takes is UNDETERMINED
 
-Found by the F14 adjudication on 2026-08-07 and **deliberately not fixed in that
-pass**, because it changes `R_lo` and `R_hi` themselves and every figure derived
-from them.
+Raised by the third F19 adjudication on 2026-08-07, against a resolution I
+proposed and could not defend.
 
-`admissionRule` 6: "An observation with `ambiguous > 0` is admitted to the FALL
-arithmetic only, at both bounds, and **excluded from the HOLD arithmetic**.
-Crediting an unowned saving toward a hold is the double-count the refusal exists
-to prevent." `aggregate` passes the whole admitted set to `poolRatio`,
-`strataCells`, `deliveryScore` and `recompute` alike, so an observation with a
-non-zero `ambiguous` count is in the hold figures the rule keeps it out of.
+`selectionOf` splits admitted from excluded on DISPOSITION alone. `voidConditions`
+16 and `holdsIf` 5 both compare "the EXCLUDED observations" against "the ADMITTED
+set", and after F19 an observation can be admission-admitted and hold-excluded at
+once. Nothing in the frozen text says which sense those two comparisons take.
 
-**The direction is conservative, which is why shipping the hold branch ahead of
-this fix is safe.** Such an observation carries its full `A_o` while its ambiguous
-rows are refused rather than credited, so its `S_o` is deflated relative to what
-it would otherwise be — it drags `R_lo` DOWN, making a hold harder rather than
-easier. That is the safe error on the hold side, and `holding (unvalidated)` "may
-not be cited as an input to opening or closing any gate" in any case. It is not
-guaranteed for every conceivable observation, only for one whose refused ambiguous
-rows carry positive magnitude — the ordinary case, and the same qualification F1
-had to be corrected to make.
+**My attempted resolution was an equivocation and is recorded as one.** I argued
+that `admissionRule` 6 says such an observation "is admitted", so clause 16's
+"admitted set" covers it. The clause actually reads "is admitted **to the FALL
+arithmetic only**" — domain-qualified, and I had quoted it with the qualifier
+dropped. `conflictsResolved` 5 repeats the same two-domain split and likewise
+assigns the observation to neither side of clause 16's comparison.
 
-The fix is a partition: `poolRatio` and everything hold-side over
-`admitted.filter(t => t.refusals.ambiguous.count === 0)`, while `rHiPlus` keeps
-the full set. It needs its own controls, because every hold-side figure moves.
+**Left on the disposition split, and that is an implementation convention rather
+than a reading of the design.** Stated in `decideHold` and here so it cannot later
+be cited as what the frozen text required. Moving the clause-6 exclusions to the
+excluded side would add their `wouldHaveAdded` to `excludedWouldHaveAdded` and
+remove their `S_o` from `admittedSumS` — both directions of one comparison at
+once, so not even the direction is obvious.
+
+### F21 — a hold cell can be evaluable on five observations and priced on three
+
+`holdsIf` 3 wants "All four declared strata evaluable (≥ 5 **admitted**
+observations each) and all four on the same side of 30%", and `admissionRule` 8
+defines the floor in the same words. `admissionRule` 6 moves only the arithmetic.
+So the floor counts admitted observations and the ratio does not, and a cell that
+clears five admitted may be priced over as few as one.
+
+**The obvious guard is refused.** Requiring five hold-eligible observations per
+cell as well is monotone-conservative — after the fall branch it can only turn a
+hold into `open` — but it is still a verdict threshold the frozen design does not
+contain, and disclosing it would prevent misattribution without preserving the
+pre-registered rule. It is the objection `design.metric` raises against reusing
+30% on a jackknifed quantity: "minting a stricter number in the frozen one's
+clothes". The literal reading ships and the gap is recorded here instead.
+
+The exposure is bounded in practice by `hold.rAll`, which reinstates every
+clause-6 exclusion at `saved_o = 0` with its billing — see F19's closing note.
 
 ### F17 — the frozen preflight screens for none of `R_hi⁺`'s new refusals
 
@@ -60,7 +80,9 @@ false`, `ambiguous === 0`, `unmatched === 0`, `excludedForeign === 0`,
 `unverifiable`, about unique window ownership, about credited rows no window
 owns, about slices disagreeing, or about full slice coverage. And
 `savedFraction !== null` excludes only `provenanceUnavailable` and `ambiguous`;
-`report.ts:1240` deliberately does not withhold it for `unverifiable`.
+`buildCounterfactual`'s withholding rule deliberately does not withhold it for
+`unverifiable`. (This paragraph cited `report.ts:1240` and was already off by
+nineteen lines — see the stale-citation note below.)
 
 So a run can pass its ten-minute preflight and still return `open` at scoring
 time on a condition the preflight never looked at. **That is the safe direction**
@@ -118,13 +140,104 @@ is neither a hold nor a fall.
 
 ### A stale citation in the frozen design, recorded because it cannot be fixed
 
-`admissionRule` 5 cites `savedFraction` at `report.ts:684`. It is at
-`report.ts:1098` today. The pre-registration is frozen and stays as written; this
-note exists so the next reader does not follow the line number.
+`admissionRule` 5 cites `savedFraction` at `report.ts:684`. **This note said
+`report.ts:1098` and that was wrong too by the time anyone read it** — 1098 is
+inside the ambiguous branch of `buildCounterfactual`, not the withholding rule.
+The rule is the `savedFraction:` property of `buildCounterfactual`'s return,
+`provenanceUnavailable || ambiguous > 0 ? null : ...`, at `report.ts:1259` today.
+
+**Cited by its text from here on, not by its line.** Three line numbers for one
+expression in two days is the whole argument: a citation that has to be re-checked
+every time the file moves is a citation nobody re-checks. The pre-registration is
+frozen and stays as written.
 
 ---
 
 ## CLOSED
+
+### F19 — the hold arithmetic was scored over observations the rule bars from it — FIXED
+
+`admissionRule` 6: "An observation with `ambiguous > 0` is admitted to the FALL
+arithmetic only, at both bounds, and **excluded from the HOLD arithmetic**."
+`aggregate` passed the whole admitted set to `poolRatio`, `strataCells`,
+`deliveryScore` and `recompute` alike.
+
+**THE RUN HAS TWO DOMAINS.** The published bracket stays over the full admitted
+set — `conflictsResolved` 5 records the resolution as "admitted to the FALL
+arithmetic at both bounds and excluded from the HOLD arithmetic", and `fallsIf`
+reads `R_lo` by name — while `B12Result.hold` carries `R_lo`, three
+recomputations, four cells and `R_gate` over the domain clause 6 leaves. They are
+the same numbers on every clean run, which is why the divergence is pinned by
+seven controls rather than by a comment.
+
+**THIS FINDING'S OWN SAFETY CLAIM WAS FALSE AND IS CORRECTED HERE RATHER THAN
+DELETED.** It read: "Such an observation carries its full `A_o` while its
+ambiguous rows are refused, so its `S_o` is deflated — it drags `R_lo` DOWN,
+making a hold harder." That confuses *deflated relative to its own counterfactual*
+with *below the pool*. Removing an observation `(a, s, o)` from a ratio of sums
+raises the pool **iff** its local ratio `(s−o)/(a+s)` is below the pooled one, and
+a positive refused magnitude does not establish that. So the direction was never
+conservative and never established — which means the hold branch shipped in the
+F14 pass on a justification that did not hold. Refuted by the first adjudication
+of 2026-08-07 against a claim I had written.
+
+**What does bound the direction is `R_all`, and only because of Reading D below.**
+Writing `S_x` for the excluded observations' saving, `hold.rAll` is
+`(S_e − O)/(A_e + A_x + S_e)` against a published `R_lo` of
+`(S_e + S_x − O)/(A_e + A_x + S_e + S_x)`; for `S_x > 0` the first is strictly
+smaller. So a hold now requires the full admitted set to clear 30% under
+dilution too, and the fix can only make a hold HARDER — **for `S_x > 0`, stated
+with the qualification F1 and F9 both had to be corrected to make.**
+
+Three forks were adjudicated and two went against me:
+
+- **Does a short hold set make a hold impossible?** I read `holdsIf` 1's "over ≥
+  20 admitted observations" as attaching to the figure, which would have made any
+  ambiguous observation fatal to a hold and collapsed the whole fix to one
+  conjunct. REFUTED: clause 6 calls the observation admitted, and "excluded from
+  the HOLD arithmetic" presupposes an arithmetic it is excluded from. The hold
+  legitimately runs on fewer than 20.
+- **What does the hold's `R_all` reinstate?** Reading D: the clause-6 exclusions
+  rejoin it at `saved_o = 0` with their billing intact. `admissionRule` 3 uses
+  "dropped" to mean dropped from the hold arithmetic — a `void(task_failed)`
+  observation is "dropped from the hold arithmetic ... and reinstated at
+  `saved_o = 0`" — and `holdsIf` 2 asks a hold to survive "reinstating everything
+  it dropped". The literal alternative takes a billed denominator off the hold
+  side, which is the one direction a dilution guard must not move.
+- **Is the predicate the owned ledger?** No, and this finding proposed that it
+  was. `admissionRule` 5 pins `ambiguous` to the shipped counter, which
+  `report.ts` increments over the whole telemetry slice **before** ownership is
+  decided; ownership is imposed later, in `computeTerms`. The predicate is
+  `refusals.ambiguous.count + unattributedRefusals.ambiguous.count > 0`. Reading
+  a per-observation boolean off `unattributedRefusals` is not the F12 double-count
+  — that defect was adding magnitudes across slices — and a row two slices share
+  correctly makes both observations hold-excluded, because both reports withheld.
+
+Two frozen floors survived the partition intact, because the text words them over
+"admitted": `unexercised` is "fewer than 5 **admitted** observations carrying its
+rows", and a stratum is evaluable on "≥ 5 **admitted** observations each". Both
+`deliveryScore` and `strataCells` therefore take an explicit population PAIR and
+neither member defaults to the other — passing the hold-eligible set for both is
+the obvious implementation and silently redefines a floor the design fixed.
+
+### F22 — `voidConditions` 18's 30% half was a conjunct that could not fail — FIXED
+
+Found while writing F19's hold branch, not reported by any reviewer.
+
+The check `![rLoMinusTask, rLoMinusRow, rAll].some(v => v >= 0.3 !== rLo >= 0.3)`
+was the last conjunct of the hold. The conjuncts above it had already required
+`rLo >= 0.3` and all three recomputations `>= 0.3`, so every operand was on the
+same side of the line by the time it was evaluated and the expression was always
+`true`. **It sat directly beneath a comment explaining that the F9 guard had been
+removed for exactly this reason** — a guard that cannot fail, three paragraphs
+under the house rule against them.
+
+Moved to the PUBLISHED recomputations against the published parent, which is the
+pair clause 18 names, and placed after the fall branch. There it decides
+something: with the domains split, a published figure can straddle 30% while the
+hold domain does not. Deleting it before that fixture existed changed no test;
+deleting it after flips the verdict from `open` to `holding (unvalidated)`, which
+is how the guard was established as a guard.
 
 ### F14 — `B12Result` could say two of the six verdicts the design defines — FIXED
 
@@ -614,3 +727,39 @@ marked as such:** `rows[0].key` on a priced row fired under the ENCODING defect
 but not under "always pair with index 0", because index 0's key is correct for
 row 0 either way. The index rule is proved by the `unattributed` assertion beside
 it, which fired on exactly that defect.
+
+## Seven more, for F19 and F22
+
+The F19 pass added seven assertions to `b12-aggregate.test.ts`. **All seven
+passed on first execution, and every existing b12 test passed unchanged** — which
+is the expected result and the reason none of it was evidence: the two domains are
+the same set on every fixture written before this pass, so a partition that does
+nothing looks exactly like a partition that works.
+
+Six defects were planted, one at a time, restoring the file between each so no two
+could cancel:
+
+| defect planted | what fired | what did NOT |
+|---|---|---|
+| no partition at all — the pre-F19 body | 5 of the 7 | the clean-run identity test, correctly |
+| `ambiguousCount` reads the OWNED ledger only — F19's own proposal | the unowned-ambiguous control, alone | the other six |
+| Reading L: clause-6 exclusions kept out of `hold.rAll` | 2, with `R_all` at 30.56% against the correct 29.48% | — |
+| delivery populations collapsed onto hold-eligible | the exercise-floor control, alone | — |
+| strata floor collapsed onto hold-eligible | the cell-evaluability control, alone | — |
+| `strata: hold.strata` on the published face | the face control, alone | — |
+
+**The second row is the one worth keeping.** F19 proposed that predicate itself,
+and the control written to separate the two readings fires on it and on nothing
+else — so the correction is pinned rather than asserted.
+
+**The last row is the hazard a type could not have caught.** Both domains are in
+scope exactly once, in `aggregate`'s final assembly, and `StrataCells` is
+`StrataCells`; the slip is one word and no compiler objects. Branding the type was
+considered and declined — `decideHold` cannot see the published figures at all, so
+the brand would protect only that one line, and a control that exercises the real
+assembly is better evidence than a label attached to the object.
+
+**F22's guard was proved twice, in opposite directions.** Deleting it before the
+straddle fixture existed changed no test — which is what established that the
+conjunct it replaced could not fire. Deleting it after flips that run from `open`
+to `holding (unvalidated)`.

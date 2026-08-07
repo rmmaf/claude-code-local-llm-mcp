@@ -67,12 +67,17 @@ a quantity nothing computes any more reads as protection while providing none.
 `runCoverage` deduplicates by row identity instead, and refuses what it cannot
 resolve.
 
-## `deliveryScore(terms, tools, horizon, minClosures?): DeliveryScore`
+## `deliveryScore(pop, tools, horizon, minClosures?): DeliveryScore`
 
-`tools` is the list of telemetry `tool` names this delivery owns.
+`tools` is the list of telemetry `tool` names this delivery owns. `pop` is a
+REQUIRED PAIR — `{ exercise, arithmetic }` — and neither member defaults to the
+other: `admissionRule` 6 split them apart, `unexercised` is defined over
+**admitted** observations and the ratio the hold reads is not. On the published
+face both members are the full admitted set; on `hold.gate` the exercise floor is
+still the admitted set and only the arithmetic narrows.
 
-1. `carrying` = the observations with at least one entry in `t.perDelivery` whose
-   key is in `tools` and whose `rowCount > 0`.
+1. `carrying` = the observations **of `pop.exercise`** with at least one entry in
+   `t.perDelivery` whose key is in `tools` and whose `rowCount > 0`.
 2. If `carrying.length < MIN_DELIVERY_OBSERVATIONS`, return
    `{ scored: false, reason: "unexercised", observations: carrying.length }`.
    **There must be no `r` on that object at all.** `unexercised` is a third
@@ -87,9 +92,9 @@ resolve.
    `closureUnknown` is not a closure and is not a failure to close — it is
    reported and counted toward neither, which can only push this floor toward
    `unexercised`, and `unexercised` is neither a hold nor a fall.
-4. Otherwise the numerator is the sum, over ALL `terms` (not just `carrying`), of
-   this delivery's `sLo`/`sHi` per the horizon; the denominator is the SAME
-   `A + S` that `poolRatio(terms, horizon)` uses over all `terms`.
+4. Otherwise the numerator is the sum, over ALL of `pop.arithmetic` (not just
+   `carrying`), of this delivery's `sLo`/`sHi` per the horizon; the denominator is
+   the SAME `A + S` that `poolRatio(pop.arithmetic, horizon)` uses.
    **One common denominator**, and a tool's rows are never bucketed under another
    delivery's name — the design warns that an implementer doing so would decide
    `gate`'s survival on another tool's saving.
@@ -127,11 +132,32 @@ resolve.
   with `sLo = 0` and `sHi = 0` but its `aO` and `oO` intact. This is the dilution
   guard; the other two are concentration guards.
 
-## `strataCells(admitted): StrataCells`
+## `holdRecompute(eligible, reinstated): HoldRecomputations`
 
-Call `partitionByStrata` from `./strata.js`. For each of the four cells: if it
-holds fewer than `MIN_DELIVERY_OBSERVATIONS` observations, the cell is
-`{ evaluable: false, reason }`; otherwise `{ evaluable: true, value: poolRatio(cell, "lo") }`.
+The three `holdsIf` 2 names and no more — `rLoMinusTask`, `rLoMinusRow`, `rAll`,
+all at the LOW horizon, because that is what the condition asks for. The two
+high-horizon forms exist for `voidConditions` 18, which compares them against the
+published `R_hi`, a figure the hold domain does not have; carrying them here would
+put two numbers on the artifact that nothing reads and no rule defines.
+
+`reinstated` is `dropped` PLUS the clause-6 exclusions. Share the task-drop and
+row-drop helpers with `recompute` rather than restating them: two derivations of
+one rule is what this repository has already watched drift.
+
+## `strataCells(pop): StrataCells`
+
+`pop` is the same kind of required pair `deliveryScore` takes, named for what each
+member decides: `{ floor, ratio }`. Call `partitionByStrata` on BOTH. For each of
+the four cells: if the **`floor`** partition holds fewer than
+`MIN_DELIVERY_OBSERVATIONS` observations, the cell is `{ evaluable: false, reason }`;
+otherwise `{ evaluable: true, value: poolRatio(ratioCell, "lo") }`.
+
+**The floor is an admitted-set property and the ratio is not.** `holdsIf` 3 asks
+for "All four declared strata evaluable (≥ 5 **admitted** observations each) and
+all four on the same side of 30%", and `admissionRule` 8 repeats the floor in the
+same words. So a hold cell can be evaluable on five and priced on three; that is
+the literal frozen rule and the gap it leaves is `FINDINGS.md` F21, not a licence
+to add a second floor of one's own.
 
 **One extra rule, before the floor.** If `unknownStratum` is non-empty, `testRed`
 AND `typesOnly` are both `{ evaluable: false, reason }` naming the count,
@@ -149,10 +175,51 @@ not the same thing; do not merge the two buckets or the two rules.
 
 Fill every field of `B12Result` from the functions above.
 
-- `rLo` / `rHi` = `poolRatio(input.admitted, "lo" | "hi")`.
-- `gate` = `deliveryScore(admitted, ["gate"], "lo")`;
-  `repair` = `deliveryScore(admitted, ["repair"], "lo", MIN_REPAIR_CLOSURES)`;
-  `other` = `deliveryScore(admitted, ["fix","implement","models","scaffold","status"], "lo")`.
+**THE RUN HAS TWO DOMAINS AND EVERY FIELD BELOW NAMES ITS OWN.**
+`admissionRule` 6: "An observation with `ambiguous > 0` is admitted to the FALL
+arithmetic only, at both bounds, and **excluded from the HOLD arithmetic**", and
+`conflictsResolved` 5 records that as the chosen resolution of "excluded outright
+versus admitted". So:
+
+- **full admitted** — the published bracket and everything `voidConditions` and
+  `fallsIf` read. Such an observation is still admitted, so it counts toward the
+  20 and toward every floor the design words as "admitted observations".
+- **hold-eligible** = admitted minus every observation with
+  `refusals.ambiguous.count + unattributedRefusals.ambiguous.count > 0`. The
+  predicate reads BOTH ledgers because `admissionRule` 5 pins `ambiguous` to the
+  shipped counter, which `report.ts` increments over the whole telemetry slice
+  before ownership is decided.
+- **every produced observation** — `rHiPlus`, unchanged.
+
+Derive the partition inside `aggregate()`. It is the only function that sees the
+whole admitted set, and the run-level assembler that will call it does not exist
+yet — a required input would be a rule its author could satisfy wrongly, and an
+optional one a rule they could forget.
+
+- `rLo` / `rHi` = `poolRatio(input.admitted, "lo" | "hi")` — FULL admitted.
+  `fallsIf` reads `rLo` by name; the hold's lower bound is `hold.rLo`.
+- `gate` = `deliveryScore({ exercise: admitted, arithmetic: admitted }, ["gate"], "lo")`;
+  `repair` = the same pair with `["repair"]` and `MIN_REPAIR_CLOSURES`;
+  `other` = the same pair over the five unexercised tools.
+- `hold`: `basis` is the literal `"hold-eligible"`; `eligible` and
+  `excludedForAmbiguity` sum to `admitted.length`; `rLo` is
+  `poolRatio(holdEligible, "lo")`; `recomputations` are the three `holdsIf` 2
+  names and no more; `strata` is `strataCells({ floor: admitted, ratio: holdEligible })`;
+  `gate` is `deliveryScore({ exercise: admitted, arithmetic: holdEligible }, ["gate"], "lo")`.
+
+  **THE TWO POPULATIONS ARE NOT INTERCHANGEABLE AND NEITHER DEFAULTS TO THE
+  OTHER.** `unexercised` is defined as "fewer than 5 **admitted** observations
+  carrying its rows" and a stratum is evaluable on "≥ 5 **admitted** observations
+  each"; clause 6 moves only the arithmetic. Passing the hold-eligible set for
+  both — the obvious implementation — silently redefines a frozen floor and turns
+  an ambiguous refusal into evidence that a tool was never run.
+
+  **`hold.recomputations.rAll` REINSTATES THE CLAUSE-6 EXCLUSIONS TOO**, at
+  `saved_o = 0` with their billing intact, alongside the dropped observations.
+  `admissionRule` 3 uses "dropped" to mean dropped from the hold arithmetic, and
+  `holdsIf` 2 asks a hold to survive "reinstating everything it dropped". Leaving
+  them out entirely takes a billed denominator off the hold side, which is the one
+  direction a dilution guard must not move.
 - `identityHolds`: true when the three numerators sum to the pooled numerator
   within `1e-9`. Compute it; do not assume it.
 - `meanOfPerObservationRatios`: the mean of `(t.sLo - t.oO) / (t.aO + t.sLo)` over
@@ -213,6 +280,15 @@ Fill every field of `B12Result` from the functions above.
       `A_o = 100, O_o = 5, S_lo = 30, S_hi = 15` put every cell at 19.23% while
       `R_hi⁺` is 8.70%.
 
+  Then `voidConditions` 18's **other half**, which is NOT a void:
+
+  10a. any PUBLISHED recomputation on the opposite side of **30%** from the
+       published `rLo` → `"open"`, "with both figures recorded", and it "does NOT
+       consume the attempt cap". **Over the published figures, not the hold ones.**
+       Written as a conjunct of the hold it can never fire: the conjuncts below
+       already force `rLo` and all three low recomputations onto the same side of
+       the line. `FINDINGS.md` F22.
+
   Then the hold, and it is **always `"holding (unvalidated)"`**:
 
   11. `holdsIf` 1–6 all satisfied → `"holding (unvalidated)"`. `holdsIf` 7 is "the
@@ -220,8 +296,20 @@ Fill every field of `B12Result` from the functions above.
       the state for exactly that: "A never-run A/B leaves `holding (unvalidated)`,
       which is a real recorded state and **may not be cited as an input to opening
       or closing any gate**." Returning `open` there collapses a state the design
-      provides into one it distinguishes from it. A recomputation across **30%**
-      blocks this and is NOT a void — `voidConditions` 18's other half.
+      provides into one it distinguishes from it.
+
+      **EVERY RATIO IN THIS STEP IS A HOLD-DOMAIN RATIO.** `rLo` and `hold.rLo`
+      are both `number`, both plausible, and differ only on runs carrying an
+      ambiguous refusal — so the step takes a separate function whose input is the
+      hold evidence alone, and the published figures are not in scope. A one-word
+      slip is a compile error rather than a review question.
+
+      Two conjuncts read the ADMITTED set rather than the hold domain, and each
+      says why: `holdsIf` 6 asks whether `unitsAddedByInstallation` was computed
+      for every observation, which is a question about the instrument; and
+      `holdsIf` 5's ledger comparison is left on the disposition split, which is an
+      implementation convention and not a reading of the frozen text
+      (`FINDINGS.md` F20).
   12. otherwise `"open"`.
 
   **The bare `"holding"` is unreachable from this unit and that is correct**, not

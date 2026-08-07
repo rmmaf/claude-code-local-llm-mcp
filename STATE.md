@@ -5,40 +5,40 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**F9, F12, F10 and F14 are closed.** Gate at 4 failures, all pre-existing Windows
-CRLF/path; tsc green; `SELFTEST OK — 50 checks passed`.
+**F19 is closed and the run now has TWO domains.** Gate at 4 failures, all
+pre-existing Windows CRLF/path; tsc green.
 
-- **UNIT 4 exists** (`coverage.ts`): the exactly-once run ledger, keyed
-  `[artifact, ordinal]` — nothing on a telemetry row survives a null id.
-- **The window join is five hops, not four** — it read every tool result while
-  the crediting join reads gate/repair only, so a quoted id could be claimed.
-- **The verdict had TWO of six states.** No observation count, rate basis,
-  selection guard, recomputation or register — six VOID clauses it had the data
-  for — and `holding (unvalidated)` collapsed into `open`.
-- **Two frozen clauses contradict themselves** — 15 says "VOID" and "returns
-  `open`" in one sentence, 3 does it to a short stratum. `design.metric` and
-  `admissionRule` 8 settle them by quotation.
+- **`admissionRule` 6 was not implemented at all.** An `ambiguous > 0`
+  observation is "admitted to the FALL arithmetic only" and was in the hold too.
+  `rLo` and `hold.rLo` are two numbers now; anyone quoting one must say which.
+- **The finding's own safety claim was FALSE** — removal raises a ratio of sums
+  iff the removed local ratio is below the pool, which a refused magnitude does
+  not establish. The hold branch shipped on a direction never established.
+- **Its proposed predicate was too narrow too**: `report.ts` counts `ambiguous`
+  before ownership exists, so BOTH ledgers decide.
+- **A guard sat three paragraphs under the rule against guards that cannot
+  fail** — clause 18's 30% half, subsumed by the conjuncts above it (F22).
 
 ## Next action
 
-**F17 and F19 remain, F19 with teeth**: `admissionRule` 6 excludes an
-`ambiguous > 0` observation from the HOLD arithmetic and the scorer includes it —
-conservative direction, so the hold branch shipped ahead of it.
+**F17, F20 and F21 remain, recorded as unresolved rather than closed.** F20 is
+genuine underdetermination in the frozen text and the shipped behaviour is
+labelled an implementation convention in the code itself.
 
-The scorer is wired to NOTHING: no parser for `observation.json`, nothing writes
-`verificationStratum`, no run-level assembler — the next real piece of work, and
-where `identify` gets its `source`.
+The scorer is still wired to NOTHING: no parser for `observation.json`, nothing
+writes `verificationStratum`, no run-level assembler — the next real work, and
+where `identify` gets its `source` and `aggregate` gets its caller.
 
 ## Do not redo
 
-- **A control never seen failing is not a control** — it caught three bad
-  fixtures of my own, one firing the wrong VOID clause.
-- **A guard that cannot fail is not a guard.** Step 1b went with the sum it
-  guarded; the F9 hold-side conjunct was subsumed by `rHiPlus`, proved by
-  deleting it and watching nothing break.
-- **Things I asserted and had backwards**: omission does not reliably deflate the
-  hold; a clean preflight does not imply the new refusals stay quiet (F17); "no
-  hold branch because the A/B exists nowhere" ignored `holding (unvalidated)`.
-- **A stubbed `processRunner` does NOT stub `vcsRunner`.** 42 repair tests shelled
-  out to real `git` — 179 ms of a 214 ms call, reading whatever repo `%TEMP%` sits
-  under. Look for a second runner before believing a test is isolated.
+- **A control never seen failing is not a control.** Seven new assertions passed
+  on first run and every old one passed unchanged — the two domains coincide on
+  every fixture written before this pass. Six planted defects, one at a time.
+- **Codex refuted three of my readings and was right each time.** Verify its
+  citations, then concede — arguing the second one cost a round.
+- **Line-number citations rot.** Two in `FINDINGS.md` pointed at the wrong lines
+  within two days, including the note whose whole job was correcting one.
+- **A stubbed `processRunner` does NOT stub `vcsRunner`** — and the 49× margin
+  that fix bought is not immunity: under load from four background jobs the same
+  test went 146 ms → 5196 ms and timed out. Check machine load before believing
+  a bare `STACK_TRACE_ERROR`.
