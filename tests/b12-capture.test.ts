@@ -31,7 +31,7 @@ import {
   reduceFile,
   reduceRecord,
 } from "../src/cost/b12/capture.js";
-import { TELEMETRY_REL_PATH } from "../src/telemetry.js";
+import { readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import type { Transcript } from "../src/cost/transcript.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -261,6 +261,47 @@ describe("captureObservation — the only filesystem surface", () => {
     // first hop of the join is the tool name (`isLocalToolResult`).
     expect(archive.invocationIds).toEqual(["11111111-2222-4333-8444-555555555555"]);
     expect(archive.dirtyAtCapture).toBe(false);
+  });
+
+  it("THE ARCHIVED telemetry.jsonl ROUND-TRIPS THROUGH readTelemetry IN ORDER", async () => {
+    // UNIT 5 keys a row `[source, ordinal]` where the source is THIS file and the
+    // ordinal is its position in the array `readTelemetry` returns. So the
+    // written file has to reread as the same array in the same order, or every
+    // key is a key to a different row — and nothing else in this suite checks
+    // the format the harness writes, only the value it captured.
+    const rows = [
+      { ts: "2026-08-07T10:00:01.000Z", tool: "gate", invocation_id: "aaaaaaaa-1111-4111-8111-111111111111", bytes_raw: 40 },
+      { ts: "2026-08-07T10:00:00.000Z", tool: "repair", bytes_raw: 7 },
+      { ts: "2026-08-07T10:00:02.000Z", tool: "gate", bytes_raw: 0, detail: { nested: [1, { a: null }] } },
+    ];
+    const { treeDir, slugDir } = await tree(
+      { [TELEMETRY_REL_PATH]: rows.map((r) => JSON.stringify(r)).join("\n") + "\n" },
+      { "own.jsonl": jsonl(line({ sessionId: "s-own", requestId: "r-1" })) }
+    );
+    const archive = await captureObservation({
+      taskId: "t",
+      arm: "treatment",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+    });
+
+    // Exactly what `scripts/b12-run.mjs` writes into the observation directory.
+    const archiveRoot = tmp();
+    await fs.mkdir(path.join(archiveRoot, ".local-coder"), { recursive: true });
+    await fs.writeFile(
+      path.join(archiveRoot, TELEMETRY_REL_PATH),
+      archive.telemetry.map((r) => JSON.stringify(r)).join("\n") + (archive.telemetry.length > 0 ? "\n" : ""),
+      "utf8"
+    );
+
+    const reread = await readTelemetry(archiveRoot);
+    expect(reread).toEqual(archive.telemetry);
+    // NOT sorted by `ts` — the rows above are deliberately out of time order, so
+    // a writer that helpfully sorted them would shift every ordinal after the
+    // first while still round-tripping as a SET.
+    expect(reread.map((r) => r.tool)).toEqual(["gate", "repair", "gate"]);
   });
 
   it("hashes the worktree bytes, and the hash is of the file rather than of a summary", async () => {

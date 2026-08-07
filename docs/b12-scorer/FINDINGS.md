@@ -181,6 +181,50 @@ END" is a fact rather than an intention. `takeSnapshot` gained artifact 5's
 per-file sha256. The dead `.mcp.json` fallback is a refusal now, and
 `dirtyAtAcceptance` is read at acceptance time and decides nothing.
 
+**A SECOND GATE ON THE DIFFS RETURNED REFUTE, AND FOUR OF ITS HOLES ARE FIXED
+HERE.** Both of the frozen quotations it turned on were checked before conceding
+and both hold.
+
+- **`accepted` was being earned somewhere no commit describes, and my first fix
+  published the discrepancy instead of removing it.** `admissionRule` 3:
+  "An observation whose acceptance predicate does not exit 0 **AT ITS END
+  COMMIT** is `void(task_failed)`." Acceptance ran against the working tree while
+  `endCommit` was `git rev-parse HEAD`, so on the ORDINARY outcome — `claude
+  --print` edits and does not commit — the exit code described a state no commit
+  contained. A `dirtyAtAcceptance` flag was the wrong answer: a hash inventory
+  does not make an uncommitted tree into the named end commit. Refusing would
+  have been worse, since it invalidates the ordinary case. **The harness now
+  commits what the arm left, in the arm's own throwaway worktree, before
+  acceptance runs** — which adds no rule and makes the frozen predicate
+  evaluable. Whether the ARM committed its own work is still recorded.
+- **The commit barrier's `ls-tree` check asked whether ANYTHING was under the
+  directory.** An index-mutating `pre-commit` hook can drop `archive.json` while
+  leaving `observation.json` staged: the add succeeds, the staged check succeeds,
+  the commit succeeds with what is left, and the existence check succeeds. Every
+  guard green, archive not committed. It compares each written file's BLOB HASH
+  against `HEAD:<path>` now, and the file list is built as the files are written
+  rather than maintained by hand beside them.
+- **An empty lineage committed as a schema-complete archive.** Caught by
+  comparing two numbers the harness already has: if ids were originated, a
+  transcript carrying them exists, so an empty lineage means the search was
+  scoped wrong. `classifyRun` already refuses the mirror image. No disposition
+  and no threshold added.
+- **`mcpConfigSha256` was compared only when present**, which makes the check
+  disappear on exactly the manifest that needs it. `design.artifacts` 1 requires
+  the manifest to carry it, so it is required.
+
+**AND ONE HOLE IS NOT FIXED, BECAUSE FIXING IT WOULD MINT.** `voidConditions` 5
+freezes `src/cost/**` and `scripts/b12-run.mjs`; it does not name `dist/**`, and
+`design.artifacts` 1's manifest inventory does not list it either. **A
+hand-edited `dist/cost/b12/capture.js` can fabricate or omit archive evidence
+while every frozen source stays byte-identical** — which defeats the reason the
+capture was put under `src/cost/b12/` in the first place. Requiring a manifest
+pin for it would add an item to a frozen inventory. So both the compiled and the
+source hash are RECORDED on every observation and the pin is compared when a
+manifest carries one — the shape `assertRatesFrozen` already uses. **This is a
+registered limit, not a fix**, and it is the first one that lives in the harness
+rather than in the scorer.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **`installedChars`**, above — the harness is the only place it can be taken.
@@ -1140,6 +1184,16 @@ result had `name: null` and failed the join; and the invocation id was `inv-1`,
 while `readInvocationId` requires a UUID shape. Neither was a code defect. Both
 are the same lesson this file already records — a fixture that contradicts its
 own stated intent passes silently.
+
+**A nineteenth, added after gate 2, and it is the identity contract itself.**
+Nothing checked that the `telemetry.jsonl` the harness WRITES rereads as the
+array UNIT 5 keys ordinals into — only that the captured value was right. The
+control writes the file exactly as `observe()` does, rereads it with
+`readTelemetry`, and asserts both equality AND order, over rows deliberately out
+of time order. **Proved by a writer that sorts by `ts`** — which round-trips
+perfectly as a SET and shifts every ordinal after the first, so the deep-equal
+half stayed green and only the order assertion fired. That is the whole reason
+the fixture's rows are unsorted.
 
 **Four more for `design.artifacts` 5's per-file sha256**, in `cost-meter.test.ts`
 against the existing snapshot fixture, and they had to be rewritten before three

@@ -372,7 +372,12 @@ function resolveMcpConfig(manifest) {
   if (!existsSync(file)) refuse(`manifest.pinned.mcpConfig points at ${file}, which does not exist`);
   const got = sha256File(file);
   const want = manifest.pinned?.mcpConfigSha256;
-  if (want && want !== got) refuse(`mcpConfig sha256 ${got} != pinned ${want} — the treatment moved under the run`);
+  // REQUIRED, NOT COMPARED-IF-PRESENT. `design.artifacts` 1 makes the manifest
+  // carry "the sha256 of ... the MCP configs", so a manifest without one is
+  // non-compliant rather than permissive, and comparing only when present makes
+  // the check disappear on exactly the manifest that most needs it.
+  if (!want) refuse("manifest.pinned.mcpConfigSha256 is absent — `design.artifacts` 1 requires the manifest to carry it");
+  if (want !== got) refuse(`mcpConfig sha256 ${got} != pinned ${want} — the treatment moved under the run`);
   return { path: file, sha256: got };
 }
 
@@ -387,10 +392,26 @@ function resolveMcpConfig(manifest) {
  * third implementation of the lineage rule to avoid an import that is already
  * mandatory would be the drift this file spends a paragraph warning about.
  */
-async function loadCapture() {
+async function loadCapture(manifest) {
   const file = path.join(REPO, "dist", "cost", "b12", "capture.js");
+  const source = path.join(REPO, "src", "cost", "b12", "capture.ts");
   if (!existsSync(file)) refuse(`the capture is not built: ${file} — run \`npm run build\` before observing`);
-  return import(pathToFileURL(file).href);
+  const sha256 = sha256File(file);
+  const want = manifest.pinned?.captureSha256;
+  if (want && want !== sha256) refuse(`dist capture sha256 ${sha256} != pinned ${want}`);
+  // **A HOLE THE FROZEN TEXT DOES NOT CLOSE, RECORDED RATHER THAN PAPERED OVER.**
+  // `voidConditions` 5 freezes `src/cost/**` and `scripts/b12-run.mjs`. It does
+  // NOT name `dist/**`, and `design.artifacts` 1's manifest inventory does not
+  // list it either — so a HAND-EDITED `dist/cost/b12/capture.js` could fabricate
+  // or omit archive evidence while every frozen source stayed byte-identical.
+  // That defeats the reason the capture was put under `src/cost/b12/`.
+  //
+  // Requiring the pin would MINT: artifact 1 enumerates what the manifest
+  // carries and this is not among them. So both hashes are RECORDED on every
+  // observation and the pin is compared when a manifest chooses to carry one —
+  // the same shape `assertRatesFrozen` already uses. A reader can then check the
+  // compiled file against the source it claims to be; nothing here can.
+  return { module: await import(pathToFileURL(file).href), sha256, sourceSha256: sha256File(source) };
 }
 
 // ---------------------------------------------------------------------------
@@ -570,7 +591,7 @@ async function observe(args) {
   // Both refusals BEFORE the worktree and before the session id, so a manifest
   // that cannot produce a compliant observation costs nothing to discover.
   const mcp = arm === "treatment" ? resolveMcpConfig(manifest) : null;
-  const capture = await loadCapture();
+  const capture = await loadCapture(manifest);
 
   // Its own worktree, from the base commit the manifest declares. Without this,
   // task 12 runs against a tree tasks 1-11 already changed, `gate` comes back
@@ -655,6 +676,40 @@ async function observe(args) {
   const after = takeSnapshot();
   const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
 
+  // THE END COMMIT IS MADE HERE, BEFORE ACCEPTANCE, AND THAT IS THE FROZEN RULE
+  // RATHER THAN A CONVENIENCE.
+  //
+  // `admissionRule` 3: "An observation whose acceptance predicate does not exit 0
+  // AT ITS END COMMIT is `void(task_failed)`." This ran acceptance against the
+  // working tree and separately recorded `endCommit` as `git rev-parse HEAD`, so
+  // on the ORDINARY outcome — `claude --print` edits files and does not commit —
+  // the exit code was earned on a state no recorded commit contained, and
+  // `accepted` is exactly what separates a TASK from an ATTEMPT.
+  //
+  // Reporting a `dirtyAtAcceptance` flag was the first fix and it was the wrong
+  // one: it published the discrepancy instead of removing it, and a hash
+  // inventory does not make an uncommitted tree into the named end commit.
+  // Refusing on a dirty tree would have been worse — it invalidates the ordinary
+  // case, which is not a rule the frozen text has.
+  //
+  // So the harness commits what the arm left, in the arm's own throwaway
+  // worktree, and `endCommit` names it. This adds no rule: it makes the frozen
+  // predicate EVALUABLE, and acceptance then runs on a tree that IS its end
+  // commit by construction. Whether the arm committed its own work is still a
+  // fact about the arm, so it is recorded rather than erased.
+  const leftUncommitted = run("git", ["-C", treeDir, "status", "--porcelain"]).out.trim().length > 0;
+  if (leftUncommitted) {
+    git(["add", "-A"], treeDir);
+    git(["commit", "-m", `b12 end state: ${task.id}/${arm}`], treeDir);
+  }
+  // Read HERE — after the arm's work is committed and BEFORE acceptance runs —
+  // so "acceptance exited 0 at its end commit" is true by construction rather
+  // than by hope. Read after acceptance it would name a commit the command may
+  // never have seen.
+  const endCommit = git(["rev-parse", "HEAD"], treeDir);
+  const stillDirty = run("git", ["-C", treeDir, "status", "--porcelain"]).out.trim();
+  if (stillDirty) refuse(`worktree still dirty after the end-state commit: ${stillDirty.slice(0, 200)}`);
+
   // The acceptance predicate decides whether this is a TASK or an ATTEMPT.
   // Without it the numerator is earned at a verification step and the
   // denominator is croppable by quitting, so every fraction rises by giving up.
@@ -667,18 +722,11 @@ async function observe(args) {
     });
   }
 
-  const endCommit = git(["rev-parse", "HEAD"], treeDir);
-  // READ AT ACCEPTANCE TIME, NOT INFERRED FROM `endCommit`. The acceptance
-  // command runs against the WORKING TREE and `endCommit` is `git rev-parse
-  // HEAD`, so an arm that edits without committing — the ordinary outcome of
-  // `claude --print` — earns its exit code on files no recorded commit
-  // contains. `accepted` is what separates a TASK from an ATTEMPT, so that is
-  // the discriminator resting on unrecorded state.
-  //
-  // REPORTED, DECIDING NOTHING. The frozen text supplies no disposition for a
-  // dirty acceptance, and refusing on one would mint a rule after the freeze —
-  // it would also invalidate the ordinary case. What makes it recoverable is
-  // the archive: `sourceFiles` hashes the tree the command actually saw.
+  // Taken AFTER acceptance, so it answers a different question from the one
+  // above: not "did the arm commit its work" but "did the acceptance command
+  // itself write into the tree" — coverage output, a build directory, a lock
+  // file. Reported, deciding nothing; the frozen text has no rule about it, and
+  // `sourceFiles` hashes whatever it left.
   const endPorcelain = run("git", ["-C", treeDir, "status", "--porcelain"]).out;
 
   // AN OBSERVATION THAT RECORDED NOTHING IS NOT AN OBSERVATION, and archiving it
@@ -705,6 +753,45 @@ async function observe(args) {
   const censored = verdict.censored;
   const invalid = verdict.reasons;
 
+  const runId = manifest.runId ?? "b12-unnamed";
+  const dir = path.join(REPO, "evidence", runId, `obs-${task.id}-${arm}`);
+  mkdirSync(dir, { recursive: true });
+
+  // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the
+  // only window in which the tree and its `.local-coder/telemetry.jsonl` are
+  // both on disk: the log is gitignored as per-machine, and the removal below
+  // deletes it. Without this the run "cannot be corrected, only discarded".
+  //
+  // BEFORE the observation literal, not after, because the lineage is one of the
+  // things that can make the observation invalid.
+  const archive = await capture.module.captureObservation({
+    taskId: task.id,
+    arm,
+    sessionId,
+    treeDir,
+    slugDirs: projectSlugDirs(),
+    porcelain: endPorcelain,
+    declaredFileScope: task.fileScope ?? null,
+  });
+
+  // AN EMPTY LINEAGE BESIDE ORIGINATED IDS IS A CONTRADICTION, AND IT IS THE
+  // HARNESS'S OWN TWO MEASUREMENTS DISAGREEING.
+  //
+  // If ids were originated, a transcript carrying them exists; if the lineage
+  // search found none, the search was scoped wrong. `classifyRun` already
+  // refuses the mirror image — `originatedCount === 0` is "the arm produced no
+  // billed request, or its slug was outside the snapshot". This is the same
+  // fact seen from the other side, and catching it mints nothing: it adds no
+  // disposition and no threshold, it compares two numbers the harness already
+  // has. Without it `archive.lineage: []` is schema-complete, commits cleanly,
+  // and reads as an observation whose session simply had no records.
+  if (originated.length > 0 && archive.lineage.length === 0) {
+    invalid.push(
+      `${originated.length} requestId(s) were originated and the lineage search found no transcript carrying them — ` +
+        `the search covered ${archive.slugsSearched.length} slug(s) and ${archive.transcriptsSearched} file(s)`
+    );
+  }
+
   const observation = {
     valid: invalid.length === 0,
     // Which case the run fell into, named. A boolean records that something was
@@ -729,8 +816,11 @@ async function observe(args) {
     cliErrorCode: result.errorCode,
     binary,
     mcpConfig: mcp,
-    /** See `endPorcelain`: whether acceptance and `endCommit` describe one state. */
-    dirtyAtAcceptance: endPorcelain.trim().length > 0,
+    capture: { sha256: capture.sha256, sourceSha256: capture.sourceSha256 },
+    /** Whether the ARM committed its own work, or the harness had to. */
+    armLeftUncommitted: leftUncommitted,
+    /** Whether the ACCEPTANCE COMMAND wrote into the tree. Deciding nothing. */
+    acceptanceDirtiedTree: endPorcelain.trim().length > 0,
     ratesSha256: ratesSha,
     baseCommit: task.baseCommit,
     treeHashAtStart: treeHash,
@@ -749,39 +839,28 @@ async function observe(args) {
     stderrTail: result.err.slice(-2000),
   };
 
-  const runId = manifest.runId ?? "b12-unnamed";
-  const dir = path.join(REPO, "evidence", runId, `obs-${task.id}-${arm}`);
-  mkdirSync(dir, { recursive: true });
-
-  // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the
-  // only window in which the tree and its `.local-coder/telemetry.jsonl` are
-  // both on disk: the log is gitignored as per-machine, and the removal below
-  // deletes it. Without this the run "cannot be corrected, only discarded".
-  const archive = await capture.captureObservation({
-    taskId: task.id,
-    arm,
-    sessionId,
-    treeDir,
-    slugDirs: projectSlugDirs(),
-    porcelain: endPorcelain,
-    declaredFileScope: task.fileScope ?? null,
-  });
-
-  writeFileSync(path.join(dir, "observation.json"), JSON.stringify(observation, null, 2) + "\n", "utf8");
-  writeFileSync(path.join(dir, "snapshot-before.json"), JSON.stringify(before, null, 2) + "\n", "utf8");
-  writeFileSync(path.join(dir, "snapshot-after.json"), JSON.stringify(after, null, 2) + "\n", "utf8");
-  writeFileSync(path.join(dir, "cli-stdout.json"), result.out, "utf8");
-  writeFileSync(path.join(dir, "archive.json"), JSON.stringify(archive, null, 2) + "\n", "utf8");
+  // NAMED AS THEY ARE WRITTEN, because the commit barrier below verifies THIS
+  // list against `HEAD` blob by blob. A hand-maintained second list is how a new
+  // artifact comes to be written and never checked.
+  const written = [];
+  const emit = (name, body) => {
+    writeFileSync(path.join(dir, name), body, "utf8");
+    written.push(name);
+  };
+  emit("observation.json", JSON.stringify(observation, null, 2) + "\n");
+  emit("snapshot-before.json", JSON.stringify(before, null, 2) + "\n");
+  emit("snapshot-after.json", JSON.stringify(after, null, 2) + "\n");
+  emit("cli-stdout.json", result.out);
+  emit("archive.json", JSON.stringify(archive, null, 2) + "\n");
   // The telemetry rows go out AGAIN on their own, verbatim and one per line,
   // because this file is the IDENTITY SOURCE for UNIT 5: `identify` keys a row
   // `[source, ordinal]`, and an ordinal has to be a position in a file a reader
   // can point at. There is no run-level log to key against — every observation
   // writes into its own worktree — so the archive path IS the source, and
   // ordinals restarting per file stay unique because paths differ.
-  writeFileSync(
-    path.join(dir, "telemetry.jsonl"),
-    archive.telemetry.map((row) => JSON.stringify(row)).join("\n") + (archive.telemetry.length > 0 ? "\n" : ""),
-    "utf8"
+  emit(
+    "telemetry.jsonl",
+    archive.telemetry.map((row) => JSON.stringify(row)).join("\n") + (archive.telemetry.length > 0 ? "\n" : "")
   );
 
   // A machine-written row per observation, `design.artifacts` 10: "whose `ts` is
@@ -821,8 +900,30 @@ async function observe(args) {
   const staged = git(["diff", "--cached", "--name-only", "--", relDir]);
   if (staged.trim() === "") refuse(`nothing staged under ${relDir} — the archive did not reach the index`);
   git(["commit", "-m", `evidence: ${runId} ${task.id}/${arm}`, "--", relDir, relLog]);
-  const committed = git(["ls-tree", "-r", "--name-only", "HEAD", "--", relDir]);
-  if (committed.trim() === "") refuse(`HEAD carries nothing under ${relDir} after the commit`);
+
+  // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
+  //
+  // It asked `git ls-tree` whether ANYTHING sat under the directory. An
+  // index-mutating `pre-commit` hook can drop `archive.json` while leaving
+  // `observation.json` staged: the add succeeds, the staged check succeeds
+  // because files are staged, the commit succeeds with what is left, and
+  // `ls-tree` succeeds because something is there. The archive is not committed
+  // and every guard is green. A `post-commit` hook that moves `HEAD` back to an
+  // older commit containing an older copy of the directory passes it too.
+  //
+  // So each file is compared BY BLOB HASH against what `HEAD` now carries.
+  // `git hash-object` on the file and `git rev-parse HEAD:<path>` on the tree
+  // are the same function of the same bytes, so equality is exact rather than
+  // circumstantial, and a stale `HEAD` fails on content instead of on presence.
+  for (const name of written) {
+    const rel = `${relDir}/${name}`;
+    const onDisk = git(["hash-object", "--", path.join(dir, name)]);
+    const inHead = run("git", ["-C", REPO, "rev-parse", `HEAD:${rel}`]);
+    if (inHead.code !== 0) refuse(`HEAD does not carry ${rel} after the commit`);
+    if (inHead.out.trim() !== onDisk) {
+      refuse(`HEAD carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.slice(0, 12)}`);
+    }
+  }
 
   process.stdout.write(
     `  ${observation.valid ? "ok  " : "INVALID"}  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  ` +
