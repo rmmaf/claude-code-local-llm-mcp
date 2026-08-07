@@ -309,9 +309,10 @@ prescribing a throw — the compiler does the work the throw was standing in for
 The positional fields came along for free: "null on a refusal" is now a type
 rather than a paragraph.
 
-**The control is two `Assert` type aliases beside the union, and it is in `src/`
-deliberately** — see **F16**: a compile-time assertion written in `tests/` is
-read by no compiler. Seen failing: widening `CreditedLedgerRow["units"]` gives
+**The control is two `Assert` type aliases beside the union, in `src/`** — where
+it had to be when the union landed, because `tests/` was read by no compiler
+then (**F16**, fixed since). It stays beside the type it constrains rather than
+in a file that imports it. Seen failing: widening `CreditedLedgerRow["units"]` gives
 `TS2344: Type 'false' does not satisfy the constraint 'true'`. A runtime half
 sits in `cost-meter.test.ts`, summing a real `buildCounterfactual`'s credited
 rows at both horizons with no coalescing anywhere.
@@ -410,9 +411,10 @@ The scorer-correctness pass added seven assertions to
 `tests/b12-aggregate.test.ts` and two to `tests/b12-terms.test.ts`. Both files
 test stubs, so **every one of them fails on `not implemented` whether it is right
 or wrong** — none has ever been executed against any implementation. Their
-constants were derived by hand, and **that is all that has been checked** — not
-even their API shape, because of **F16**: nothing under `tests/` is type-checked.
-Each is marked `UNPROVED CONTROL`.
+constants were derived by hand and their API shape is pinned by `tsc` — true
+since **F16** put `tests/**` in the config, and false for the hours before it.
+**Neither says the assertion is right**, which is the whole point: each is marked
+`UNPROVED CONTROL`, and only their behaviour against a real body is unproved now.
 
 **Three were already defective when written, which is the argument for the
 re-check rather than against it.** Re-deriving the fixtures against the specs

@@ -9,6 +9,13 @@
   //
   // Keep `include` here narrow. Widening it puts the test tree in the published
   // package, and `prepare` runs the build on install.
+  //
+  // IT ALSO CARRIES A CHECK THE OTHER CONFIG CANNOT. `rootDir: "src"` makes an
+  // import that reaches outside `src/` a TS6059; the checking config has no
+  // `rootDir`, so its inferred common root expands around whatever is imported
+  // and that diagnostic disappears. `gate` still catches it — `npm test` runs
+  // `pretest`, which runs this build — but `gate --checks types` alone does not.
+  // Run both configs, or run the full gate.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,

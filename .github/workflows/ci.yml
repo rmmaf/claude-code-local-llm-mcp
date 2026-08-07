@@ -15,6 +15,13 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # THE ONLY STEP THAT TYPE-CHECKS THE TESTS. `build` compiles
+      # `tsconfig.build.json`, which is `src/**` alone, and `npm test` runs
+      # vitest, which transpiles without checking — so before this step a
+      # test-only type error passed CI in silence, and did so for the whole life
+      # of the project. Ahead of `build` on purpose: a type error should be
+      # reported as one rather than as a failed compile of something else.
+      - run: npm run typecheck
       - run: npm run build
       # Offline by design: all LM Studio calls are mocked. The live smoke test
       # (scripts/smoke-test.ts) is manual-only and must never run here.

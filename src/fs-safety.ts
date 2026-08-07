@@ -317,9 +317,13 @@ export function enforceOutputCap(
   // every `<=` against NaN is false, so a check meant to refuse ONE oversized
   // request refuses EVERY request instead. An unknown window must fail open.
   //
-  // The literal that produced it was in `tests/`, which `tsconfig.json` did not
-  // cover until 2026-08-07 and now does. That route is closed; the guard stays,
-  // because a `Config` also arrives from JSON at runtime and no compiler sees it.
+  // BOTH ROUTES TO IT ARE NOW CLOSED, and the guard stays anyway. The literal
+  // that produced it was in `tests/`, which `tsconfig.json` did not cover until
+  // 2026-08-07 and now does. And `loadConfig` cannot produce it either: the
+  // field comes from `optionalNumberFromEnv`, which returns `null` on anything
+  // not finite and positive. So this is defence against a `Config` some future
+  // caller builds by hand — not against a live path, which is worth saying
+  // rather than leaving a reader to assume there is one.
   if (window === undefined) return;
   const { contextTokens } = window;
   if (typeof contextTokens !== "number" || !Number.isFinite(contextTokens) || contextTokens <= 0) {

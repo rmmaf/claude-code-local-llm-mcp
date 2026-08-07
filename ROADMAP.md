@@ -163,8 +163,10 @@ What may be built next, and the number that decides it.
   `scripts/contract-stability.ts` runs a 10-file size ladder of this repo, 665 B
   to 35,656 B, plus three multi-file groups, scoring every response
   `complete` / `elided` / `truncated` through `src/contract-probe.ts` — which
-  lives under `src/` on purpose, because `tsconfig.json` covers `src/**` only and
-  a scoring bug there would corrupt every number silently. Headline: **94.7%
+  lives under `src/` on purpose, because `tsconfig.json` does not cover
+  `scripts/**` (it covered `src/**` alone when this was written; `tests/**`
+  joined on 2026-08-07) and a scoring bug there would corrupt every number
+  silently. Headline: **94.7%
   complete** over 38 scored responses, and **the outcome is a function of size,
   not a random variable** — 13 of 13 cases unanimous across three repeats, 12
   byte-identical. Practical ceiling on this configuration: **~23 KB of editable

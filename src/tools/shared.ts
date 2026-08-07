@@ -50,9 +50,11 @@ export async function resolveContextTokens(
   deps: { runner?: CommandRunner; contextTokens?: number | null; fetchImpl?: FetchLike } = {}
 ): Promise<number | null> {
   if (deps.contextTokens !== undefined) return deps.contextTokens;
-  // `typeof`, not `!== null`: a Config literal built without the field (nothing
-  // type-checks those) arrives as undefined, and returning that would hand
-  // `enforceOutputCap` a NaN budget.
+  // `typeof`, not `!== null`: a Config literal built without the field arrives
+  // as undefined, and returning that would hand `enforceOutputCap` a NaN budget.
+  // The literals that did it were in `tests/`, which nothing type-checked until
+  // `tests/**` joined `tsconfig.json` on 2026-08-07; the guard now covers a
+  // hand-built Config rather than a live path.
   const configured = typeof config.contextTokens === "number" ? config.contextTokens : null;
   // Probe only with a runner we were actually handed, or the real one when the
   // caller injected no fetch either. Same rule `selection.ts` applies to its

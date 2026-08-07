@@ -1247,10 +1247,17 @@ models are loaded and none was named. A pre-flight that *refuses* work must not
 act on a guess; the asymmetry is that skipping risks one bad response, while
 guessing wrong refuses everything. The guard tests for a finite positive number
 rather than `!== null` for a reason that was observed, not imagined: `Config`
-literals in `tests/helpers.ts` are not type-checked (`tsconfig` covers `src/**`),
-so a missing field arrives as `undefined`, makes the budget `NaN`, every `<=`
-false, and a check meant to refuse one request refuses every one. Fifty tests
-went red on the `!== null` version.
+literals in `tests/helpers.ts` were not type-checked (`tsconfig` covered `src/**`
+alone), so a missing field arrived as `undefined`, made the budget `NaN`, every
+`<=` false, and a check meant to refuse one request refused every one. Fifty
+tests went red on the `!== null` version.
+
+**Amended 2026-08-07, and the decision stands:** `tests/**` is in `tsconfig.json`
+now, so that literal would not compile. `loadConfig` never produced the value
+either — `optionalNumberFromEnv` returns `null` on anything not finite and
+positive. The guard is kept as defence against a hand-built `Config`, which is a
+weaker justification than the one it was adopted on, and is recorded as such
+rather than left reading like a live hazard.
 
 **The corrective retry is its own request and gets its own pre-flight.** This was
 missed on the first pass and it is the sharper half of the design: the check ran
