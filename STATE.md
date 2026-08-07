@@ -20,13 +20,13 @@ pre-existing Windows CRLF/path; tsc green; SELFTEST OK.
 
 ## Next action
 
-**F17, F20 and F21 remain OPEN — four routes to closing them were adjudicated and
-all four refused.** What shipped is observability: every cell carries both its
-populations, and `selection` names its own basis.
+**F17, F20, F21 remain OPEN — four routes adjudicated, all four refused.** What
+shipped is observability: cells carry both populations, `selection` its basis.
 
-The scorer is still wired to NOTHING: no `observation.json` parser, nothing writes
-`verificationStratum`, no run-level assembler, no `counterfactual.json` emitter —
-the next real work, and where F20's dual reporting is owed.
+**UNIT-5.md is written and NOT yet gated by Codex** — the assembler. It settles
+two things: identity is the run log read ONCE (scope-then-identify collides keys
+across windows), and `verificationStratum` joins from the manifest, since
+`b12-run.mjs` writes every other `B12Observation` field and not that one.
 
 ## Do not redo
 
