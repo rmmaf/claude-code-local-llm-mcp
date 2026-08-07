@@ -1602,6 +1602,47 @@ defect, and it pinned four of them in place.
       commit, so the harness now refuses any run that attempts it — enforcing the
       rule this section already carries, that a unit with an observation may not
       be drawn again.
+- **PHASE 3 IS CLOSED AT 1 OF 3, DELIBERATELY, WITHOUT A THIRD EXPOSURE.**
+  Decided 2026-08-07 with an adversarial second opinion that was asked to attack
+  the decision and agreed with it.
+  - **Why not exposure C.** It would not be the third comparable draw: the specs
+    changed under the scorer-correctness pass and UNIT-3 — `aggregate`, the unit
+    that never closed — grew materially. Publishing "1 of 3" three times would
+    look like accumulating evidence while being three different experiments. And
+    the likely outcome is another 1 of 3: `strata` showed small-unit closure,
+    `terms` came within one failing test, `aggregate` regressed even before it
+    grew. Even ≥ 2 of 3 would license only "reachable", and `R_repair` never
+    gates B12's own status.
+  - **THE COST, STATED RATHER THAN GLOSSED.** The registered reading rule says
+    exactly 1 of 3 requires more exposure. Stopping leaves that formal question
+    **unresolved**, and it is recorded as unresolved — not as answered.
+  - **What Phase 3 did produce, which is the thing worth keeping:** `repair`
+    closes small, prescriptively-specified units in one round; comes close on
+    medium ones; and drives large ones BACKWARDS, re-emitting its previous answer
+    at the same length against a larger prompt. Four re-emissions out of four.
+  - **Consequence:** `terms.ts` and `aggregate.ts` stop being measured work and
+    are implemented by the orchestrator. `repair` gets no further draw at them.
+- **F11 AND F13 ARE IMPLEMENTED TO THE INSTRUCTION, NOT AMENDED AWAY, AND THE
+  READINGS ARE DECLARED HERE BEFORE THE RUN.**
+  - `R_other` will read **`unexercised`** on every run this venue can produce.
+    Not a measurement: the five tools it is defined over — `fix`, `implement`,
+    `models`, `scaffold`, `status` — write no telemetry row at all, so the bucket
+    has no source data. `unexercised` is the design's own state for this and is
+    neither a hold nor a fall.
+  - `identityHolds` will read **`false`** on any run whose installation term is
+    non-zero, which `holdsIf` 6 requires for every observation. `Σ_d R_d` is
+    `S/(A+S)` and `R` is `(S−O)/(A+S)`; they differ by `O/(A+S)`.
+  - **The design is NOT amended, and the distinction is the whole point.** B20's
+    rule lets the INSTRUMENT's implementation be repaired until the first scored
+    observation. Reallocating `O` or minting an `R_installation` would change the
+    ESTIMAND, which is not repair however early it happens. `B12Result` carries
+    `identityHolds` as a boolean precisely because the design's author allowed it
+    to be false; forcing it true would delete the evidence. **If a coherent
+    per-delivery decomposition is wanted, it needs a newly pre-registered
+    premise, not a repair to this one.**
+  - Declared in advance so neither field is later mistaken for a measurement.
+    This is disclosure, not a threshold change: nothing about what would count as
+    a hold or a fall moves.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and

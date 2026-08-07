@@ -104,6 +104,15 @@ term has to be allocated across deliveries, or published as its own
 the implementer to build the common denominator and let `identityHolds` come out
 false rather than to force the identity.
 
+**DECIDED 2026-08-07: implement to the instruction; do not amend.** B20's rule
+lets the INSTRUMENT's implementation be repaired until the first scored
+observation — it does not license changing the ESTIMAND, which is what
+reallocating `O` would be, however early. `B12Result` carries `identityHolds` as
+a boolean because the design's author allowed it to be false; forcing it true
+deletes the evidence. The reading is pre-declared in `PREMISES.md § B12` so it is
+not later mistaken for a measurement. A coherent per-delivery decomposition needs
+a newly pre-registered premise.
+
 ### F13 — `R_other` has no source data at all
 
 `UNIT-3.md:88` scores `R_other` over `fix`, `implement`, `models`, `scaffold`,
@@ -115,8 +124,14 @@ join nothing and land in `excludedForeign`.
 
 So `R_other` is `unexercised` by construction on every run that can be produced
 today, and the `Σ_d R_d + R_other = R` identity of **F11** cannot even be formed.
-Two readings, and the project has to pick one: instrument the five tools, or
-amend the design to say `R_other` is empty in this venue and why.
+
+**DECIDED 2026-08-07: publish `unexercised` and declare it in advance.** Neither
+of the two alternatives survives. Amending the design changes the estimand (see
+F11). Instrumenting the five tools is a design change wearing an implementation's
+clothes — it would CREATE data the experiment assumed already existed — and it
+would not close F11 anyway, since the missing `O/(A+S)` is untouched by it.
+`unexercised` is the design's own state for a delivery nobody exercised, and it
+is neither a hold nor a fall.
 
 ### F10 — the window join is wider than the crediting join
 
