@@ -348,7 +348,7 @@ describe("strataCells — a corrupted declaration is not a measured absence", ()
       ...[0, 1, 2, 3, 4].map((n) => soloTerms(`y${n}`, "types-only")),
       soloTerms("typo", typo),
     ];
-    const cells = strataCells(set);
+    const cells = strataCells({ floor: set, ratio: set });
     expect(cells.testRed.evaluable).toBe(false);
     expect(cells.typesOnly.evaluable).toBe(false);
     // AND THE RULE IS TARGETED, not a blanket refusal. All eleven windows have
@@ -377,7 +377,7 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
     // been asked. A 0 would put it under 15% and fire the stopping criterion on
     // an absence.
     const four = [0, 1, 2, 3].map(withGate);
-    const score = deliveryScore(four, ["gate"], "lo");
+    const score = deliveryScore({ exercise: four, arithmetic: four }, ["gate"], "lo");
     expect(score.scored).toBe(false);
     if (!score.scored) {
       expect(score.reason).toBe("unexercised");
@@ -397,8 +397,8 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
     // Five observations, each A=100 and S=50, split 30 gate / 20 repair. Pooled
     // 250/(500+250) = 1/3; gate 150/750 = 0.2; repair 100/750 = 0.13333.
     const five = [0, 1, 2, 3, 4].map(withGate);
-    const gate = deliveryScore(five, ["gate"], "lo");
-    const repair = deliveryScore(five, ["repair"], "lo", 0);
+    const gate = deliveryScore({ exercise: five, arithmetic: five }, ["gate"], "lo");
+    const repair = deliveryScore({ exercise: five, arithmetic: five }, ["repair"], "lo", 0);
     expect(gate.scored).toBe(true);
     expect(repair.scored).toBe(true);
     if (gate.scored && repair.scored) {
@@ -437,14 +437,14 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
     // Five carrying observations, ONE of which closed. Over the observation
     // floor, under the closure floor.
     const one = [withClosures(0, 1, 0), ...[1, 2, 3, 4].map((n) => withClosures(n, 0, 0))];
-    const short = deliveryScore(one, ["repair"], "lo", 2);
+    const short = deliveryScore({ exercise: one, arithmetic: one }, ["repair"], "lo", 2);
     expect(short.scored).toBe(false);
     if (!short.scored) expect(short.reason).toBe("unexercised");
     expect((short as { r?: number }).r).toBeUndefined();
 
     // Two closures in two observations: scored.
     const two = [withClosures(0, 1, 0), withClosures(1, 1, 0), ...[2, 3, 4].map((n) => withClosures(n, 0, 0))];
-    expect(deliveryScore(two, ["repair"], "lo", 2).scored).toBe(true);
+    expect(deliveryScore({ exercise: two, arithmetic: two }, ["repair"], "lo", 2).scored).toBe(true);
 
     // THE CONTROL FOR "OBSERVATIONS, NOT ROWS", and without it nothing here
     // distinguishes the two readings: every fixture above has `closures` of 0 or
@@ -457,7 +457,7 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
       withClosures(0, 2, 0),
       ...[1, 2, 3, 4].map((n) => withClosures(n, 0, 0)),
     ];
-    expect(deliveryScore(twiceInOne, ["repair"], "lo", 2).scored).toBe(false);
+    expect(deliveryScore({ exercise: twiceInOne, arithmetic: twiceInOne }, ["repair"], "lo", 2).scored).toBe(false);
 
     // THE NEGATIVE CONTROL. Four observations whose rows could not say whether
     // they closed are NOT four closures. An implementation counting any repair
@@ -466,7 +466,7 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
     // while a scored R_repair built on unreadable rows is a number nobody can
     // defend.
     const unknowns = [withClosures(0, 1, 0), ...[1, 2, 3, 4].map((n) => withClosures(n, 0, 1))];
-    expect(deliveryScore(unknowns, ["repair"], "lo", 2).scored).toBe(false);
+    expect(deliveryScore({ exercise: unknowns, arithmetic: unknowns }, ["repair"], "lo", 2).scored).toBe(false);
   });
 });
 
@@ -760,5 +760,270 @@ describe("the verdict — six states, and five of them were unreachable", () => 
       ...(n === 0 ? { unattributed: [keyed("orphan", { units: -500, unitsLo: -500 })] } : {}),
     }));
     expect(aggregate(aggregateInput(set)).verdict).not.toBe("holding (unvalidated)");
+  });
+});
+
+describe("the hold arithmetic — admissionRule 6 gives the run two domains", () => {
+  /**
+   * Twenty observations that HOLD, with observation 0 carrying an ambiguous
+   * refusal and a saving four and a half times its neighbours'.
+   *
+   * DERIVED BY HAND. Nineteen at `A = 100, S = 44`; observation 0 at
+   * `A = 100, S = 200`; every row's saving is `gate`'s.
+   *
+   *   published `R_lo`   (20 obs)  1036 / (2000 + 1036) = 34.12%  — clears 30%
+   *   hold `R_lo`        (19 obs)   836 / (1900 +  836) = 30.56%  — clears it too
+   *   hold `R_all`  (19 + obs 0 reinstated at S = 0)
+   *                                 836 / (2000 +  836) = 29.48%  — DOES NOT
+   *
+   * So the published side holds, the hold pool holds, and the DILUTION guard is
+   * the single thing that refuses. That is deliberate: a fixture blocked by three
+   * conditions at once cannot say which one it was written about.
+   */
+  const twoDomains = () =>
+    twenty((n) => ({
+      aO: 100,
+      sLo: n === 0 ? 200 : 44,
+      sHi: n === 0 ? 200 : 44,
+      perDelivery: {
+        gate: { sLo: n === 0 ? 200 : 44, sHi: n === 0 ? 200 : 44, rowCount: 1, closures: 1, closureUnknown: 0 },
+      },
+      ...(n === 0
+        ? { refusals: ledger({ ambiguous: { count: 1, units: 10, unsized: 0 } }) }
+        : {}),
+    }));
+
+  it("refuses a hold the published bracket would have granted, and names the domain", () => {
+    const result = aggregate(aggregateInput(twoDomains()));
+
+    // The published bracket is over the FULL admitted set, ambiguous observation
+    // included -- `conflictsResolved` 5 resolves the fork as "admitted to the FALL
+    // arithmetic at both bounds", and `fallsIf` reads `R_lo` by that name.
+    expect(result.rLo).toBeCloseTo(1_036 / 3_036, 12);
+    expect(result.admitted).toBe(20);
+
+    // The hold domain is one observation smaller, and says so on the face.
+    expect(result.hold.basis).toBe("hold-eligible");
+    expect(result.hold.eligible).toBe(19);
+    expect(result.hold.excludedForAmbiguity).toBe(1);
+    expect(result.hold.rLo).toBeCloseTo(836 / 2_736, 12);
+
+    // AND THE SINGLE REFUSING CONDITION, ASSERTED SO THE TEST CANNOT PASS FOR
+    // ANOTHER REASON. Every other hold conjunct clears 30%; `R_all` does not.
+    expect(result.hold.rLo).toBeGreaterThanOrEqual(0.3);
+    expect(result.hold.recomputations.rLoMinusTask).toBeGreaterThanOrEqual(0.3);
+    expect(result.hold.recomputations.rLoMinusRow).toBeGreaterThanOrEqual(0.3);
+    expect(result.hold.recomputations.rAll).toBeCloseTo(836 / 2_836, 12);
+    expect(result.hold.recomputations.rAll).toBeLessThan(0.3);
+    expect(result.hold.gate.scored && result.hold.gate.r >= 0.3).toBe(true);
+
+    expect(result.verdict).toBe("open");
+    expect(result.voidClause).toBeNull();
+  });
+
+  it("reads an UNOWNED ambiguous row, which the finding's own predicate would have missed", () => {
+    // `FINDINGS.md` F19 proposed `t.refusals.ambiguous.count === 0`. `refusals`
+    // holds only rows this window OWNS, and `report.ts` counts `ambiguous` over
+    // the whole telemetry slice with no ownership filter -- `admissionRule` 5 pins
+    // the meaning to that counter by name. So an observation whose ambiguous rows
+    // are all unowned still withheld its `savedFraction` and is still the
+    // observation clause 6 keeps out of the hold.
+    //
+    // THE SAME FIXTURE WITH THE REFUSAL MOVED TO THE OTHER LEDGER. Nothing else
+    // changes, so any difference in verdict is the predicate and nothing else.
+    const set = twoDomains().map((t, n) =>
+      n === 0
+        ? terms({
+            ...t,
+            refusals: ledger(),
+            unattributed: [refused("unowned-ambiguous", "ambiguous", 10)],
+            unattributedRefusals: ledger({ ambiguous: { count: 1, units: 10, unsized: 0 } }),
+          })
+        : t
+    );
+    const result = aggregate(aggregateInput(set));
+
+    expect(result.hold.excludedForAmbiguity).toBe(1);
+    expect(result.hold.recomputations.rAll).toBeLessThan(0.3);
+    expect(result.verdict).toBe("open");
+  });
+
+  it("leaves the published face alone, cell for cell, while the hold domain moves", () => {
+    // THE ASSEMBLY HAZARD, AND IT IS THE ONE PLACE BOTH DOMAINS ARE IN SCOPE.
+    // `decideHold` cannot see the published figures at all, but `aggregate` builds
+    // both and fills one `B12Result`, and `StrataCells` is `StrataCells` -- putting
+    // the hold cells on the face is an assignment away and no type would object.
+    const set = twoDomains();
+    const result = aggregate(aggregateInput(set));
+
+    // Computed independently here rather than read back off the result, so this
+    // compares the artifact against the rule instead of against itself.
+    const face = strataCells({ floor: set, ratio: set });
+    expect(result.strata).toEqual(face);
+
+    // And the two genuinely differ, so the assertion above is not vacuous: the
+    // `test-red` and `solo` cells both contain observation 0.
+    if (result.strata.solo.evaluable && result.hold.strata.solo.evaluable) {
+      expect(result.strata.solo.value).toBeCloseTo(596 / 1_596, 12);
+      expect(result.hold.strata.solo.value).toBeCloseTo(396 / 1_296, 12);
+      expect(result.strata.solo.value).not.toBeCloseTo(result.hold.strata.solo.value, 6);
+    }
+    expect(result.strata.solo.evaluable).toBe(true);
+  });
+
+  it("counts the delivery's EXERCISE floor on the admitted set and its ratio on the hold one", () => {
+    // `design.metric`: "A delivery with fewer than 5 ADMITTED observations carrying
+    // its rows is `unexercised`". Clause 6 leaves such an observation admitted, so
+    // a window whose telemetry carries a `gate` row exercised `gate` whatever its
+    // refusals say about who owns the saving.
+    //
+    // EXACTLY FIVE CARRY, AND ONE OF THEM IS AMBIGUOUS-BEARING. Collapsing the two
+    // populations onto the hold-eligible set -- the obvious implementation --
+    // leaves four and turns a delivery that ran into one that was never asked.
+    const set = twenty((n) => ({
+      aO: 100,
+      sLo: 44,
+      sHi: 44,
+      ...(n < 5
+        ? {
+            perDelivery: {
+              gate: { sLo: 44, sHi: 44, rowCount: 1, closures: 1, closureUnknown: 0 },
+            },
+          }
+        : {}),
+      ...(n === 0
+        ? { refusals: ledger({ ambiguous: { count: 1, units: 10, unsized: 0 } }) }
+        : {}),
+    }));
+    const result = aggregate(aggregateInput(set));
+
+    expect(result.hold.excludedForAmbiguity).toBe(1);
+    expect(result.hold.gate.scored).toBe(true);
+    expect(result.hold.gate.observations).toBe(5);
+    // The ratio is the hold domain's: four carrying observations' rows over the
+    // 19-observation denominator.
+    if (result.hold.gate.scored) expect(result.hold.gate.r).toBeCloseTo(176 / 2_736, 12);
+  });
+
+  it("keeps a stratum cell EVALUABLE on five admitted while pricing it on four", () => {
+    // `holdsIf` 3 asks for "All four declared strata evaluable (≥ 5 ADMITTED
+    // observations each) and all four on the same side of 30%", and
+    // `admissionRule` 8 repeats the floor in the same words. Clause 6 moves only
+    // the arithmetic, so evaluability is an admitted-set property.
+    //
+    // SIX OF THE TEN `test-red` OBSERVATIONS CARRY AN AMBIGUOUS REFUSAL, leaving
+    // four to price the cell. Reading the floor off the hold domain would call the
+    // cell unevaluable and return `open` for a reason the design does not give.
+    // That the cell then blocks the hold on its RATIO is a different fact, and
+    // `FINDINGS.md` F21 records the gap the literal reading leaves open.
+    const set = twenty((n) => ({
+      aO: 100,
+      sLo: 44,
+      sHi: 44,
+      ...(n % 2 === 0 && n <= 10
+        ? { refusals: ledger({ ambiguous: { count: 1, units: 1, unsized: 0 } }) }
+        : {}),
+    }));
+    const result = aggregate(aggregateInput(set));
+
+    expect(result.hold.excludedForAmbiguity).toBe(6);
+    expect(result.hold.strata.testRed.evaluable).toBe(true);
+    expect(result.strata.testRed.evaluable).toBe(true);
+    if (result.hold.strata.testRed.evaluable) {
+      // Four observations, not ten: the floor came from the admitted set and the
+      // ratio did not.
+      expect(result.hold.strata.testRed.value).toBeCloseTo(176 / 576, 12);
+    }
+  });
+
+  it("returns `open` when a PUBLISHED recomputation straddles 30% and the hold domain does not", () => {
+    // `voidConditions` 18's other half: "Across 30% it returns `open` with both
+    // figures recorded and does NOT consume the attempt cap." Not a void.
+    //
+    // **THIS CHECK WAS THE LAST CONJUNCT OF THE HOLD AND COULD NOT FIRE THERE.**
+    // The conjuncts above it already required `R_lo` and all three low
+    // recomputations at or above 30%, so every operand was on the same side by the
+    // time it was read (`FINDINGS.md` F22). It can only decide anything over the
+    // PUBLISHED figures, which the hold conjuncts do not constrain — and only when
+    // the two domains differ, since they are the same numbers otherwise.
+    //
+    // BY HAND, with `O_o = 0` throughout. Observation 0 is a large, high-ratio task
+    // (`A = 300, S = 300`); observation 1 carries the ambiguous refusal and no
+    // saving at all (`A = 100, S = 0`); the other eighteen are `A = 100, S = 44`.
+    //
+    //   published `R_lo`          1092 / (2200 + 1092) = 33.17%  — above 30%
+    //   published `R_lo⁻ᵗ`  (obs 0, the largest `A_o`, deleted)
+    //                              792 / (1900 +  792) = 29.42%  — BELOW: straddle
+    //   hold `R_lo`         (obs 1 excluded)
+    //                             1092 / (2100 + 1092) = 34.21%  — above
+    //   hold `R_lo⁻ᵗ`              792 / (1800 +  792) = 30.56%  — above
+    //   hold `R_all`   (obs 1 back at S = 0)
+    //                             1092 / (2200 + 1092) = 33.17%  — above
+    //
+    // So every hold condition passes and the run still returns `open`, on a figure
+    // the hold arithmetic never sees.
+    const set = twenty((n) => {
+      const aO = n === 0 ? 300 : 100;
+      const s = n === 0 ? 300 : n === 1 ? 0 : 44;
+      return {
+        aO,
+        sLo: s,
+        sHi: s,
+        perDelivery: { gate: { sLo: s, sHi: s, rowCount: 1, closures: 1, closureUnknown: 0 } },
+        ...(n === 1
+          ? { refusals: ledger({ ambiguous: { count: 1, units: 10, unsized: 0 } }) }
+          : {}),
+      };
+    });
+    const result = aggregate(aggregateInput(set));
+
+    expect(result.rLo).toBeCloseTo(1_092 / 3_292, 12);
+    expect(result.recomputations.rLoMinusTask).toBeCloseTo(792 / 2_692, 12);
+    expect(result.recomputations.rLoMinusTask).toBeLessThan(0.3);
+
+    // EVERY HOLD CONDITION CLEARS, which is what makes this test about the straddle
+    // and not about the hold domain. Without those assertions it would pass for
+    // whichever conjunct happened to fail first.
+    expect(result.hold.rLo).toBeGreaterThanOrEqual(0.3);
+    expect(result.hold.recomputations.rLoMinusTask).toBeCloseTo(792 / 2_592, 12);
+    expect(result.hold.recomputations.rLoMinusTask).toBeGreaterThanOrEqual(0.3);
+    expect(result.hold.recomputations.rLoMinusRow).toBeGreaterThanOrEqual(0.3);
+    expect(result.hold.recomputations.rAll).toBeGreaterThanOrEqual(0.3);
+    expect(result.hold.gate.scored && result.hold.gate.r >= 0.3).toBe(true);
+    for (const cell of [
+      result.hold.strata.testRed,
+      result.hold.strata.typesOnly,
+      result.hold.strata.solo,
+      result.hold.strata.multi,
+    ]) {
+      expect(cell.evaluable && cell.value >= 0.3).toBe(true);
+    }
+
+    // A VOID WOULD BE WRONG HERE: only the 15% line voids, and nothing crosses it.
+    expect(result.verdict).toBe("open");
+    expect(result.voidClause).toBeNull();
+  });
+
+  it("is IDENTICAL to the published domain on a run with no ambiguous refusal", () => {
+    // The other half of the pair, and the reason the divergence needs controls at
+    // all: on every clean run the two domains are the same set, every figure
+    // coincides, and a defect in the partition is invisible. The frozen preflight
+    // asserts `ambiguous === 0`, so a clean run is the expected case.
+    const clean = twenty(() => ({
+      aO: 100,
+      sLo: 50,
+      sHi: 50,
+      perDelivery: { gate: { sLo: 50, sHi: 50, rowCount: 1, closures: 1, closureUnknown: 0 } },
+    }));
+    const result = aggregate(aggregateInput(clean));
+
+    expect(result.hold.excludedForAmbiguity).toBe(0);
+    expect(result.hold.eligible).toBe(20);
+    expect(result.hold.rLo).toBe(result.rLo);
+    expect(result.hold.strata).toEqual(result.strata);
+    expect(result.hold.gate).toEqual(result.gate);
+    expect(result.hold.recomputations.rLoMinusTask).toBe(result.recomputations.rLoMinusTask);
+    expect(result.hold.recomputations.rAll).toBe(result.recomputations.rAll);
+    expect(result.verdict).toBe("holding (unvalidated)");
   });
 });

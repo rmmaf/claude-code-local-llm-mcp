@@ -14,6 +14,8 @@ import type {
   B12Result,
   DeliveryScore,
   Evaluable,
+  HoldFigures,
+  HoldRecomputations,
   ObservationTerms,
   PriorRun,
   Recomputations,
@@ -65,6 +67,28 @@ const TOOL_CALL_NAMES = new Set(["gate", "repair"]);
 
 /** The four class names, in one place, so no figure is built from three. */
 const CLASSES = ["ambiguous", "unverifiable", "excludedForeign", "unmatched"] as const;
+
+/**
+ * `admissionRule` 6's `ambiguous`, counted the way the shipped instrument counts it.
+ *
+ * **BOTH LEDGERS, AND THE OWNED ONE ALONE IS NOT ENOUGH.** `admissionRule` 5 pins
+ * the meaning to `report.ts` by file and line — "`savedFraction` is withheld iff
+ * `provenanceUnavailable || ambiguous > 0`" — and that counter is incremented for
+ * every telemetry row whose id is ambiguous, BEFORE any ownership is decided.
+ * Ownership is imposed later, in `computeTerms`, which is where one count becomes
+ * two ledgers. So an observation all of whose ambiguous rows are unowned still had
+ * `ambiguous > 0` in its report, still withheld its `savedFraction`, and is still
+ * the observation clause 6 keeps out of the hold. `FINDINGS.md` F19 proposed the
+ * owned ledger alone and would have missed exactly that case.
+ *
+ * SUMMING TWO COUNTS ON ONE OBSERVATION IS NOT THE F12 DOUBLE-COUNT. That defect
+ * was adding per-observation totals ACROSS observations, where a row two slices
+ * share is added twice. Here the question is asked once per observation and the
+ * answer is a boolean; a shared ambiguous row makes it true for both, which is
+ * right, because both reports withheld.
+ */
+const ambiguousCount = (t: ObservationTerms): number =>
+  t.refusals.ambiguous.count + t.unattributedRefusals.ambiguous.count;
 
 const sumOf = <T>(xs: readonly T[], f: (x: T) => number): number =>
   xs.reduce((total, x) => total + f(x), 0);
@@ -197,48 +221,111 @@ export function recompute(
   admitted: readonly ObservationTerms[],
   dropped: readonly ObservationTerms[]
 ): Recomputations {
-  const withoutLargestTask = (): ObservationTerms[] => {
-    if (admitted.length === 0) return [];
-    let worst = 0;
-    admitted.forEach((t, i) => {
-      if (t.aO > (admitted[worst]?.aO ?? -Infinity)) worst = i;
-    });
-    return admitted.filter((_, i) => i !== worst);
-  };
-
-  const rows = creditedRows(admitted);
-  /** `admitted` with one row's contribution removed from the observation that owns it. */
-  const withoutLargestRow = (horizon: "lo" | "hi"): ObservationTerms[] => {
-    const magnitude = (r: (typeof rows)[number]): number =>
-      horizon === "lo" ? r.row.unitsLo : r.row.units;
-    if (rows.length === 0) return [...admitted];
-    let best = 0;
-    rows.forEach((r, i) => {
-      const incumbent = rows[best];
-      if (incumbent !== undefined && magnitude(r) > magnitude(incumbent)) best = i;
-    });
-    const chosen = rows[best];
-    if (chosen === undefined) return [...admitted];
-    return admitted.map((t, i) =>
-      i !== chosen.owner
-        ? t
-        : horizon === "lo"
-          ? { ...t, sLo: t.sLo - chosen.row.unitsLo }
-          : { ...t, sHi: t.sHi - chosen.row.units }
-    );
-  };
-
-  const minusTask = withoutLargestTask();
-  // Reinstated with NO saving and its billing intact: the dilution guard.
-  const reinstated = [...admitted, ...dropped.map((t) => ({ ...t, sLo: 0, sHi: 0 }))];
-
+  const minusTask = withoutLargestTask(admitted);
   return {
     rLoMinusTask: poolRatio(minusTask, "lo"),
     rHiMinusTask: poolRatio(minusTask, "hi"),
-    rLoMinusRow: poolRatio(withoutLargestRow("lo"), "lo"),
-    rHiMinusRow: poolRatio(withoutLargestRow("hi"), "hi"),
-    rAll: poolRatio(reinstated, "lo"),
+    rLoMinusRow: poolRatio(withoutLargestRow(admitted, "lo"), "lo"),
+    rHiMinusRow: poolRatio(withoutLargestRow(admitted, "hi"), "hi"),
+    rAll: poolRatio(reinstate(admitted, dropped), "lo"),
   };
+}
+
+/**
+ * The same three guards `holdsIf` 2 asks for, over the hold domain.
+ *
+ * **`reinstated` IS NOT THE SAME SET `recompute` GETS, AND THAT IS THE POINT.**
+ * `holdsIf` 2 wants a hold to survive "reinstating everything it dropped", and
+ * `admissionRule` 3 shows the design using "dropped" to mean dropped FROM THE HOLD
+ * ARITHMETIC rather than dropped from the run — a `void(task_failed)` observation
+ * is "dropped from the hold arithmetic ... and reinstated at `saved_o = 0` in the
+ * mandatory `R_all` recomputation". `admissionRule` 6 drops the ambiguous-bearing
+ * observation from that same arithmetic, so the dilution guard has to see it too.
+ *
+ * The alternative — leaving it out of the hold entirely, `A_o` and all — takes a
+ * billed denominator off the hold side and can only make a hold EASIER. That is
+ * the direction a guard named for dilution must not move.
+ *
+ * Shares `withoutLargestTask` and `withoutLargestRow` with `recompute` rather than
+ * restating them: two derivations of one rule is what this repository has already
+ * watched drift.
+ */
+function holdRecompute(
+  eligible: readonly ObservationTerms[],
+  reinstated: readonly ObservationTerms[]
+): HoldRecomputations {
+  return {
+    rLoMinusTask: poolRatio(withoutLargestTask(eligible), "lo"),
+    rLoMinusRow: poolRatio(withoutLargestRow(eligible, "lo"), "lo"),
+    rAll: poolRatio(reinstate(eligible, reinstated), "lo"),
+  };
+}
+
+/** The concentration guard's first form: the largest `A_o` deleted. */
+function withoutLargestTask(terms: readonly ObservationTerms[]): ObservationTerms[] {
+  if (terms.length === 0) return [];
+  let worst = 0;
+  terms.forEach((t, i) => {
+    if (t.aO > (terms[worst]?.aO ?? -Infinity)) worst = i;
+  });
+  return terms.filter((_, i) => i !== worst);
+}
+
+/** The set with one row's contribution removed from the observation that owns it. */
+function withoutLargestRow(
+  terms: readonly ObservationTerms[],
+  horizon: "lo" | "hi"
+): ObservationTerms[] {
+  const rows = creditedRows(terms);
+  const magnitude = (r: (typeof rows)[number]): number =>
+    horizon === "lo" ? r.row.unitsLo : r.row.units;
+  if (rows.length === 0) return [...terms];
+  let best = 0;
+  rows.forEach((r, i) => {
+    const incumbent = rows[best];
+    if (incumbent !== undefined && magnitude(r) > magnitude(incumbent)) best = i;
+  });
+  const chosen = rows[best];
+  if (chosen === undefined) return [...terms];
+  return terms.map((t, i) =>
+    i !== chosen.owner
+      ? t
+      : horizon === "lo"
+        ? { ...t, sLo: t.sLo - chosen.row.unitsLo }
+        : { ...t, sHi: t.sHi - chosen.row.units }
+  );
+}
+
+/** The dilution guard: every excluded observation back, at NO saving, billing intact. */
+function reinstate(
+  kept: readonly ObservationTerms[],
+  excluded: readonly ObservationTerms[]
+): ObservationTerms[] {
+  return [...kept, ...excluded.map((t) => ({ ...t, sLo: 0, sHi: 0 }))];
+}
+
+/**
+ * The two sets a delivery figure is built from, which `admissionRule` 6 split apart.
+ *
+ * BOTH REQUIRED AND NEITHER DEFAULTS TO THE OTHER. On the published face they are
+ * the same set and passing it twice looks redundant; on the hold side they are
+ * not, and a parameter that quietly fell back to its sibling would be the exact
+ * silent-domain error this shape exists to make impossible.
+ */
+export interface DeliveryPopulations {
+  /**
+   * Decides `unexercised` and the closure floor. FULL ADMITTED, because
+   * `design.metric` words it that way — "A delivery with fewer than 5 ADMITTED
+   * observations carrying its rows is `unexercised`" — and clause 6 leaves such an
+   * observation admitted. A window whose telemetry carries a `gate` row exercised
+   * `gate`, whatever its refusals say about who owns the saving.
+   */
+  exercise: readonly ObservationTerms[];
+  /**
+   * The domain the ratio is computed over: full admitted for the published face,
+   * hold-eligible for `holdsIf` 4's `R_gate`.
+   */
+  arithmetic: readonly ObservationTerms[];
 }
 
 /**
@@ -257,16 +344,24 @@ export function recompute(
  * `B12Result.identityHolds` come out false: it says "compute it; do not assume
  * it". Allocating `O` across deliveries is a design decision nobody has made.
  * `FINDINGS.md` F11.
+ *
+ * **TWO POPULATIONS, AND COLLAPSING THEM SILENTLY MOVES A FROZEN FLOOR.** See
+ * `DeliveryPopulations`: `unexercised` is defined over ADMITTED observations and
+ * the ratio the hold reads is not. Passing the hold-eligible set for both — the
+ * obvious implementation of `admissionRule` 6 — would quietly redefine
+ * `unexercised` as "fewer than 5 hold-eligible", which the design does not say
+ * and which turns an ambiguous refusal into evidence that a tool was never run.
  */
 export function deliveryScore(
-  terms: readonly ObservationTerms[],
+  pop: DeliveryPopulations,
   tools: readonly string[],
   horizon: "lo" | "hi",
   minClosures?: number
 ): DeliveryScore {
+  const terms = pop.arithmetic;
   const bucketsOf = (t: ObservationTerms) =>
     tools.map((tool) => t.perDelivery[tool]).filter((b) => b !== undefined);
-  const carrying = terms.filter((t) => bucketsOf(t).some((b) => b.rowCount > 0));
+  const carrying = pop.exercise.filter((t) => bucketsOf(t).some((b) => b.rowCount > 0));
 
   // `unexercised` is a THIRD STATE and carries no `r` at all: a delivery nobody
   // exercised has not failed to pay for itself, it has not been asked, and a 0
@@ -359,6 +454,29 @@ function selectionOf(
 }
 
 /**
+ * The two sets a stratum cell is built from — the same split `DeliveryPopulations`
+ * makes, and for the same reason.
+ *
+ * **THE FLOOR IS AN ADMITTED-SET PROPERTY AND THE RATIO IS NOT.** `holdsIf` 3 asks
+ * for "All four declared strata evaluable (≥ 5 ADMITTED observations each) and all
+ * four on the same side of 30%", and `admissionRule` 8 repeats the floor in the
+ * same words. `admissionRule` 6 moves only the arithmetic.
+ *
+ * **A CELL CAN THEREFORE BE EVALUABLE ON FIVE AND PRICED ON THREE, and that is
+ * the literal frozen rule rather than an oversight.** Requiring five on the ratio
+ * side as well would be a stricter number in the frozen one's clothes — the exact
+ * objection `design.metric` raises against reusing 30% on a jackknifed quantity —
+ * so the gap is recorded as `FINDINGS.md` F21 instead of being closed by
+ * preference.
+ */
+export interface StrataPopulations {
+  /** Full admitted: decides evaluability, and whether a declaration was corrupted. */
+  floor: readonly ObservationTerms[];
+  /** The domain the cell's bracket is pooled over. */
+  ratio: readonly ObservationTerms[];
+}
+
+/**
  * Fill the four cells, leaving any below the 5-observation floor unevaluable.
  *
  * A non-empty `unknownStratum` makes `testRed` AND `typesOnly` unevaluable
@@ -368,57 +486,94 @@ function selectionOf(
  * originated no billed request belongs to neither cell, and neither is deflated
  * by its absence. Measured absence, corrupted declaration: not the same fact.
  */
-export function strataCells(admitted: readonly ObservationTerms[]): StrataCells {
-  const p = partitionByStrata(admitted);
-  const cell = (of: readonly ObservationTerms[], name: string): Evaluable<number> =>
-    of.length < MIN_DELIVERY_OBSERVATIONS
+export function strataCells(pop: StrataPopulations): StrataCells {
+  const floor = partitionByStrata(pop.floor);
+  const ratio = partitionByStrata(pop.ratio);
+  const cell = (
+    counted: readonly ObservationTerms[],
+    priced: readonly ObservationTerms[],
+    name: string
+  ): Evaluable<number> =>
+    counted.length < MIN_DELIVERY_OBSERVATIONS
       ? {
           evaluable: false,
-          reason: `${name} holds ${of.length} admitted observation(s), below the floor of ${MIN_DELIVERY_OBSERVATIONS}`,
+          reason: `${name} holds ${counted.length} admitted observation(s), below the floor of ${MIN_DELIVERY_OBSERVATIONS}`,
         }
-      : { evaluable: true, value: poolRatio(of, "lo") };
+      : { evaluable: true, value: poolRatio(priced, "lo") };
 
+  // COUNTED ON THE FLOOR POPULATION, because an unrecognised declaration is a
+  // fact about the admitted set. A run reaches the hold only after every cell is
+  // already evaluable, so reading it off the ratio population would ask the
+  // question again of a set that cannot answer it differently.
   const corrupted =
-    p.unknownStratum.length > 0
+    floor.unknownStratum.length > 0
       ? {
           evaluable: false as const,
-          reason: `${p.unknownStratum.length} observation(s) carry an unrecognised verificationStratum, so both declared cells are deflated by an unknown amount`,
+          reason: `${floor.unknownStratum.length} observation(s) carry an unrecognised verificationStratum, so both declared cells are deflated by an unknown amount`,
         }
       : null;
 
   return {
-    testRed: corrupted ?? cell(p.testRed, "test-red"),
-    typesOnly: corrupted ?? cell(p.typesOnly, "types-only"),
-    solo: cell(p.solo, "solo"),
-    multi: cell(p.multi, "multi"),
+    testRed: corrupted ?? cell(floor.testRed, ratio.testRed, "test-red"),
+    typesOnly: corrupted ?? cell(floor.typesOnly, ratio.typesOnly, "types-only"),
+    solo: cell(floor.solo, ratio.solo, "solo"),
+    multi: cell(floor.multi, ratio.multi, "multi"),
   };
 }
 
 /** The artifact. Owed by every registered run, whether it scores or voids. */
 export function aggregate(input: AggregateInput): B12Result {
   const { admitted, dropped, coverage, priorRuns } = input;
+  // `admissionRule` 6, AND IT IS DERIVED HERE RATHER THAN ASKED OF THE CALLER.
+  // This is the only function that sees the whole admitted set, and the run-level
+  // assembler that will call it does not exist yet — a required input would be a
+  // rule the assembler's author could satisfy wrongly, and an optional one a rule
+  // they could forget. See `ambiguousCount` for why both ledgers are read.
+  const holdEligible = admitted.filter((t) => ambiguousCount(t) === 0);
+  const holdExcluded = admitted.filter((t) => ambiguousCount(t) > 0);
   const rLo = poolRatio(admitted, "lo");
   const rHi = poolRatio(admitted, "hi");
   // Computed ONCE and read twice below. It used to be called twice, which is the
   // shape that lets a figure and the verdict built on it disagree.
   const fallSide = rHiPlus([...admitted, ...dropped], coverage);
-  const strata = strataCells(admitted);
+  const strata = strataCells({ floor: admitted, ratio: admitted });
   const selection = selectionOf(admitted, dropped);
   const recomputations = recompute(admitted, dropped);
+
+  // THE HOLD DOMAIN, BUILT BESIDE THE PUBLISHED ONE SO THE PAIR IS LEGIBLE. Every
+  // member is the same quantity over a smaller set, and on a run with no ambiguous
+  // refusal `holdExcluded` is empty and every member equals its published twin —
+  // which is why the divergence is pinned by a control rather than by a comment.
+  const hold: HoldFigures = {
+    basis: "hold-eligible",
+    eligible: holdEligible.length,
+    excludedForAmbiguity: holdExcluded.length,
+    rLo: poolRatio(holdEligible, "lo"),
+    // Reading D: the clause-6 observations join the dropped ones in `R_all`, at no
+    // saving and with their billing intact. See `holdRecompute`.
+    recomputations: holdRecompute(holdEligible, [...dropped, ...holdExcluded]),
+    strata: strataCells({ floor: admitted, ratio: holdEligible }),
+    gate: deliveryScore({ exercise: admitted, arithmetic: holdEligible }, ["gate"], "lo"),
+  };
   // DERIVED, both of them, from the one register. `abandonedRuns` is also what
   // fires the clause-1 VOID, so the count on the artifact and the condition that
   // voided the run are one quantity read twice rather than two that can disagree.
   const abandonedRuns = priorRuns.filter((r) => r.result === null).length;
   const voidedRuns = priorRuns.filter((r) => r.result !== null && !r.result.scored).length;
 
-  const gate = deliveryScore(admitted, ["gate"], "lo");
-  const repair = deliveryScore(admitted, ["repair"], "lo", MIN_REPAIR_CLOSURES);
+  // THE PUBLISHED THREE, over the full admitted set on both populations. The
+  // design's per-delivery figures are descriptive here; the only one a verdict
+  // reads is `hold.gate`, and `R_repair` "is reported separately and NEVER gates
+  // B12's own status".
+  const publishedPop = { exercise: admitted, arithmetic: admitted };
+  const gate = deliveryScore(publishedPop, ["gate"], "lo");
+  const repair = deliveryScore(publishedPop, ["repair"], "lo", MIN_REPAIR_CLOSURES);
   // `R_other` reads `unexercised` on every run this venue can produce: none of
   // these five tools writes a telemetry row. Declared in advance in
   // `PREMISES.md § B12` so the field is not mistaken for a measurement.
   // `FINDINGS.md` F13.
   const other = deliveryScore(
-    admitted,
+    publishedPop,
     ["fix", "implement", "models", "scaffold", "status"],
     "lo"
   );
@@ -458,6 +613,7 @@ export function aggregate(input: AggregateInput): B12Result {
     gate,
     repair,
     other,
+    hold,
     identityHolds,
     admitted: admitted.length,
     dispositions: [...admitted, ...dropped].map((t) => ({
@@ -487,7 +643,7 @@ export function aggregate(input: AggregateInput): B12Result {
       rHi,
       fallSide,
       strata,
-      gate,
+      hold,
       selection,
       recomputations,
       priorRuns,
@@ -503,23 +659,51 @@ export function aggregate(input: AggregateInput): B12Result {
 interface Decision {
   admitted: readonly ObservationTerms[];
   coverage: RunTelemetryCoverage;
+  /** PUBLISHED, over the full admitted set. The hold's lower bound is `hold.rLo`. */
   rLo: number;
   rHi: number;
   fallSide: Evaluable<number>;
+  /** PUBLISHED. `holdsIf` 3's cells are `hold.strata`. */
   strata: StrataCells;
-  gate: DeliveryScore;
   selection: B12Result["selection"];
+  /** PUBLISHED, the five `voidConditions` 18 compares against `rLo` and `rHi`. */
   recomputations: Recomputations;
   priorRuns: readonly PriorRun[];
+  hold: HoldFigures;
+}
+
+/**
+ * Everything `holdsIf` may read, and NOTHING ELSE IS IN SCOPE.
+ *
+ * That is the whole point of the separate function. `admissionRule` 6 gives the
+ * run two domains whose members carry identical names and identical types, so a
+ * hold conjunct reaching for the published `rLo` instead of the hold one is a
+ * one-word mistake that no type can catch — both are `number`. Putting the
+ * published figures out of scope catches it at compile time instead.
+ *
+ * `admitted` is here because `holdsIf` 6 asks whether `unitsAddedByInstallation`
+ * was computed for EVERY observation, which is a data-quality question about the
+ * admitted set rather than an arithmetic over a domain.
+ */
+interface HoldEvidence {
+  hold: HoldFigures;
+  selection: B12Result["selection"];
+  admitted: readonly ObservationTerms[];
 }
 
 /**
  * The verdict, and the void clause BY NAME when it voids.
  *
- * **VOIDS FIRST, THEN THE FALL, AND NEVER A HOLD.** The order is not cosmetic: a
+ * **VOIDS FIRST, THEN THE FALL, THEN THE HOLD.** The order is not cosmetic: a
  * void discards the run and consumes an attempt (`voidConditions` 23), so a run
  * that voids never reaches the fall arithmetic and cannot be recorded as a fall
  * on a set the design has already disqualified.
+ *
+ * **TWO DOMAINS, AND ONLY THE HOLD USES THE SECOND.** `admissionRule` 6 admits an
+ * `ambiguous > 0` observation "to the FALL arithmetic only, at both bounds", and
+ * excludes it from the hold arithmetic. So every figure above the hold branch is
+ * the published, full-admitted one — including the strata `voidConditions` 17 and
+ * `fallsIf` read — and the hold branch sees only `HoldEvidence`.
  *
  * **TWO CLAUSES OF THE FROZEN TEXT CONTRADICT THEMSELVES, and the resolutions are
  * quoted rather than chosen.**
@@ -540,15 +724,15 @@ interface Decision {
  * void**." Its FIRST clause, fewer than 20 admitted, carries no such
  * contradiction and voids.
  *
- * **THERE IS NO HOLD BRANCH, and this is not an oversight.** `holdsIf` has seven
- * conditions and the seventh is "the A/B ran and did not kill it"; the A/B does
- * not exist, so no run can satisfy the list. When one is written it owes a guard
- * this function cannot carry today: a credited row no window owns is omitted from
- * `R_lo` and `R_hi`, and magnitudes are SIGNED, so omitting a NEGATIVE one RAISES
- * both figures, toward a hold. "Omission deflates the hold, which is the safe
- * direction" was written during the F9 fix and is false as stated, so
- * `coverage.unattributedCredited.count > 0` must block a hold exactly as it blocks
- * a fall.
+ * **THIS DOC CLAIMED "THERE IS NO HOLD BRANCH" UNTIL 2026-08-07, TWO PASSES AFTER
+ * ONE WAS WRITTEN.** The F14 pass moved the body and `UNIT-3.md` and left this
+ * comment describing the world before it, so the file's most load-bearing docstring
+ * contradicted the function under it. Its closing demand was stale twice over: it
+ * asked for a `coverage.unattributedCredited.count > 0` conjunct that the hold
+ * branch below deliberately omits, because `rHiPlus` refuses on that exact fact and
+ * the run has already returned `open` before the hold is reached. Recorded rather
+ * than quietly deleted — a doc that outlived its code is the same failure as a
+ * guard that outlived the sum it guarded, and this file has now produced both.
  */
 function decide(d: Decision): { verdict: B12Result["verdict"]; voidClause: string | null } {
   const voided = (voidClause: string) => ({ verdict: "void" as const, voidClause });
@@ -652,9 +836,6 @@ function decide(d: Decision): { verdict: B12Result["verdict"]; voidClause: strin
     d.strata.solo.evaluable &&
     d.strata.multi.evaluable;
   if (!cellsEvaluable) return { verdict: "open", voidClause: null };
-  const cells = [d.strata.testRed, d.strata.typesOnly, d.strata.solo, d.strata.multi].flatMap((c) =>
-    c.evaluable ? [c.value] : []
-  );
 
   if (d.fallSide.value < 0.15) {
     // `fallsIf`: a fall stands unappealed only if both subagent strata are
@@ -672,52 +853,90 @@ function decide(d: Decision): { verdict: B12Result["verdict"]; voidClause: strin
     return { verdict: "open — provisional", voidClause: null };
   }
 
-  // THE HOLD, AND IT IS ALWAYS `(unvalidated)` FROM HERE. `holdsIf` 7 is "the A/B
-  // ran and did not kill it", the A/B does not exist, and the design names the
-  // state for exactly that: "A never-run A/B leaves `holding (unvalidated)`, which
-  // is a real recorded state and MAY NOT BE CITED AS AN INPUT TO OPENING OR
-  // CLOSING ANY GATE." This function returned `open` there until 2026-08-07, on
-  // the argument that a hold needs an A/B — which collapsed a state the design
-  // provides into one it distinguishes from it.
-  const holds =
-    // 1. The whole bracket clears the line; the count is settled above.
-    d.rLo >= 0.3 &&
-    // 2. Survives deleting its best task, its best row, and reinstating everything
-    //    it dropped. All three are LOW-side figures, which is what `holdsIf` asks.
-    d.recomputations.rLoMinusTask >= 0.3 &&
-    d.recomputations.rLoMinusRow >= 0.3 &&
-    d.recomputations.rAll >= 0.3 &&
-    // 3. All four cells evaluable (settled) and all four on the same side of 30%.
-    cells.every((v) => v >= 0.3) &&
-    // 4. Per-delivery: G-stop requires each delivery to individually pay for itself.
-    d.gate.scored &&
-    d.gate.r >= 0.3 &&
-    // 5. The ledger is clean enough to read. No refused magnitude is null — implied
-    //    by `fallSide.evaluable` above — and the excluded set does not outweigh the
-    //    admitted one, which the void above only proves in one direction.
-    s.excludedUnsized === 0 &&
-    s.excludedWouldHaveAdded <= s.admittedSumS &&
-    // 6. `unitsAddedByInstallation` computed for EVERY observation, not estimated
-    //    and not omitted. A non-finite `oO` is the omission wearing a number.
-    d.admitted.every((t) => Number.isFinite(t.oO)) &&
-    // **THE F9 HOLD-SIDE GUARD IS NOT WRITTEN HERE, AND THAT IS DELIBERATE.** It
-    // was registered during the F9 fix as owed to whoever wrote a hold branch: a
-    // credited row no window owns is omitted from `R_lo`, and magnitudes are
-    // SIGNED, so omitting a NEGATIVE one RAISES the figure toward a hold. Writing
-    // it here as `coverage.unattributedCredited.count === 0` produces a conjunct
-    // that can never decide anything — `rHiPlus` refuses on exactly that fact, so
-    // the run has already returned `open` above. Planting the defect proved it:
-    // deleting the conjunct changed no test. It is subsumed, not dropped, and a
-    // guard that cannot fail is the thing this file spends its comments warning
-    // about.
-    //
-    // `voidConditions` 18's OTHER half: a recomputation across 30% "returns `open`
-    // with both figures recorded and does NOT consume the attempt cap". It is not
-    // a void, and it is only outcome-deciding here.
-    ![d.recomputations.rLoMinusTask, d.recomputations.rLoMinusRow, d.recomputations.rAll].some(
-      (v) => v >= 0.3 !== d.rLo >= 0.3
-    );
-  if (holds) return { verdict: "holding (unvalidated)", voidClause: null };
+  // `voidConditions` 18's OTHER HALF, AND IT IS NOT A VOID: a recomputation across
+  // 30% "returns `open` with both figures recorded and does NOT consume the attempt
+  // cap — a run producing two defensible numbers straddling the hold line has
+  // measured something". Over the PUBLISHED recomputations against the PUBLISHED
+  // parent, which is the pair clause 18 names.
+  //
+  // **THIS USED TO BE THE LAST CONJUNCT OF THE HOLD, WHERE IT COULD NOT FAIL.**
+  // The conjuncts above it already required `rLo >= 0.3` and all three low
+  // recomputations `>= 0.3`, so by the time it was evaluated every operand was on
+  // the same side of the line and the test was always true — a guard that cannot
+  // fire, sitting directly beneath a comment explaining that the F9 guard was
+  // removed for exactly that reason. Moved here, over figures the hold branch does
+  // not constrain, it can. `FINDINGS.md` F22.
+  const straddles30 = [
+    d.recomputations.rLoMinusTask,
+    d.recomputations.rLoMinusRow,
+    d.recomputations.rAll,
+  ].some((v) => v >= 0.3 !== d.rLo >= 0.3);
+  if (straddles30) return { verdict: "open", voidClause: null };
 
+  if (decideHold({ hold: d.hold, selection: s, admitted: d.admitted })) {
+    return { verdict: "holding (unvalidated)", voidClause: null };
+  }
   return { verdict: "open", voidClause: null };
+}
+
+/**
+ * `holdsIf` 1–6 over the domain `admissionRule` 6 leaves the hold.
+ *
+ * ALWAYS `(unvalidated)` WHEN IT PASSES. `holdsIf` 7 is "the A/B ran and did not
+ * kill it", the A/B does not exist, and the design names the state for exactly
+ * that: "A never-run A/B leaves `holding (unvalidated)`, which is a real recorded
+ * state and MAY NOT BE CITED AS AN INPUT TO OPENING OR CLOSING ANY GATE."
+ *
+ * **EVERY RATIO HERE IS A HOLD-DOMAIN RATIO AND THE PUBLISHED ONES ARE NOT IN
+ * SCOPE.** That is why this is a function and not a block: `d.rLo` and
+ * `d.hold.rLo` are both `number`, both plausible, and differ only on runs that
+ * carry an ambiguous refusal — the runs where getting it wrong matters and no
+ * test on a clean fixture would notice.
+ *
+ * **THE F9 HOLD-SIDE GUARD IS SUBSUMED, NOT MISSING.** A credited row no window
+ * owns is omitted from `R_lo`, and magnitudes are SIGNED, so omitting a NEGATIVE
+ * one RAISES the figure toward a hold; a guard was registered as owed here. Written
+ * as a conjunct it can never decide anything, because `rHiPlus` refuses on that
+ * exact fact and the run returns `open` before reaching this function. Planting the
+ * defect proved it: deleting the conjunct changed no test.
+ */
+function decideHold(e: HoldEvidence): boolean {
+  const cells = [e.hold.strata.testRed, e.hold.strata.typesOnly, e.hold.strata.solo, e.hold.strata.multi];
+  return (
+    // 1. The whole bracket clears the line. The COUNT is settled by the caller's
+    //    clause-3 void, which counts admitted observations — `hold.eligible` may
+    //    legitimately be smaller, because clause 6 leaves such an observation
+    //    admitted and removes it only from this arithmetic.
+    e.hold.rLo >= 0.3 &&
+    // 2. Survives deleting its best task, its best row, and reinstating everything
+    //    it dropped — where "dropped" includes the clause-6 exclusions, per
+    //    `admissionRule` 3's use of the phrase. All three are LOW-side figures.
+    e.hold.recomputations.rLoMinusTask >= 0.3 &&
+    e.hold.recomputations.rLoMinusRow >= 0.3 &&
+    e.hold.recomputations.rAll >= 0.3 &&
+    // 3. All four cells on the same side of 30%. Their EVALUABILITY was decided on
+    //    the admitted set and settled by the caller; a cell can therefore be
+    //    evaluable on five admitted observations and priced on fewer (`FINDINGS.md`
+    //    F21). Re-checked here rather than assumed, because this function may not
+    //    depend on which branch called it.
+    cells.every((c) => c.evaluable && c.value >= 0.3) &&
+    // 4. Per-delivery: G-stop requires each delivery to individually pay for
+    //    itself. `unexercised` was counted on the admitted set, the ratio was not.
+    e.hold.gate.scored &&
+    e.hold.gate.r >= 0.3 &&
+    // 5. The ledger is clean enough to read. No refused magnitude is null — implied
+    //    by the caller's `fallSide.evaluable` — and the excluded set does not
+    //    outweigh the admitted one, which the void above only proves in one
+    //    direction. **`selection` SPLITS ON DISPOSITION, NOT ON CLAUSE 6**, and
+    //    that is an implementation convention rather than a reading of the frozen
+    //    text, which does not say which sense of "excluded" these two comparisons
+    //    take. `FINDINGS.md` F20.
+    e.selection.excludedUnsized === 0 &&
+    e.selection.excludedWouldHaveAdded <= e.selection.admittedSumS &&
+    // 6. `unitsAddedByInstallation` computed for EVERY observation, not estimated
+    //    and not omitted. A non-finite `oO` is the omission wearing a number. Over
+    //    the ADMITTED set: it is a question about what the instrument computed, not
+    //    about which arithmetic the observation feeds.
+    e.admitted.every((t) => Number.isFinite(t.oO))
+  );
 }

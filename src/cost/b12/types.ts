@@ -316,11 +316,26 @@ export interface ObservationTerms {
    * The four-class summary of the REFUSED part of `unattributed`, for this
    * window's own artifact page.
    *
-   * A DIAGNOSTIC THAT DECIDES NOTHING. It is filled in the same pass as
-   * `unattributed` — one loop, one rule, so the two cannot drift — and no figure
-   * reads it. It used to be what `rHiPlus` summed, which is the defect F12
-   * records: summing a per-observation total of rows no observation owns
-   * double-counts every row two slices share.
+   * **NOTHING MAY SUM IT; ONE PREDICATE MAY READ IT.** It is filled in the same
+   * pass as `unattributed` — one loop, one rule, so the two cannot drift. It used
+   * to be what `rHiPlus` summed, which is the defect F12 records: summing a
+   * per-observation total of rows no observation owns double-counts every row two
+   * slices share.
+   *
+   * This doc said "A DIAGNOSTIC THAT DECIDES NOTHING" until F19, and that became
+   * false. `admissionRule` 6 excludes an observation with `ambiguous > 0` from the
+   * hold arithmetic, and `admissionRule` 5 pins what `ambiguous` means to the
+   * shipped counter — `savedFraction` withheld iff `provenanceUnavailable ||
+   * ambiguous > 0` (`report.ts`) — which is counted over the whole telemetry slice
+   * with NO ownership filter. So the clause-6 predicate is
+   * `refusals.ambiguous.count + unattributedRefusals.ambiguous.count > 0`, and a
+   * predicate reading only the owned ledger would miss an observation whose
+   * ambiguous rows are all unowned.
+   *
+   * A BOOLEAN IS NOT THE SUM F12 FORBIDS. The duplication is arithmetic: one
+   * physical row in two slices, added twice. Asking each observation "did your
+   * report withhold" adds nothing — and a shared ambiguous row makes the answer
+   * yes for BOTH observations, which is correct, because both reports withheld.
    */
   unattributedRefusals: RefusalLedger;
   /** Unevaluable when the window carried no billed request of its own. */
@@ -409,11 +424,80 @@ export interface Recomputations {
 }
 
 /**
+ * The three `holdsIf` 2 names, and only those three.
+ *
+ * LOW HORIZON ONLY, because that is what the condition asks for: "`R_lo⁻ᵗ`,
+ * `R_lo⁻ʳ` and `R_all` all ≥ 30%". The two high-horizon recomputations exist for
+ * `voidConditions` 18, which compares them against the PUBLISHED `R_hi` — a
+ * figure the hold domain does not have. Carrying them here anyway would put two
+ * numbers on the artifact that nothing reads and no rule defines, which is the
+ * shape this file spends its comments refusing.
+ */
+export interface HoldRecomputations {
+  rLoMinusTask: number;
+  rLoMinusRow: number;
+  rAll: number;
+}
+
+/**
+ * The hold arithmetic, over the domain `admissionRule` 6 leaves it.
+ *
+ * **"An observation with `ambiguous > 0` is admitted to the FALL arithmetic
+ * only, at both bounds, and EXCLUDED FROM THE HOLD ARITHMETIC."** So a run has
+ * two domains, not one, and `B12Result`'s own `rLo`/`rHi`/`strata`/`gate` are the
+ * full-admitted ones — the published bracket, which `fallsIf` reads. These are
+ * the other domain, and they are the ONLY figures a hold may be built from.
+ *
+ * DELIBERATELY NOT SHAPED LIKE THE PUBLISHED SIDE. A symmetric pair invites a
+ * reader to assume the two are interchangeable, and they are not: this side has
+ * no `rHi` (nothing reads one), three recomputations rather than five, and a
+ * `gate` whose EXERCISE floor was counted on the full admitted set while its
+ * ratio was not. The asymmetry is the documentation.
+ *
+ * `eligible` and `excludedForAmbiguity` are both published because their sum is
+ * the admitted count: a reader who sees `excludedForAmbiguity: 0` knows every
+ * figure here equals its published twin, and a reader who sees a non-zero knows
+ * they do not — which is otherwise invisible, since the two domains coincide on
+ * every clean run.
+ */
+export interface HoldFigures {
+  /** A required discriminant, so a hold figure can never be read as a published one. */
+  readonly basis: "hold-eligible";
+  /** Admitted observations carrying no ambiguous refusal, owned or unowned. */
+  eligible: number;
+  /** Admitted observations `admissionRule` 6 keeps out of this arithmetic. */
+  excludedForAmbiguity: number;
+  /** `holdsIf` 1's figure. There is no `rHi` here because no hold condition reads one. */
+  rLo: number;
+  recomputations: HoldRecomputations;
+  /**
+   * `holdsIf` 3's four cells: the RATIO over the hold-eligible domain, the
+   * EVALUABILITY floor over the full admitted set — "≥ 5 admitted observations
+   * each", repeated by `admissionRule` 8 in the same words.
+   */
+  strata: StrataCells;
+  /** `holdsIf` 4. `repair` and `other` are absent because no hold condition reads them. */
+  gate: DeliveryScore;
+}
+
+/**
  * What the verdict command emits. Owed by every registered run, scored or void.
  */
 export interface B12Result {
   runId: string;
-  /** The bracket. Published as an interval, never as a point. */
+  /**
+   * The bracket. Published as an interval, never as a point.
+   *
+   * **OVER THE FULL ADMITTED SET, INCLUDING THE OBSERVATIONS NO HOLD MAY USE.**
+   * `design.metric` opens its definition "Per admitted observation `o`", and
+   * `conflictsResolved` 5 records the chosen resolution as "admitted to the FALL
+   * arithmetic at both bounds and excluded from the HOLD arithmetic" — so these
+   * two ARE the fall side's bounds, and `fallsIf` reads `rLo` by name ("`R_lo` <
+   * 30% ≤ `R_hi⁺` ... is `open`"). The hold's lower bound is a different number
+   * over a different domain and lives on `hold`, because one field cannot mean
+   * both and this repository has already watched two derivations of one figure
+   * drift apart.
+   */
   rLo: number;
   rHi: number;
   /**
@@ -431,11 +515,36 @@ export interface B12Result {
    * `unownedRows` rather than taking the totals on trust.
    */
   coverage: RunTelemetryCoverage;
+  /**
+   * The five `voidConditions` 18 compares against `rLo` and `rHi` — so over the
+   * same full admitted set those two are, or the comparison would be between a
+   * recomputation and a parent from another domain. `holdsIf` 2's three are on
+   * `hold.recomputations`.
+   */
   recomputations: Recomputations;
+  /**
+   * The four cells over the FULL admitted set — `admissionRule` 8's "each of the
+   * four cells reports its own bracket", and the population `voidConditions` 17
+   * and `fallsIf`'s unappealed condition both read.
+   *
+   * `holdsIf` 3's cells are on `hold.strata` and are a different arithmetic over
+   * the same evaluability. On a run with no ambiguous refusal the two are equal,
+   * which is exactly why the divergence needs a control rather than a comment.
+   */
   strata: StrataCells;
+  /** Full admitted. `holdsIf` 4's `R_gate` is on `hold.gate`. */
   gate: DeliveryScore;
   repair: DeliveryScore;
   other: DeliveryScore;
+  /**
+   * The hold arithmetic, over the domain `admissionRule` 6 leaves it.
+   *
+   * REQUIRED, so a run cannot publish a verdict without publishing the figures
+   * the verdict was built from. Equal to its published twins on every run whose
+   * admitted set carries no ambiguous refusal, which is every clean run — the
+   * preflight asserts `ambiguous === 0` — and different exactly when it matters.
+   */
+  hold: HoldFigures;
   /**
    * `sum_d numerator_d === numerator` over ONE common denominator. Ratios do
    * not otherwise sum, and the design warns that an implementer bucketing
