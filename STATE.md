@@ -5,40 +5,42 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**The instrument is fixed and tested; the completion is pre-registered and not
-yet run.** Nothing was measured — this was all harness.
+**Exposure B is complete and reads 1 of 3 — INCONCLUSIVE.** The pre-registered
+branch for exactly one: the manifest may not be sealed on it.
 
-- **Exposure B was INCOMPLETE/VOID, not the "1 of 3" its artifact printed.**
-  `aggregate` never generated a token — both `repair` calls died in the backend.
-  `strata` closed in round 1; `terms` reached one failing test of four with `tsc`
-  green. Adding `report.ts` to `context_files` moved every mechanism.
-- **Five Codex findings, 3 agents each, all 15 confirmed.** F4/F5 fixed here;
-  F1/F2 are scorer-correctness and untouched on purpose — fixing them would edit
-  the spec of the unit about to be attempted.
-- **F5 (`ee7defb`):** `detail.context_files` did not exist — exposure B's central
-  VOID could not fail. Read off the LOADED files, never off the argument.
-- **F4 (`f6926b4`):** state came from the vitest exit code alone, so "ran and
-  failed" and "never ran" were the same `red`. Now a per-unit telemetry window
-  and six states; only `closed` counts. The fresh-exposure guard compares against
-  the stub at `d0253e1`, not `git status` — which cannot see a body this script
-  itself committed. `ea35254`: 39 self-test checks, extracted verbatim.
+- **`aggregate` is RED, and it is the first real observation it has ever had.**
+  `run 2026-08-07-mac-b12-phase3-c40e9f4`, US$ 0.42. Two `repair` calls, 4
+  attempts, every envelope complete, no backend failure, **`voids: []`** — model
+  and all three context files verified from telemetry. Exposure B's central
+  condition was observed rather than declared, for the first time.
+- **It never beat the stub:** 10 → 20 and 10 → 18, round 2 changed nothing. The
+  empty diff IS the measurement — `best` starts at the original bytes.
+- **`report.ts` helped it too, and not enough.** Damage roughly halved against
+  exposure A on the same unit (10 → 28, 10 → 25).
+- **Re-emission is now four for four.** Round 2's completion is the same length
+  as round 1's (3306/3306, 3419/3419) against a prompt 2,300 tokens larger.
+- **The instrument found a limitation in the registered condition.** Both calls
+  stopped on `budget`, round 3 timing out: `aggregate` got TWO productive rounds
+  where the prompt says three. Cause measured, not guessed — its rounds cost
+  106–132 s because it writes ~3,400 completion tokens, twice `terms`' ~1,700,
+  against `repair`'s default 300 s. **Not the window:** its prompt is within 4%
+  of `terms`', and its rounds cost 128–132 s at 32,768 too.
 
 ## Next action
 
-**On the Mac** — load at 65,536, `git pull`, then:
-```
-git checkout d0253e1 -- src/cost/b12/aggregate.ts
-B12_ONLY=aggregate B12_CARRIED_FROM=2026-08-06-mac-b12-phase3-f2932ff \
-  bash scripts/b12-scorer-mac.sh
-```
-Expect: one unit attempted, artifact reads `partial` with no verdict, and
-`contextFilesObserved` carrying `src/cost/report.ts` — exposure B's central
-condition observed rather than declared, for the first time.
+**Pin `budget_seconds` before the next exposure and register it.** It is an
+unregistered free parameter that silently truncates the registered `max_rounds`
+on any unit whose output is large. At ~130 s/round, three rounds of `aggregate`
+needs ≥ 450 s.
+
+Then the open work, in order: **F1 and F2** (scorer correctness — deflated
+`rHiPlus`, and `UNIT-3`'s two unimplementable guards), and **review `strata.ts`**
+— the local model's body, on this branch and not yet read by me, which must not
+reach `main` unreviewed.
 
 ## Do not redo
 
-- **A control never seen failing is not a control.** Every change here was
-  reverted and re-run to watch the right checks fail — including the self-test's
-  first draft, which reported four passes it had not earned because `refuse`
-  writes to stderr and the capture dropped it.
-- **`bash -n` parses; it does not expand.** Exercise every path, do not read it.
+- **A control never seen failing is not a control.** Every harness change this
+  session was reverted and re-run to watch the right checks fail.
+- **The session's narration is not the measurement.** It reported the diff as
+  "discarded along with the rollback"; it was empty because nothing beat the stub.

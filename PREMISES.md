@@ -1489,12 +1489,53 @@ defect, and it pinned four of them in place.
     counts toward neither side. Exposure B registered the middle one and had no
     way to check it: `detail.context_files` did not exist. It does now
     (`ee7defb`), and the check is `f6926b4`.
+- **EXPOSURE B COMPLETION RESULT: `aggregate` is RED. Exposure B therefore reads
+  1 of 3 — INCONCLUSIVE**, which is the pre-registered branch for exactly one:
+  the manifest may not be sealed on it. `run 2026-08-07-mac-b12-phase3-c40e9f4`,
+  US$ 0.42 of 40, one unit attempted, artifact reads `partial` and renders no
+  verdict. This reading is written by hand from both artifacts, as registered.
+  - **It is a REAL observation, and the first `aggregate` has ever had.** Two
+    `repair` calls, **4 generation attempts**, every envelope `complete`, no
+    backend failure. `voids: []` — `detail.model` matched on every row, and
+    `contextFilesObserved` carried all three declared paths. **Exposure B's
+    central condition was observed rather than declared, for the first time.**
+  - **It never beat the stub.** Round 1 went 10 → **20** and 10 → **18**; round 2
+    changed nothing in either call. `files: []` and the diff is empty **because
+    `best` starts at the ORIGINAL bytes and nothing displaced it** — the same
+    correction attempt 1 needed. The session's own narration got this wrong
+    ("discarded along with the rollback"); the empty diff IS the measurement.
+  - **THE RE-EMISSION SIGNATURE, now four for four.** Round 2's completion is
+    the SAME LENGTH as round 1's in both calls — 3306/3306 and 3419/3419 — with
+    the same failure count, against a prompt **2,300 tokens larger** carrying the
+    failures. Exposure A showed 1899→1907→1907, 1895→1898→1898, 3385→3385. After
+    round 1 this model re-emits; it does not correct.
+  - **`report.ts` HELPED `aggregate` TOO, and it was not enough.** Damage roughly
+    halved against exposure A on the identical unit: 10 → 28 and 10 → 25 became
+    10 → 20 and 10 → 18. Same direction as `strata` (closed) and `terms` (4 → 1).
+  - **A LIMITATION IN THE REGISTERED CONDITION, found by the new per-round
+    telemetry.** The prompt says `max_rounds: 3`; **both calls stopped on
+    `budget` with round 3 timing out**, so `aggregate` got TWO productive rounds.
+    Cause, measured rather than guessed: its rounds cost **106–132 s** because it
+    writes ~3,400 completion tokens, **twice `terms`' ~1,700** — and `repair`'s
+    default `budget_seconds` is 300. **NOT the window.** `aggregate`'s prompt
+    (20–23 k) is within 4% of `terms`' (19–20 k), and its rounds cost 128–132 s
+    at 32,768 as well. The file's size is the cause, at any window.
+  - **WHETHER THE THIRD ROUND WOULD HAVE MATTERED IS A HYPOTHESIS, LABELLED.**
+    Two independent pieces of evidence say no — round 2 re-emitted round 1 here,
+    and exposure A's call 2 DID reach round 3 and produced 23 → 23 — but neither
+    is the measurement, and the condition as registered was not delivered.
+    **`budget_seconds` is an unregistered free parameter** that silently truncates
+    the registered `max_rounds` on any unit whose output is large enough. It must
+    be fixed and recorded before the next exposure, not defaulted.
+  - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
+    hedge that this would be its first real observation and not necessarily a bad
+    one. Both halves resolved: real, and bad.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
-  (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B —
-  **INCOMPLETE/VOID** (`run 2026-08-06-mac-b12-phase3-f2932ff`), with `strata`
-  closed and `terms` at one failing test. Attempt 1 void. No scored B12 run.
-- **Status:** open · exposure A INCONCLUSIVE · exposure B **VOID, incomplete** —
-  the completion is pre-registered and not yet run
+  (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
+  INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
+  `c40e9f4` (`aggregate` red). Attempt 1 void. No exposure has reached the bar.
+- **Status:** open · **both exposures INCONCLUSIVE at 1 of 3** · `R_repair`
+  neither reachable nor ruled out; `budget_seconds` must be pinned first
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 
