@@ -1,20 +1,52 @@
 # UNIT 5 — the assembler: a committed run archive in, two artifacts out
 
-`src/cost/b12/assemble.ts`. **The only unit that touches the filesystem.** UNITs
-1–4 are pure functions over values; this one reads a run's committed evidence,
-builds those values, calls the four in order, and writes what the design says a
-run owes.
+`src/cost/b12/archive.ts` (impure) + `src/cost/b12/assemble.ts` (pure) + a thin
+emitter. UNITs 1–4 are pure functions over values; this is where the filesystem
+lives, and it is split in three so that the impure surface stays as small as the
+four units below it were designed to make it.
+
+> **THIS SPEC IS NOT YET IMPLEMENTABLE, AND THE REASON IS NOT IN THIS FILE.**
+> `design.artifacts` 6 defines the per-observation archive this unit reads —
+> reduced lineage records, the telemetry window VERBATIM, the pre/post
+> `requestId` diff, the observation's `invocation_id` set, the acceptance exit
+> code, and sha256 of every source file. `scripts/b12-run.mjs` writes
+> `observation.json`, `snapshot-before.json`, `snapshot-after.json` and
+> `cli-stdout.json`. **An assembler that promises to read a committed archive has
+> no compliant archive to read** (`FINDINGS.md` F24). The harness is the blocker,
+> not this unit.
 
 **NOT PART OF THE PHASE-3 EXPOSURE.** Phase 3 is closed at 1 of 3 and `repair`
 gets no further draw (`PREMISES.md § B12`). UNITs 1–3 were the measured task;
-this is orchestrator work and is authored directly. Nothing here is evidence
-about a local model.
+this is orchestrator work, authored directly, and is not evidence about a local
+model.
 
-**WHY IT DOES NOT EXIST YET, STATED SO THE ABSENCE IS NOT MISTAKEN FOR AN
-OVERSIGHT.** Every unit below it was specified against a frozen design that says
-what to compute. This one is specified against a frozen design that says what to
-*emit* and a run script that emits something slightly different, and the gap
-between the two is the whole of the work.
+**REVISED 2026-08-07 after a Codex gate returned REFUTE on the first draft.** The
+first version overstated one danger, minted three refusals the design does not
+authorise, claimed the counterfactual artifact was already covered by
+`ObservationTerms`, and put every VOID clause behind one vague word. Each is
+corrected below and named where it was wrong, because a spec that quietly
+improves is a spec nobody can audit.
+
+---
+
+## The three parts, and why the boundary is there
+
+| module | purity | responsibility |
+|---|---|---|
+| `archive.ts` | **impure** | paths → a validated `RunArchive` value. Canonical telemetry identification happens here, exactly once. |
+| `assemble.ts` | **pure** | `RunArchive` + registration audit → `{ counterfactual, result }`. Joins strata, decides dispositions, enforces the committed order, runs the archive-level VOID checks, then calls the four units. |
+| the emitter | thin | reads through `archive.ts`, calls `assemble`, and **writes both artifacts even when the result is a VOID**. |
+
+**The first draft made this one `assemble.ts` and that was the wrong boundary.**
+Every rule worth testing — order, disposition, the VOID predicates, artifact
+completeness — is a function of values, and putting it behind a filesystem read
+means every test of it builds a directory tree. The split lets the frozen rules be
+tested as values and the hostile on-disk cases be tested separately.
+
+It also corrects a claim: the first draft said the committed order "is knowable
+only in this unit". It is knowable wherever the ordered manifest is a value —
+which, after the split, is `assemble.ts`, and it does not need the filesystem to
+know it.
 
 ---
 
@@ -23,10 +55,10 @@ between the two is the whole of the work.
 | source | what it fixes | notes |
 |---|---|---|
 | `evidence/<run_id>.b12.tasks.json` | the ORDERED 30 task ids, and **the only declaration of `verificationStratum`** | `design.artifacts` 1 |
-| `evidence/<run_id>/obs-<taskId>-<arm>/observation.json` | every other `B12Observation` field | written by `scripts/b12-run.mjs` |
-| the run's telemetry log | every `TelemetryRecord`, **read once** | identity source, see step 2 |
-| every session transcript of the run | `ambiguousIds`, and the lineage each `computeTerms` needs | `invocationOwners` |
-| `.local-coder/rates.json` + the manifest | prices, and the MEASURED `clientTruncationCap` | VOID 8 |
+| `evidence/<run_id>/obs-<taskId>-<arm>/` | the per-observation archive | **incomplete today — F24** |
+| the run's telemetry log | every `TelemetryRecord`, **read once** | identity source, step 2 |
+| every session transcript of the run | `ambiguousIds`, and the lineage `computeTerms` needs | `invocationOwners` |
+| `.local-coder/rates.json` + the manifest | prices, and the MEASURED `clientTruncationCap` | `voidConditions` 8 |
 | `MEASUREMENTS.jsonl` + each prior `<run_id>.b12.result.json` | `priorRuns` | `voidConditions` 1 |
 
 ---
@@ -38,18 +70,27 @@ between the two is the whole of the work.
 **`observation.json` CARRIES EVERY `B12Observation` FIELD EXCEPT ONE.**
 `scripts/b12-run.mjs` writes `valid`, `invalidReasons`, `runId`, `taskId`, `arm`,
 `sessionId`, `censored`, `baseCommit`, `treeHashAtStart`, `endCommit`,
-`originatedRequestIds` and `accepted`. It does **not** write
-`verificationStratum`, and `admissionRule` 8 says the stratum is "declared per
-task before the run" — so it is joined here, from the manifest, by `taskId`.
+`originatedRequestIds` and `accepted` — every required field and several extra
+provenance ones. It does **not** write `verificationStratum`, and
+`admissionRule` 8 says the stratum is "declared per task before the run", so it
+is joined here from the manifest by `taskId`.
 
-**REFUSE WHEN THE JOIN FAILS; NEVER DEFAULT.** A missing stratum may not become
-`"types-only"` because that is the more common value, and it may not be inferred
-from the observation's own result — that would be reading the stratum off the
-data it is meant to stratify. `partitionByStrata`'s `unknownStratum` bucket
-(`FINDINGS.md` F3) is defence in depth against a corrupted declaration reaching
-UNIT 1; it is not a licence for this unit to guess and let UNIT 1 catch it.
+**NEVER DEFAULT.** A missing stratum may not become `"types-only"` because that
+is the commoner value, and it may not be inferred from the observation's own
+result — that reads the stratum off the data it exists to stratify.
+`partitionByStrata`'s `unknownStratum` bucket (`FINDINGS.md` F3) is defence in
+depth against a corrupted declaration reaching UNIT 1; it is not a licence to
+guess here.
 
-The manifest also fixes the ORDER, which nothing downstream can see — step 6.
+**AND DO NOT THROW EITHER — the frozen text has no disposition for this and that
+is `FINDINGS.md` F25.** `admissionRule` 1 makes every registered run owe a result
+artifact naming `scored` or a VOID clause BY NAME, and a throw produces no
+artifact at all. But the closed disposition list has no member that lawfully
+describes a malformed manifest: `void(withheld)` is fixed by `admissionRule` 5 to
+`provenanceUnavailable || ambiguous > 0`, `void(execution_error)` is narrowly
+enumerated in clause 12, and `void(task_failed)` is the acceptance predicate. The
+first draft of this spec resolved that gap by inventing a throw. It is recorded
+open instead.
 
 ### 2. Identify the telemetry log ONCE, over the WHOLE log, before any scoping
 
@@ -58,176 +99,218 @@ const records = await readTelemetry(root);          // ../telemetry.js
 const universe = identify(TELEMETRY_REL_PATH, records);
 ```
 
-**THIS IS THE LOAD-BEARING RULE OF THE UNIT AND IT IS EASY TO GET BACKWARDS.**
 `identify` keys a row `JSON.stringify([source, ordinal])` where `ordinal` is its
-position in the array it was handed. `scopeTelemetry(transcript, telemetry)`
-returns a `TelemetryRecord[]` with **no identity at all** — so the obvious
-sequence, scope-then-identify, restarts ordinals at 0 inside every slice and
-makes two observations mint `["telemetry.jsonl", 0]` for two different physical
-rows.
+position **in the array it was handed**. `scopeTelemetry(transcript, telemetry)`
+returns a bare `TelemetryRecord[]` carrying no identity, so the obvious sequence —
+scope, then identify — restarts ordinals at 0 inside every slice and mints one key
+for two different physical rows.
 
-That is `FINDINGS.md` F12 reintroduced at the read layer, and it is worse there:
-`runCoverage` would report `exactlyOnce: true` over a set of colliding keys while
-attributing magnitudes to the wrong observations. **Scope by filtering the
-IDENTIFIED array** — apply `scopeTelemetry`'s predicate to `universe`, keeping
-each row's key — and hand `universe` itself to `runCoverage` as its first
-argument.
+**WHAT THAT COSTS, STATED PRECISELY, BECAUSE THE FIRST DRAFT OVERSTATED IT.** It
+claimed `runCoverage` "would report `exactlyOnce: true` over colliding keys". That
+is false in the case it most obviously applies to, and traced through
+`coverage.ts` the three cases differ:
+
+- **Two OWNED rows collide** — `claims[key]` collects two distinct labels, the key
+  goes to `contested`, `reasons` gains a sentence and `exactlyOnce` is **false**.
+  Caught, loudly.
+- **One owned, one unowned collide** — the owned claim puts the key in `claims`,
+  and the unowned-rows loop begins `if (claims.has(key)) continue`. The unowned
+  occurrence is **silently discarded**. Not caught.
+- **Two unowned rows collide with equal disposition and magnitude** — `resolve`
+  reads them as one row seen twice and merges them. **Not caught**, and the second
+  row's magnitude vanishes from `R_hi⁺`.
+
+So the rule stands and the reason is sharper: the danger is not that the ledger
+lies about `exactlyOnce`, it is that **rows are dropped or merged where the ledger
+cannot see them at all.**
+
+**Scope by filtering the IDENTIFIED array** — apply `scopeTelemetry`'s predicate to
+`universe`, keeping each row's key — and hand `universe` itself to `runCoverage`.
+If the universe is ALSO built from separately identified slices, even the
+`unsliced` reason stops firing, and the last protection is gone.
 
 **ONE LOG IS IDENTITY; THE PER-OBSERVATION COPIES ARE ARCHIVE.**
-`design.artifacts` 6 has each `obs-<NN>/` carry "the telemetry rows in the task's
-window", so the same physical row exists in the run log and in one or more
-observation directories. Identity is a property of the READ (`coverage.ts`), so
-identifying the copies would produce a second, disagreeing key space. Read the
-run-level log; treat the copies as evidence for a human, never as input.
+`design.artifacts` 6 has each `obs-<NN>/` carry the window's telemetry rows
+verbatim. Identity is a property of the READ, so identifying the copies produces a
+second, disagreeing key space. Read the run-level log; the copies are evidence for
+a human and for re-emission, never input to identity.
 
 ### 3. `ambiguousIds` once, run-level
 
-`invocationOwners(transcripts)` over every session transcript of the run — which
-is what `src/cost/cli.ts` already does before its own loop, and the reason it is
-handed to `computeTerms` rather than derived there. Computing it per
-observation would give each window a different set, and `admissionRule` 5 pins
-`ambiguous` to a counter over the whole slice: "`savedFraction` is withheld iff
-`provenanceUnavailable || ambiguous > 0`".
+`invocationOwners(transcripts)` over every session transcript of the run — what
+`src/cost/cli.ts` already does before its own loop, and the reason it is handed to
+`computeTerms` rather than derived there. Per-observation computation gives each
+window a different set, and `admissionRule` 5 pins `ambiguous` to a counter over
+the whole slice.
 
-`FINDINGS.md` F19 turns on this set — it is what decides which observations leave
-the hold arithmetic — so a narrower one silently widens the hold domain.
+`FINDINGS.md` F19 turns on this set — it decides which observations leave the hold
+arithmetic — so a narrower one silently widens the hold domain.
 
 ### 4. Rates, with the measured cap overlaid
 
 Load `.local-coder/rates.json`, then overlay the manifest's `clientTruncationCap`
-for the pinned Claude Code version. **`rates.json` is frozen byte-identical to
-commit `3541625` and cannot hold it**, and `voidConditions` 8 requires it measured
-per version — "a run that does not record a measured cap for its own version is
-VOID". The overlay happens here because this is the only unit that sees both
-files; `computeTerms` documents that its caller does it.
+for the pinned version. `rates.json` is frozen byte-identical to commit `3541625`
+and cannot hold it, while `Rates` requires the field.
+
+**THAT SATISFIES ONLY HALF OF `voidConditions` 8**, which reads: "VOID if no
+`clientTruncationCap` was measured for the version that ran, **or if the artifact
+does not carry both the capped and uncapped brackets**." A *bracket* in this
+design is `[R_lo, R_hi]` — "THE SCORED QUANTITY IS A BRACKET, NOT A POINT".
+`B12Result.cappedVsUncapped` is two summed row-BYTE magnitudes. **The current
+result type cannot satisfy clause 8** and the fix is a second pass of the whole
+arithmetic, not a field on this unit. `FINDINGS.md` F23.
 
 ### 5. One `computeTerms` per observation
 
-`TermsInput` needs `observation`, the FULL lineage `transcript` (continuation and
-fork children included — never one file), the identified slice from step 2,
-`rates`, `installedChars`, `ambiguousIds`, and `disposition`.
+`TermsInput` needs `observation`, the FULL lineage `transcript`, the identified
+slice from step 2, `rates`, `installedChars`, `ambiguousIds`, and `disposition`.
 
-`disposition` is DECIDED HERE, from the closed list in `admissionRule` 1
-(`scored`, `void(execution_error)`, `void(version_drift)`, `void(instrument_write)`,
-`void(rate_key_mixed)`, `void(withheld)`, `void(sibling_inheritance)`,
-`void(task_failed)`, `void(pacing)`, `not_started`). `computeTerms` takes it as an
-argument and decides nothing — UNIT 2 says so, and that is what keeps the
-admission rule in one place instead of scattered through the arithmetic.
+`disposition` is DECIDED IN `assemble.ts`, from the closed list in
+`admissionRule` 1. `computeTerms` takes it and decides nothing — UNIT 2 says so,
+and that is what keeps the admission rule in one place.
 
 `admissionRule` 13: **`R`'s admission requires the TREATED arm's acceptance
-only.** The control arm never enters the primary verdict, "otherwise `R`'s
-admitted set is unknowable at the moment it must be published".
+only.** The control arm never enters the primary verdict.
 
 ### 6. Select the first 20 that admit, IN THE COMMITTED ORDER
 
-`admissionRule` 2: "The manifest fixes an ORDERED list of 30 tasks by id; **the
-first 20 that admit, in that committed order, are scored.** The order is fixed
-before the first arm runs, so this is headroom and not selection."
+`admissionRule` 2: "the first 20 that admit, in that committed order, are scored."
+`aggregate` receives only the selected arrays and says in its own comment that it
+cannot see the manifest order, so its `length !== 20` refusal is a **backstop**.
+Directory listing order, `mtime` and task-id sort are all wrong and all look right
+on a clean run.
 
-**THIS UNIT IS THE ONLY PLACE THE ORDER IS KNOWABLE.** `aggregate` refuses on any
-count other than 20 and says in its own comment that it cannot see the committed
-order — so a caller handing it a set of 20 has already made the selection, and
-the check there is a backstop, not the rule. Directory listing order, filesystem
-`mtime` and task-id sort are all WRONG and all look right on a clean run.
+**A MANIFEST TASK WITH NO OBSERVATION DIRECTORY IS LAWFUL, and the first draft
+made it an error.** `not_started` is a member of the closed disposition list; the
+manifest orders 30 tasks as HEADROOM and only the first 20 that admit are scored.
+Requiring a bijection contradicts both.
 
-Every task not scored is reported with its disposition (`admissionRule` 2), and
-the ones with a disposition other than `not_started` go to `aggregate` as
-`dropped` — `rHiPlus` and `R_all` are both defined over them.
+Every task not scored is reported with its disposition. Those with a disposition
+other than `not_started` go to `aggregate` as `dropped` — `rHiPlus` and `R_all`
+are both defined over them.
 
-### 7. The prior-run register
+### 7. The archive-level VOID clauses, each with its own predicate
 
-`priorRuns` from `MEASUREMENTS.jsonl` and each prior `<run_id>.b12.result.json`.
-`voidConditions` 1: B12 may not be scored while any registered run has no
-committed result, **and "omission is itself a VOID"**.
+`aggregate`'s `decide()` implements clauses **1, 3, 10, 16, 17 and 18** — the ones
+that are facts about the arithmetic. The rest are facts about the ARCHIVE and
+belong here. The first draft hid them all behind the word `disposition`, which
+cannot encode a run-level VOID at all.
 
-**NEITHER THIS UNIT NOR `aggregate` CAN CHECK THAT THE REGISTER IS COMPLETE**, and
-that limit is stated rather than papered over. `aggregate` can see that a register
-was supplied and that every entry resolved; this unit can see that every
-`run_id` in `MEASUREMENTS.jsonl` has an artifact. A run registered in neither is
-invisible to both. Say so on the artifact.
+| clause | what it is a fact about |
+|---|---|
+| 2 | partial set, every disposition reported, committed order followed |
+| 7 | version, binary sha256, `DISABLE_AUTOUPDATER` |
+| 8 | measured cap **and both brackets** (F23) |
+| 9 | instrument contamination; the scorer's own session absent from the manifest |
+| 11 | base commit, clean tree at start, pair tree hashes |
+| 12 | instruction / settings / MCP / policy hashes |
+| 13 | memory restoration and its pre/post hashes |
+| 14 | snapshot scope, and cumulative origination disjointness |
+| 19 | the scoring command's identity, and `ambiguousIds` set equality |
+| 20 | pacing |
+
+Clauses **4, 5, 6** (frozen-item drift, instrument-source drift, the conformance
+suite at the run commit) are an audit over git history rather than over the
+archive, and `assemble` should take their result as an input rather than compute
+it. Clauses **21, 22** are the A/B's. Clause **23** is the run registry's.
 
 ### 8. Emit two artifacts, not one
 
-- **`evidence/<run_id>.b12.counterfactual.json`** (`design.artifacts` 7) — PER
-  OBSERVATION: `A_o`, `S_o` at both horizons, `O_o`, the per-row `(t, T, ttl,
-  multiplier, bytes_raw, bytes_returned, capped/uncapped/signed)` vector, the
-  four-class refusal ledger with magnitudes, subagent share, rate key, and the
-  disposition. Everything here is already on `ObservationTerms`.
-- **`evidence/<run_id>.b12.result.json`** (`design.artifacts` 8) — `B12Result`
-  verbatim. Owed "by every registered run whether it scores or voids", which
-  means a run that voids at step 6 still writes one.
+- **`evidence/<run_id>.b12.counterfactual.json`** (`design.artifacts` 7) — per
+  observation. **NOT everything here is on `ObservationTerms`, which the first
+  draft claimed.** The frozen inventory also demands requests-per-segment, the
+  Claude Code version, base and end SHAs, the tree hash, and the instruction-set
+  and memory hashes. Some come from `observation.json`, some from the archive of
+  artifact 6, and the hashes come from nowhere at all today (F24).
+- **`evidence/<run_id>.b12.result.json`** (`design.artifacts` 8) — `B12Result`,
+  "owed by every registered run whether it scores or voids". A run that voids at
+  step 6 still writes one, which is why nothing above may throw.
 
-**`FINDINGS.md` F20's DUAL REPORTING IS OWED TO THE FIRST OF THESE, NOT THE
-SECOND.** `voidConditions` 16 compares "the EXCLUDED observations" against "the
-ADMITTED set" and `admissionRule` 6 put one observation on both sides; the frozen
-text picks neither reading. Publishing both is permitted as "reported, deciding
-nothing" but the per-observation inputs belong to artifact 7, whose inventory is
-the wide one — `result.json` carries only `selection.basis`, the label saying
-which reading the verdict used.
+**`FINDINGS.md` F20's dual reporting is owed to the FIRST of these**: the
+per-observation inputs a reader needs to recompute `voidConditions` 16 under the
+other reading of "excluded" belong to artifact 7's wide inventory.
+`result.json` carries only `selection.basis`, the label naming the reading used.
 
 ---
 
-## What it must refuse, loudly
+## What it refuses, and under which authority
 
-A silent assumption here is worse than anywhere else in the scorer, because every
-unit below it is pure and will happily compute a confident number over a wrong
-set. In each case throw with the run identity and the offending id in the message
-— `computeTerms`'s pairing assertion is the model.
+The first draft listed five refusals as though the design demanded all five. It
+demands two of them, in a form that is not a throw.
 
-1. **A `taskId` in the manifest with no observation directory**, or the reverse.
-2. **An observation whose `taskId` does not join to a manifest stratum** — step 1.
-3. **Two identified rows sharing a key.** This cannot happen if step 2 is done
-   right and is the assertion that proves it was: it is a control that CAN fire,
-   which is why it is written rather than assumed.
-4. **A telemetry log that is absent or empty** while any observation's transcript
-   carries a local tool result — that is `provenanceUnavailable`'s file-level
-   cousin and it would score every row as `unverifiable`.
-5. **A manifest whose recorded git blob hash does not match the file**
-   (`design.artifacts` 1: "any commit touching it dated after the earliest session
-   start is a VOID").
+| condition | authority | handling |
+|---|---|---|
+| stratum does not join | none — **F25** | detect and report; the design supplies no disposition |
+| manifest blob hash / a commit touching it after the earliest session start | `design.artifacts` 1 | **VOID**, named on the result artifact |
+| two identified rows share a key | none | an **engineering invariant** of step 2, asserted in the tests; not a scoring rule |
+| telemetry log absent while a transcript carries a local tool result | none | an audit failure reported as a VOID result, not an exception |
+| a manifest task with no observation directory | contradicted | lawful — `not_started` |
 
-**It does NOT refuse on a stratum it does not recognise.** That is UNIT 1's
-`unknownStratum` and `FINDINGS.md` F3 — the value joined and was simply not one of
-the two, which is a corrupted declaration rather than a missing one, and the
-design owes an artifact "whether it scores or voids" so a throw produces none.
+**Nothing in this unit throws to avoid producing an artifact.** `admissionRule` 1
+makes the result artifact owed from registration onward; an exception is the one
+outcome the design does not allow. A parse error with no possible result is the
+only exception, and it is a bug rather than a run outcome.
 
 ---
 
-## What this unit inherits, open
+## What it inherits, open
 
-- **F17** — the frozen preflight screens for none of `R_hi⁺`'s refusal
-  conditions, so a run can pass preflight and still return `open` here.
-- **F20** — the selection guard's domain is undetermined; step 8 says where the
-  dual reporting goes.
-- **F21** — a hold cell can be evaluable on ten and priced on four; both counts
-  are published, the gap is not closed.
+**F17** the preflight screens for none of `R_hi⁺`'s refusals · **F20** the
+selection guard's domain, and where its dual reporting goes · **F21** a hold cell
+evaluable on ten and priced on four · **F23** clause 8's two brackets ·
+**F24** the archive the harness does not write · **F25** no disposition for a
+malformed declaration.
 
-## What this unit creates, and it is new
+## What it creates
 
-**THE ANALYSIS SESSION IS NOT AN OBSERVATION, BUT IT IS ARCHIVED.**
-`admissionRule` 7 voids the whole run if an OBSERVATION's session reads
-`.local-coder/telemetry.jsonl`. This unit reads it by construction. It is not an
-observation and no rule touches it — but `admissionRule` 2 requires the analysis
-session's transcript to be committed, precisely so that `R`, `N` and `A` computed
-on a partial set is machine-checkable after the fact. **Whoever runs the
-assembler must run it in a committed, archived session**, and that obligation
-belongs in `PREMISES.md § B12` before the first run rather than in this file.
+**THE ANALYSIS SESSION IS NOT AN OBSERVATION, BUT IT IS ARCHIVED AND IT IS
+FORBIDDEN FROM THE MANIFEST.** `admissionRule` 7 voids the run if an
+OBSERVATION's session reads `.local-coder/telemetry.jsonl`; this unit reads it by
+construction. `admissionRule` 2 wants the analysis session's transcript committed
+so that computing `R` on a partial set stays machine-checkable, and
+`voidConditions` 9 forbids that session from appearing in the manifest. Both
+obligations belong in `PREMISES.md § B12` before the first run.
 
 ---
 
 ## Done when
 
-`npx vitest run tests/b12-assemble.test.ts` exits 0, over a synthetic run archive
-built on disk in a temp root — a manifest, twenty-plus observation directories, a
-telemetry log and two session transcripts.
+`npx vitest run tests/b12-archive.test.ts` and `tests/b12-assemble.test.ts` exit 0.
 
-**The oracle's central assertion is a ROUND TRIP, not a golden file.** Build the
-archive, assemble it, and separately build the same `B12Result` by calling
-`identify` / `computeTerms` / `runCoverage` / `aggregate` by hand over values the
-test constructs; the two must be deep-equal. A golden `result.json` would pass on
-any assembler that is wrong in the same way twice.
+**Two oracles, because there are two modules.**
 
-**And one assertion that is not a round trip**: two observations whose windows
-overlap must produce slices whose keys are DISJOINT-BY-ROW and IDENTICAL-BY-KEY
-for the row they share — the scope-then-identify defect passes every other test
-in the file.
+- **`archive.ts` — hostile on-disk fixtures.** Missing files, extra directories,
+  reordered directory listings, hash drift, duplicate ids, incomplete snapshots,
+  malformed lineage.
+- **`assemble.ts` — constructed `RunArchive` values.** Every disposition path, the
+  order selection, each archive-level VOID clause of step 7, and artifact-schema
+  completeness against the frozen inventories.
+
+**The round trip is a PARTIAL oracle and the first draft called it the central
+one.** Building the same `B12Result` by calling the four units by hand catches a
+filesystem adapter that differs from constructed values — wrong decoding, a failed
+join, wrong slice selection, lost keys, wrong order, a duplicated or omitted unit
+call. It provably MISSES any defect shared by both paths, any frozen obligation
+absent from both, missing counterfactual fields (the equality names only
+`B12Result`), every covariate and VOID check not represented in `B12Result`, and a
+non-compliant archive producer.
+
+**The assertion that does not go through the units at all**, replacing the first
+draft's narrower overlapping-window one:
+
+> Every physical telemetry line, identified independently by run-log source and
+> ordinal, appears under that same key in every slice that sees it; and
+> `runCoverage` accounts for every universe key exactly once or names it in
+> `contested` or `unsliced`.
+
+That subsumes the overlap case and catches the mixed-ownership and equal-magnitude
+aliases that `runCoverage` cannot see.
+
+**And one metamorphic pair on the order**: changing directory enumeration must not
+change the selection; changing only the manifest order must change which first
+twenty are selected.
+
+**`design.artifacts` 11 owes a replay test this does not satisfy** — "recomputes
+the bracket, both jackknives, `R_all`, `R_hi⁺`, every stratum and EVERY admission
+condition **from the committed archive alone**". A synthetic round trip over
+same-process values is not that, and it cannot be until F24 lands.

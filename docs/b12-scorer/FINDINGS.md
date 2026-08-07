@@ -15,6 +15,9 @@ sharpened in the process rather than copied. **F19–F22 came from three more
 rounds the same day**, and those went the other way: three of my own readings
 were refuted, including a safety claim this file had already published (see F19)
 and a resolution I offered by quotation with the qualifier dropped (F20).
+**F23–F25 came from the gate on `UNIT-5.md`**, which returned REFUTE on the whole
+spec — and F24 is the first finding here that blocks the project rather than the
+scorer: a run executed today produces evidence that cannot be re-scored.
 
 **None of these is a reachability blocker.** The four units' oracles pass green on
 all of them — `coverage.ts` joined the three when the run-level ledger landed —
@@ -24,6 +27,96 @@ defect is not evidence the defect is absent.
 ---
 
 ## OPEN
+
+### F24 — the archive the assembler must read is not the archive the harness writes
+
+**THE BLOCKER.** Found by the Codex gate on `UNIT-5.md`, 2026-08-07, and it is the
+reason that spec is not implementable.
+
+`design.artifacts` 6 defines `evidence/<run_id>/obs-<NN>/`, "committed at each
+task's END, before the next task starts": the admitted records reduced to the
+fields the meter reads for **every file in the lineage**; the telemetry rows in
+the task's window **VERBATIM**, credited and refused alike; the pre/post
+`requestId` diff; the observation's `invocation_id` set; the acceptance command's
+exit code; and **sha256 of every source file**.
+
+`scripts/b12-run.mjs` writes four files: `observation.json`,
+`snapshot-before.json`, `snapshot-after.json`, `cli-stdout.json`.
+
+**The archive is what makes the run correctable rather than only discardable.**
+The frozen text says so in the same clause: `.local-coder/telemetry.jsonl` is
+gitignored as per-machine and session transcripts live outside the repository and
+are rewritten by the vendor, "so without this archive the VOID conditions' own
+re-emission escape hatch cannot be exercised and the run cannot be corrected, only
+discarded — which is character for character why B1 cannot be re-adjudicated."
+
+So this is not a reporting gap. **A run executed today produces evidence that
+cannot be re-scored**, which is the failure mode the whole design was written
+against. The fix belongs to the harness, not to any scorer unit, and it has to
+land before the first scored observation or the run it produces is the one that
+cannot be corrected.
+
+Two dependent gaps fall out of the same hole:
+
+- `design.artifacts` 7 (`counterfactual.json`) demands the version, base and end
+  SHAs, the tree hash, and the **instruction-set and memory hashes** per
+  observation. Nothing records the last two anywhere.
+- `design.artifacts` 11 owes a replay test that recomputes every figure and
+  "EVERY admission condition **from the committed archive alone**". That test
+  cannot be written against an archive that does not carry the inputs.
+
+### F25 — the frozen text demands a declaration and supplies no disposition for its absence
+
+Found by the same gate, against a resolution the first draft of `UNIT-5.md`
+invented.
+
+`admissionRule` 8 requires `verificationStratum` "declared per task before the
+run", and `scripts/b12-run.mjs` does not write it — so the assembler joins it from
+the manifest by `taskId`. The question is what happens when the join FAILS.
+
+**A throw is not available.** `admissionRule` 1 makes every registered run owe a
+committed result artifact carrying `scored` or the VOID clause BY NAME, from
+registration onward. An exception produces no artifact, which is the one outcome
+the design does not allow.
+
+**And no member of the closed disposition list describes it.** `void(withheld)`
+is fixed by `admissionRule` 5 to `provenanceUnavailable || ambiguous > 0`;
+`void(execution_error)` is narrowly enumerated by clause 12 as a harness exit, an
+unhandled exception, or a transcript ending with no assistant turn;
+`void(task_failed)` is the acceptance predicate. A malformed manifest is none of
+them.
+
+So the frozen text contains an ENCODING GAP: it mandates the declaration, mandates
+a named disposition, and provides no name for the case where the declaration is
+missing. **The first draft resolved it by inventing a throw, which is both a
+minted rule and the one handling `admissionRule` 1 forbids.** Recorded unresolved.
+It is arguably the strongest candidate for a re-registered premise, since unlike
+F20 and F21 it is not a choice between two readings — it is a hole.
+
+### F23 — `voidConditions` 8 wants two BRACKETS and the artifact carries two byte sums
+
+Found by the same gate. Unlike F24 and F25 this one is a defect in UNIT 3, not in
+the assembler, and it was invisible until a spec had to promise clause 8 could be
+satisfied.
+
+Clause 8: "VOID if no `clientTruncationCap` was measured for the version that ran,
+**or if the artifact does not carry both the capped and uncapped brackets**."
+
+A *bracket* is fixed by `design.metric` in its opening line — "**THE SCORED
+QUANTITY IS A BRACKET, NOT A POINT**" — and is `[R_lo, R_hi]`.
+`B12Result.cappedVsUncapped` is `{ capped: number; uncapped: number }`, two sums
+of row BYTE magnitudes over the credited rows. Two numbers, not two intervals.
+
+**The two frozen texts describe the same artifact differently**, and this is the
+usual shape: `design.metric` lists "the uncapped-vs-capped pair" among the things
+"reported, deciding nothing", while `voidConditions` 8 makes brackets a condition
+of not voiding. The stricter reading is also the one that refuses, and this
+design's habit is to take the reading that is "demanding on the experiment, never
+permissive on the result" (`thresholdArgument`).
+
+Satisfying it is a second full pass of the arithmetic with the cap applied and
+without — `poolRatio` over rows priced both ways at both horizons — which changes
+`B12Result` and belongs in its own pass with its own controls. Not fixed here.
 
 ### F20 — which sense of "excluded" the selection guard takes is UNDETERMINED
 
