@@ -1530,11 +1530,11 @@ defect, and it pinned four of them in place.
   - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
     hedge that this would be its first real observation and not necessarily a bad
     one. Both halves resolved: real, and bad.
-- **TWO CONDITION CHANGES REGISTERED AFTER EXPOSURE B AND BEFORE ANY LATER RUN.**
-  Both are instrument repairs — they fix a spec that was wrong and a limit that
-  was never registered — but both change what the model is handed, so **no run
-  under them is comparable with exposure A or B** and any later exposure is a new
-  one with its own registration.
+- **THREE CONDITION CHANGES REGISTERED AFTER EXPOSURE B AND BEFORE ANY LATER
+  RUN.** All are instrument repairs — they fix specs that were wrong and a limit
+  that was never registered — but all change what the model is handed, so **no
+  run under them is comparable with exposure A or B** and any later exposure is a
+  new one with its own registration.
   - **The two limits are now set as a pair and VERIFIED.** `budget_seconds: 600`
     and `LOCAL_CODER_TIMEOUT_MS: 180000`, where before the budget was never
     passed and defaulted to 300 s. Raising the budget alone would have traded a
@@ -1557,12 +1557,47 @@ defect, and it pinned four of them in place.
     produced both failure modes from this in one run: a `TS2459` in one call and
     an inline reimplementation in the other. **This is a spec that was wrong, not
     a spec that was hard**, which is why it is repaired rather than left frozen.
+  - **THE SCORER-CORRECTNESS PASS (F1, F2a, F2b, F3, F8), and it changes the
+    TASK, not only the conditions.** Four defects that every oracle passed green
+    on, all fixed together with their specs and their oracles; the mechanisms are
+    in `docs/b12-scorer/FINDINGS.md`. Two are worth naming here because they
+    decide how a later exposure may be read.
+    - **UNIT-3 is materially harder now** — a second refusal ledger to sum, a
+      per-horizon row jackknife, an observation-level closure floor, a fifth
+      partition bucket, and a verdict that refuses to fall on an unevaluable
+      stratum. **UNIT-2 changed shape rather than difficulty**: two arithmetic
+      steps became field reads and one cross-module import went away, while a
+      second ledger and two closure counters arrived. **UNIT-1 gained one
+      bucket.** So an exposure C would measure a DIFFERENT TASK from A and B, on
+      top of already being incomparable on conditions — and `aggregate`, the unit
+      that has never closed, is the one that grew.
+    - **A closure under these specs answers reachability and still says nothing
+      about the scorer being correct.** F9–F14 are open, and two of them are
+      structural: `R_other` has no source data at all (five of the seven tools
+      write no telemetry), and `Σ_d R_d + R_other = R` — asserted by the frozen
+      design and computed by the artifact — is **false** by `O/(A+S)` on every
+      run with a non-zero installation term. Neither is fixable by an
+      implementer; both need the design to say something it does not say.
+    - **Seven of the new assertions are not controls yet.** They test stubs, so
+      they fail on `not implemented` whether they are right or wrong. Marked
+      `UNPROVED CONTROL` in the files and to be re-checked by breaking a real
+      body the day one exists. Registered now because "the oracle agreed" is
+      exactly the claim a green run would invite, and these oracles have not been
+      watched fail.
+    - **`STUBS_FROZEN_AT` moved to `3d27f08`**, which is where the repaired stubs
+      live. A consequence rather than a choice: `strata` has a body at that
+      commit, so the harness now refuses any run that attempts it — enforcing the
+      rule this section already carries, that a unit with an observation may not
+      be drawn again.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
   `c40e9f4` (`aggregate` red). Attempt 1 void. No exposure has reached the bar.
 - **Status:** open · **both exposures INCONCLUSIVE at 1 of 3** · `R_repair`
-  neither reachable nor ruled out; `budget_seconds` must be pinned first
+  neither reachable nor ruled out. The limits are pinned and verified (F7) and
+  the scorer's four spec defects are fixed (F1/F2a/F2b/F3), so nothing blocks an
+  exposure C — but it would measure a changed task, and whether to spend one is
+  open. F9–F14 remain, two of them structural.
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 

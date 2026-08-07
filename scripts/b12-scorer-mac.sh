@@ -186,7 +186,20 @@ RATES_FROZEN_AT="3541625"
 # The check below re-verifies that these really are stubs rather than trusting
 # this comment: a pin at the wrong commit makes every comparison meaningless in
 # the direction that passes.
-STUBS_FROZEN_AT="d0253e1"
+#
+# MOVED OFF d0253e1 BY THE SCORER-CORRECTNESS PASS (F1/F2a/F2b/F3). Those units'
+# stubs changed -- headers, doc comments, and the specs they point at -- so a run
+# still pinned at d0253e1 would refuse every unit as "already carrying a body"
+# when nothing had been written. The pin has to move with the stub or the guard
+# fires on its own repairs.
+#
+# CONSEQUENCE, STATED RATHER THAN DISCOVERED: `strata` is NOT a stub here, so
+# this pin cannot start a run that attempts it -- the "not implemented" check
+# below refuses, by name. That is the rule PREMISES already carries ("Do not
+# re-run a unit that already has an observation ... that is a second draw at the
+# same bar") now enforced by the harness. An exposure that genuinely wants all
+# three reset has to move this pin deliberately, which is a visible act.
+STUBS_FROZEN_AT="3d27f08"
 # EXPOSURE B. `src/cost/report.ts` joins context_files, and the floor doubles
 # BECAUSE of it: that file is 51,747 B ~ 14,800 tokens, which puts aggregate's
 # corrective retry near 29,000 against 32,768's ~29,491 usable budget -- inside

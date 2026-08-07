@@ -5,40 +5,40 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**Exposure B is complete and reads 1 of 3 — INCONCLUSIVE.** The pre-registered
-branch for exactly one: the manifest may not be sealed on it.
+**F1, F2a, F2b, F3 and F8 are closed**, each moving a spec, an oracle and a body
+together. Mechanisms in `docs/b12-scorer/FINDINGS.md`; the condition change is
+registered in `PREMISES` before any run can happen under it.
 
-- **`aggregate` is RED, and it is the first real observation it has ever had.**
-  `run 2026-08-07-mac-b12-phase3-c40e9f4`, US$ 0.42. Two `repair` calls, 4
-  attempts, every envelope complete, no backend failure, **`voids: []`** — model
-  and context files verified from telemetry, the condition observed at last.
-- **It never beat the stub:** 10 → 20 and 10 → 18, round 2 changed nothing. The
-  empty diff IS the measurement — `best` starts at the original bytes. `report.ts`
-  helped here too and not enough: exposure A was 10 → 28 and 10 → 25.
-- **Re-emission is now four for four.** Round 2's completion is the same length
-  as round 1's (3306/3306, 3419/3419) against a prompt 2,300 tokens larger.
-- **The instrument found a limitation in the registered condition (F7):** both
-  calls stopped on `budget`, so `aggregate` got two productive rounds of three.
+- **`CreditedRow` gained `unitsLo` and `passed`** — the low horizon, since
+  `aggregate.ts` has no `rates` to rank rows for `R_lo⁻ʳ`; and the verdict, since
+  `MIN_REPAIR_CLOSURES` counted what no type carried. **Absent is `null`.**
+- **`ObservationTerms` gained `unattributedRefusals`.** Two of the four refusal
+  classes could never be owned by a window, so `rHiPlus` was short by two.
+- **`strata.ts` gained `unknownStratum`**, and `"fallen"` now needs all four
+  cells evaluable — Codex's amendment, confirmed in `fallsIf`.
+- **Gate: 25 = 18 baseline (14 stubs + 4 Windows CRLF) + 7 new.** tsc green,
+  SELFTEST OK — 50 checks. `STUBS_FROZEN_AT` moved to `3d27f08`.
 
 ## Next action
 
-**`docs/b12-scorer/FINDINGS.md` holds every open defect, each mechanism
-re-checked against the files.** Six open, two closed. Next is the scorer-
-correctness pass — **F1** (two of four refusal classes structurally unpopulated,
-deflating `rHiPlus`), **F2a/F2b**, **F3**, **F6** — each moving a spec, an oracle
-and a body together.
+**The two structural findings are the interesting ones and neither is an
+implementer's to fix.** `R_other` has no source data — only `gate` and `repair`
+write telemetry, so five of its seven tools emit nothing (F13). And
+`Σ_d R_d + R_other = R`, asserted by the frozen design and computed by the
+artifact, is false by `O/(A+S)` whenever `O` is non-zero (F11).
 
-**F7 first, because it gates the next exposure:** pin `budget_seconds`. At
-~130 s/round, three rounds of `aggregate` needs ≥ 450 s; 600 s matches the MCP
-config. Do not re-run a unit that already has an observation to give it the
-rounds it should have had — that is a second draw.
-
-`strata.ts` is **reviewed and accepted**: correct against `UNIT-1.md` step for
-step, F3 its one deferred finding.
+**Standing decision, still the owner's:** exposure C, or stop Phase 3 on what it
+has. It would measure a changed task — UNIT-3 grew, and it never closed.
 
 ## Do not redo
 
-- **A control never seen failing is not a control.** Every harness change this
-  session was reverted and re-run to watch the right checks fail.
-- **The session's narration is not the measurement.** It reported the diff as
-  "discarded along with the rollback"; it was empty because nothing beat the stub.
+- **A control never seen failing is not a control** — and seven new assertions
+  are NOT controls yet: they test stubs, so they fail on `not implemented`
+  whether right or wrong. Marked `UNPROVED CONTROL`; re-check by breaking a real
+  body the day one lands.
+- **A control that fires on the clock says nothing.** `repair.test.ts` compared
+  `JSON.stringify(result).length` across runs whose `model_ms` differ — 656 vs
+  657, passing on luck until today. `now` is injected now.
+- **Codex sharpened two claims and I weakened them:** `excludedForeign` is
+  practically, not provably, unownable (F10), and omission deflates only when the
+  magnitude is positive — `wouldHaveAdded` is signed.
