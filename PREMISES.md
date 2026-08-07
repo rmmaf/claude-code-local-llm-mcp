@@ -1444,12 +1444,57 @@ defect, and it pinned four of them in place.
     the single most informative moment this premise has produced. The obvious
     candidate — the inlined `rateKey` — stays a hypothesis: the fixture uses
     only default multipliers, so the rate-key blindness alone would not fail it.
+- **PHASE-3 EXPOSURE B — COMPLETION, pre-registered before the run.**
+  Registered at commit `ea35254`, after the harness changes below and before a
+  single token of it was generated.
+  - **What runs:** `B12_ONLY=aggregate`, `B12_CARRIED_FROM=` the exposure B run,
+    against `aggregate.ts` reset to its stub at `d0253e1`. Same window (65,536),
+    same `context_files`, same local model, same specs and oracles.
+  - **WHY THIS IS A CONTINUATION AND NOT A NEW DRAW.** `aggregate` has no
+    observation at all — B15 already rules that a round with no response is not
+    one, and exposure B's own VOID clause names "crash" among its causes. The
+    conditions are unchanged, so nothing about the exposure moves.
+  - **`terms` IS NOT RE-ATTEMPTED, AND THIS IS THE POINT OF THE FLAG.** It got a
+    fair draw and came within one failing test; so did `strata`, which closed.
+    Re-running all three to "finish" the exposure would hand those two a SECOND
+    draw at the same bar, and three draws for two units is a higher chance of
+    reaching `>= 2 of 3` with nothing about `repair` having changed. The harness
+    now refuses to let a run inherit them silently and refuses to combine two
+    runs arithmetically: the completion's artifact reads `partial` and renders no
+    verdict. **The reading is written here, by hand, with both artifacts as
+    evidence** — as every reading in this file has been.
+  - **REGISTERED PREDICTION.** `aggregate` closes: **no.** It is the largest unit
+    (four exported functions against `terms`' three and `strata`' two), it was
+    the unit exposure A drove furthest backwards (10 → 28, 10 → 25 → 23), and
+    nothing in the two harness fixes changes what the model is handed. The one
+    thing that has changed in its favour is second-hand: `strata` and `terms`
+    both improved sharply once `report.ts` joined `context_files`, and
+    `aggregate` has never once been attempted under that condition — both of its
+    calls died before generating. **So the honest prediction is that this is the
+    first real observation of `aggregate`, not that it is a bad one.** If it
+    closes, the exposure reads 2 of 3 and `R_repair` is reachable.
+  - **THE CAVEAT THAT HAS TO EXIST BEFORE THE RESULT DOES.** Whatever `repair`
+    writes into `aggregate.ts` closes an oracle that does **not** exercise the
+    two guards finding F2 names: the fixture passes `minClosures: 0`, never
+    imports `recompute`, and never asserts on `recomputations`. **A closure
+    answers reachability and says nothing about the scorer being correct.** That
+    body does not reach `main` as the B12 scorer until F1 and F2 are fixed and
+    tests exist over the seams that currently pass green and empty. Written down
+    now because it is much easier to say before a green run than after one.
+  - **VOID conditions, evaluated by the harness rather than declared.** The
+    completion is VOID if `detail.model` on any repair row is not the declared
+    local model; if `detail.context_files` does not contain all three declared
+    paths, **or is absent**, which is unverifiable and therefore not a pass; or
+    if `aggregate` again produces no observation, which is `no_response` and
+    counts toward neither side. Exposure B registered the middle one and had no
+    way to check it: `detail.context_files` did not exist. It does now
+    (`ee7defb`), and the check is `f6926b4`.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B —
   **INCOMPLETE/VOID** (`run 2026-08-06-mac-b12-phase3-f2932ff`), with `strata`
   closed and `terms` at one failing test. Attempt 1 void. No scored B12 run.
 - **Status:** open · exposure A INCONCLUSIVE · exposure B **VOID, incomplete** —
-  `aggregate` unmeasured, and how to complete it is undecided
+  the completion is pre-registered and not yet run
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 
