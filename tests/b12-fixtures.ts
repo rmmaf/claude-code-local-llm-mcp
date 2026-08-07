@@ -24,6 +24,7 @@ import type {
   ObservationTerms,
   RunTelemetryCoverage,
 } from "../src/cost/b12/types.js";
+import type { AggregateInput } from "../src/cost/b12/aggregate.js";
 import { identify, runCoverage } from "../src/cost/b12/coverage.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -291,6 +292,53 @@ export function coverageOf(all: readonly ObservationTerms[]): RunTelemetryCovera
 
 /** `identify`, re-exported so an oracle can stamp its own artifact's rows. */
 export { identify };
+
+/**
+ * An `AggregateInput` over `admitted`, with the coverage the set implies and an
+ * empty prior-run register.
+ *
+ * `priorRuns: []` is a CLAIM — "this run has no predecessors" — and not a default
+ * the caller may forget: `voidConditions` 1 makes omitting the register itself a
+ * VOID, which is why the field is required on the type. Saying it once here keeps
+ * every oracle honest about which claim it is making.
+ */
+export function aggregateInput(
+  admitted: readonly ObservationTerms[],
+  over: Partial<AggregateInput> = {}
+): AggregateInput {
+  return {
+    runId: "run-1",
+    admitted,
+    dropped: [],
+    coverage: coverageOf(admitted),
+    priorRuns: [],
+    ...over,
+  };
+}
+
+/**
+ * Twenty admitted observations, five per stratum cell, which is the smallest set
+ * the frozen design will score: `admissionRule` 2 fixes the count at exactly 20
+ * and `holdsIf` 3 wants five in each of the four cells.
+ *
+ * Anything below it now VOIDs on the count before any arithmetic is read, so a
+ * two-observation fixture can no longer say anything about a verdict.
+ */
+export function twenty(
+  over: (n: number) => Partial<ObservationTerms> = () => ({})
+): ObservationTerms[] {
+  return Array.from({ length: 20 }, (_unused, n) =>
+    terms({
+      taskId: `t${n}`,
+      verificationStratum: n % 2 === 0 ? "test-red" : "types-only",
+      subagentShare: {
+        evaluable: true,
+        value: { own: 1, sidechain: n % 4 < 2 ? 0 : 1, share: n % 4 < 2 ? 0 : 1, stratum: n % 4 < 2 ? "solo" : "multi" },
+      },
+      ...over(n),
+    })
+  );
+}
 
 export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
   return {

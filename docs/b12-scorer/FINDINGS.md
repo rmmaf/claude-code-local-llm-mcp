@@ -21,6 +21,33 @@ cannot fail on a defect is not evidence the defect is absent.
 
 ## OPEN
 
+### F19 — the hold arithmetic includes observations the admission rule excludes from it
+
+Found by the F14 adjudication on 2026-08-07 and **deliberately not fixed in that
+pass**, because it changes `R_lo` and `R_hi` themselves and every figure derived
+from them.
+
+`admissionRule` 6: "An observation with `ambiguous > 0` is admitted to the FALL
+arithmetic only, at both bounds, and **excluded from the HOLD arithmetic**.
+Crediting an unowned saving toward a hold is the double-count the refusal exists
+to prevent." `aggregate` passes the whole admitted set to `poolRatio`,
+`strataCells`, `deliveryScore` and `recompute` alike, so an observation with a
+non-zero `ambiguous` count is in the hold figures the rule keeps it out of.
+
+**The direction is conservative, which is why shipping the hold branch ahead of
+this fix is safe.** Such an observation carries its full `A_o` while its ambiguous
+rows are refused rather than credited, so its `S_o` is deflated relative to what
+it would otherwise be — it drags `R_lo` DOWN, making a hold harder rather than
+easier. That is the safe error on the hold side, and `holding (unvalidated)` "may
+not be cited as an input to opening or closing any gate" in any case. It is not
+guaranteed for every conceivable observation, only for one whose refused ambiguous
+rows carry positive magnitude — the ordinary case, and the same qualification F1
+had to be corrected to make.
+
+The fix is a partition: `poolRatio` and everything hold-side over
+`admitted.filter(t => t.refusals.ambiguous.count === 0)`, while `rHiPlus` keeps
+the full set. It needs its own controls, because every hold-side figure moves.
+
 ### F17 — the frozen preflight screens for none of `R_hi⁺`'s new refusals
 
 Raised by the second adjudication on 2026-08-07, against a claim I had made and
@@ -89,22 +116,6 @@ would not close F11 anyway, since the missing `O/(A+S)` is untouched by it.
 `unexercised` is the design's own state for a delivery nobody exercised, and it
 is neither a hold nor a fall.
 
-### F14 — `B12Result` cannot say what `fallsIf` requires it to say
-
-`fallsIf` names `open — provisional` as a real state: a fall whose refusal
-ledger, excluded-observation call counts or subagent strata do not clear the
-conditions "is `open — provisional` and requires the A/B before it may be
-recorded as a fall". `B12Result.verdict` offers `"open"` and no such member, so
-the scorer collapses a provisional fall into a plain `open`.
-
-`UNIT-3.md`'s verdict rule now refuses to fall when any stratum is unevaluable,
-which is the half of this that could be fixed without a type change. The other
-half — telling `open` from `open — provisional` — needs the excluded
-observations' `gate`/`repair` call counts, which `AggregateInput` does carry via
-`dropped[].rows`, and a new verdict member. Also unlisted: the run-level void
-clause and the register of prior runs that `design.artifacts` requires on the
-artifact's face.
-
 ### A stale citation in the frozen design, recorded because it cannot be fixed
 
 `admissionRule` 5 cites `savedFraction` at `report.ts:684`. It is at
@@ -114,6 +125,50 @@ note exists so the next reader does not follow the line number.
 ---
 
 ## CLOSED
+
+### F14 — `B12Result` could say two of the six verdicts the design defines — FIXED
+
+`fallsIf` names `open — provisional` as a real state and `B12Result.verdict` had
+no such member, so a provisional fall was published as a plain `open`. That was
+the finding as recorded. **The adjudication found it was the smaller half.** The
+verdict function returned `"fallen"` or `"open"` and nothing else: it checked no
+observation count, no rate basis, no selection guard, no recomputation, no
+register — six frozen VOID clauses it had the data for — and it collapsed
+`holding (unvalidated)` into `open` as well.
+
+**Fixed** with the ordered rule in `UNIT-3.md`: six voids, each naming its clause
+on the artifact, then the two `open` states the frozen text settles, then the
+fall, then the hold. `B12Result` gains `voidClause`, `selection`, `priorRuns`,
+`voidedRuns` and `abandonedRuns`; `AggregateInput` gains a REQUIRED `priorRuns`,
+because `voidConditions` 1 makes omitting the register itself a VOID and an
+optional field would be indistinguishable from a first run.
+
+**Two clauses of the frozen text contradict themselves, and both are settled by
+quotation rather than by preference.**
+
+- `voidConditions` 15 opens "VOID if any refused magnitude is null and R_hi+ was
+  therefore not evaluable" and ends "the run returns `open`, never a fall", while
+  `fallsIf` says `open — provisional`. `design.metric` settles it in words: "If
+  any refused magnitude is `null`, `R_hi⁺` is NOT EVALUABLE and **the run returns
+  `open`**." Two of the three name `open`, and it is the only reading that does
+  not spend an irreplaceable attempt (`voidConditions` 23) on an ambiguity.
+- `voidConditions` 3 does the same to an undersized stratum, and `admissionRule`
+  8 settles it outright: it "returns `open`, never a hold, a fall, **or a void**."
+
+**Two shapes carry a rule instead of checking it.** `PriorResult` makes a prior
+run state `scored` or name its void clause, and carry its bracket either way, so
+clause 1's three requirements cannot be satisfied separately. `AttemptCost` makes
+"did not consume an attempt" unrepresentable without naming which of clause 23's
+three enumerated vendor-side causes it was — "every other void is an attempt, or
+the fall condition can be dodged indefinitely by voiding until a clean set lands
+on the preferred side".
+
+**And the F9 hold-side guard turned out to be subsumed rather than owed.** It was
+registered during the F9 fix as owed to whoever wrote a hold branch. Written as a
+conjunct of the hold it can never decide anything, because `rHiPlus` refuses on
+that exact fact and the run has already returned `open`. Established by planting
+the defect: deleting the conjunct changed no test. Removed and explained, on the
+same rule that retired step 1b — a guard that cannot fail is not a guard.
 
 ### F10 — the window join was wider than the crediting join — FIXED
 

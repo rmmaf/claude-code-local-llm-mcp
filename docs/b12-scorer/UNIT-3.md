@@ -166,23 +166,86 @@ Fill every field of `B12Result` from the functions above.
   especially when it was not, because it carries the reason — and a reader can
   check the exactly-once claim against `unownedRows` instead of taking the
   totals on trust.
-- `verdict`: `"open"` unless something clearly decides otherwise; never invent a
-  hold. `"fallen"` requires `rHiPlus.evaluable === true`, its value `< 0.15`,
-  **and all four `strata` cells evaluable.** `fallsIf` names the last one twice:
+- `verdict` and `voidClause`: **VOIDS FIRST, THEN THE FALL, THEN THE HOLD.** The
+  order is not cosmetic — a void discards the run and consumes an attempt
+  (`voidConditions` 23), so a run that voids must never reach the fall arithmetic.
+  In order, and each void naming its clause on the artifact:
+
+  1. `admitted.length !== 20` — `voidConditions` 3 and `admissionRule` 2. Fewer
+     voids by the clause; MORE is the manifest's selection made by the caller,
+     since "the first 20 that admit, in that committed order, are scored" and this
+     unit cannot see the committed order.
+  2. the admitted set spans other than **exactly** one rate key — `voidConditions`
+     10. Zero is as wrong as two.
+  3. `selection.excludedWouldHaveAdded > admittedSumS`, or
+     `excludedToolCalls > admittedToolCalls` — `voidConditions` 16. The first is
+     sound in ONE direction only: the sum is a floor while `excludedUnsized > 0`,
+     so exceeding proves the guard fired and not exceeding proves nothing. That
+     leaves no hole — an unsized refusal on a dropped observation also makes
+     `rHiPlus` refuse, so such a run reaches `open` below.
+  4. both subagent strata evaluable, in DIFFERENT bands, and every refusal counter
+     clean — `voidConditions` 17. "Clean" is every class count zero in every
+     observation's OWNED ledger and in `coverage.unowned`. The cleanliness is half
+     the condition: a run with refusals has an ordinary explanation for the strata
+     parting.
+  5. any recomputation on the opposite side of **15%** from its parent —
+     `voidConditions` 18. Only that line voids.
+  6. any prior run carrying no committed result — `voidConditions` 1.
+
+  Then, and these are `open` rather than `void`:
+
+  7. `rHiPlus` not evaluable. **The frozen text contradicts itself here and
+     `design.metric` settles it**: "If any refused magnitude is `null`, `R_hi⁺` is
+     NOT EVALUABLE and **the run returns `open`**." `voidConditions` 15 opens
+     "VOID if" and then says "the run returns `open`, never a fall" in the same
+     sentence; `fallsIf` says `open — provisional`. Two of the three name `open`,
+     and it is the only reading that does not spend an irreplaceable attempt on an
+     ambiguity.
+  8. any of the four cells unevaluable. `admissionRule` 8 is explicit: an
+     unevaluable stratum "returns `open`, never a hold, a fall, **or a void**."
+
+  Then the fall:
+
+  9. `rHiPlus < 15%` **and both subagent strata below 15%** → `"fallen"`.
+  10. `rHiPlus < 15%` otherwise → **`"open — provisional"`**. The cells are pooled
+      at the LO horizon while `R_hi⁺` is a doubt-credited HI figure, so they can
+      sit on opposite sides of the line: 20 observations at
+      `A_o = 100, O_o = 5, S_lo = 30, S_hi = 15` put every cell at 19.23% while
+      `R_hi⁺` is 8.70%.
+
+  Then the hold, and it is **always `"holding (unvalidated)"`**:
+
+  11. `holdsIf` 1–6 all satisfied → `"holding (unvalidated)"`. `holdsIf` 7 is "the
+      A/B ran and did not kill it", the A/B does not exist, and the design names
+      the state for exactly that: "A never-run A/B leaves `holding (unvalidated)`,
+      which is a real recorded state and **may not be cited as an input to opening
+      or closing any gate**." Returning `open` there collapses a state the design
+      provides into one it distinguishes from it. A recomputation across **30%**
+      blocks this and is NOT a void — `voidConditions` 18's other half.
+  12. otherwise `"open"`.
+
+  **The bare `"holding"` is unreachable from this unit and that is correct**, not
+  an omission: it requires an A/B that has not been built.
+
+  **The F9 hold-side guard is subsumed, not missing.** A credited row no window
+  owns raises `R_lo` when its magnitude is negative, so a guard was registered as
+  owed to the hold branch. Written as a conjunct it can never decide anything —
+  `rHiPlus` refuses on that exact fact, so step 7 has already returned. Proved by
+  planting the defect: deleting the conjunct changed no test.
+
+  Historical, kept because the reasoning still applies: `"fallen"` requires all
+  four `strata` cells evaluable. `fallsIf` names it twice:
   a fall stands unappealed only if "both subagent strata are evaluable", and
   "a run with fewer than 20 admitted observations, or any stratum below 5, is
   VOID or `open` — never a fall on a short set". An unevaluable cell is exactly
   that case, whether it came from the 5-observation floor or from
   `unknownStratum`.
 
-  **A HOLD BRANCH DOES NOT EXIST YET AND OWES ONE MORE GUARD WHEN IT IS WRITTEN.**
-  A credited row no window owns is omitted from `R_lo` and `R_hi`, and magnitudes
-  are SIGNED — so omitting a NEGATIVE one RAISES both figures, toward a hold.
-  "Omission deflates the hold, which is the safe direction" was written during
-  this fix and is false as stated. So `coverage.unattributedCredited.count > 0`
-  must block a hold exactly as it blocks a fall. Written down rather than
-  implemented, because a guard on a branch nothing reaches is a guard nobody has
-  seen fail.
+  **The hold branch now exists** — see the ordered rule above — and the guard this
+  paragraph asked for turned out to be subsumed by step 7 rather than owed. The
+  claim it corrected still stands: "omission deflates the hold, which is the safe
+  direction" is FALSE, because magnitudes are signed and an omitted NEGATIVE
+  credited row RAISES `R_lo`.
 
 ## Done when
 

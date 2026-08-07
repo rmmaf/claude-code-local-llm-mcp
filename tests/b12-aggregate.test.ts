@@ -13,7 +13,16 @@ import { describe, expect, it } from "vitest";
 import { aggregate, deliveryScore, poolRatio, recompute, rHiPlus, strataCells } from "../src/cost/b12/aggregate.js";
 import { runCoverage } from "../src/cost/b12/coverage.js";
 import type { ObservationTerms } from "../src/cost/b12/types.js";
-import { coverageOf, keyed, ledger, refused, terms, universeOf } from "./b12-fixtures.js";
+import {
+  aggregateInput,
+  coverageOf,
+  keyed,
+  ledger,
+  refused,
+  terms,
+  twenty,
+  universeOf,
+} from "./b12-fixtures.js";
 
 /** `rHiPlus` over a set, with the coverage the set itself implies. */
 const fallSide = (all: readonly ObservationTerms[]) => rHiPlus(all, coverageOf(all));
@@ -464,7 +473,7 @@ describe("deliveryScore — unexercised is a third state, never a low number", (
 describe("aggregate — the artifact publishes the banned form and decides on the other one", () => {
   it("reports the mean beside the pooled figure, and the two disagree by design", () => {
     const set = [terms({ taskId: "a", aO: 100, sLo: 50, sHi: 50 }), terms({ taskId: "b", aO: 900 })];
-    const result = aggregate({ runId: "run-1", admitted: set, dropped: [], coverage: coverageOf(set) });
+    const result = aggregate(aggregateInput(set));
     expect(result.rLo).toBeCloseTo(0.047619047619047616, 12);
     expect(result.meanOfPerObservationRatios).toBeCloseTo(0.16666666666666666, 12);
     // If these two are ever equal on this fixture, something started reading the
@@ -499,12 +508,7 @@ describe("aggregate — the artifact publishes the banned form and decides on th
         },
       })
     );
-    const result = aggregate({
-      runId: "run-1",
-      admitted: withInstall,
-      dropped: [],
-      coverage: coverageOf(withInstall),
-    });
+    const result = aggregate(aggregateInput(withInstall));
     expect(result.identityHolds).toBe(false);
     // And the pooled figure is the one with O subtracted, so a reader can see
     // WHICH of the two the artifact decided on.
@@ -514,7 +518,7 @@ describe("aggregate — the artifact publishes the banned form and decides on th
   it("leaves a stratum below the floor unevaluable rather than scoring it", () => {
     // `holdsIf` 3 wants four evaluable cells. Two observations is not a cell.
     const set = [terms({ taskId: "a", aO: 100, sLo: 50 }), terms({ taskId: "b", aO: 900 })];
-    const result = aggregate({ runId: "run-1", admitted: set, dropped: [], coverage: coverageOf(set) });
+    const result = aggregate(aggregateInput(set));
     expect(result.strata.testRed.evaluable).toBe(false);
     expect(result.strata.solo.evaluable).toBe(false);
   });
@@ -524,19 +528,237 @@ describe("aggregate — the artifact publishes the banned form and decides on th
     // reason a run returned `open` is the most useful thing on it. Carrying the
     // ledger rather than a boolean also lets a reader check the exactly-once
     // claim against `unownedRows` instead of taking the totals on trust.
-    const orphan = terms({ aO: 1_000, sHi: 100, unattributed: [keyed("c1", { units: 500 })] });
-    const result = aggregate({
-      runId: "run-1",
-      admitted: [orphan],
-      dropped: [],
-      coverage: coverageOf([orphan]),
-    });
+    // The set is deliberately one that WOULD hold: `A = 100, S = 50` per
+    // observation with `gate` carrying all of it. An empty fixture would return
+    // `open` whether or not the orphan was noticed, which is the kind of
+    // assertion that passes for the wrong reason -- and planting the defect is
+    // how that was found.
+    const set = twenty((n) => ({
+      aO: 100,
+      sLo: 50,
+      sHi: 50,
+      perDelivery: { gate: { sLo: 50, sHi: 50, rowCount: 1, closures: 1, closureUnknown: 0 } },
+      ...(n === 0 ? { unattributed: [keyed("c1", { units: 500 })] } : {}),
+    }));
+    const result = aggregate(aggregateInput(set));
     expect(result.rHiPlus.evaluable).toBe(false);
     expect(result.coverage.exactlyOnce).toBe(false);
     expect(result.coverage.unownedRows).toHaveLength(1);
     expect(result.coverage.reasons[0]).toBe(
       result.rHiPlus.evaluable ? undefined : result.rHiPlus.reason
     );
+    // `open`, not `void`. `design.metric` says it in words -- "If any refused
+    // magnitude is `null`, `R_hi⁺` is NOT EVALUABLE and the run returns `open`" --
+    // and `voidConditions` 15 says both "VOID" and "the run returns `open`" in one
+    // sentence. Two of the three formulations name `open`, and it is also the only
+    // one that does not spend an irreplaceable attempt on an ambiguity.
     expect(result.verdict).toBe("open");
+    expect(result.voidClause).toBeNull();
+  });
+});
+
+describe("the verdict — six states, and five of them were unreachable", () => {
+  /** Twenty clean observations, every cell at the same figure. */
+  const clean = (over: (n: number) => Partial<ObservationTerms> = () => ({})) =>
+    twenty((n) => ({ aO: 100, sLo: 50, sHi: 50, ...over(n) }));
+
+  it("VOIDS on the observation count, naming the clause", () => {
+    // `voidConditions` 3 and `admissionRule` 2. Nothing checked this at all until
+    // 2026-08-07: a three-observation run could return `fallen` on three
+    // observations' arithmetic, which is the shape B1 died of.
+    const short = aggregate(aggregateInput(clean().slice(0, 19)));
+    expect(short.verdict).toBe("void");
+    expect(short.voidClause).toContain("voidConditions 3");
+
+    // AND THE OTHER SIDE. 30 tasks are HEADROOM: "the first 20 that admit, in that
+    // committed order, are scored". This function cannot see the committed order,
+    // so a caller handing it 21 has made a selection the manifest reserves.
+    const long = clean();
+    const over = aggregate(aggregateInput([...long, terms({ taskId: "extra", aO: 100 })]));
+    expect(over.verdict).toBe("void");
+  });
+
+  it("VOIDS on a mixed rate basis, and on no rate basis at all", () => {
+    // `admissionRule` 9: "The admitted set spans EXACTLY one rate key." G1's ratio
+    // argument survives an unknown pricing basis only if the basis is CONSTANT.
+    const mixed = aggregate(
+      aggregateInput(clean((n) => (n === 3 ? { rateKeys: ["other-model"] } : {})))
+    );
+    expect(mixed.verdict).toBe("void");
+    expect(mixed.voidClause).toContain("voidConditions 10");
+
+    // ZERO IS AS WRONG AS TWO, and a `> 1` check would pass it: no observation
+    // carrying a rate key means the instrument recorded no pricing basis.
+    const none = aggregate(aggregateInput(clean(() => ({ rateKeys: [] }))));
+    expect(none.verdict).toBe("void");
+  });
+
+  it("VOIDS when the excluded observations outweigh the admitted ones", () => {
+    // `voidConditions` 16, both halves: "the pool was then selected on the
+    // treatment's own attributability". Excluded rows are counted over `rows`,
+    // credited AND refused -- the question is calls MADE, not calls scored, and
+    // `perDelivery.rowCount` counts only the credited ones.
+    const dropped = [
+      terms({
+        taskId: "x",
+        disposition: "void(task_failed)",
+        refusals: ledger({ ambiguous: { count: 1, units: 9_999, unsized: 0 } }),
+      }),
+    ];
+    const heavy = aggregate(aggregateInput(clean(), { dropped, coverage: coverageOf([...clean(), ...dropped]) }));
+    expect(heavy.verdict).toBe("void");
+    expect(heavy.voidClause).toContain("voidConditions 16");
+  });
+
+  it("VOIDS when the two subagent strata disagree on a clean ledger, and NOT otherwise", () => {
+    // `voidConditions` 17: "That is a coverage-bug signature, not a cost result."
+    // `solo` observations are pushed above 30% while `multi` stays under 15%.
+    const split = clean((n) => (n % 4 < 2 ? { sLo: 900, sHi: 900 } : { sLo: 5, sHi: 5 }));
+    const bug = aggregate(aggregateInput(split));
+    expect(bug.verdict).toBe("void");
+    expect(bug.voidClause).toContain("voidConditions 17");
+
+    // THE ANTI-VACUITY ARM, and it is the whole condition rather than half of it:
+    // the SAME split with one refusal on the books is NOT this signature, because
+    // a run with refusals has an ordinary explanation for the two strata parting.
+    const explained = split.map((t, n) =>
+      n === 0 ? terms({ ...t, refusals: ledger({ unmatched: { count: 1, units: 5, unsized: 0 } }) }) : t
+    );
+    expect(aggregate(aggregateInput(explained)).verdict).not.toBe("void");
+  });
+
+  it("VOIDS when a recomputation crosses the 15% line, and only that line", () => {
+    // `voidConditions` 18. ONLY the fall line voids: across 30% the run "returns
+    // `open` with both figures recorded and does NOT consume the attempt cap --
+    // a run producing two defensible numbers straddling the hold line has measured
+    // something".
+    //
+    // TWO big rows, one in a `solo` window and one in a `multi` one, and that is
+    // not decoration: concentrating the whole numerator into ONE observation puts
+    // its subagent stratum in a different band from the other's and trips clause
+    // 17 first. The first draft of this fixture did exactly that and fired the
+    // wrong clause -- a test that voids for a reason it was not written about
+    // reads as a passing test.
+    //
+    // By hand, 20 observations at A = 100: two carry S = 300, eighteen carry 0.
+    //   solo and multi:  300/(1000+300) = 23.08% each -- the SAME band
+    //   R_lo:            600/(2000+600) = 23.08%      -- above the fall line
+    //   drop the best row (300):  300/(2000+300) = 13.04%  -- below it
+    const concentrated = clean((n) =>
+      n === 0 || n === 2
+        ? { sLo: 300, sHi: 300, rows: [keyed(`big-${n}`, { units: 300, unitsLo: 300 })] }
+        : { sLo: 0, sHi: 0 }
+    );
+    const jackknifed = aggregate(aggregateInput(concentrated));
+    expect(jackknifed.rLo).toBeCloseTo(600 / 2_600, 12);
+    expect(jackknifed.recomputations.rLoMinusRow).toBeCloseTo(300 / 2_300, 12);
+    expect(jackknifed.verdict).toBe("void");
+    expect(jackknifed.voidClause).toContain("voidConditions 18");
+  });
+
+  it("VOIDS while a previously registered run carries no committed result", () => {
+    // `voidConditions` 1: "B12 may not be scored while any registered run has no
+    // result." The register is a REQUIRED argument for the same reason -- an
+    // omitted field would be indistinguishable from a first run.
+    const withGhost = aggregate(
+      aggregateInput(clean(), {
+        priorRuns: [{ runId: "run-0", result: null, attempt: { consumed: true } }],
+      })
+    );
+    expect(withGhost.verdict).toBe("void");
+    expect(withGhost.voidClause).toContain("voidConditions 1");
+    expect(withGhost.abandonedRuns).toBe(1);
+
+    // The same register with the result committed does not void, and the counts
+    // come off the one field rather than off two that can disagree.
+    const resolved = aggregate(
+      aggregateInput(clean(), {
+        priorRuns: [
+          {
+            runId: "run-0",
+            result: { scored: false, voidClause: "voidConditions 7", bracket: { rLo: 0.1, rHi: 0.2 } },
+            attempt: { consumed: true },
+          },
+        ],
+      })
+    );
+    expect(resolved.verdict).not.toBe("void");
+    expect(resolved.voidedRuns).toBe(1);
+    expect(resolved.abandonedRuns).toBe(0);
+  });
+
+  it("demotes a fall to `open — provisional` when the strata are not both below 15%", () => {
+    // F14, and the case the member exists for. `strataCells` pools at the LO
+    // horizon while `R_hi⁺` is a doubt-credited HI figure, so the two can sit on
+    // opposite sides of the fall line on one set.
+    //
+    // By hand, 20 observations at A=100, O=5, S_lo=30, S_hi=15 (reachable with
+    // signed rows, e.g. 50/100 and -20/-85):
+    //   each cell of 10:  (300 - 50) / (1000 + 300)  = 19.23%   -- at or above 15%
+    //   R_hi+ over 20:    (300 - 100) / (2000 + 300) =  8.70%   -- below it
+    // Both subagent strata sit in the SAME 15-30% band, so `voidConditions` 17
+    // does not fire, and `fallsIf` demotes rather than falls.
+    const set = twenty(() => ({ aO: 100, oO: 5, sLo: 30, sHi: 15 }));
+    const result = aggregate(aggregateInput(set));
+    expect(result.rHiPlus.evaluable).toBe(true);
+    if (result.rHiPlus.evaluable) expect(result.rHiPlus.value).toBeCloseTo(200 / 2_300, 12);
+    if (result.strata.solo.evaluable) expect(result.strata.solo.value).toBeCloseTo(250 / 1_300, 12);
+    expect(result.verdict).toBe("open — provisional");
+    expect(result.voidClause).toBeNull();
+  });
+
+  it("falls only when the subagent strata fall with it", () => {
+    // The same shape with the strata dragged under 15% too. Without this arm the
+    // test above is satisfied by an implementation that never returns `fallen` at
+    // all, which would make the stopping criterion unreachable.
+    const set = twenty(() => ({ aO: 100, oO: 40, sLo: 30, sHi: 15 }));
+    const result = aggregate(aggregateInput(set));
+    if (result.strata.solo.evaluable) expect(result.strata.solo.value).toBeLessThan(0.15);
+    expect(result.verdict).toBe("fallen");
+  });
+
+  it("returns `holding (unvalidated)` rather than `open`, because a never-run A/B is a STATE", () => {
+    // `holdsIf` 7 names it: "A never-run A/B leaves `holding (unvalidated)`, which
+    // is a real recorded state and MAY NOT BE CITED AS AN INPUT TO OPENING OR
+    // CLOSING ANY GATE." This function returned `open` there, on the argument that
+    // a hold needs an A/B -- which collapsed a state the design provides into one
+    // it distinguishes from it.
+    //
+    // Every one of `holdsIf` 1-6 has to hold: A=100, S=50 gives R_lo = 1/3 pooled
+    // and in every cell, gate carries 40 of the 50, and nothing is refused.
+    const set = twenty(() => ({
+      aO: 100,
+      sLo: 50,
+      sHi: 50,
+      perDelivery: { gate: { sLo: 50, sHi: 50, rowCount: 1, closures: 1, closureUnknown: 0 } },
+    }));
+    const result = aggregate(aggregateInput(set));
+    expect(result.rLo).toBeCloseTo(1 / 3, 12);
+    expect(result.verdict).toBe("holding (unvalidated)");
+    // NEVER the bare `holding`, which needs an A/B that does not exist.
+    expect(result.verdict).not.toBe("holding");
+  });
+
+  it("refuses that hold while a credited row belongs to no window", () => {
+    // THE F9 GUARD, AND IT TURNED OUT TO BE SUBSUMED RATHER THAN OWED. "Omission
+    // deflates the hold, which is the safe direction" was written during the F9
+    // fix and is FALSE -- magnitudes are signed, so an omitted NEGATIVE credited
+    // row RAISES `R_lo`, toward a hold -- so a guard was registered as owed to
+    // whoever wrote a hold branch. Writing it as a conjunct of the hold produced
+    // one that can never decide anything: `rHiPlus` refuses on exactly that fact,
+    // so the run returns `open` before the hold is ever considered. Deleting the
+    // conjunct changed no test, which is how that was established.
+    //
+    // So what this pins is the ORDER, not a conjunct: an otherwise-holding set
+    // with one unowned credited row must not hold. The early return on an
+    // unevaluable fall side is the thing doing the work.
+    const set = twenty((n) => ({
+      aO: 100,
+      sLo: 50,
+      sHi: 50,
+      perDelivery: { gate: { sLo: 50, sHi: 50, rowCount: 1, closures: 1, closureUnknown: 0 } },
+      ...(n === 0 ? { unattributed: [keyed("orphan", { units: -500, unitsLo: -500 })] } : {}),
+    }));
+    expect(aggregate(aggregateInput(set)).verdict).not.toBe("holding (unvalidated)");
   });
 });

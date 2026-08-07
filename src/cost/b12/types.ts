@@ -354,6 +354,48 @@ export type DeliveryScore =
   | { scored: true; r: number; observations: number }
   | { scored: false; reason: "unexercised"; observations: number };
 
+/**
+ * One previously registered run, as the successor's artifact must list it.
+ *
+ * `voidConditions` 1 makes this a VOID condition twice over: B12 may not be
+ * scored while any registered run has no committed result, and "every prior run's
+ * run_id and bracket is listed in the successor's summary; **omission is itself a
+ * VOID**". So the register is a required argument rather than an optional one —
+ * a missing field would be indistinguishable from a run with no predecessors.
+ */
+export type PriorResult =
+  | { scored: true; bracket: { rLo: number; rHi: number } }
+  | { scored: false; voidClause: string; bracket: { rLo: number; rHi: number } };
+
+/**
+ * `voidConditions` 23: a VOID CONSUMES AN ATTEMPT, except for three enumerated
+ * vendor-side causes the operator cannot induce.
+ *
+ * A bare `false` is unrepresentable on purpose. "Every other void is an attempt,
+ * or the fall condition can be dodged indefinitely by voiding until a clean set
+ * lands on the preferred side" — so not consuming one must NAME which of the
+ * three it was. Enumerate the good values; refuse what the rule does not name.
+ */
+export type AttemptCost =
+  | { consumed: true }
+  | { consumed: false; exempt: "auto-update" | "echo-layout-change" | "vendor-outage" };
+
+export interface PriorRun {
+  runId: string;
+  /**
+   * What it committed. **NULL MEANS NO COMMITTED RESULT**, which is the clause-1
+   * VOID itself: a run registered and never resolved. It is also what
+   * `abandonedRuns` counts, so the count on the artifact and the condition that
+   * voided the run are one quantity read twice rather than two that can disagree.
+   *
+   * The shape carries the rest of clause 1 as a TYPE rather than as a check: a
+   * result states `scored` or names its void clause, and either way it carries
+   * its partial bracket. None of the three can be omitted separately.
+   */
+  result: PriorResult | null;
+  attempt: AttemptCost;
+}
+
 /** The five recomputations `voidConditions` 18 requires beside the parent figures. */
 export interface Recomputations {
   /** Largest-`A_o` task dropped. */
@@ -410,7 +452,60 @@ export interface B12Result {
   rowsNetNegative: number;
   /** BANNED as the deciding form; carried because the design says to report it. */
   meanOfPerObservationRatios: number;
-  verdict: "holding" | "holding (unvalidated)" | "fallen" | "open" | "void";
+  /**
+   * **`open — provisional` IS A REAL STATE OF THE FROZEN DESIGN and was missing.**
+   *
+   * `fallsIf` names it: a fall stands unappealed only under four conditions, and
+   * "otherwise the fall is `open — provisional` and requires the A/B before it may
+   * be recorded as a fall". Without the member the scorer collapsed a provisional
+   * fall into a plain `open`, which reads as "we measured nothing decisive"
+   * instead of "we measured a fall the design will not let stand yet".
+   */
+  verdict:
+    | "holding"
+    | "holding (unvalidated)"
+    | "fallen"
+    | "open"
+    | "open — provisional"
+    | "void";
+  /**
+   * The void clause BY NAME, or null when the run did not void.
+   *
+   * `admissionRule` 1 and `voidConditions` 1 both require it on the artifact's
+   * face: a run owes a result "carrying `scored` or `void`, the void clause BY
+   * NAME, the observation count, and the partial bracket". A boolean would say
+   * that something fired without saying what, which is the shape that makes a
+   * void unfalsifiable after the fact.
+   */
+  voidClause: string | null;
+  /**
+   * The selection guard's two pairs, reported whether or not they fired.
+   *
+   * `voidConditions` 16 voids a run whose excluded observations outweigh its
+   * admitted ones on either — summed `wouldHaveAdded` against `Σ S_o`, or
+   * `gate`/`repair` call counts. `holdsIf` 5 reads the first pair as well. Both
+   * are on the face because "the pool was selected on the treatment's own
+   * attributability" is a claim a reader must be able to check.
+   */
+  selection: {
+    /**
+     * A FLOOR whenever `excludedUnsized > 0`, never a total: a null magnitude is
+     * counted there and deliberately not summed here. So `excludedWouldHaveAdded
+     * > admittedSumS` is sound in one direction only — it proves the guard fired,
+     * and its negation proves nothing while anything is unsized.
+     */
+    excludedWouldHaveAdded: number;
+    excludedUnsized: number;
+    admittedSumS: number;
+    excludedToolCalls: number;
+    admittedToolCalls: number;
+  };
+  /** Every previously registered run. Omission is itself a VOID (`voidConditions` 1). */
+  priorRuns: readonly PriorRun[];
+  /** DERIVED from `priorRuns`: a committed result naming a void clause. */
+  voidedRuns: number;
+  /** DERIVED: registered and never resolved — the same set that fires the clause-1 VOID. */
+  abandonedRuns: number;
   /** Quoted from the frozen design so the artifact carries its own standard. */
   thresholds: { hold: 0.3; fall: 0.15 };
 }

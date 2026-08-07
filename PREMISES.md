@@ -1682,6 +1682,32 @@ defect, and it pinned four of them in place.
   - **UNIT-3 grew again** — a run-level argument and five refusal conditions —
     and there is now a UNIT 4 that never existed during any exposure. An exposure
     C would measure a task further still from A's and B's.
+- **THE VERDICT NOW HAS SIX STATES AND IT HAD TWO (F14), AND TWO CLAUSES OF THE
+  FROZEN TEXT CONTRADICT THEMSELVES.** Registered 2026-08-07 after two rounds of
+  adjudication, before any later run.
+  - **The scorer could return `fallen` or `open` and nothing else.** It checked no
+    observation count, no rate basis, no selection guard, no recomputation and no
+    prior-run register — six VOID clauses it had the data for. A three-observation
+    run could have returned `fallen`. It also collapsed `holding (unvalidated)`
+    into `open`, and `holdsIf` 7 names that state for exactly the never-run A/B
+    this project has.
+  - **`voidConditions` 15 says both "VOID" and "the run returns `open`" in one
+    sentence**, while `fallsIf` says `open — provisional`. Three formulations of
+    one fact. `design.metric` settles it in words — "the run returns `open`" — and
+    that reading is registered here. **`voidConditions` 3 does the same to an
+    undersized stratum**, and `admissionRule` 8 settles it outright: "never a
+    hold, a fall, or a void." Both readings are pre-declared so neither is later
+    mistaken for a judgement made after seeing a number.
+  - **`holding (unvalidated)` is now reachable and the bare `holding` is not.**
+    The design says the unvalidated state "may not be cited as an input to opening
+    or closing any gate", so nothing downstream may move on it. Publishing it is
+    disclosure, not a threshold change.
+  - **F19 is open and NOT fixed**, found in the same adjudication:
+    `admissionRule` 6 excludes an observation with `ambiguous > 0` from the HOLD
+    arithmetic and the scorer includes it. The direction is conservative — such an
+    observation carries its full `A_o` against a deflated `S_o`, so it drags
+    `R_lo` DOWN — which is why the hold branch ships ahead of the fix rather than
+    waiting for it. Recorded before any run so a later hold is read knowing it.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
@@ -1690,10 +1716,10 @@ defect, and it pinned four of them in place.
   neither reachable nor ruled out. The limits are pinned and verified (F7) and
   the scorer's spec defects are fixed (F1/F2a/F2b/F3, then F9/F12), so nothing
   blocks an exposure C — but it would measure a changed task, and whether to
-  spend one is open. **F10, F14 and F17 remain**, and the scorer is still wired
-  to nothing: `observation.json` has no parser, `verificationStratum` is written
-  by no harness, and the run-level assembler that would call `runCoverage` does
-  not exist.
+  spend one is open. **F17 and F19 remain**, and the scorer is still wired to
+  nothing: `observation.json` has no parser, `verificationStratum` is written by
+  no harness, and the run-level assembler that would call `runCoverage` and
+  `aggregate` does not exist.
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 
