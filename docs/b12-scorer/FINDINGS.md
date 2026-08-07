@@ -88,7 +88,16 @@ in what the local model wrote** — the spec says "split on
 `t.verificationStratum`" and says nothing about validation, and the body follows
 the spec exactly. Fix the spec, the oracle and the body together.
 
-### F6 — `UNIT-2.md`'s only worked example teaches the wrong module
+### F8 — `strata.ts`'s file header says "UNIT 2" and it is UNIT 1
+
+Doc only. Present in the stub at `d0253e1`, so it is the author's, not the local
+model's. `docs/b12-scorer/UNIT-1.md` is its spec.
+
+---
+
+## CLOSED
+
+### F6 — `UNIT-2.md`'s only worked example teaches the wrong module — FIXED
 
 Corrected 2026-08-07 after sweeping every symbol named in all three specs against
 where it is actually exported from. **This was recorded as two functions; it is
@@ -120,7 +129,11 @@ workarounds for one spec defect, in one exposure.
 `UNIT-1.md` and `UNIT-3.md` are clean: every cross-file reference in them names
 its module (`partitionByStrata` "from `./strata.js`", `subagentShare` likewise).
 
-### F7 — `budget_seconds` is an unregistered parameter that truncates a registered one
+**Fixed by giving `UNIT-2.md` an explicit import block covering all six symbols,
+plus the module at each of the five call sites that lacked it** — and by saying
+in the document why the block is there, so nobody removes it as redundant.
+
+### F7 — `budget_seconds` is an unregistered parameter that truncates a registered one — FIXED
 
 `repair`'s default budget is 300 s. `aggregate`'s rounds cost 106–132 s because
 it writes ~3,400 completion tokens, twice `terms`' ~1,700 — so the `max_rounds:
@@ -140,8 +153,12 @@ timeout. The scorer's MCP config sets `LOCAL_CODER_TIMEOUT_MS` to 600000, so
 two after it — trading a truncation for a starvation.
 
 The pair has to be set together. Longest LEGITIMATE round observed across three
-exposures is **149 s** (`aggregate` typically 106–132 s); the 256 s round was the
-backend dying. So a per-request ceiling near 180 s clears real work with margin
+exposures is **132 s** (exposure A; `aggregate` typically 106–132 s). **Corrected
+from 149 s**, which was itself a timeout, not a generation: that round carries
+`attempts: 0` and the error "LM Studio request timed out after 148755 ms" — a
+request handed the remaining budget as its ceiling. The 256 s round was the
+backend returning HTTP 400. So a per-request ceiling near 180 s clears real work
+with margin
 while cutting a dead backend off early instead of letting it eat the budget, and
 a 600 s budget then fits three such rounds with no single request able to consume
 more than 30% of it. **That property — no request can starve its successors — is
@@ -151,14 +168,13 @@ because a round with a corrective retry issues two requests.**
 Do not re-run a unit that already has an observation in order to give it the
 rounds it should have had — that is a second draw at the same bar.
 
-### F8 — `strata.ts`'s file header says "UNIT 2" and it is UNIT 1
-
-Doc only. Present in the stub at `d0253e1`, so it is the author's, not the local
-model's. `docs/b12-scorer/UNIT-1.md` is its spec.
-
----
-
-## CLOSED
+**Fixed as `TIMEOUT_MS=180000` / `BUDGET_SECONDS=600` / `MAX_ROUNDS=3` in the
+scorer, and — because both travel through a PROMPT and both are optional
+arguments with defaults — recorded in `detail.budget_seconds` and
+`detail.max_rounds` and checked per repair row. A session that drops one is now
+a `limits-mismatch` VOID; a row that predates the fields is `limits-unverifiable`,
+never a pass.** Without that half, the fix would have been a registered condition
+nothing could confirm — which is precisely F5.
 
 ### F4 — a unit's state came from the vitest exit code alone — FIXED `f6926b4`
 

@@ -72,6 +72,10 @@ head2 "The telemetry-window reader, against fabricated windows"
 # looks at. Any field this fabricates that the tool does not write is a test
 # passing against a shape that never occurs, so keep it to what src/tools/
 # repair.ts records: tool, invocation_id, detail.{passed,model,context_files,rounds}.
+# B12_LIMITS controls the two limit fields a row carries: "ok" writes the
+# expected pair, "-" omits both (a row from before they existed), or give an
+# explicit "budget,rounds" pair to force a mismatch.
+B12_LIMITS="ok"
 row() { # row <passed> <model> <context_files json or -> <attempts per round, space separated>
   local passed="$1" model="$2" ctx="$3"; shift 3
   local rounds="" n=1
@@ -89,8 +93,14 @@ row() { # row <passed> <model> <context_files json or -> <attempts per round, sp
   rounds=${rounds%,}
   local ctxfield=""
   [ "$ctx" = "-" ] || ctxfield=",\"context_files\":$ctx"
-  printf '{"tool":"repair","invocation_id":"i%s","detail":{"passed":%s,"model":"%s"%s,"rounds":[%s]}}\n' \
-    "$n" "$passed" "$model" "$ctxfield" "$rounds"
+  local limfield=""
+  case "$B12_LIMITS" in
+    -) limfield="" ;;
+    ok) limfield=',"budget_seconds":600,"max_rounds":3' ;;
+    *) limfield=",\"budget_seconds\":${B12_LIMITS%,*},\"max_rounds\":${B12_LIMITS#*,}" ;;
+  esac
+  printf '{"tool":"repair","invocation_id":"i%s","detail":{"passed":%s,"model":"%s"%s%s,"rounds":[%s]}}\n' \
+    "$n" "$passed" "$model" "$ctxfield" "$limfield" "$rounds"
 }
 MODEL="qwen3-coder-30b-a3b-instruct-dwq-v2"
 CTXJSON='["src/cost/b12/types.ts","src/cost/rates.ts","src/cost/report.ts"]'
@@ -98,6 +108,7 @@ CTXDECL='"src/cost/b12/types.ts", "src/cost/rates.ts", "src/cost/report.ts"'
 
 read_window_of() { # read_window_of <telemetry file> <byte offset> [model expected]
   B12_TELE="$1" B12_FROM="$2" B12_MODEL_EXPECT="${3:-$MODEL}" B12_CTX_EXPECT="$CTXDECL" \
+    B12_BUDGET_EXPECT=600 B12_ROUNDS_EXPECT=3 \
     node "$WINDOW_JS" "$TMP/window.json" 2>&1 | head -1
 }
 
@@ -108,49 +119,49 @@ row true "$MODEL" "$CTXJSON" 1 > "$T"
 OFFSET=$(wc -c < "$T" | tr -d ' ')
 
 { row false "$MODEL" "$CTXJSON" 3 2; } >> "$T"
-check "rows before the offset are excluded" "1 0 5 ok ok" "$(read_window_of "$T" "$OFFSET")"
+check "rows before the offset are excluded" "1 0 5 ok ok ok" "$(read_window_of "$T" "$OFFSET")"
 
 : > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
-check "one call, passed, one attempt" "1 1 1 ok ok" "$(read_window_of "$T" 0)"
+check "one call, passed, one attempt" "1 1 1 ok ok ok" "$(read_window_of "$T" 0)"
 
 # EXPOSURE B'S AGGREGATE, which is the regression this whole change exists for:
 # two repair calls, both dead in the backend, zero tokens generated.
 : > "$T"; { row false "$MODEL" "$CTXJSON"; row false "$MODEL" "$CTXJSON"; } > "$T"
-check "two calls, no rounds at all -> 0 attempts" "2 0 0 ok ok" "$(read_window_of "$T" 0)"
+check "two calls, no rounds at all -> 0 attempts" "2 0 0 ok ok ok" "$(read_window_of "$T" 0)"
 
 : > "$T"; row false "$MODEL" "$CTXJSON" 0 0 > "$T"
-check "rounds present but empty -> 0 attempts" "1 0 0 ok ok" "$(read_window_of "$T" 0)"
+check "rounds present but empty -> 0 attempts" "1 0 0 ok ok ok" "$(read_window_of "$T" 0)"
 
 : > "$T"
-check "an empty window reports no rows" "0 0 0 unknown no-rows" "$(read_window_of "$T" 0)"
+check "an empty window reports no rows" "0 0 0 unknown no-rows no-rows" "$(read_window_of "$T" 0)"
 
 # A gate row in the same window is not a repair row.
 : > "$T"; printf '{"tool":"gate","detail":{"passed":true}}\n' > "$T"
-check "a gate row is not counted as a repair row" "0 0 0 unknown no-rows" "$(read_window_of "$T" 0)"
+check "a gate row is not counted as a repair row" "0 0 0 unknown no-rows no-rows" "$(read_window_of "$T" 0)"
 
 : > "$T"; printf 'this line is not json\n' > "$T"; row true "$MODEL" "$CTXJSON" 1 >> "$T"
-check "an unparseable line is skipped, not fatal" "1 1 1 ok ok" "$(read_window_of "$T" 0)"
+check "an unparseable line is skipped, not fatal" "1 1 1 ok ok ok" "$(read_window_of "$T" 0)"
 
 # --- the two VOID conditions -------------------------------------------------
 : > "$T"; row true "some-other-model" "$CTXJSON" 1 > "$T"
-check "a foreign local model is a mismatch" "1 1 1 mismatch ok" "$(read_window_of "$T" 0)"
+check "a foreign local model is a mismatch" "1 1 1 mismatch ok ok" "$(read_window_of "$T" 0)"
 
 : > "$T"; row true "$MODEL" - 1 > "$T"
-check "an ABSENT context_files key is unknown, NOT a pass" "1 1 1 ok unknown" "$(read_window_of "$T" 0)"
+check "an ABSENT context_files key is unknown, NOT a pass" "1 1 1 ok unknown ok" "$(read_window_of "$T" 0)"
 
 : > "$T"; row true "$MODEL" 'null' 1 > "$T"
-check "a null context_files is unknown, NOT a pass" "1 1 1 ok unknown" "$(read_window_of "$T" 0)"
+check "a null context_files is unknown, NOT a pass" "1 1 1 ok unknown ok" "$(read_window_of "$T" 0)"
 
 : > "$T"; row true "$MODEL" '["src/cost/b12/types.ts","src/cost/rates.ts"]' 1 > "$T"
-check "report.ts absent from the prompt is missing" "1 1 1 ok missing" "$(read_window_of "$T" 0)"
+check "report.ts absent from the prompt is missing" "1 1 1 ok missing ok" "$(read_window_of "$T" 0)"
 
 : > "$T"; row true "$MODEL" '[]' 1 > "$T"
-check "an empty context list is missing, not unknown" "1 1 1 ok missing" "$(read_window_of "$T" 0)"
+check "an empty context list is missing, not unknown" "1 1 1 ok missing ok" "$(read_window_of "$T" 0)"
 
 # Two rows, one carrying the key and one not: the run cannot claim the condition
 # held on the strength of the row that happens to answer.
 : > "$T"; { row false "$MODEL" "$CTXJSON" 1; row true "$MODEL" - 1; } > "$T"
-check "one row without the key makes the whole unit unknown" "2 1 2 ok unknown" "$(read_window_of "$T" 0)"
+check "one row without the key makes the whole unit unknown" "2 1 2 ok unknown ok" "$(read_window_of "$T" 0)"
 
 # The JSON side file, which is what reaches the artifact.
 : > "$T"; row true "$MODEL" "$CTXJSON" 2 > "$T"
@@ -161,13 +172,44 @@ check "the side file records the observed context files" \
 check "the side file records the observed model" "$MODEL" \
   "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).localModelObserved.join(",")' "$TMP/window.json")"
 
+# --- the limits, which travel through a PROMPT and can simply not arrive ------
+# `repair` takes both as optional arguments with defaults, so a session that
+# dropped one is measured at 300 s / 3 rounds with nothing saying so. These are
+# the checks that make the difference visible.
+B12_LIMITS="-"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+check "limits ABSENT is unknown, NOT a pass" "1 1 1 ok ok unknown" "$(read_window_of "$T" 0)"
+
+B12_LIMITS="300,3"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+check "the DEFAULT budget where 600 was registered is a mismatch" "1 1 1 ok ok mismatch" \
+  "$(read_window_of "$T" 0)"
+
+B12_LIMITS="600,1"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+check "a wrong max_rounds is a mismatch even with the right budget" "1 1 1 ok ok mismatch" \
+  "$(read_window_of "$T" 0)"
+
+# One row right and one row wrong: the unit cannot pass on the strength of the
+# one that happens to agree.
+B12_LIMITS="ok"; : > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+B12_LIMITS="300,3"; row false "$MODEL" "$CTXJSON" 1 >> "$T"
+check "one row at the default makes the whole unit a mismatch" "2 1 2 ok ok mismatch" \
+  "$(read_window_of "$T" 0)"
+
+B12_LIMITS="ok"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+read_window_of "$T" 0 >/dev/null
+check "the side file records expected and observed apart" "600|600|3|3" \
+  "$(node -p 'const w=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); [w.budgetSecondsExpected,w.budgetSecondsObserved.join(","),w.maxRoundsExpected,w.maxRoundsObserved.join(",")].join("|")' "$TMP/window.json")"
+
 # ---------------------------------------------------------------------------
 head2 "The state decision, against every branch"
 # ---------------------------------------------------------------------------
 # Driven with the same variable names the loop uses, under `set -u`, so a name
 # this block reads and the loop does not set would fail here rather than on the
 # Mac at unit 3 of a $40 run.
-state_of() { # state_of <vitest rc> <calls> <passed> <attempts> [model verdict] [ctx verdict] [unit]
+state_of() { # state_of <vitest rc> <calls> <passed> <attempts> [model] [ctx] [unit] [limits]
   (
     set -u
     ok()   { :; }
@@ -175,8 +217,9 @@ state_of() { # state_of <vitest rc> <calls> <passed> <attempts> [model verdict] 
     warn() { :; }
     N=1; UNIT="${7:-aggregate}"; CLOSED=0; VOIDS=""
     MODEL_LOCAL="$MODEL"; CONTEXT_FILES="$CTXDECL"; UNIT_TELE_JSON="/dev/null"
+    BUDGET_SECONDS=600; MAX_ROUNDS=3
     VITEST_RC="$1"; R_CALLS="$2"; R_PASSED="$3"; R_ATTEMPTS="$4"
-    R_MODEL="${5:-ok}"; R_CTX="${6:-ok}"
+    R_MODEL="${5:-ok}"; R_CTX="${6:-ok}"; R_LIMITS="${8:-ok}"
     UNIT_STATE=""
     . "$STATE_SH"
     printf '%s|%s|%s' "$UNIT_STATE" "$CLOSED" "$VOIDS"
@@ -203,8 +246,13 @@ check "an unverifiable context records a VOID" "closed|1| context-unverifiable:a
   "$(state_of 0 1 1 3 ok unknown)"
 check "a missing context file records a VOID" "closed|1| context-file-missing:aggregate" \
   "$(state_of 0 1 1 3 ok missing)"
-check "no rows records BOTH VOIDs" "no_repair_call|0| local-model-unverified:aggregate context-unverifiable:aggregate" \
-  "$(state_of 1 0 0 0 unknown no-rows)"
+check "a limits mismatch records a VOID" "closed|1| limits-mismatch:aggregate" \
+  "$(state_of 0 1 1 3 ok ok aggregate mismatch)"
+check "absent limits record a VOID, never a pass" "closed|1| limits-unverifiable:aggregate" \
+  "$(state_of 0 1 1 3 ok ok aggregate unknown)"
+check "no rows records ALL THREE VOIDs" \
+  "no_repair_call|0| local-model-unverified:aggregate context-unverifiable:aggregate limits-unverifiable:aggregate" \
+  "$(state_of 1 0 0 0 unknown no-rows aggregate no-rows)"
 
 # ---------------------------------------------------------------------------
 head2 "The fresh-exposure guard, against throwaway repositories"
@@ -306,7 +354,7 @@ head2 "End to end: exposure B's aggregate, through both units at once"
 LINE=$(read_window_of "$T" 0)
 set -- $LINE
 check "exposure B's aggregate reads as no_response, not red" "no_response|0|" \
-  "$(state_of 1 "$1" "$2" "$3" "$4" "$5")"
+  "$(state_of 1 "$1" "$2" "$3" "$4" "$5" aggregate "$6")"
 
 # ---------------------------------------------------------------------------
 head2 "The same thing again, on exposure B's REAL telemetry"
@@ -325,23 +373,32 @@ if [ ! -s "$SLICE" ]; then
   printf '    FAIL  the exposure B fixture is missing: %s\n' "$SLICE"; FAIL=$((FAIL + 1))
 else
   replay_state() { # replay_state <unit> <first row> <last row> <vitest exit that run recorded>
-    local unit="$1" vitest="$4" line c p a m x
+    local unit="$1" vitest="$4" line c p a m x l
     sed -n "$2,$3p" "$SLICE" > "$TMP/real.jsonl"
     line=$(B12_TELE="$TMP/real.jsonl" B12_FROM=0 B12_MODEL_EXPECT="$MODEL" \
-      B12_CTX_EXPECT="$CTXDECL" node "$WINDOW_JS" "$TMP/real.json" | head -1)
-    read -r c p a m x <<EOF
+      B12_CTX_EXPECT="$CTXDECL" B12_BUDGET_EXPECT=600 B12_ROUNDS_EXPECT=3 \
+      node "$WINDOW_JS" "$TMP/real.json" | head -1)
+    # SIX fields, and `read` must name all six. With five names the last one
+    # swallows the rest of the line, and the verdict this section exists to check
+    # would arrive glued to its neighbour and be judged by the wrong branch.
+    read -r c p a m x l <<EOF
 $line
 EOF
-    state_of "$vitest" "$c" "$p" "$a" "$m" "$x" "$unit"
+    state_of "$vitest" "$c" "$p" "$a" "$m" "$x" "$unit" "$l"
   }
   # strata closed for real: repair returned passed:true and its oracle went green.
-  check "real slice: strata -> closed" "closed|1| context-unverifiable:strata" \
+  check "real slice: strata -> closed" "closed|1| context-unverifiable:strata limits-unverifiable:strata" \
     "$(replay_state strata 1 1 0)"
   # terms ran and failed: five attempts across two calls.
-  check "real slice: terms -> red" "red|0| context-unverifiable:terms" \
+  check "real slice: terms -> red" "red|0| context-unverifiable:terms limits-unverifiable:terms" \
     "$(replay_state terms 2 3 1)"
   # THE ONE THIS WORK EXISTS FOR. Two calls, zero attempts, published as `red`.
-  check "real slice: aggregate -> no_response, NOT red" "no_response|0| context-unverifiable:aggregate" \
+  # Both VOIDs fire on this slice and that is the honest reading: these rows
+  # predate `context_files` AND the two limits, so neither condition can be
+  # evaluated from them. The STATE is what this check is really about, and it is
+  # unchanged — `no_response`, not `red`.
+  check "real slice: aggregate -> no_response, NOT red" \
+    "no_response|0| context-unverifiable:aggregate limits-unverifiable:aggregate" \
     "$(replay_state aggregate 4 5 1)"
   # And every row predates detail.context_files, so exposure B's own central VOID
   # comes back UNVERIFIABLE from its own evidence — which is the reading

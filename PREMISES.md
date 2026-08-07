@@ -1530,6 +1530,33 @@ defect, and it pinned four of them in place.
   - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
     hedge that this would be its first real observation and not necessarily a bad
     one. Both halves resolved: real, and bad.
+- **TWO CONDITION CHANGES REGISTERED AFTER EXPOSURE B AND BEFORE ANY LATER RUN.**
+  Both are instrument repairs — they fix a spec that was wrong and a limit that
+  was never registered — but both change what the model is handed, so **no run
+  under them is comparable with exposure A or B** and any later exposure is a new
+  one with its own registration.
+  - **The two limits are now set as a pair and VERIFIED.** `budget_seconds: 600`
+    and `LOCAL_CODER_TIMEOUT_MS: 180000`, where before the budget was never
+    passed and defaulted to 300 s. Raising the budget alone would have traded a
+    truncation for a starvation: the per-request timeout is
+    `min(config.timeoutMs, remaining)`, and at 600/600 one slow round can be
+    issued with the whole budget. 180 s clears the longest LEGITIMATE round ever
+    observed (132 s, exposure A) by 36% while no single request can take more
+    than 30% of the budget. The 149 s and 256 s rounds on record were **not**
+    generations — one was a request handed the remaining budget as its timeout,
+    the other the backend returning HTTP 400.
+    **They travel through a prompt and both have defaults, so they are now
+    recorded in `detail.budget_seconds` / `detail.max_rounds` and checked per
+    repair row; absent is `unknown` and a VOID, never a pass.** Without that, a
+    session dropping one argument would be measured at 300 s with nothing saying
+    so — the same defect as exposure B's unverifiable context condition.
+  - **`UNIT-2.md` now names every import.** It named six cross-module functions
+    and gave the module for exactly one, and that one said `../report.js` — right
+    for three of the six and wrong for `multipliersFor` and `rateKey`, which live
+    in `../rates.js` and are imported-not-re-exported by `report.ts`. Exposure B
+    produced both failure modes from this in one run: a `TS2459` in one call and
+    an inline reimplementation in the other. **This is a spec that was wrong, not
+    a spec that was hard**, which is why it is repaired rather than left frozen.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and

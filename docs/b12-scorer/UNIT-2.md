@@ -12,6 +12,24 @@ implemented — call it, do not reimplement it.
   `write + cacheRead * max(0, T - 1 - t)`, where `write` is `m.cacheWrite1h` for
   ttl `"1h"` and `m.cacheWrite5m` for `"5m"`.
 
+**EVERY IMPORT THIS UNIT NEEDS, AND THEY ARE NOT ALL FROM THE SAME MODULE.**
+This list is here because the one worked example above used to be the document's
+only module hint, and generalising from it is wrong for two of the six:
+
+```ts
+import {
+  breakdownOfRequests, buildCounterfactual, buildSessionReport,
+  positionalMultiplier, unitsAddedByInstallation,
+} from "../report.js";
+import { multipliersFor, rateKey } from "../rates.js";
+import { subagentShare } from "./strata.js";
+```
+
+`multipliersFor` and `rateKey` live in `../rates.js`. `../report.js` imports them
+and does **not** re-export them, so importing either from `../report.js` is a
+`TS2459` — which is exactly what `run 2026-08-06-mac-b12-phase3-f2932ff` did
+before spending its remaining budget on the error.
+
 ## `windowInvocationIds(observation, transcript): Set<string>`
 
 Four hops, all required:
@@ -45,7 +63,8 @@ In order:
    - `sHi += (row.capped / rates.charsPerToken) * row.multiplier`
    - `sLo += (row.capped / rates.charsPerToken) * writeComponent`, where
      `writeComponent` is `m.cacheWrite1h` when `row.ttl === "1h"` and
-     `m.cacheWrite5m` when `"5m"`, with `m = multipliersFor(rates, row.rateKey)`.
+     `m.cacheWrite5m` when `"5m"`, with `m = multipliersFor(rates, row.rateKey)`
+     — `multipliersFor` **from `../rates.js`**, see the import block above.
      That is `positionalMultiplier` at `T - 1 - t = 0`.
    - Add the same two numbers into `perDelivery[row.tool]`
      (`{sLo, sHi, rowCount}`), creating the entry on first sight. Key by
@@ -59,7 +78,7 @@ In order:
     `./strata.js`.
 12. `billedRequestCount` = the number of `transcript.requests` in `owned`.
 13. `rateKeys` = sorted unique `rateKey(request.model, request.speed)` over those
-    same requests.
+    same requests. `rateKey` is **from `../rates.js`**, not `../report.js`.
 14. `taskId`, `arm`, `verificationStratum` from `input.observation`;
     `disposition` from `input.disposition`.
 

@@ -197,6 +197,41 @@ STUBS_FROZEN_AT="d0253e1"
 EXPOSURE="${B12_EXPOSURE:-B}"
 MIN_CONTEXT=65536
 CONTEXT_FILES='"src/cost/b12/types.ts", "src/cost/rates.ts", "src/cost/report.ts"'
+# THE TWO LIMITS THAT DECIDE HOW MANY ATTEMPTS THE MODEL ACTUALLY GETS, and they
+# have to be set as a PAIR. `repair`'s budget defaults to 300 s and this script
+# never passed one, while the prompt asks for `max_rounds: 3` -- so
+# `run 2026-08-07-mac-b12-phase3-c40e9f4` delivered TWO productive rounds on
+# `aggregate` and stopped on `budget` in both calls. The registered condition was
+# not the condition that ran.
+#
+# Raising the budget alone would trade a truncation for a starvation. The
+# per-request timeout is `min(config.timeoutMs, remaining)` (`src/tools/shared.ts`),
+# and `src/tools/repair.ts` records the hazard by name: when the two are equal,
+# round 1's request is issued with the WHOLE budget as its timeout. At 600/600
+# one slow round eats the two after it.
+#
+# So: a per-request ceiling that clears real work and cuts a dead backend off
+# early, and a budget that fits three of those. Longest LEGITIMATE round observed
+# across three exposures is 132 s (exposure A; `aggregate` typically 106-132 s).
+# The 149 s and 256 s rounds were not generations -- one was a request handed the
+# remaining budget as its timeout, the other was the backend returning HTTP 400.
+# 180 s therefore clears the real maximum by 36% while no single request can take
+# more than 30% of the budget.
+#
+# A single ROUND can still consume most of the budget: generation permits a
+# corrective retry, and the gate after it receives whatever is left. Recorded,
+# not fixed -- gates run in ~2 s here, and the property worth keeping is that no
+# REQUEST can starve its successors.
+#
+# BOTH ARE VERIFIED FROM TELEMETRY AFTERWARDS, not merely asked for. They reach
+# `repair` through a PROMPT -- the session is asked to pass them -- and both are
+# optional arguments with defaults, so a session that drops one is silently
+# measured at 300 s and 3 rounds with nothing recording that it happened. That is
+# the same shape as exposure B's context-files VOID, which was registered and
+# could not be checked because the field did not exist. It exists now.
+TIMEOUT_MS=180000
+BUDGET_SECONDS=600
+MAX_ROUNDS=3
 # A fresh exposure may not inherit a body closed under the OLD condition: that
 # would let one closure out of two attempts reach the ">= 2 of 3" bar and
 # silently loosen a threshold this project refuses to move. Resuming a run the
@@ -589,12 +624,20 @@ fs.writeFileSync(process.argv[1], JSON.stringify({
     env: {
       LOCAL_CODER_MAX_OUTPUT_TOKENS: "16384",
       LOCAL_CODER_CONTEXT_TOKENS: process.argv[3],
-      LOCAL_CODER_TIMEOUT_MS: "600000",
+      LOCAL_CODER_TIMEOUT_MS: process.argv[4],
       LOCAL_CODER_AUTO_CLAUDE_MD: "0",
     },
   } },
 }, null, 2) + "\n");
-' "$MCP_CFG" "$REPO" "$WINDOW_START" || refuse "could not write the MCP config"
+' "$MCP_CFG" "$REPO" "$WINDOW_START" "$TIMEOUT_MS" || refuse "could not write the MCP config"
+# READ BACK, because this one is now load-bearing on the measurement rather than
+# on whether the server starts. A timeout that silently stayed at its old value
+# would put every round back under the ceiling this run exists to move.
+node -e '
+const c = require(process.argv[1]);
+const got = c.mcpServers["local-coder"].env.LOCAL_CODER_TIMEOUT_MS;
+if (got !== process.argv[2]) { console.error("timeout is " + got + ", expected " + process.argv[2]); process.exit(1); }
+' "$MCP_CFG" "$TIMEOUT_MS" || refuse "the per-request timeout did not land in the MCP config"
 node -e '
 const c = require(process.argv[1]);
 const a = c.mcpServers["local-coder"].args[0];
@@ -730,6 +773,18 @@ for (const r of withKey) for (const p of (r.detail.context_files || [])) seen.ad
 const ctxVerdict = repairs.length === 0 ? "no-rows"
   : withKey.length < repairs.length ? "unknown"
   : want.every((p) => seen.has(p)) ? "ok" : "missing";
+// THE TWO LIMITS, as RESOLVED by the tool rather than as asked for in the
+// prompt. They decide how many attempts the model got, they reach `repair`
+// through a session that may drop them, and both have defaults -- so a run can
+// be measured at 300 s while its own registration says 600 and nothing
+// contradicts it. Absent is `unknown`, never a pass, for the same reason as the
+// context files: a row that predates the field cannot answer the question.
+const budgets = [...new Set(repairs.map((r) => r.detail && r.detail.budget_seconds))];
+const roundCaps = [...new Set(repairs.map((r) => r.detail && r.detail.max_rounds))];
+const limitsVerdict = repairs.length === 0 ? "no-rows"
+  : budgets.some((b) => typeof b !== "number") || roundCaps.some((m) => typeof m !== "number") ? "unknown"
+  : budgets.every((b) => b === Number(e.B12_BUDGET_EXPECT)) &&
+    roundCaps.every((m) => m === Number(e.B12_ROUNDS_EXPECT)) ? "ok" : "mismatch";
 fs.writeFileSync(out, JSON.stringify({
   repairCalls: repairs.length,
   repairPassed: passed,
@@ -740,11 +795,16 @@ fs.writeFileSync(out, JSON.stringify({
   contextFilesObserved: [...seen].sort(),
   contextFilesVerdict: ctxVerdict,
   rowsWithoutContextKey: repairs.length - withKey.length,
+  budgetSecondsExpected: Number(e.B12_BUDGET_EXPECT),
+  budgetSecondsObserved: budgets,
+  maxRoundsExpected: Number(e.B12_ROUNDS_EXPECT),
+  maxRoundsObserved: roundCaps,
+  limitsVerdict,
   invocationIds: repairs.map((r) => r.invocation_id).filter(Boolean),
 }, null, 2) + "\n");
 // One line, five fields, for the shell. Anything else on stdout is a failure to
 // produce it, and the shell checks the shape rather than trusting the exit code.
-process.stdout.write([repairs.length, passed, attempts, modelVerdict, ctxVerdict].join(" ") + "\n");
+process.stdout.write([repairs.length, passed, attempts, modelVerdict, ctxVerdict, limitsVerdict].join(" ") + "\n");
 JS
 [ -s "$UNIT_WINDOW_JS" ] || refuse "the telemetry-window reader is empty; every unit below would be scored on the vitest exit code alone, which is the defect this run exists to fix"
 
@@ -848,7 +908,8 @@ Then call mcp__local-coder__repair EXACTLY ONCE, with these arguments:
   files:         [\"$SRC\"]
   spec:          the full text of $SPEC, verbatim
   checks:        \"all\"
-  max_rounds:    3
+  max_rounds:    $MAX_ROUNDS
+  budget_seconds: $BUDGET_SECONDS
   context_files: [$CONTEXT_FILES]
 
 Then report, verbatim, the returned passed, rounds_used, stopped_because and
@@ -921,9 +982,10 @@ write closes the gate and destroys the measurement this run exists to produce."
   UNIT_TELE_JSON="$OUT/unit-$N-$UNIT.repair.json"
   WINDOW_LINE=$(B12_TELE="$TELEMETRY" B12_FROM="$UNIT_TELE_BEFORE" \
     B12_MODEL_EXPECT="$MODEL_LOCAL" B12_CTX_EXPECT="$CONTEXT_FILES" \
+    B12_BUDGET_EXPECT="$BUDGET_SECONDS" B12_ROUNDS_EXPECT="$MAX_ROUNDS" \
     node "$UNIT_WINDOW_JS" "$UNIT_TELE_JSON" 2>&1 | head -1)
-  R_CALLS=""; R_PASSED=""; R_ATTEMPTS=""; R_MODEL=""; R_CTX=""
-  read -r R_CALLS R_PASSED R_ATTEMPTS R_MODEL R_CTX <<WINDOW
+  R_CALLS=""; R_PASSED=""; R_ATTEMPTS=""; R_MODEL=""; R_CTX=""; R_LIMITS=""
+  read -r R_CALLS R_PASSED R_ATTEMPTS R_MODEL R_CTX R_LIMITS <<WINDOW
 $WINDOW_LINE
 WINDOW
   # SHAPE, NOT EXIT CODE. An unreadable window is recorded as one: every count
@@ -939,10 +1001,10 @@ WINDOW
       ''|*[!0-9]*) TELE_OK=0 ;;
     esac
   done
-  [ -n "$R_MODEL" ] && [ -n "$R_CTX" ] || TELE_OK=0
+  [ -n "$R_MODEL" ] && [ -n "$R_CTX" ] && [ -n "$R_LIMITS" ] || TELE_OK=0
   if [ "$TELE_OK" != "1" ]; then
     warn "could not read this unit's telemetry window (\"$WINDOW_LINE\"). Recorded as no observation rather than guessed at."
-    R_CALLS=0; R_PASSED=0; R_ATTEMPTS=0; R_MODEL="unknown"; R_CTX="unknown"
+    R_CALLS=0; R_PASSED=0; R_ATTEMPTS=0; R_MODEL="unknown"; R_CTX="unknown"; R_LIMITS="unknown"
   fi
   info "repair rows $R_CALLS, passed $R_PASSED, generation attempts $R_ATTEMPTS"
 
@@ -1009,6 +1071,22 @@ WINDOW
     *)
       warn "VOID: detail.context_files is absent from a repair row — that row predates the field, so this exposure's context condition is UNVERIFIABLE. Unverifiable is not satisfied."
       VOIDS="$VOIDS context-unverifiable:$UNIT" ;;
+  esac
+  # THE LIMITS THE MODEL ACTUALLY RAN UNDER. They travel through a prompt and
+  # both have defaults, so a session that dropped one would be measured at 300 s
+  # and 3 rounds while this run's registration says otherwise — and nothing here
+  # would have contradicted it before the field existed.
+  case "$R_LIMITS" in
+    ok) ok "limits verified in telemetry: budget ${BUDGET_SECONDS}s, max_rounds $MAX_ROUNDS" ;;
+    mismatch)
+      warn "VOID: a repair row ran under limits other than budget ${BUDGET_SECONDS}s / max_rounds $MAX_ROUNDS. The session did not pass what the prompt asked for. See $UNIT_TELE_JSON."
+      VOIDS="$VOIDS limits-mismatch:$UNIT" ;;
+    no-rows)
+      warn "VOID: no repair row, so the limits are unverifiable for this unit."
+      VOIDS="$VOIDS limits-unverifiable:$UNIT" ;;
+    *)
+      warn "VOID: detail.budget_seconds or detail.max_rounds is absent from a repair row — that row predates the field, so how many attempts the model got is UNVERIFIABLE."
+      VOIDS="$VOIDS limits-unverifiable:$UNIT" ;;
   esac
   # <<< B12-STATE-BLOCK
 

@@ -631,6 +631,51 @@ describe("repair loop", () => {
     expect(detail.model).toBeNull();
   });
 
+  it("records the limits that were RESOLVED, not the ones that were asked for", async () => {
+    // Both are optional with defaults, so a caller that omits one is measured
+    // under a condition it did not register — and no row could say which
+    // afterwards. B12's Phase-3 prompt asks a session to pass these through;
+    // if the session drops one, this is the only thing that will ever notice.
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1, budget_seconds: 600 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
+    expect(detail.budget_seconds).toBe(600);
+    expect(detail.max_rounds).toBe(1);
+  });
+
+  it("records the DEFAULTS when the caller omitted them, never absent", async () => {
+    // The case that matters, and the one an argument-echo would get wrong: a
+    // caller that passed nothing still ran under a specific budget, and the row
+    // has to name it. Absent would read as "unknown" when the answer is 300.
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair(baseArgs, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
+    expect(detail.budget_seconds).toBe(300);
+    expect(detail.max_rounds).toBe(3);
+  });
+
   it("writes the context files to telemetry, which `files` cannot hold", async () => {
     // `detail.files` is the diff's changed list, so it is structurally editable
     // files only — a read-only reference file can never appear in it. B12's

@@ -933,6 +933,19 @@ async function repairLoop(
       // log had no subject — and B7 is a latency premise. `null` now means the
       // call ended before any generation started, not that the name was lost.
       model,
+      // THE TWO LIMITS THAT DECIDE HOW MANY ATTEMPTS THE MODEL GOT, recorded as
+      // RESOLVED rather than as requested. Both are optional arguments with
+      // defaults, so a caller that omits one is silently measured under a
+      // different condition than the one it registered — and until now no row
+      // could tell the two apart afterwards. B12's Phase-3 prompt asks for
+      // `max_rounds: 3` and got two productive rounds out of a 300 s default
+      // budget; that only became visible by timing the rounds by hand.
+      //
+      // `budget_seconds` is the one that binds: the per-request timeout is
+      // `min(config.timeoutMs, remaining)` (`shared.ts`), so the budget caps
+      // every request as well as the call.
+      budget_seconds: budgetMs / 1000,
+      max_rounds: maxRounds,
       files: changed,
       // The read-only files the model was actually GIVEN, which `files` above
       // structurally cannot hold: `changed` comes from the diff, so it lists
