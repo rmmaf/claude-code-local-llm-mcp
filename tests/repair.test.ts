@@ -768,11 +768,19 @@ describe("repair loop", () => {
     // payload (repair.ts), which is why this field goes in `detail` and nowhere
     // near `result` — two runs of one fixture, one with context files and one
     // without, have to agree on all three metered figures.
+    //
+    // THE CLOCK IS INJECTED, AND WITHOUT IT THIS TEST IS NOISE. `bytes_returned`
+    // is `JSON.stringify(result).length`, and `result.rounds` carries
+    // `model_ms`/`gate_ms` off the wall clock — so two runs differ by one byte
+    // the moment a timing crosses a digit boundary, which is a real 656-vs-657
+    // failure this file produced. A control that fires on the clock cannot say
+    // anything about the field it exists to watch.
     const run = async (context: string[] | undefined) => {
       const target = tempRoot();
       await setup(target);
       await writeFileTree(target, { "src/reference.ts": "export const K = 1;\n" });
       const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+      let tick = 0;
       const result = await runRepair(
         { ...baseArgs, ...(context === undefined ? {} : { context_files: context }), max_rounds: 1 },
         testConfig(target),
@@ -783,6 +791,7 @@ describe("repair loop", () => {
           ]),
           fetchImpl,
           runner: noLmsRunner(),
+          now: () => (tick += 1_000),
         }
       );
       const row = (await readTelemetry(target))[0];
