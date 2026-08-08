@@ -386,6 +386,24 @@ the sequence of FIRST executions, and `admissionRule` 12 governs re-runs with
 no temporal clause; they pass the guard and are counted at scoring over the
 same runlog. Both counterexamples and the re-run permission fire in tests.
 
+**A SIXTH ROUND: A PATH-TRAVERSAL DELETE, CONFIRMED AS A CLASS; AND A
+PROTOCOL-SEALING DEMAND, SPLIT.** `task.id` was interpolated into the worktree
+path handed to a recursive delete — `../../target` escaped `.b12/` and erased
+an unrelated directory before git ever ran. Fixed as the CLASS, not the
+instance: `task.id` AND `runId` (which names `evidence/<runId>/…`) are held to
+one safe-filename grammar in the completeness sweep, and the worktree path
+additionally proves it is a direct child of `.b12/` before any `rmSync`. On
+protocol sealing, the checkable pieces the REGISTERED method names shipped:
+the proof session (the committed MEASUREMENTS row: "proof session showed
+`mcp__local-coder__status` callable") must exist, have called the tool, and be
+a SEPARATE session from the six replicates; `context.commit` — which script
+produced this — is required provenance. The wider demands — the exact
+registered prompt and a byte-exact argv template — were DECLINED as minting:
+the pre-declaration fixes "identical but for the arm", not a prompt string,
+and the artifact's own note says the argv is NOT byte-for-byte before a
+manifest exists. The registered argv components stay pinned; the
+sessions-really-ran boundary stays registered above.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **Artifacts 7 and 11**, which belong to UNIT 5 and could not be written until

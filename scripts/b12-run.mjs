@@ -439,6 +439,18 @@ export function manifestDeclarationGaps(manifest) {
   };
   const pinned = manifest?.pinned ?? {};
 
+  // IDS ARE PATH SEGMENTS, SO THEY GET A GRAMMAR. A sixth adversarial round
+  // found `task.id` interpolated into the worktree path and handed to a
+  // recursive delete — an id of `../../target` escaped `.b12/` and erased an
+  // unrelated directory before git ever ran. `runId` has the same job in
+  // `evidence/<runId>/…`, so both are held to one safe-filename grammar; the
+  // containment assert in `observe` is the second wall, not the only one.
+  const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+  need(
+    str(manifest?.runId) && SAFE_ID.test(manifest.runId),
+    "manifest.runId is absent or not a safe path segment ([A-Za-z0-9][A-Za-z0-9_-]{0,63}) — it names evidence/<runId>/… on disk, and artifact 1's whole naming scheme hangs off it"
+  );
+
   // Run-level, artifact 1: "the pinned Claude Code version and binary sha256;
   // the measured clientTruncationCap for that version; ... the pacing ceiling
   // and the per-task denominator share cap; the scoring command string; and the
@@ -518,7 +530,10 @@ export function manifestDeclarationGaps(manifest) {
     const tneed = (cond, msg) => {
       if (!cond) gaps.push(`task ${id} ${msg}`);
     };
-    tneed(str(t?.id), "carries no id");
+    tneed(
+      str(t?.id) && SAFE_ID.test(t.id),
+      "carries no id, or an id that is not a safe path segment ([A-Za-z0-9][A-Za-z0-9_-]{0,63}) — the id names the worktree directory a recursive delete targets"
+    );
     tneed(str(t?.prompt), 'carries no prompt (artifact 1: "the prompt text")');
     tneed(str(t?.promptSha256), 'carries no promptSha256 (design.artifacts 1: "the prompt text and its sha256"; required, not compared-if-present)');
     tneed(str(t?.baseCommit), 'declares no baseCommit (artifact 1: "the base commit SHA"; voidConditions 11)');
@@ -877,6 +892,27 @@ export function validateInstalledCharsProbe(probe, live) {
   if (typeof ctx.prompt !== "string" || ctx.prompt.length === 0) {
     fail("the probe records no session prompt — the protocol fixes one prompt, identical across arms");
   }
+  // Which script produced this is provenance too: the committed measurement
+  // row names "scripts/b12-installedchars-probe-mac.sh at <commit>", and the
+  // commit is the field that makes that claim checkable against git history.
+  if (typeof ctx.commit !== "string" || ctx.commit.length === 0) {
+    fail("the probe records no producing commit (context.commit) — provenance for WHICH script ran is part of the record");
+  }
+  // The proof session is part of the registered METHOD (the committed
+  // MEASUREMENTS row: "proof session showed mcp__local-coder__status
+  // callable") — it is what proves the treatment config actually installs the
+  // server, so its absence or a proof that called no local tool refuses. A
+  // sixth adversarial round asked for more — the exact registered prompt and
+  // a byte-exact argv template — and those are DECLINED as minting: the
+  // pre-declaration fixes "identical but for the arm", not a prompt string,
+  // and the artifact's own note says the argv is NOT byte-for-byte before a
+  // manifest exists. The REGISTERED components are what this function pins.
+  const proof = probe.proofSession ?? null;
+  if (!proof || typeof proof !== "object") fail("the probe carries no proofSession — the registered method's proof that the treatment config installs the server");
+  if (!Array.isArray(proof.toolsCalled) || !proof.toolsCalled.includes("mcp__local-coder__status")) {
+    fail(`the proof session did not call mcp__local-coder__status (toolsCalled: ${JSON.stringify(proof.toolsCalled ?? null)}) — installation was never proven`);
+  }
+  if (typeof proof.sessionId !== "string" || proof.sessionId.length === 0) fail("the proof session carries no sessionId");
   const shape = ctx.argvShape ?? {};
   // "--strict-mcp-config" does not contain the substring "--mcp-config", so
   // these three includes-checks pin the registered shape: both arms strict,
@@ -942,6 +978,9 @@ export function validateInstalledCharsProbe(probe, live) {
   });
   if (new Set(sessionIds).size !== 6) {
     fail("the six replicate sessions do not carry six distinct session ids — fresh sessions are the protocol, and a reused id is a resumed session");
+  }
+  if (sessionIds.includes(proof.sessionId)) {
+    fail(`the proof session's id ${proof.sessionId} is also a replicate session — the proof is a SEPARATE session by the registered method`);
   }
   if (deltas.some((d) => d < 0)) {
     fail(`recomputed deltas ${JSON.stringify(deltas)} include a negative — outside the pre-declared domain (treatment minus control; a negative says the arms are reversed or the measurement is wrong)`);
@@ -1357,7 +1396,18 @@ async function observe(args) {
   // green where it would have returned 40 KB, and reversing the manifest's order
   // moves the result by more than the gap between the fall line and the hold.
   if (!task.baseCommit) refuse(`task ${task.id} declares no baseCommit`);
-  const treeDir = path.join(REPO, ".b12", `${task.id}-${arm}`);
+  const b12Root = path.join(REPO, ".b12");
+  const treeDir = path.join(b12Root, `${task.id}-${arm}`);
+  // THE SECOND WALL before the recursive delete: the id grammar above already
+  // refuses traversal, but a path that is about to be `rmSync`'d recursively
+  // earns its own containment proof — exactly one segment below `.b12/`,
+  // never outside it.
+  {
+    const rel = path.relative(b12Root, treeDir);
+    if (rel.startsWith("..") || path.isAbsolute(rel) || rel.includes(path.sep) || rel.length === 0) {
+      refuse(`worktree path ${treeDir} is not a direct child of ${b12Root} — refusing to delete or create it`);
+    }
+  }
   if (existsSync(treeDir)) rmSync(treeDir, { recursive: true, force: true });
   mkdirSync(path.dirname(treeDir), { recursive: true });
   git(["worktree", "add", "--detach", treeDir, task.baseCommit]);

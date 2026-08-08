@@ -5,15 +5,15 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**THE F24 HARNESS PASS SHIPPED, THROUGH FIVE ADVERSARIAL ROUNDS.** Planning
-gate (3 of 6 readings REFUTED — they shaped the code); diff review (2 fixed, 1
-declined-as-code, registered); branch review (validator RECOMPUTES the probe
-from its replicate records — no trusted summary, no fallback); fourth round
-(abPairs schema validated; drift in EVERY instruction component invalidates;
-the pair-membership wider ask DECLINED against admissionRule 13); fifth round
-(order guard: a FIRST run needs ALL predecessors executed, not just no-later-
-task-ran — and its old refusal of LATE RE-RUNS was over-strict, corrected:
-rule 12 has no temporal clause; re-runs pass, counted at scoring).
+**THE F24 HARNESS PASS SHIPPED, THROUGH SIX ADVERSARIAL ROUNDS.** Planning
+gate (3 of 6 readings REFUTED — they shaped the code); diff review (2 fixed,
+1 declined-as-code); branch review (the validator RECOMPUTES the probe from
+its replicate records — no trusted summary, no fallback); fourth (abPairs
+schema; drift in EVERY instruction component invalidates; pair-membership ask
+DECLINED per admissionRule 13); fifth (FIRST runs need ALL predecessors; late
+re-runs pass — rule 12 has no temporal clause); sixth (traversal-safe grammar
+for task.id AND runId, `.b12/` containment before the delete; proof session +
+commit required; byte-exact demands DECLINED as minting).
 `observe()` resolves `installedChars` from COMMITTED evidence only (under
 `evidence/`, byte-identical to HEAD's blob, sha REQUIRED), key asserted
 component by component (any move refuses; sealed blobs force a re-probe);

@@ -2555,7 +2555,12 @@ describe("the B12 harness", () => {
         deltaTokens: deltas[0],
         installedCharsAdapter: Math.round((deltas[0] as number) * 3.7 * 10) / 10,
         preDeclaration: "PREMISES.md § B12 — test fixture",
+        proofSession: {
+          sessionId: "sess-proof",
+          toolsCalled: ["ToolSearch", "mcp__local-coder__status"],
+        },
         context: {
+          commit: "fixture-commit",
           claudeBinarySha256: "bin-sha",
           mcpConfigSha256: "mcp-sha",
           policyBlobSha256: null as string | null,
@@ -2699,6 +2704,47 @@ describe("the B12 harness", () => {
       expect(() => validateInstalledCharsProbe(badShape, live())).toThrow(/control argv shape/);
     });
 
+    it("requires the proof session and the producing commit — the registered method's own pieces", async () => {
+      // The sixth round asked the validator to seal the protocol harder. The
+      // pieces the REGISTERED method actually names are checked: the committed
+      // MEASUREMENTS row says "proof session showed mcp__local-coder__status
+      // callable", and names the producing script at its commit. The wider
+      // demands — exact prompt text, byte-exact argv — were DECLINED as
+      // minting: the pre-declaration fixes "identical but for the arm", not a
+      // prompt string.
+      const { validateInstalledCharsProbe } = await load();
+      const noProof = probe() as Record<string, unknown>;
+      delete noProof.proofSession;
+      expect(() => validateInstalledCharsProbe(noProof, live())).toThrow(/no proofSession/);
+      const noStatus = probe();
+      noStatus.proofSession.toolsCalled = ["ToolSearch"];
+      expect(() => validateInstalledCharsProbe(noStatus, live())).toThrow(/installation was never proven/);
+      // The proof is a SEPARATE session — an id shared with a replicate says
+      // the proof rode inside an arm.
+      const shared = probe();
+      shared.proofSession.sessionId = shared.replicates[0]!.treatment.sessionId;
+      expect(() => validateInstalledCharsProbe(shared, live())).toThrow(/SEPARATE session/);
+      const noCommit = probe() as { context: Record<string, unknown> };
+      delete noCommit.context.commit;
+      expect(() => validateInstalledCharsProbe(noCommit, live())).toThrow(/no producing commit/);
+    });
+
+    it("refuses ids that are not safe path segments — the recursive delete's first wall", async () => {
+      // The sixth round's traversal finding: task.id is interpolated into the
+      // worktree path that gets rmSync'd recursively, and runId names
+      // evidence/<runId>/… — an id of `../../target` escaped `.b12/`.
+      const { manifestDeclarationGaps } = await load();
+      const traversal = completeManifest();
+      (traversal.tasks[0] as Record<string, unknown>).id = "../../target";
+      expect(manifestDeclarationGaps(traversal).some((g) => /not a safe path segment/.test(g))).toBe(true);
+      const badRun = completeManifest() as Record<string, unknown>;
+      badRun.runId = "../evil";
+      expect(manifestDeclarationGaps(badRun).some((g) => /runId.*safe path segment/.test(g))).toBe(true);
+      const noRun = completeManifest() as Record<string, unknown>;
+      delete noRun.runId;
+      expect(manifestDeclarationGaps(noRun).some((g) => /runId/.test(g))).toBe(true);
+    });
+
     it("fires when the binary moved under the calibration key", async () => {
       const { validateInstalledCharsProbe } = await load();
       expect(() => validateInstalledCharsProbe(probe(), { ...live(), binarySha256: "other-bin" })).toThrow(
@@ -2734,6 +2780,7 @@ describe("the B12 harness", () => {
     // A manifest that satisfies the FULL design.artifacts 1 sweep. Kept in one
     // place so stripping a single field is provably the only difference.
     const completeManifest = () => ({
+      runId: "run-01",
       abPairs: [
         { id: "p1", taskId: "t1", order: "treatment-first" },
         { id: "p2", taskId: "t1", order: "control-first" },
