@@ -1770,6 +1770,64 @@ defect, and it pinned four of them in place.
       eligible subset, so a cell can be evaluable on five and priced on fewer
       (`FINDINGS.md` F21) — and `recomputations` reinstates the hold-excluded
       observations rather than dropping them.
+- **THE INSTALLATION TERM'S INPUT: ONE `O_o`, OPERATIONALIZED HERE, BEFORE THE
+  PROBE THAT MEASURES IT.** Registered 2026-08-08. `DECISIONS.md` item (c) is
+  decided by the owner: supplying `installedChars` is INSTRUMENT REPAIR under
+  `voidConditions` 5 and `runPlan` PHASE 0 (repairs 9 and 10 are among the ten
+  owed, and no scored observation exists — no `*.b12.tasks.json`, no
+  `*.b12.result.json`). The boundary that binds the repair, held through two
+  independent adjudications: **ONE `O_o`, the same value in the hold
+  arithmetic, the fall arithmetic and every recomputation.** Two values of
+  `O`, or any assignment of `O` by verdict, is new decision arithmetic under
+  `voidConditions` 4 and takes the retract-and-re-register route instead. This
+  entry exists so the operationalization is fixed while the probe's result is
+  strictly unknowable.
+  - **What `installedChars` is:** the per-arm RESIDENT system-prompt delta on
+    the pinned binary, estimated by a paired first-request usage delta — two
+    fresh scratch sessions, identical but for the arm (`--mcp-config` with
+    this server vs `--strict-mcp-config`), identical prompt, worktree and
+    settings, each arm carrying its own sealed policy blob once blobs exist;
+    the statistic is the first billed request's input-class token count,
+    treatment minus control. An ESTIMATOR, declared as one: the system prompt
+    is not observable from outside the session (`FINDINGS.md` F24), and
+    whatever the client makes resident BECAUSE the server is installed —
+    schemas or deferral stubs — is exactly what the term charges.
+  - **Units, by adapter:** the delta is native in TOKENS; the shipped
+    interface divides chars by the frozen 3.7. `installedChars :=
+    measured_tokens × 3.7`, declared as an adapter so the frozen divisor
+    cancels exactly. Not a re-derivation of `charsPerToken`.
+  - **Calibration key:** binary sha256 × arm × MCP-config hash × policy-blob
+    hash × the probe protocol below. Any component moves, the value is
+    re-taken; `voidConditions` 7's version blocks re-key it automatically. The
+    committed covariate carries the key and the probe run id — a value with no
+    provenance is refused, so a defaulted zero can never impersonate a
+    measured one.
+  - **Probe protocol:** fresh sessions only (no `--continue`/`--resume`),
+    `DISABLE_AUTOUPDATER=1`, arms back-to-back on the same machine; the
+    compared request is each session's FIRST billed request (segment start:
+    input and cacheWrite classes; a non-zero cacheRead on it voids the
+    replicate). **k = 3 replicates per arm and a tolerance of ZERO — both
+    CHOSEN, with no ancestor, and labelled so** (the same honest label the
+    pacing ceiling carries).
+  - **Sustained iff** all three treatment−control deltas are identical,
+    non-negative and finite. **Not sustained** — any spread, any negative, any
+    key component that moved mid-probe — **⇒ the pre-declared route is
+    retract-and-re-register, with the probe artifacts as the recorded cause.**
+    Nothing here re-opens after the probe; the branch is chosen now.
+  - **Where deferral costs land, fixed before the probe says which world this
+    is:** if the pinned binary defers schemas, the ToolSearch round trips that
+    fetch them are billed requests inside the observation's window and enter
+    `A_o` by the frozen definition. `O_o` charges the resident delta only. No
+    frozen quantity changes in either world; the probe decides the VALUE,
+    never the arithmetic.
+  - **Domain validation owed to the harness pass (F24):** refuse to write an
+    observation whose `installedChars` is absent, non-finite or negative —
+    `holdsIf` 6's finiteness guard cannot catch a fabricated finite sentinel,
+    so provenance checked at write time is the defence. `A_o + S_o > 0` is
+    asserted per admitted observation and REPORTED, deciding nothing: the
+    directional claim "smaller `O` moves `R` toward the hold" holds only on a
+    positive denominator, and a reader of the artifact should see that
+    precondition's state rather than assume it.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
