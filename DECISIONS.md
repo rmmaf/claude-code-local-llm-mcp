@@ -2299,6 +2299,25 @@ The dossier's first recommendation was the bracket, and the review killed it.
 Recorded because a decision that survived its own advocate's reversal is worth
 more than one that was never attacked.
 
+**Postscript, same day — the probe ran, and (b) is answered by measurement.**
+`run 2026-08-08-mac-b12-installedchars-50de3b3-144422`: deltas **84, 84, 84
+tokens**, SUSTAINED under the pre-declared k = 3 / tolerance 0. The resident
+per-arm system-prompt delta on the pinned 2.1.221 binary is 84 tokens (310.8
+chars through the declared ×3.7 adapter) — against 16,127 chars of wire JSON.
+**The schemas are deferred**, exactly as the scratch observation suggested:
+the probe's own proof session shows the model saying "I'll load the tool
+schema first" and calling `ToolSearch` before `mcp__local-coder__status`.
+Their cost therefore arrives as billed ToolSearch round trips inside the
+observation window and lands in `A_o` by the frozen definition — the
+where-costs-land disposition this section fixed in advance. Getting here took
+two refusals, each of which became a registered fact: the work Mac's ~30
+claude.ai account connectors (now arm-invariant — both arms strict, in the
+probe and in `observe()`), and cross-session prefix caching (cacheRead=22,099
+on a fresh session id, which forced the statistic to the cache-invariant
+total). The calibration key binds the value to binary × arm × MCP config ×
+env; it is re-taken when policy blobs or a sealed manifest exist. The F24
+harness pass proceeds.
+
 ## Three decisions taken while their answers were still unknowable
 
 All three had been sitting open longer than any technical blocker, and all three
