@@ -18,9 +18,8 @@ argument; the pair-membership wider ask DECLINED against admissionRule 13).
 `evidence/`, byte-identical to HEAD's blob, sha REQUIRED), key asserted
 component by component (any move refuses; sealed blobs force a re-probe);
 per-arm policy blobs via `--append-system-prompt` (VOID 12); memory restored,
-pre/post hashed (VOID 13); artifact 1's FULL inventory swept (acceptance with
-DECLARED expected exit, consumed by `accepted`). Control arm: NAMED absence —
-a control value, even 0, is a second `O`. Gate at the 4-failure baseline.
+pre/post hashed (VOID 13); artifact 1's FULL inventory swept. Control arm:
+NAMED absence — a value, even 0, is a second `O`. Gate at 4-failure baseline.
 
 ## Next action
 
