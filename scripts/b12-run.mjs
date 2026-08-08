@@ -29,7 +29,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -62,6 +62,35 @@ function git(args, cwd = REPO) {
   const r = run("git", ["-C", cwd, ...args]);
   if (r.code !== 0) refuse(`git ${args.join(" ")} failed: ${r.err.trim() || r.out.trim()}`);
   return r.out.trim();
+}
+
+/**
+ * The shared-index half of the concurrency story (the sixth diff round's
+ * first finding): each observation runs in its own worktree, but the evidence
+ * commit runs in THIS repository, and two concurrent observations contend on
+ * `.git/index.lock`. Git's own lock already prevents corruption; what it
+ * hands the loser is a visible failure — so the loser RETRIES, bounded,
+ * instead of refusing an observation that already paid for its session. Any
+ * failure that is not lock contention still refuses immediately, and the
+ * staged-emptiness wall inside the loop is the same wall as before.
+ */
+async function gitCommitEvidenceRetrying(relDir, relLog, message) {
+  const LOCKED = /index\.lock|Another git process|could not lock/i;
+  for (let attempt = 1; ; attempt++) {
+    const add = run("git", ["-C", REPO, "add", "--", relDir, relLog]);
+    if (add.code === 0) {
+      const staged = git(["diff", "--cached", "--name-only", "--", relDir]);
+      if (staged.trim() === "") refuse(`nothing staged under ${relDir} — the archive did not reach the index`);
+      const commit = run("git", ["-C", REPO, "commit", "-m", message, "--", relDir, relLog]);
+      if (commit.code === 0) return;
+      if (!LOCKED.test(`${commit.err}\n${commit.out}`) || attempt >= 5) {
+        refuse(`git commit failed after ${attempt} attempt(s): ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}`);
+      }
+    } else if (!LOCKED.test(`${add.err}\n${add.out}`) || attempt >= 5) {
+      refuse(`git add failed after ${attempt} attempt(s): ${(add.err.trim() || add.out.trim()).slice(0, 300)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+  }
 }
 
 function sha256File(file) {
@@ -431,6 +460,39 @@ function resolveMcpConfig(manifest) {
  * hitting one on an already-registered run stops the harness but does NOT erase
  * the owed `result.json` — that debt is the operator's, not this exit code's.
  */
+/**
+ * The observation directory's name, attempt N. `admissionRule` 12 archives BOTH
+ * attempts of a re-run, and one name per task/arm cannot hold two — so a first
+ * attempt is `obs-<taskId>-<arm>` (every existing archive keeps its name) and a
+ * re-run is `obs-<taskId>-<arm>-r<N>`. The scorer's `parseObsDirName`
+ * (`src/cost/b12/archive.ts`) reads this grammar back; the round trip is the
+ * negative control in `tests/cost-meter.test.ts`.
+ */
+export function obsDirName(taskId, arm, attempt) {
+  return `obs-${taskId}-${arm}${attempt === 1 ? "" : `-r${attempt}`}`;
+}
+
+/**
+ * Claim the observation directory ATOMICALLY. The exists-then-create shape had
+ * a race: two `observe` processes for one task/arm could both see attempt N
+ * free, then overwrite each other's six files — destroying exactly what
+ * `admissionRule` 12 preserves (the third adversarial round on the UNIT-5
+ * diff). A NON-recursive `mkdirSync` is the claim: the filesystem hands the
+ * directory to exactly one caller, the loser gets `EEXIST` and tries N+1.
+ */
+export function claimObsDir(runEvidenceDir, taskId, arm) {
+  mkdirSync(runEvidenceDir, { recursive: true });
+  for (let attempt = 1; ; attempt++) {
+    const dir = path.join(runEvidenceDir, obsDirName(taskId, arm, attempt));
+    try {
+      mkdirSync(dir);
+      return { dir, attempt };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+  }
+}
+
 export function manifestDeclarationGaps(manifest) {
   const gaps = [];
   const str = (v) => typeof v === "string" && v.length > 0;
@@ -525,11 +587,22 @@ export function manifestDeclarationGaps(manifest) {
     }
   }
 
+  // ONE ID, ONE DECLARATION — a duplicated task id would hand the scorer's
+  // by-id joins to POSITION (the last declaration silently wins) and its
+  // entry-walking selection the same observation once per entry (the seventh
+  // adversarial round). Refused here, in the pre-registration window, before
+  // anything is spent under an id two declarations claim.
+  const seenTaskIds = new Set();
   for (const t of manifest?.tasks ?? []) {
     const id = t?.id ?? "(unnamed task)";
     const tneed = (cond, msg) => {
       if (!cond) gaps.push(`task ${id} ${msg}`);
     };
+    tneed(
+      !seenTaskIds.has(t?.id),
+      "is declared more than once — one id, one declaration; the scorer's by-id joins cannot decide which declaration governs a duplicated id (design.artifacts 1)"
+    );
+    if (str(t?.id)) seenTaskIds.add(t.id);
     tneed(
       str(t?.id) && SAFE_ID.test(t.id),
       "carries no id, or an id that is not a safe path segment ([A-Za-z0-9][A-Za-z0-9_-]{0,63}) — the id names the worktree directory a recursive delete targets"
@@ -1397,7 +1470,23 @@ async function observe(args) {
   // moves the result by more than the gap between the fall line and the hold.
   if (!task.baseCommit) refuse(`task ${task.id} declares no baseCommit`);
   const b12Root = path.join(REPO, ".b12");
-  const treeDir = path.join(b12Root, `${task.id}-${arm}`);
+  // PROCESS-UNIQUE, not per-task/arm (the sixth diff round's first finding):
+  // a fixed `.b12/<task>-<arm>` path plus the recursive delete below meant a
+  // concurrent invocation of the same task/arm deleted THIS process's LIVE
+  // worktree mid-observation — destroying exactly the in-flight evidence the
+  // atomic `claimObsDir` was built to preserve at archive time. The token
+  // keeps the path one safe segment below `.b12/` (the containment wall
+  // holds unchanged); the lineage capture, the snapshots and the memory
+  // restore all derive the slug FROM the path, so a fresh path is only a
+  // fresh slug. The evidence claim stays at the END on purpose: claiming
+  // before the session would leave an empty claimed directory in append-only
+  // `evidence/` on every mid-flight refusal, converting "a refusal costs
+  // nothing to discover" into a permanent void at scoring time.
+  const processToken = createHash("sha256")
+    .update(`${process.pid}:${stamp()}:${Math.random()}`)
+    .digest("hex")
+    .slice(0, 12);
+  const treeDir = path.join(b12Root, `${task.id}-${arm}-${processToken}`);
   // THE SECOND WALL before the recursive delete: the id grammar above already
   // refuses traversal, but a path that is about to be `rmSync`'d recursively
   // earns its own containment proof — exactly one segment below `.b12/`,
@@ -1644,8 +1733,16 @@ async function observe(args) {
   invalid.push(...instructionDriftReasons(instructionPre, instructionPost));
 
   const runId = manifest.runId ?? "b12-unnamed";
-  const dir = path.join(REPO, "evidence", runId, `obs-${task.id}-${arm}`);
-  mkdirSync(dir, { recursive: true });
+  // A RE-RUN GETS ITS OWN DIRECTORY, `obs-<taskId>-<arm>-r<N>`. `admissionRule`
+  // 12 says "Both attempts are archived and both fractions published", and one
+  // directory per task/arm cannot hold two attempts — the second write would
+  // overwrite the first's evidence or trip the commit barrier against HEAD's
+  // blobs, both of which destroy exactly what the clause preserves. Found by
+  // the UNIT-5 plan gate (FINDINGS.md); the scorer's `parseObsDirName` reads
+  // the same grammar back — the round trip is pinned in `cost-meter.test.ts`.
+  // Which attempt SCORES is the scorer's registered convention, not decided
+  // here. The claim is ATOMIC — see `claimObsDir`.
+  const { dir } = claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
 
   // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the
   // only window in which the tree and its `.local-coder/telemetry.jsonl` are
@@ -1791,22 +1888,24 @@ async function observe(args) {
 
   // A machine-written row per observation, `design.artifacts` 10: "whose `ts` is
   // read from the system clock in the same command that writes it".
+  // APPEND, never read-concat-write: the old shape lost rows under two
+  // concurrent observes (both read, both write, one row gone) — and a missing
+  // row is what the scorer's replay now refuses the whole order over. A
+  // single-line O_APPEND write is the atomic unit the log was designed around.
   const runLog = path.join(REPO, "evidence", `${runId}.b12.runlog.jsonl`);
-  writeFileSync(
+  appendFileSync(
     runLog,
-    (existsSync(runLog) ? readFileSync(runLog, "utf8") : "") +
-      JSON.stringify({
-        ts: stamp(),
-        runId,
-        taskId: task.id,
-        arm,
-        sessionId,
-        outcome: verdict.outcome,
-        valid: observation.valid,
-        accepted: observation.accepted,
-        originated: originated.length,
-      }) +
-      "\n",
+    JSON.stringify({
+      ts: stamp(),
+      runId,
+      taskId: task.id,
+      arm,
+      sessionId,
+      outcome: verdict.outcome,
+      valid: observation.valid,
+      accepted: observation.accepted,
+      originated: originated.length,
+    }) + "\n",
     "utf8"
   );
 
@@ -1822,10 +1921,7 @@ async function observe(args) {
   // would leave the archive uncommitted and the run looking clean.
   const relDir = path.relative(REPO, dir).split(path.sep).join("/");
   const relLog = path.relative(REPO, runLog).split(path.sep).join("/");
-  git(["add", "--", relDir, relLog]);
-  const staged = git(["diff", "--cached", "--name-only", "--", relDir]);
-  if (staged.trim() === "") refuse(`nothing staged under ${relDir} — the archive did not reach the index`);
-  git(["commit", "-m", `evidence: ${runId} ${task.id}/${arm}`, "--", relDir, relLog]);
+  await gitCommitEvidenceRetrying(relDir, relLog, `evidence: ${runId} ${task.id}/${arm}`);
 
   // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
   //

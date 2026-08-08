@@ -338,6 +338,38 @@ export async function readTranscript(
     }
   }
 
+  return transcriptFromRecords(raw, {
+    files,
+    skippedLines,
+    ...(sessionId !== undefined ? { sessionId } : {}),
+  });
+}
+
+/**
+ * The parser's PURE half — every admission and grouping rule, over records that
+ * are already values. `readTranscript` above is now "read the files, call this".
+ *
+ * EXTRACTED FOR UNIT 5, NOT DUPLICATED BY IT. `runPlan` PHASE 6 scores "over
+ * the ARCHIVE, never the live directory", and the archive stores each lineage
+ * file as `RawRecord`s — `capture.ts` reduces onto the parser's own declared
+ * field set precisely so this call is lawful (`FINDINGS.md` F24). A second
+ * records-to-`Transcript` implementation in the assembler is how the meter and
+ * the oracle drifted apart four times; ONE rule, two feeders.
+ *
+ * `meta` exists because a `Transcript` carries more than its records: the file
+ * list, the skipped-line count and the session anchor are facts about the READ,
+ * not derivable from the records — and the archive holds all three
+ * (`sourcePath`, `droppedLines`, the observation's `sessionId`), so the
+ * reconstruction supplies them rather than fabricating them.
+ */
+export function transcriptFromRecords(
+  raw: readonly RawRecord[],
+  meta: { files: string[]; skippedLines: number; sessionId?: string }
+): Transcript {
+  const { files, skippedLines } = meta;
+  if (files.length === 0) throw new Error("transcriptFromRecords needs at least one file name");
+  const sessionId = meta.sessionId;
+
   // PASS 0 — RECORD-LEVEL ADMISSION, APPLIED ONCE.
   //
   // Everything downstream iterates the result, because there is more than one

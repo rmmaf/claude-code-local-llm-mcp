@@ -1,0 +1,46 @@
+{
+  "schema": "b12-obs-archive/1",
+  "taskId": "t1",
+  "arm": "treatment",
+  "sessionId": "sess-t1",
+  "lineage": [
+    {
+      "sourcePath": "/fake/projects/slug/sess-t1.jsonl",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "sessionId": "sess-t1",
+      "requestIds": ["rq-t1"],
+      "droppedLines": 0,
+      "records": [
+        {
+          "type": "assistant",
+          "uuid": "u-1",
+          "parentUuid": null,
+          "requestId": "rq-t1",
+          "sessionId": "sess-t1",
+          "timestamp": "2023-11-14T22:13:20.000Z",
+          "isSidechain": false,
+          "message": {
+            "model": "test-model",
+            "content": [],
+            "usage": {
+              "input_tokens": 0,
+              "cache_creation_input_tokens": 1000,
+              "cache_read_input_tokens": 0,
+              "output_tokens": 0,
+              "cache_creation": { "ephemeral_1h_input_tokens": 1000, "ephemeral_5m_input_tokens": 0 }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "slugsSearched": ["slug"],
+  "transcriptsSearched": 1,
+  "telemetry": [],
+  "telemetryPath": "/fake/worktree/.local-coder/telemetry.jsonl",
+  "telemetryFound": false,
+  "invocationIds": [],
+  "sourceFiles": [{ "path": "src/example.ts", "sha256": "6666666666666666666666666666666666666666666666666666666666666666" }],
+  "declaredFileScope": ["src/"],
+  "dirtyAtCapture": false
+}

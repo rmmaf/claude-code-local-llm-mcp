@@ -2490,6 +2490,56 @@ describe("the B12 harness", () => {
     ).rejects.toThrow(/REFUSED/);
   });
 
+  describe("the UNIT-5 pass: the re-run directory grammar, round-tripped", () => {
+    // `admissionRule` 12 archives BOTH attempts; one directory name per
+    // task/arm cannot hold two, so the harness suffixes re-runs and the
+    // scorer's `parseObsDirName` must read the same grammar back — two halves
+    // of one rule, compared here so they cannot drift apart.
+    it("what the harness writes, the scorer parses — and a first attempt keeps its name", async () => {
+      const { obsDirName } = await import("../scripts/b12-run.mjs");
+      const { parseObsDirName } = await import("../src/cost/b12/archive.js");
+      expect(obsDirName("t1", "treatment", 1)).toBe("obs-t1-treatment");
+      expect(parseObsDirName(obsDirName("t1", "treatment", 1))).toEqual({
+        taskId: "t1",
+        arm: "treatment",
+        attempt: 1,
+      });
+      expect(parseObsDirName(obsDirName("fix-the-parser", "control", 3))).toEqual({
+        taskId: "fix-the-parser",
+        arm: "control",
+        attempt: 3,
+      });
+    });
+
+    it("the negative control: a name neither side owns parses to nothing", async () => {
+      const { parseObsDirName } = await import("../src/cost/b12/archive.js");
+      // `-r1` is a name the harness NEVER writes (attempt 1 is unsuffixed), so
+      // accepting it would let a fabricated duplicate directory shadow a first
+      // attempt.
+      expect(parseObsDirName("obs-t1-treatment-r1")).toBeNull();
+    });
+
+    it("claimObsDir claims atomically — an existing attempt is never reused, never clobbered", async () => {
+      // The third adversarial round: exists-then-create let two observes pick
+      // one directory and overwrite each other's six files. The non-recursive
+      // mkdir IS the claim; a second caller gets the next attempt.
+      const { claimObsDir } = await import("../scripts/b12-run.mjs");
+      const root = makeTempRoot("b12-claim-");
+      try {
+        const first = claimObsDir(root, "t1", "treatment");
+        const second = claimObsDir(root, "t1", "treatment");
+        const third = claimObsDir(root, "t1", "treatment");
+        expect(first.attempt).toBe(1);
+        expect(second.attempt).toBe(2);
+        expect(third.attempt).toBe(3);
+        expect(new Set([first.dir, second.dir, third.dir]).size).toBe(3);
+        expect(path.basename(second.dir)).toBe("obs-t1-treatment-r2");
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("the F24 pass: every new guard shown FIRING", () => {
     // The house rule — `DECISIONS.md § a check that cannot fail is worse than no
     // check` — applied to the guards this pass added, the same shape VOID 6
@@ -2821,6 +2871,18 @@ describe("the B12 harness", () => {
     it("reports no gaps on the full artifact-1 inventory — the green path exists", async () => {
       const { manifestDeclarationGaps } = await load();
       expect(manifestDeclarationGaps(completeManifest())).toHaveLength(0);
+    });
+
+    it("a duplicated task id is a declaration gap — one id, one declaration", async () => {
+      // The seventh adversarial round: the scorer's by-id joins collapse
+      // duplicates by POSITION, so the duplication is refused here, in the
+      // pre-registration window, before anything is spent under a contested id.
+      const { manifestDeclarationGaps } = await load();
+      const m = completeManifest();
+      m.tasks.push({ ...m.tasks[0]! });
+      const gaps = manifestDeclarationGaps(m);
+      expect(gaps).toHaveLength(1);
+      expect(gaps[0]).toMatch(/task t1 is declared more than once.*one id, one declaration/);
     });
 
     it("fires one gap per stripped declaration, each citing the clause that requires it", async () => {

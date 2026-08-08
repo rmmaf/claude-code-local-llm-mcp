@@ -404,25 +404,317 @@ and the artifact's own note says the argv is NOT byte-for-byte before a
 manifest exists. The registered argv components stay pinned; the
 sessions-really-ran boundary stays registered above.
 
+**SHIPPED 2026-08-08 — THE UNIT 5 PASS: artifacts 7 and 11, through a plan
+gate.** A Codex gate ran on the PLAN before a line was written — 14 verdicts:
+4 CONFIRM, 5 REFINE (all conceded), 3 REFUTE (two conceded in form and defended
+in substance, one conceded whole), 1 UNDERDETERMINED — and the adjudication is
+in the plan file and summarized here where it changed the shipped shape.
+
+- **The assembler exists**: `archive.ts` (impure — paths, git facts and the
+  register in; a validated `RunArchive` value out; telemetry identity stamped
+  ONCE, keyed on the archive path), `assemble.ts` (pure — dispositions, the
+  committed-order replay, the archive-level clauses 2/7/8/9/11/12/13/14/19/20,
+  `ambiguousIds` run-level, one `computeTerms` per attempt, `runCoverage`,
+  `aggregate`), `emit.ts` (thin — writes BOTH artifacts even on a VOID, never
+  commits). The parser gained its pure half (`transcriptFromRecords`) so the
+  archive feeds the SAME rule the live read does — one rule, two feeders.
+- **Artifact 7 ships wide**: per attempt, both-horizon terms, the per-row
+  vector, the four-class ledgers, subagent share, requests-per-segment, rate
+  keys, SHAs, the SEVEN instruction components pre/post with an EXPLICIT
+  absence-of-aggregate marker (the VOID-21 registration, not a minted hash),
+  both MCP-config facts, F20's dual-reporting inputs, and the pre-declared
+  `A_o + S_o > 0` report per admitted observation (gate R8: counterfactual.json
+  only — artifact 8's inventory is not a licence to enlarge result.json).
+- **Artifact 11's replay runs the REAL path over a COMMITTED fixture archive**
+  (`tests/fixtures/b12-run/` — test material, never evidence):
+  `readRunArchive → assembleRun → emitRun`, the bracket, jackknives, `R_all`,
+  `R_hi⁺`, strata and every admission condition recomputed by hand (gate S4
+  refuted "wait for a real run"; the residue that IS still owed: no archive of
+  a REAL run exists until one runs).
+- **TWO REGISTERED CONVENTIONS, labelled on the artifact** (the
+  `selection.basis` precedent): disposition-name precedence = the closed
+  list's published order, with every fired predicate on the face (gate R4
+  refuted "derived from the frozen text" — it is a convention and says so);
+  a re-run's scored attempt = the LAST (`admissionRule` 12 archives both and
+  publishes both fractions but never says which scores).
+- **`voidConditions` 8 FIRES ON EVERY RUN, by design, until F23's pass** — the
+  artifact carries two byte sums, not two brackets; an assembler that skipped
+  the unimplementable half would publish "no void" over a condition it did not
+  check (gate R6 CONFIRM).
+- **The clause 4–6 audit is an INPUT** with its verdict and inputs on the
+  face; `{ran: false}` yields `uncheckedClauses`, never "clean", and the
+  pre-declaration (`PREMISES.md § B12`) now bars a final verdict without a
+  committed audit (gate R7: `{ran:false}` alone cannot discharge the clauses).
+  **The audit computer is a named blocker of a lawful run** — nobody has
+  written it.
+- **Found by the gate, fixed in the pass** (no own finding number): the obs
+  directory `obs-<taskId>-<arm>` COLLIDES on a re-run, destroying what
+  `admissionRule` 12 preserves — the harness now suffixes `-r<N>` and the
+  scorer parses the same grammar back, round-tripped in the oracle.
+- **F25 at scoring time, registered**: a declaration failure the preflight
+  route cannot reach (hostile archive: `accepted` null with nothing else
+  fired, an unreadable record, a missing `installedChars`) is reported by
+  name in `declarationFailures`, the observation is never admitted (entailed
+  by rules 3/8, not chosen), NO disposition is minted, and the run-level
+  consequence falls out of clause 3's own arithmetic. **Registered limit:**
+  such an observation has no terms, so it is absent from `R_hi⁺`'s "every
+  observation" domain — the omission is published on the artifact rather than
+  papered, and the frozen text supplies no disposition that could carry it.
+- **Registered limit, verdict precedence**: when archive-level clauses fire,
+  the run's `voidClause` names the FIRST in table order and the whole check
+  table is published — the frozen text ranks voids nowhere, so the order is a
+  labelled convention like the two above.
+
+**AN ADVERSARIAL ROUND ON THE DIFF RETURNED FIVE HIGH FINDINGS — ALL FIVE
+CONFIRMED, ALL FIVE FIXED IN THE SAME PASS.** One class, five instances:
+evidence accepted uncommitted, or absence of evidence published as clean —
+the probe trust boundary's shape, which F24's second round had already fixed
+once. Each fix ships FIRING:
+
+- **The audit input trusted any readable JSON.** A working-tree
+  `{ran:true, verdict:"clean"}` would have certified clauses 4–6. Now the
+  audit must be COMMITTED EVIDENCE at `evidence/<runId>.b12.audit.json` —
+  in HEAD, byte-identical, non-empty `inputs` (`committedAuditCheck`, the
+  probe boundary's own comparison) — and the pre-declaration names the path.
+- **An absent runlog replayed as a followed order.** Zero rows returned
+  "clean" while the archive held real attempts. Now every archived treatment
+  attempt needs its machine-written row (artifact 10) and every row its
+  surviving directory; either gap fires clause 2's check as unreplayable.
+- **Corrupt/drifted telemetry still priced the surviving subset.** A suspect
+  identity source now prices NOTHING: `telemetryIntact` false → no terms, an
+  `integrityFailures` entry, and a fired artifact-6 integrity check — the run
+  voids instead of scoring around the tampering.
+- **Clause 19's id set was taken on faith.** The ambiguity universe derived
+  from rebuilt transcripts is now compared per observation against the
+  archive's SEALED `invocationIds` inventory; any missing or extra id fires.
+- **Absent memory/instruction evidence read as clean.** Clause 12 fires on a
+  record with no instruction hashes; clause 13 fires on a missing pin, a
+  missing restoration hash, or missing pre/post memory hashes — unshowable
+  is not clean, the same principle the audit seam applies to clauses 4–6.
+
+**A SECOND ADVERSARIAL ROUND (the branch diff) RETURNED THREE MORE — ALL
+CONFIRMED, ALL FIXED.** The first round closed the boundaries the pass had
+ADDED; this one closed the boundary the pass had INHERITED: the commit
+barrier proves the original WRITE, and nothing proved the REPLAY reads the
+same bytes.
+
+- **Observation evidence was read from the mutable working tree.** Editing
+  `telemetry.jsonl` and `archive.json`'s copy CONSISTENTLY bypassed the drift
+  check. Now one `git status --porcelain` spans the manifest, the runlog and
+  every observation directory: a DIRTY path is positive evidence of tampering
+  — the owning observation loses its terms (integrity route) — and
+  UNSHOWABLE (no repository to ask) fires the committed-evidence check
+  without fabricating a tampering claim: terms publish under the void,
+  because the partial bracket is owed either way. The distinction is the
+  registered shape: mismatch ≠ absence of proof.
+- **The manifest's committedness never bound the BYTES.** A blob existing at
+  the path proved nothing about the bytes parsed. `git show HEAD:<manifest>`
+  is now compared byte-for-byte with what was read; inequality fires
+  artifact 1 by name.
+- **A JSON-valid `null` in an archived lineage crashed the emitter** —
+  violating this unit's own "nothing throws to avoid producing an artifact".
+  Resolved by the PRODUCTION parser's own rule for the same situation: a
+  non-object record is dropped WITH A COUNT (`reduceRecord`/`skippedLines`
+  do exactly this), reported, never fatal — end-to-end control: a hostile
+  null still yields a committed-shaped result artifact.
+
+**A THIRD ROUND RETURNED THREE HIGH — TWO CONFIRMED AND FIXED, ONE DECLINED
+WITH ITS CITATION:**
+
+- **CONFIRMED: the register was read from the working tree.** Manifests and
+  results came from HEAD while `MEASUREMENTS.jsonl` came from disk — a
+  locally deleted row made an abandoned run (clause 1's own VOID) vanish
+  into a deciding-nothing discrepancy. Registration rows now come from
+  `HEAD:MEASUREMENTS.jsonl`, the on-disk copy is compared (a named
+  discrepancy when it differs), the file joined the committed-evidence
+  sweep, and **discrepancies FIRE a clause-1 check**: a register that cannot
+  be listed with confidence is the omission the clause calls "itself a
+  VOID". One correction the fix itself needed: the three byte-compares
+  (manifest, audit, register) normalise CRLF — autocrlf materialises an LF
+  blob as CRLF on Windows, and byte-identity would have called every
+  Windows checkout tampered; line endings are the one transformation git
+  performs on checkout, so they are the one normalised away.
+- **CONFIRMED: attempt allocation raced.** Exists-then-create let two
+  `observe` processes claim one directory and overwrite each other's six
+  files — destroying what `admissionRule` 12 preserves — and the runlog's
+  read-concat-write LOST rows under concurrency, which the order replay now
+  refuses whole runs over. The claim is a NON-recursive `mkdirSync`
+  (`claimObsDir`: the filesystem hands the directory to exactly one caller,
+  `EEXIST` tries N+1) and the runlog row is a single-line `appendFileSync`.
+  A concurrent git commit still fails loudly on the index lock — the
+  barrier's own refusal.
+- **DECLINED: "derive clause 8's predicate and make a non-void verdict
+  reachable".** That is F23 by its own entry — "a second full pass of the
+  whole arithmetic … changes `B12Result` and belongs in its own pass with
+  its own controls" — and the always-firing check was CONFIRMED by the plan
+  gate (R6) and registered here, in STATE.md and in UNIT-5.md. The artifact
+  structurally cannot carry two brackets, so the missing-evidence predicate
+  is constantly true until F23 lands; a run-time probe of a compile-time
+  shape would be theater, and nothing runs before F23 anyway.
+
+**A FOURTH ROUND RETURNED TWO HIGH — BOTH CONFIRMED, BOTH FIXED. Both are
+fail-open instances of the principle the pass had already registered three
+times, found inside the fixes themselves:**
+
+- **The freeze window was anchored at the WRONG END of the session.**
+  Artifact 1 says "dated after the earliest session START"; the anchor was
+  the first runlog row's `ts` — written at observation END — so a manifest
+  commit DURING a long first session escaped the window entirely.
+  `observation.started` (pre-execution, recorded all along, discarded by the
+  narrower) is now preserved, and `earliestSessionStart` takes the MINIMUM
+  across every start-preceding timestamp the archive holds (`started`, the
+  pre-snapshot's `ts`, the runlog rows). Fail CLOSED: no trustworthy anchor →
+  `manifestCommitsAfterStart` is null, and null FIRES artifact 1 — a freeze
+  that cannot be shown held is not a freeze.
+- **The rates check read clean with BOTH references unavailable — and its
+  detail CLAIMED an identity nothing had shown.** With the frozen commit's
+  blob unreachable and the manifest pin absent, any working-tree rates file
+  passed. Now the check fires when the pin is absent, when the frozen blob
+  cannot be read, or on any inequality among disk/pin/frozen — the detail
+  names which, and "unverified pricing is not frozen pricing" is on the
+  face.
+
+**A FIFTH ROUND RETURNED ONE HIGH AND ONE MEDIUM — BOTH CONFIRMED, BOTH
+FIXED. Both are the same class again: a trust check that reported instead of
+refusing:**
+
+- **Cross-wired evidence was scored under the directory's name.** An
+  `observation.json` naming another task or arm than its directory only
+  appended a diagnostic; the assembler then picked the manifest task from the
+  DIRECTORY and priced the mismatched record's acceptance and telemetry under
+  it — copied evidence could apply one task's result to another. Identity is
+  now a binding: record↔directory (task, arm), record↔run (`runId`),
+  record↔sealed archive (`archive.json`'s task, arm, session), each absence
+  or disagreement setting `identityIntact` false — and a suspect identity
+  prices NOTHING (integrity failure, no terms, the artifact-6 check fires,
+  now labelled "archive integrity"). The runlog side binds too, in clause 2's
+  replay: a row naming another run is foreign evidence, and per task the
+  rows' sessions must equal the attempts' sessions as MULTISETS — count
+  equality says every attempt HAS a row, the session binding says the rows
+  are THESE attempts' rows. Codex also asked for a snapshot binding; the
+  snapshot files carry no identity fields, and inventing one at scoring time
+  would bind nothing — declined for that sub-part, harness-side stamping
+  registered as future work, not minted here.
+- **Clause 19 read clean with either side of the comparison ABSENT.** The
+  check fired only when the pinned and actual commands both existed AND
+  differed — an absent pin or an unsupplied invocation passed while the
+  detail admitted the gap, a verdict bypass in waiting once F23 removes the
+  always-fired clause 8. It now fails CLOSED: fired unless both values exist
+  and are equal, the detail naming the absent side — an invocation that
+  cannot be shown to be the registered one is not the registered one. The
+  pure-suite default now supplies the matching invocation, because a CLEAN
+  archive is one that can show its command, not one nobody asked.
+
+**A SIXTH ROUND RETURNED TWO HIGH — BOTH CONFIRMED, BOTH FIXED; ONE
+SELF-CAUGHT DIVERGENCE FIXED INSIDE THE SAME REPAIR ZONE:**
+
+- **The worktree collided BEFORE the atomic claim could protect anything.**
+  `claimObsDir` (third round) made the EVIDENCE naming atomic — but it runs
+  after the observation executes, and until then every same-task/arm process
+  shared one fixed `.b12/<task>-<arm>` path whose startup recursively deletes
+  whatever sits there: a concurrent invocation destroyed THIS process's live
+  worktree mid-observation, exactly the in-flight evidence the claim was
+  built to preserve. The worktree path is now PROCESS-UNIQUE
+  (`.b12/<task>-<arm>-<token12>`): still one safe segment under `.b12/`, so
+  the containment wall holds unchanged; lineage capture, snapshots and the
+  memory restore all derive the slug FROM the path, so a fresh path is only
+  a fresh slug (verified against `projectSlugDirs` and `projectSlugDirFor`
+  before shipping). Codex's "claim before the worktree" alternative was
+  REJECTED with reasoning on the face: an early claim leaves an empty
+  claimed directory in append-only `evidence/` on every mid-flight refusal,
+  converting "a refusal costs nothing to discover" (the harness's own
+  registered economics) into a permanent void at scoring time. The
+  shared-index half: the evidence commit runs in the main repository, so the
+  loser of an `index.lock` race now RETRIES bounded
+  (`gitCommitEvidenceRetrying`, 5 attempts, non-lock failures still refuse
+  immediately) instead of refusing an observation that already paid for its
+  session. A true concurrent same-task test needs real sessions — registered
+  below with the real run, not simulated here.
+- **An archived binary with NO version or sha read as the pinned one.** The
+  per-observation predicate fired only when pin AND archived value both
+  existed and differed; with either archived field absent the archive-level
+  check published "every observation matches" on no evidence. Fails CLOSED
+  now: an existing pin with an absent archived side fires
+  `void(version_drift)` naming the absence, and version and sha are compared
+  INDEPENDENTLY — a drift in one is not permission to skip the other.
+  Self-caught in the same lines: the scorer compared version by STRICT
+  EQUALITY while the harness's own gate (`assertPinned`) records raw
+  `claude --version` output and requires it to CONTAIN the pin — the
+  stricter second rule would have false-fired on every lawful run, the
+  two-implementations drift this repository documents. The scorer now
+  replays the harness's registered comparison, with the raw-output negative
+  control pinned in the suite.
+
+**A SEVENTH ROUND RETURNED TWO HIGH — BOTH CONFIRMED IN THEIR CORE, BOTH
+FIXED; TWO OF THE RECOMMENDED MECHANISMS DECLINED AGAINST THE COMMITTED LOG'S
+OWN SHAPE:**
+
+- **The register reconciled only one direction, and read its rows as if the
+  log could not lie.** `collectRegister` destructured `{ rows }` and DISCARDED
+  `parseJsonl`'s corrupt-line count; a non-object row and a non-string
+  `run_id` were silently skipped; and the reverse direction both the
+  docstring and the clause-1 check comment PROMISED ("a row with no
+  manifest") was never implemented — a scrubbed manifest hid an abandoned
+  run and restored its consumed attempt. Fixed with a pure core: `registrationRows`
+  fires on every row whose MEMBERSHIP cannot be decided (corrupt lines,
+  non-object rows, a `run_id` that is not a string), and
+  `reconcileRegisterTraces` reconciles a run's TRACES — a
+  `.b12.runlog.jsonl`, a `.b12.result.json` or an observation directory in
+  HEAD's `evidence/` whose id has no committed manifest is a run the
+  register cannot enumerate, one discrepancy per hidden run, with the
+  committed repository's real neighbours (preflight reports, probes,
+  telemetry, the preregistration) pinned as negative controls. Two of the
+  recommended mechanisms were DECLINED with the committed history as the
+  citation: the bare row-minus-manifest set difference (every one of the 237
+  committed rows carries `run_id`, naming 59 measured runs, none of them
+  B12 — the difference voids every future run against the repo's own
+  append-only log) and duplicate-`run_id` rejection (multiplicity is the
+  log's lawful shape — one row per metric per run, twenty-three under
+  `2026-08-02-win-01`; registration is presence, not count). The row ALONE,
+  every other trace also scrubbed, is a REGISTERED LIMIT stated in
+  `collectRegister`'s docstring: the frozen clause pins no registration-row
+  schema beyond "its run_id written", so that row is indistinguishable from
+  an ordinary measurement row.
+- **A manifest declaring one id twice priced the session twice while every
+  check stayed clean.** The selection walks manifest ENTRIES and fetches the
+  scored attempt BY ID, so a duplicated declaration admitted the same
+  observation's terms once per entry — distorting the bracket and the
+  per-task denominator share — while `taskById`'s last-wins collapse let
+  POSITION silently decide which declaration governs. Fixed on both sides:
+  the harness refuses a duplicated task id in `manifestDeclarationGaps`
+  (pre-registration, before anything is spent under a contested id), and the
+  scorer fires `design.artifacts 1 — task identity` in table order beside
+  the manifest-blob predicate, walks each id ONCE in selection, reports a
+  duplicated not-started task as ONE disposition row, and reports which
+  declaration governs the observation as UNDECIDABLE through the F25
+  declaration route — never defaulted to position. The metamorphic control
+  is pinned in the suite: the duplicate entry may change no figure — one
+  admission, one bracket, one disposition row, same `R` as the
+  single-declaration archive.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
-- **Artifacts 7 and 11**, which belong to UNIT 5 and could not be written until
-  the above landed — now unblocked.
-- **The `A_o + S_o > 0` assertion-and-report** the pre-declaration names: it
-  lives where `A_o` and `S_o` first exist, which is the assembler, not the
-  harness.
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced
   mechanically by the calibration-key refusal above the moment a manifest
   carries blobs.
-
-Two dependent gaps fall out of the same hole:
-
-- `design.artifacts` 7 (`counterfactual.json`) demands the version, base and end
-  SHAs, the tree hash, and the **instruction-set and memory hashes** per
-  observation. Nothing records the last two anywhere.
-- `design.artifacts` 11 owes a replay test that recomputes every figure and
-  "EVERY admission condition **from the committed archive alone**". That test
-  cannot be written against an archive that does not carry the inputs.
+- **The clause 4–6 audit computer** (see the UNIT 5 block above) — the input
+  seam and the pre-declaration exist; the tool does not.
+- **A REAL run's committed archive** for artifact 11's replay — the fixture
+  replay exercises the full path; only a run can supply the real object.
+- **Identity stamps on the snapshot files** (harness-side): the fifth round's
+  binding covers `observation.json`, `archive.json` and the runlog because
+  those carry identity; the snapshots carry none, so their binding waits on
+  the harness writing one — a run-time change, not a scoring-time mint.
+- **A concurrent same-task execution test** (harness-side): the sixth round's
+  unique worktree path and commit retry are exercised by real sessions only —
+  two live processes on one task/arm belong to the real run's protocol, not
+  to a fixture that would prove the mock instead of the harness.
+- **A registration-row marker** (operator-side): the seventh round's row-alone
+  blind spot exists because the frozen clause pins no registration-row schema.
+  The registration COMMAND is operator tooling, not frozen instrument — a
+  marker field on future registration rows would make the row-alone direction
+  decidable without touching the design. Until then the limit stands as
+  registered.
 
 **Two readings of mine were REFUTED and are recorded as refuted:**
 
@@ -542,6 +834,19 @@ no-minted-disposition argument holds only before registration, and hitting the
 refusal on a registered run does not erase the owed `result.json`. **The finding
 stays OPEN as stated**: the encoding gap in the frozen text is unreachable on a
 compliant run now, not closed.
+
+**THE SCORING-TIME BEHAVIOUR IS REGISTERED TOO, 2026-08-08 (the UNIT 5 pass),
+because a hostile archive can still reach the gap.** The plan gate refuted
+leaving it as an implementation convention. What `assemble` does, registered
+here rather than implied by code: the observation is reported by name in
+`declarationFailures` (F25 cited), it is never admitted — entailed by
+`admissionRule` 3 (a task is scored only against its committed predicate) and
+8 (the declaration is required), not chosen — NO disposition is minted, no
+throw occurs, and the run-level consequence follows from clause 3's own
+arithmetic. A PRESENT-but-corrupt stratum string keeps its terms and flows
+through `partitionByStrata.unknownStratum`, the shipped defence in depth. The
+gap itself remains exactly as stated above: OPEN, an encoding gap in the
+frozen text.
 
 ---
 
