@@ -2489,6 +2489,568 @@ describe("the B12 harness", () => {
       runNode(process.execPath, [script, "snapshot", "--root", root], { cwd: process.cwd() })
     ).rejects.toThrow(/REFUSED/);
   });
+
+  describe("the F24 pass: every new guard shown FIRING", () => {
+    // The house rule — `DECISIONS.md § a check that cannot fail is worse than no
+    // check` — applied to the guards this pass added, the same shape VOID 6
+    // demands of the meter's own six controls. All on the exported pure
+    // functions: the `classifyRun` precedent, testable without a session.
+    const load = async () => import("../scripts/b12-run.mjs");
+
+    // A COHERENT artifact, because the validator RECOMPUTES instead of
+    // trusting: the third adversarial round found the old shape — summary
+    // fields read on faith — meant a committed JSON with a fabricated delta
+    // calibrated every treatment observation. `pairs` is one
+    // [treatmentPromptTokens, controlPromptTokens] per replicate; every
+    // derived field (deltas, sustained, adapter, raw records) follows from it,
+    // so a test that wants incoherence must INTRODUCE it, visibly.
+    const rawFor = (sessionId: string, requestId: string, input: number, cacheCreation: number, cacheRead: number) =>
+      JSON.stringify({
+        type: "assistant",
+        sessionId,
+        requestId,
+        uuid: `u-${requestId}`,
+        message: {
+          model: "test-model",
+          usage: {
+            input_tokens: input,
+            cache_creation_input_tokens: cacheCreation,
+            cache_read_input_tokens: cacheRead,
+            output_tokens: 4,
+          },
+        },
+      });
+    const armRecord = (arm: string, n: number, promptTokens: number) => {
+      const input = 2;
+      const cacheCreation = 0;
+      const cacheRead = promptTokens - input;
+      const sessionId = `sess-${arm}-${n}`;
+      const requestId = `req-${arm}-${n}`;
+      return {
+        arm,
+        replicate: n,
+        sessionId,
+        first: { requestId, model: "test-model", input, cacheCreation, cacheRead },
+        firstRecordRaw: rawFor(sessionId, requestId, input, cacheCreation, cacheRead),
+        promptTokens,
+      };
+    };
+    const probe = (pairs: Array<[number, number]> = [
+      [22_099, 22_015],
+      [22_099, 22_015],
+      [22_099, 22_015],
+    ]) => {
+      const replicates = pairs.map(([t, c], i) => ({
+        replicate: i + 1,
+        treatment: armRecord("treatment", i + 1, t),
+        control: armRecord("control", i + 1, c),
+        deltaTokens: t - c,
+      }));
+      const deltas = pairs.map(([t, c]) => t - c);
+      const sustained = deltas.every((d) => d === deltas[0]) && (deltas[0] as number) >= 0;
+      return {
+        runId: "probe-run-id",
+        sustained,
+        deltasTokens: deltas,
+        deltaTokens: deltas[0],
+        installedCharsAdapter: Math.round((deltas[0] as number) * 3.7 * 10) / 10,
+        preDeclaration: "PREMISES.md § B12 — test fixture",
+        proofSession: {
+          sessionId: "sess-proof",
+          toolsCalled: ["ToolSearch", "mcp__local-coder__status"],
+        },
+        context: {
+          commit: "fixture-commit",
+          claudeBinarySha256: "bin-sha",
+          mcpConfigSha256: "mcp-sha",
+          policyBlobSha256: null as string | null,
+          prompt: "Reply with exactly: ok. Do not use any tools.",
+          argvShape: {
+            treatment: "claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg> --output-format json -- <prompt>",
+            control: "claude --print --session-id <id> --strict-mcp-config --output-format json -- <prompt>",
+          },
+        },
+        replicates,
+      };
+    };
+    const live = () => ({
+      binarySha256: "bin-sha",
+      mcpConfigSha256: "mcp-sha" as string | null,
+      policyBlobSha256: null as string | null,
+      extraArgs: [] as string[],
+    });
+
+    it("accepts a matching key and returns the provenance-carrying record", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const rec = validateInstalledCharsProbe(probe(), live());
+      expect(rec.value).toBe(310.8);
+      expect(rec.deltaTokens).toBe(84);
+      expect(rec.probeRunId).toBe("probe-run-id");
+      expect(rec.calibrationKey.policyBlobSha256).toBeNull();
+      // The protocol is the artifact's own registered reference, never a
+      // fallback — the old default labelled missing provenance as valid.
+      expect(rec.calibrationKey.protocol).toBe("PREMISES.md § B12 — test fixture");
+    });
+
+    it("accepts a sustained ZERO delta — zero-measured is not zero-defaulted", async () => {
+      // The domain guard refuses ABSENCE, not smallness. A probe that measured
+      // nothing resident is a measurement, carries provenance, and must pass —
+      // this is the positive control proving the guard tells the two zeros apart.
+      const { validateInstalledCharsProbe } = await load();
+      const p = probe([
+        [22_099, 22_099],
+        [22_099, 22_099],
+        [22_099, 22_099],
+      ]);
+      expect(validateInstalledCharsProbe(p, live()).value).toBe(0);
+    });
+
+    it("fires on a negative recomputed delta — reversed arms cannot calibrate", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const p = probe([
+        [22_015, 22_099],
+        [22_015, 22_099],
+        [22_015, 22_099],
+      ]);
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/negative/);
+    });
+
+    it("fires when the summary delta is fabricated over honest records", async () => {
+      // THE THIRD ROUND'S CENTRAL CASE: records saying 84 with a summary saying
+      // anything else. The old validator read only the summary.
+      const { validateInstalledCharsProbe } = await load();
+      const p = probe() as Record<string, unknown>;
+      p.deltaTokens = 100;
+      p.installedCharsAdapter = 370;
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/recomputed replicate delta/);
+      const p2 = probe() as Record<string, unknown>;
+      p2.deltasTokens = [100, 100, 100];
+      expect(() => validateInstalledCharsProbe(p2, live())).toThrow(/summary and the records disagree/);
+      const p3 = probe([
+        [22_099, 22_015],
+        [22_100, 22_015],
+        [22_099, 22_015],
+      ]) as Record<string, unknown>;
+      p3.sustained = true; // claimed over 84/85/84
+      expect(() => validateInstalledCharsProbe(p3, live())).toThrow(/claim is not the measurement/);
+    });
+
+    it("fires on a non-finite or absent summary delta", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const withNaN = probe() as Record<string, unknown>;
+      withNaN.deltaTokens = Number.NaN;
+      expect(() => validateInstalledCharsProbe(withNaN, live())).toThrow(/non-finite/);
+      const absent = probe() as Record<string, unknown>;
+      delete absent.deltaTokens;
+      expect(() => validateInstalledCharsProbe(absent, live())).toThrow(/absent or non-finite/);
+    });
+
+    it("fires on an unsustained probe — the pre-declared branch is retract, not reuse", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const p = probe([
+        [22_099, 22_015],
+        [22_100, 22_015],
+        [22_099, 22_015],
+      ]);
+      expect(p.sustained).toBe(false); // the fixture computed it honestly
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/did not sustain/);
+    });
+
+    it("fires on every incoherence between the records and their copies", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      // No replicates at all — the summary has nothing to be re-verified against.
+      const bare = probe() as Record<string, unknown>;
+      delete bare.replicates;
+      expect(() => validateInstalledCharsProbe(bare, live())).toThrow(/no replicate records/);
+      // k is a CHOSEN constant: 3, exactly.
+      expect(() =>
+        validateInstalledCharsProbe(
+          probe([
+            [22_099, 22_015],
+            [22_099, 22_015],
+          ]),
+          live()
+        )
+      ).toThrow(/k is 3/);
+      // A promptTokens copy that disagrees with its own components.
+      const badCopy = probe();
+      badCopy.replicates[0]!.control.promptTokens = 22_016;
+      expect(() => validateInstalledCharsProbe(badCopy, live())).toThrow(/own copies disagree/);
+      // Raw evidence disagreeing with the extraction (components kept
+      // internally consistent so the raw check is what fires).
+      const badRaw = probe();
+      badRaw.replicates[0]!.treatment.first.cacheRead += 1;
+      badRaw.replicates[0]!.treatment.promptTokens += 1;
+      expect(() => validateInstalledCharsProbe(badRaw, live())).toThrow(/firstRecordRaw usage/);
+      // A reused session id — a resumed session is not a fresh one.
+      const reused = probe();
+      reused.replicates[1]!.control = armRecord("control", 1, 22_015);
+      expect(() => validateInstalledCharsProbe(reused, live())).toThrow(/distinct session ids/);
+      // Arms of one replicate on different models.
+      const mixed = probe();
+      mixed.replicates[2]!.control.first.model = "other-model";
+      expect(() => validateInstalledCharsProbe(mixed, live())).toThrow(/different models/);
+    });
+
+    it("fires on protocol metadata that is missing or wrong-shaped", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      // Missing preDeclaration: the old fallback labelled this VALID.
+      const noProto = probe() as Record<string, unknown>;
+      delete noProto.preDeclaration;
+      expect(() => validateInstalledCharsProbe(noProto, live())).toThrow(/names no registered protocol/);
+      // A control arm whose argv carries the server config is two treatments.
+      const badShape = probe();
+      badShape.context.argvShape.control = badShape.context.argvShape.treatment;
+      expect(() => validateInstalledCharsProbe(badShape, live())).toThrow(/control argv shape/);
+    });
+
+    it("requires the proof session and the producing commit — the registered method's own pieces", async () => {
+      // The sixth round asked the validator to seal the protocol harder. The
+      // pieces the REGISTERED method actually names are checked: the committed
+      // MEASUREMENTS row says "proof session showed mcp__local-coder__status
+      // callable", and names the producing script at its commit. The wider
+      // demands — exact prompt text, byte-exact argv — were DECLINED as
+      // minting: the pre-declaration fixes "identical but for the arm", not a
+      // prompt string.
+      const { validateInstalledCharsProbe } = await load();
+      const noProof = probe() as Record<string, unknown>;
+      delete noProof.proofSession;
+      expect(() => validateInstalledCharsProbe(noProof, live())).toThrow(/no proofSession/);
+      const noStatus = probe();
+      noStatus.proofSession.toolsCalled = ["ToolSearch"];
+      expect(() => validateInstalledCharsProbe(noStatus, live())).toThrow(/installation was never proven/);
+      // The proof is a SEPARATE session — an id shared with a replicate says
+      // the proof rode inside an arm.
+      const shared = probe();
+      shared.proofSession.sessionId = shared.replicates[0]!.treatment.sessionId;
+      expect(() => validateInstalledCharsProbe(shared, live())).toThrow(/SEPARATE session/);
+      const noCommit = probe() as { context: Record<string, unknown> };
+      delete noCommit.context.commit;
+      expect(() => validateInstalledCharsProbe(noCommit, live())).toThrow(/no producing commit/);
+    });
+
+    it("refuses ids that are not safe path segments — the recursive delete's first wall", async () => {
+      // The sixth round's traversal finding: task.id is interpolated into the
+      // worktree path that gets rmSync'd recursively, and runId names
+      // evidence/<runId>/… — an id of `../../target` escaped `.b12/`.
+      const { manifestDeclarationGaps } = await load();
+      const traversal = completeManifest();
+      (traversal.tasks[0] as Record<string, unknown>).id = "../../target";
+      expect(manifestDeclarationGaps(traversal).some((g) => /not a safe path segment/.test(g))).toBe(true);
+      const badRun = completeManifest() as Record<string, unknown>;
+      badRun.runId = "../evil";
+      expect(manifestDeclarationGaps(badRun).some((g) => /runId.*safe path segment/.test(g))).toBe(true);
+      const noRun = completeManifest() as Record<string, unknown>;
+      delete noRun.runId;
+      expect(manifestDeclarationGaps(noRun).some((g) => /runId/.test(g))).toBe(true);
+    });
+
+    it("fires when the binary moved under the calibration key", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe(probe(), { ...live(), binarySha256: "other-bin" })).toThrow(
+        /binary sha256/
+      );
+    });
+
+    it("fires when the manifest seals policy blobs the probe never saw", async () => {
+      // The committed probe pre-dates any sealed blob (`policyBlobSha256: null`),
+      // so the first manifest that carries blobs MUST refuse until a re-probe
+      // exists — this refusal is the mechanism that keeps the re-take rule from
+      // being forgotten, and it is asserted here so it cannot rot silently.
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe(probe(), { ...live(), policyBlobSha256: "sealed-blob-sha" })).toThrow(
+        /policy-blob .* re-probe/
+      );
+    });
+
+    it("fires when the manifest pins extraArgs the probe ran without", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe(probe(), { ...live(), extraArgs: ["--model", "x"] })).toThrow(
+        /extraArgs/
+      );
+    });
+
+    it("fires when the recomputed adapter disagrees with the artifact's copy", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe({ ...probe(), installedCharsAdapter: 311 }, live())).toThrow(
+        /adapter disagrees/
+      );
+    });
+
+    // A manifest that satisfies the FULL design.artifacts 1 sweep. Kept in one
+    // place so stripping a single field is provably the only difference.
+    const completeManifest = () => ({
+      runId: "run-01",
+      abPairs: [
+        { id: "p1", taskId: "t1", order: "treatment-first" },
+        { id: "p2", taskId: "t1", order: "control-first" },
+        { id: "p3", taskId: "t1", order: "treatment-first" },
+      ],
+      pinned: {
+        claudeCodeVersion: "9.9.9",
+        claudeBinarySha256: "bin-sha",
+        ratesSha256: "rates-sha",
+        clientTruncationCap: 30_000,
+        pacingCacheWriteShareCeiling: 0.5,
+        perTaskDenominatorShareCap: 0.25,
+        scoringCommand: "node dist/cost/cli.js --score",
+        b12RunSha256: "harness-sha",
+        claudeMdSha256: "claudemd-sha",
+        settingsSha256s: { settings: null, settingsLocal: null },
+        installedCharsProbe: "evidence/probe.json",
+        installedCharsProbeSha256: "probe-sha",
+      },
+      tasks: [
+        {
+          id: "t1",
+          prompt: "fix it",
+          promptSha256: "abc",
+          baseCommit: "deadbeef",
+          verificationStratum: "test-red",
+          expectedSubagentStratum: "solo",
+          acceptance: ["npm test"],
+          acceptanceExpectedExit: 0,
+          verificationCommands: ["npx tsc --noEmit"],
+          gateCategory: "all",
+          repairMaxRounds: 3,
+          fileScope: ["src/a.ts"],
+        },
+      ],
+    });
+
+    it("reports no gaps on the full artifact-1 inventory — the green path exists", async () => {
+      const { manifestDeclarationGaps } = await load();
+      expect(manifestDeclarationGaps(completeManifest())).toHaveLength(0);
+    });
+
+    it("fires one gap per stripped declaration, each citing the clause that requires it", async () => {
+      // FIRST shipped checking three task fields; the adversarial review found
+      // the omission decides real outcomes (a task with no acceptance predicate
+      // archived accepted: null while remaining valid — unscorable under
+      // admissionRule 3 after the session was spent). Every row here is a
+      // guard shown FIRING; the justification classes stay SEPARATE — F25 for
+      // verificationStratum, artifact-1 completeness for the rest.
+      const { manifestDeclarationGaps } = await load();
+      // Stripping the task id is tested apart: it also orphans the abPairs
+      // task references, so ONE strip fires BOTH gap classes — which is the
+      // guard working, not the test failing.
+      const noId = completeManifest();
+      delete (noId.tasks[0] as Record<string, unknown>).id;
+      const idGaps = manifestDeclarationGaps(noId);
+      expect(idGaps.some((g) => /carries no id/.test(g))).toBe(true);
+      expect(idGaps.some((g) => /not in the manifest/.test(g))).toBe(true);
+      const taskCases: Array<[string, RegExp]> = [
+        ["prompt", /carries no prompt/],
+        ["verificationStratum", /verificationStratum.*F25/],
+        ["expectedSubagentStratum", /expectedSubagentStratum.*by analogy/],
+        ["promptSha256", /promptSha256.*not compared-if-present/],
+        ["acceptance", /acceptance predicate.*admissionRule 3/],
+        ["acceptanceExpectedExit", /acceptanceExpectedExit.*expected exit code/],
+        ["verificationCommands", /verificationCommands.*verification command string/],
+        ["gateCategory", /gateCategory.*frozen gate/],
+        ["repairMaxRounds", /repairMaxRounds.*max_rounds/],
+        ["fileScope", /fileScope.*admissionRule 7/],
+        ["baseCommit", /baseCommit.*base commit SHA/],
+      ];
+      for (const [field, expected] of taskCases) {
+        const m = completeManifest();
+        delete (m.tasks[0] as Record<string, unknown>)[field];
+        const gaps = manifestDeclarationGaps(m);
+        expect.soft(gaps, `stripping task.${field} fired no gap`).toHaveLength(1);
+        expect.soft(gaps[0], `task.${field}'s gap cites the wrong clause`).toMatch(expected);
+      }
+      const pinnedCases: Array<[string, RegExp]> = [
+        ["claudeCodeVersion", /claudeCodeVersion/],
+        ["claudeBinarySha256", /claudeBinarySha256/],
+        ["ratesSha256", /ratesSha256/],
+        ["clientTruncationCap", /clientTruncationCap.*voidConditions 8/],
+        ["pacingCacheWriteShareCeiling", /CHOSEN constants/],
+        ["perTaskDenominatorShareCap", /CHOSEN constant/],
+        ["scoringCommand", /scoringCommand.*voidConditions 19/],
+        ["b12RunSha256", /b12RunSha256.*scripts\/b12-run\.mjs/],
+        ["claudeMdSha256", /claudeMdSha256/],
+        ["settingsSha256s", /settings and settingsLocal/],
+        ["installedCharsProbe", /no provenance/],
+        ["installedCharsProbeSha256", /not provenance/],
+      ];
+      for (const [field, expected] of pinnedCases) {
+        const m = completeManifest();
+        delete (m.pinned as Record<string, unknown>)[field];
+        const gaps = manifestDeclarationGaps(m);
+        expect.soft(gaps, `stripping pinned.${field} fired no gap`).toHaveLength(1);
+        expect.soft(gaps[0], `pinned.${field}'s gap cites the wrong clause`).toMatch(expected);
+      }
+      const noPairs = completeManifest() as Record<string, unknown>;
+      delete noPairs.abPairs;
+      expect(manifestDeclarationGaps(noPairs)[0]).toMatch(/abPairs.*ABBA/);
+    });
+
+    it("validates the A/B pair schema instead of accepting any array", async () => {
+      // A fourth adversarial round found `Array.isArray` letting an empty or
+      // malformed pair list through — sessions could be spent against a
+      // manifest whose A/B can never validate (voidConditions 21 voids fewer
+      // than 3 complete pairs). Each schema guard shown FIRING:
+      const { manifestDeclarationGaps } = await load();
+      const withPairs = (pairs: unknown) => {
+        const m = completeManifest() as Record<string, unknown>;
+        m.abPairs = pairs;
+        return m;
+      };
+      expect(manifestDeclarationGaps(withPairs([]))[0]).toMatch(/at least 3 pairs/);
+      const dup = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p1", taskId: "t1", order: "control-first" },
+          { id: "p3", taskId: "t1", order: "treatment-first" },
+        ])
+      );
+      expect(dup.some((g) => /duplicates pair id p1/.test(g))).toBe(true);
+      const ghost = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p2", taskId: "t-ghost", order: "control-first" },
+          { id: "p3", taskId: "t1", order: "treatment-first" },
+        ])
+      );
+      expect(ghost.some((g) => /t-ghost.*not in the manifest/.test(g))).toBe(true);
+      const orderless = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p2", taskId: "t1", order: "control-first" },
+          { id: "p3", taskId: "t1" },
+        ])
+      );
+      expect(orderless.some((g) => /declares no arm order/.test(g))).toBe(true);
+      // Both orders must occur — the necessary condition of ANY "ABBA" reading;
+      // the exact sequence pattern stays with the A/B pass's adjudication.
+      const oneSided = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p2", taskId: "t1", order: "treatment-first" },
+          { id: "p3", taskId: "t1", order: "treatment-first" },
+        ])
+      );
+      expect(oneSided.some((g) => /only one arm order/.test(g))).toBe(true);
+    });
+
+    it("refuses a treatment invocation that breaks the committed order, from the persisted runlog", async () => {
+      // voidConditions 3: "the manifest's committed order was not followed" —
+      // checkable BEFORE the session is spent, because the runlog persists
+      // progress. Control rows are ignored (the A/B runs post-verdict, its
+      // sequencing blocked with VOID 21's adjudication), and a duplicate task
+      // is NOT an order violation — admissionRule 12 adjudicates re-runs at
+      // scoring.
+      const { committedOrderViolation } = await load();
+      const manifest = { tasks: [{ id: "t1" }, { id: "t2" }, { id: "t3" }] };
+      const row = (taskId: string, arm: string) => JSON.stringify({ taskId, arm }) + "\n";
+      // In order: t1 ran, t2 next — fine; re-running t2 right after t2 — fine.
+      expect(committedOrderViolation(manifest, "t2", row("t1", "treatment"))).toBeNull();
+      expect(committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t2", "treatment"))).toBeNull();
+      // THE FIFTH ROUND'S COUNTEREXAMPLES — skipping fired nothing, because the
+      // monotonic half alone has no rows to compare against:
+      // a FIRST run of t2 on an EMPTY log skips t1 — FIRES.
+      expect(committedOrderViolation(manifest, "t2", "")).toMatch(/predecessor task\(s\) t1 have not run/);
+      // t3 after only t1 skips t2 — FIRES, naming the missing predecessor.
+      expect(committedOrderViolation(manifest, "t3", row("t1", "treatment"))).toMatch(/predecessor task\(s\) t2 have not run/);
+      // The other half still fires: predecessors complete but a LATER task
+      // already ran and t2 was never run — a first run out of sequence, only
+      // reachable on a log an unguarded harness produced.
+      expect(
+        committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t3", "treatment"))
+      ).toMatch(/would first-run after t3/);
+      // And a LATE RE-RUN of an earlier task is NOT an order event — the first
+      // shape of this guard refused it, an over-strictness corrected in the
+      // same round: admissionRule 12 has no temporal clause, and the count is
+      // adjudicated at scoring over this same runlog.
+      expect(
+        committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t2", "treatment") + row("t3", "treatment"))
+      ).toBeNull();
+      // A control row is not primary progress: t1 ran, t3's control ran (the
+      // post-verdict A/B), t2 first-runs fine.
+      expect(committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t3", "control"))).toBeNull();
+      // Corrupt progress is a refusal, never a silent skip.
+      expect(committedOrderViolation(manifest, "t2", "not json\n")).toMatch(/not JSON/);
+      // An empty log constrains only the first task's first run.
+      expect(committedOrderViolation(manifest, "t1", "")).toBeNull();
+    });
+
+    it("invalidates on drift in EVERY instruction component, with its citation", async () => {
+      // The fourth round's second finding: settings/settings.local/MCP-config/
+      // policy-blob drift was RECORDED but did not invalidate. An arm carrying
+      // two values has no well-defined hash for voidConditions 12's pair
+      // comparison — invalidating makes the frozen predicate evaluable.
+      const { instructionDriftReasons } = await load();
+      const base = {
+        claudeMd: "a",
+        settings: "b",
+        settingsLocal: null as string | null,
+        mcpConfigPassed: "d",
+        policyBlob: "e",
+        memory: "f",
+      };
+      expect(instructionDriftReasons(base, { ...base })).toHaveLength(0);
+      const cases: Array<[string, RegExp]> = [
+        ["claudeMd", /voidConditions 12: the in-repo CLAUDE\.md/],
+        ["memory", /voidConditions 13/],
+        ["settings", /two settings hashes/],
+        ["settingsLocal", /two settings\.local hashes/],
+        ["mcpConfigPassed", /moved mid-session/],
+        ["policyBlob", /calibration key/],
+      ];
+      for (const [key, cite] of cases) {
+        const post = { ...base, [key]: "moved" } as Record<string, string | null>;
+        const reasons = instructionDriftReasons(base, post);
+        expect.soft(reasons, `${key} drift fired no invalidity`).toHaveLength(1);
+        expect.soft(reasons[0], `${key} drift cites the wrong clause`).toMatch(cite);
+      }
+      // A null-to-hash transition is drift like any other — settingsLocal
+      // starts null in the base exactly to prove it.
+      expect(instructionDriftReasons(base, { ...base, settingsLocal: "appeared" })).toHaveLength(1);
+    });
+
+    it("accepts only committed evidence as a probe source", async () => {
+      // The review's high finding: with the path unconstrained and the sha
+      // compared only if pinned, a fabricated working-tree JSON with
+      // `sustained: true` could calibrate O_o for every treatment observation.
+      // Three refusals and one pass, all deterministic against this repo:
+      const { committedEvidenceCheck } = await load();
+      // Absolute paths escape the inventory.
+      expect(committedEvidenceCheck(path.join(os.homedir(), "probe.json")).why).toMatch(/repo-relative under evidence\//);
+      // Paths outside evidence/ are not the append-only inventory.
+      expect(committedEvidenceCheck("STATE.md").why).toMatch(/must live under evidence\//);
+      // A file HEAD does not carry is a working-tree fabrication.
+      expect(committedEvidenceCheck("evidence/does-not-exist.probe.json").why).toMatch(/does not exist on disk/);
+      // The committed, sha-frozen pre-registration passes: in HEAD, bytes equal.
+      const ok = committedEvidenceCheck("evidence/2026-08-05-b12-preregistration.json");
+      expect(ok.ok).toBe(true);
+      expect(ok.file).toContain("2026-08-05-b12-preregistration");
+      // The disk-vs-HEAD blob comparison itself is the commit barrier's own
+      // tested shape (hash-object vs rev-parse HEAD:<path>), reused verbatim.
+    });
+
+    it("hashes the memory directory so a restore is provable and a write is visible", async () => {
+      const { hashMemoryDir } = await load();
+      const root = tempRoot();
+      const a = path.join(root, "mem-a");
+      const b = path.join(root, "mem-b");
+      for (const dir of [a, b]) {
+        await fs.mkdir(path.join(dir, "sub"), { recursive: true });
+        await fs.writeFile(path.join(dir, "MEMORY.md"), "index\n", "utf8");
+        await fs.writeFile(path.join(dir, "sub", "note.md"), "fact\n", "utf8");
+      }
+      const ha = hashMemoryDir(a);
+      expect(ha.files).toBe(2);
+      // A faithful copy reproduces the hash — which is what lets the harness
+      // assert the restore against the manifest's pin.
+      expect(hashMemoryDir(b).sha256).toBe(ha.sha256);
+      // One byte written by a session moves it — the VOID 13 fact.
+      await fs.writeFile(path.join(b, "sub", "note.md"), "fact!\n", "utf8");
+      expect(hashMemoryDir(b).sha256).not.toBe(ha.sha256);
+      // Absent is a fact with a hash, not an error: the restore target does not
+      // exist yet for a fresh worktree slug.
+      expect(hashMemoryDir(path.join(root, "missing")).files).toBe(0);
+    });
+  });
 });
 
 describe("against a real transcript, when one is present", () => {

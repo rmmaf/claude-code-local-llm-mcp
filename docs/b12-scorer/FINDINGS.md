@@ -235,17 +235,185 @@ manifest carries one — the shape `assertRatesFrozen` already uses. **This is a
 registered limit, not a fix**, and it is the first one that lives in the harness
 rather than in the scorer.
 
+**SHIPPED 2026-08-08 — THE HARNESS HALF.** A Codex gate on six frozen-text
+readings ran BEFORE the pass was planned; three were refuted as written and the
+corrections below are theirs.
+
+- **`installedChars` is wired, with provenance, treatment arm only.** `observe()`
+  resolves the committed probe artifact the manifest names and validates the
+  calibration key COMPONENT BY COMPONENT against the live observation — binary
+  sha256, treatment MCP-config hash, policy-blob hash (exact equality INCLUDING
+  `null`: the committed probe pre-dates any sealed blob, so the first manifest
+  that seals blobs refuses until a re-probe exists — the refusal is what keeps
+  the re-take rule from being forgotten), and pinned `extraArgs`. Domain
+  validation refuses absent/non-finite/negative at resolution AND at write time
+  (`holdsIf` 6 cannot catch a fabricated finite sentinel; provenance at write
+  time is the guard). **The control arm records a NAMED absence, never a
+  value** — the gate refuted "control = 0, measured": the probe measured ONE
+  delta and the control is the baseline inside that subtraction, so a control
+  value (even 0) would be the two-valued `O` the ONE-`O_o` boundary refuses.
+- **The per-arm policy blob is delivered** via `--append-system-prompt` from the
+  manifest-pinned out-of-repo blob, hash required per arm (`voidConditions` 12
+  makes its absence from any record a VOID), refused if it resolves inside the
+  arm's worktree or exists in the base tree at the same path.
+- **The memory snapshot is restored** before every session (`design.artifacts`
+  10), asserted against the manifest pin, hashed pre and post; a post-hash drift
+  is recorded as invalidity (`voidConditions` 13).
+- **The seven instruction covariates are hashed pre and post** — the seventh,
+  the allowlist visible in the system prompt, recorded as the registered limit
+  it is, a named fact instead of a hash dressing an assumption as a measurement.
+- **Manifest completeness refuses before anything spends**: `verificationStratum`
+  (F25's route), `expectedSubagentStratum` and `promptSha256` (`design.artifacts`
+  1 completeness — the latter was compared only-when-present, `mcpConfigSha256`'s
+  old defect). The preflight reports the same checks red instead of exiting.
+- Every new guard ships FIRING in `tests/cost-meter.test.ts`, on exported pure
+  functions — the `classifyRun` precedent — including the positive control that
+  a sustained ZERO delta is accepted (zero-measured ≠ zero-defaulted).
+
+**TWO AMBIGUITIES REGISTERED BY THIS PASS, NOT RESOLVED** — both found by the
+gate, both places where the frozen text names a comparison without defining its
+operand, and where deciding silently would mint:
+
+- **`voidConditions` 21 voids A/B pairs on "different instruction-set hashes"
+  while the policy blob varies per arm BY DESIGN** (channel 5). Whether that
+  hash includes the intentionally arm-varying blob is not defined. The harness
+  records COMPONENTS only and mints no aggregate; the A/B pass must adjudicate
+  before comparing. **The adversarial review sharpened the consequence, and it
+  is recorded with teeth: until the composition is adjudicated, the pair-level
+  void is not mechanically evaluable — comparing all components voids every
+  pair (policy differs by design), excluding any invents a definition after
+  pre-registration. So AN A/B RUN MAY NOT START before this adjudication is
+  registered.** Deciding it inside a code diff was declined deliberately: the
+  planning gate on this same pass ruled "the pass must not silently decide
+  this", and a silent canonical hash would be the O-bracket's error shape —
+  minted decision structure — one level down.
+- **`voidConditions` 12 compares a pair's "MCP-config hashes" while
+  `design.artifacts` 10 gives the two arms different argv** (`--mcp-config` vs
+  none). Whether the clause compares the manifest's pin (identical by
+  construction) or what each arm was handed (differs by construction) is not
+  defined. The record carries BOTH — `mcpConfigPinned` and `mcpConfigPassed`,
+  `null` on control as a named fact.
+
+**A SECOND ADVERSARIAL PASS — CODEX REVIEW OF THE DIFF ITSELF — RETURNED THREE
+HIGH FINDINGS; TWO ARE FIXED IN THE SAME PASS, ONE IS DECLINED AS CODE AND
+REGISTERED ABOVE WITH ITS CONSEQUENCE:**
+
+- **The probe trust boundary was OPEN.** With the path unconstrained and the
+  sha compared-if-present, a fabricated working-tree JSON carrying
+  `sustained: true` and copied hashes would have calibrated `O_o` for every
+  treatment observation. Closed: the probe path must be repo-relative under
+  `evidence/`, present in HEAD, byte-identical to HEAD's blob
+  (`committedEvidenceCheck` — the commit barrier's own comparison, reused), and
+  `installedCharsProbeSha256` is REQUIRED now. Fabrication requires committing
+  the fabrication, which the append-only history records.
+- **The completeness sweep was PARTIAL, and the omission decided outcomes.** A
+  task with no acceptance predicate proceeded and archived `accepted: null`
+  while remaining `valid` — unscorable under `admissionRule` 3 after the
+  session was spent. `manifestDeclarationGaps` now sweeps artifact 1's FULL
+  inventory: per task the acceptance predicate WITH its declared expected exit
+  code (now consumed by `accepted` instead of a hardcoded 0), verification
+  command strings, gate category, repair max_rounds, file scope, both strata,
+  prompt + sha, base commit; run-level the version/binary/rates pins, the
+  measured `clientTruncationCap`, both CHOSEN caps, the scoring command, the
+  CLAUDE.md and settings hashes, the A/B pair list, and the harness's own
+  sha256 — which `observe` now asserts against the RUNNING script, so an edited
+  harness cannot drive a sealed manifest.
+- The third finding — mint a canonical instruction-set hash for
+  `voidConditions` 21 — is the ambiguity registered above, with the review's
+  consequence recorded: no A/B before the adjudication.
+
+**A THIRD ROUND, ON THE BRANCH DIFF, FOUND THE VALIDATOR TRUSTING THE SUMMARY
+IT SHOULD RECOMPUTE — CONFIRMED AND FIXED.** `validateInstalledCharsProbe`
+read only the artifact's own claims (`sustained`, `deltaTokens`), so a
+committed JSON with matching hashes and a fabricated delta would have
+calibrated every treatment observation — committing proves storage provenance,
+not that the registered protocol produced the value. Now every derived number
+is recomputed from the replicate records the artifact carries and any
+disagreement refuses: exactly k = 3 replicates (the CHOSEN constant);
+per-arm `promptTokens` re-derived from `input + cacheCreation + cacheRead`;
+each arm's VERBATIM raw first record parsed and checked against the extraction
+(usage, requestId, sessionId, admissibility); per-replicate model pairing; six
+DISTINCT session ids (a reused id is a resumed session); deltas, `deltasTokens`
+and `sustained` recomputed and compared against the claims; the protocol
+reference (`preDeclaration` naming `PREMISES.md § B12`) and both argv shapes
+(both arms strict, `--mcp-config` on treatment only) REQUIRED — the old
+fallback that labelled missing provenance as the registered protocol is gone.
+The committed artifact `2026-08-08-mac-b12-installedchars-50de3b3-144422`
+passes the full recomputation (re-verified mechanically before shipping).
+**The honest boundary, registered:** the artifact cannot prove the sessions
+RAN — the transcripts do not travel in it; that burden stays with
+committedness plus the archived raw records, which a reader holding the
+transcripts can re-verify.
+
+**A FOURTH ROUND FOUND TWO MORE — BOTH CONFIRMED, ONE WITH ITS SCOPE
+ADJUDICATED DOWN:**
+
+- **The pair list was present-not-validated.** `Array.isArray(abPairs)` let an
+  empty or malformed list through. Now: at least 3 pairs (fewer can never
+  validate — `voidConditions` 21 voids "fewer than 3 complete pairs remain"),
+  unique pair ids, task references that exist, a declared per-pair arm order,
+  and BOTH orders present — the necessary condition of any reading of "ABBA
+  order"; the exact sequence pattern is deliberately NOT decided here, it
+  belongs to the A/B pass and is blocked with the VOID-21 hash adjudication.
+  **The reviewer's wider ask — make every `observe` invocation prove pair
+  membership — was DECLINED against the frozen text:** primary observations
+  are not pairs ("the control arm never enters the primary verdict",
+  `admissionRule` 13; the A/B is post-verdict, `runPlan` PHASE 7). What IS
+  enforced now: the PRIMARY arm's committed order (`voidConditions` 3),
+  checked against the persisted runlog before a session is spent
+  (`committedOrderViolation` — treatment rows only; duplicates left to
+  `admissionRule` 12's scoring-time re-run adjudication).
+- **Instruction drift was recorded but only two components invalidated.**
+  Settings, settings.local, the passed MCP config and the policy blob drifted
+  visibly (pre ≠ post) while `valid` stayed true. Clause 12's intra-arm text
+  names only CLAUDE.md — but those components are what the clause compares
+  ACROSS A PAIR, and an arm carrying two values has no well-defined hash for
+  that comparison: invalidating makes the frozen predicate EVALUABLE, the
+  end-commit fix's own argument. `instructionDriftReasons` now compares every
+  component (null-to-hash transitions included) with a per-component citation,
+  and each fires in a test.
+
+**A FIFTH ROUND FOUND THE ORDER GUARD ENFORCING HALF ITS INVARIANT —
+CONFIRMED, AND THE FIX ALSO CORRECTED AN OVER-STRICTNESS OF THE GUARD'S FIRST
+SHAPE.** The monotonic half alone ("no already-ran task with a higher index")
+let a FIRST run of task 2 start on an empty runlog: nothing had run "after"
+it, nothing fired, and the session was spent on a run already void under
+`voidConditions` 3. Now a first run requires EVERY predecessor executed (the
+missing ones named in the refusal), plus the monotonic half. And in the same
+edit, the opposite error went: the old shape refused a LATE RE-RUN of an
+earlier task, but a re-run is not an order event — the committed order fixes
+the sequence of FIRST executions, and `admissionRule` 12 governs re-runs with
+no temporal clause; they pass the guard and are counted at scoring over the
+same runlog. Both counterexamples and the re-run permission fire in tests.
+
+**A SIXTH ROUND: A PATH-TRAVERSAL DELETE, CONFIRMED AS A CLASS; AND A
+PROTOCOL-SEALING DEMAND, SPLIT.** `task.id` was interpolated into the worktree
+path handed to a recursive delete — `../../target` escaped `.b12/` and erased
+an unrelated directory before git ever ran. Fixed as the CLASS, not the
+instance: `task.id` AND `runId` (which names `evidence/<runId>/…`) are held to
+one safe-filename grammar in the completeness sweep, and the worktree path
+additionally proves it is a direct child of `.b12/` before any `rmSync`. On
+protocol sealing, the checkable pieces the REGISTERED method names shipped:
+the proof session (the committed MEASUREMENTS row: "proof session showed
+`mcp__local-coder__status` callable") must exist, have called the tool, and be
+a SEPARATE session from the six replicates; `context.commit` — which script
+produced this — is required provenance. The wider demands — the exact
+registered prompt and a byte-exact argv template — were DECLINED as minting:
+the pre-declaration fixes "identical but for the arm", not a prompt string,
+and the artifact's own note says the argv is NOT byte-for-byte before a
+manifest exists. The registered argv components stay pinned; the
+sessions-really-ran boundary stays registered above.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
-- **`installedChars`**, above — the harness is the only place it can be taken.
-  **(c) was decided 2026-08-08 — repair, ONE `O_o`**; the operationalization is
-  pre-declared in `PREMISES.md § B12` and the paired probe (Mac, pinned binary)
-  precedes the wiring. Unblocked, not done.
-- **The memory snapshot restore** (`design.artifacts` 10) and the seven
-  `design.covariates` instruction hashes, one of which — the tool allowlist
-  visible in the system prompt — is not measurable from outside the session.
-- **Artifacts 7 and 11**, which belong to UNIT 5 and cannot be written until the
-  above lands.
+- **Artifacts 7 and 11**, which belong to UNIT 5 and could not be written until
+  the above landed — now unblocked.
+- **The `A_o + S_o > 0` assertion-and-report** the pre-declaration names: it
+  lives where `A_o` and `S_o` first exist, which is the assembler, not the
+  harness.
+- **A re-probe of `installedChars` under the sealed policy blobs**, forced
+  mechanically by the calibration-key refusal above the moment a manifest
+  carries blobs.
 
 Two dependent gaps fall out of the same hole:
 
@@ -316,8 +484,9 @@ without — `poolRatio` over rows priced both ways at both horizons — which ch
 
 ## OPEN — a decision, not an implementation
 
-One. It is the only open finding with **no shipped behaviour at all**: a run that
-reaches it has no legal outcome, so there is nothing to publish a limit about.
+One. Its candidate route now has shipped behaviour (below), but the finding
+itself — an encoding gap in the frozen text — remains: a run that reaches the
+gap at scoring time still has no legal outcome.
 
 ### F25 — the frozen text demands a declaration and supplies no disposition for its absence
 
@@ -358,6 +527,21 @@ reading the file. It does not close the finding as stated — a manifest could
 still be corrupted between sealing and scoring, and its hash is what catches that
 — but it makes the gap unreachable on a compliant run. **It belongs to the same
 harness pass as F24 and is gated with it.**
+
+**THE ROUTE SHIPPED 2026-08-08, `verificationStratum` AND ONLY THAT.**
+`manifestDeclarationGaps` in `scripts/b12-run.mjs`: `observe` refuses a manifest
+in which any task declares no `verificationStratum` before anything is spent,
+and the preflight reports the same check red. The Codex gate on this pass
+refuted a wider claim — the neighbouring refusals (the FULL `design.artifacts`
+1 inventory, from the acceptance predicate to the harness's own sha, swept by
+the same function after the adversarial review found the partial list decided
+real outcomes) ship beside it as artifact-1 completeness, an extension of this
+route's SHAPE by analogy, and are not attributed to F25.
+The timing constraint is honoured in the code's own comment: the
+no-minted-disposition argument holds only before registration, and hitting the
+refusal on a registered run does not erase the owed `result.json`. **The finding
+stays OPEN as stated**: the encoding gap in the frozen text is unreachable on a
+compliant run now, not closed.
 
 ---
 
