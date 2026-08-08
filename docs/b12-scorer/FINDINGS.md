@@ -322,6 +322,29 @@ REGISTERED ABOVE WITH ITS CONSEQUENCE:**
   `voidConditions` 21 — is the ambiguity registered above, with the review's
   consequence recorded: no A/B before the adjudication.
 
+**A THIRD ROUND, ON THE BRANCH DIFF, FOUND THE VALIDATOR TRUSTING THE SUMMARY
+IT SHOULD RECOMPUTE — CONFIRMED AND FIXED.** `validateInstalledCharsProbe`
+read only the artifact's own claims (`sustained`, `deltaTokens`), so a
+committed JSON with matching hashes and a fabricated delta would have
+calibrated every treatment observation — committing proves storage provenance,
+not that the registered protocol produced the value. Now every derived number
+is recomputed from the replicate records the artifact carries and any
+disagreement refuses: exactly k = 3 replicates (the CHOSEN constant);
+per-arm `promptTokens` re-derived from `input + cacheCreation + cacheRead`;
+each arm's VERBATIM raw first record parsed and checked against the extraction
+(usage, requestId, sessionId, admissibility); per-replicate model pairing; six
+DISTINCT session ids (a reused id is a resumed session); deltas, `deltasTokens`
+and `sustained` recomputed and compared against the claims; the protocol
+reference (`preDeclaration` naming `PREMISES.md § B12`) and both argv shapes
+(both arms strict, `--mcp-config` on treatment only) REQUIRED — the old
+fallback that labelled missing provenance as the registered protocol is gone.
+The committed artifact `2026-08-08-mac-b12-installedchars-50de3b3-144422`
+passes the full recomputation (re-verified mechanically before shipping).
+**The honest boundary, registered:** the artifact cannot prove the sessions
+RAN — the transcripts do not travel in it; that burden stays with
+committedness plus the archived raw records, which a reader holding the
+transcripts can re-verify.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **Artifacts 7 and 11**, which belong to UNIT 5 and could not be written until

@@ -728,18 +728,122 @@ export function validateInstalledCharsProbe(probe, live) {
     throw new Error(why);
   };
   if (probe === null || typeof probe !== "object") fail("the probe artifact is not an object");
+  if (typeof probe.runId !== "string" || probe.runId.length === 0) fail("the probe artifact carries no runId — a value with no provenance is refused");
+
+  // THE SUMMARY IS NOT TRUSTED — IT IS RECOMPUTED. A third adversarial round
+  // found the validator reading only the artifact's own claims (`sustained`,
+  // `deltaTokens`), which made "committed" carry the whole burden: a committed
+  // JSON with matching hashes and a fabricated delta would have calibrated
+  // every treatment observation. Committing proves storage provenance, not
+  // that the registered protocol produced the value. So every derived number
+  // is recomputed here from the replicate records the artifact carries, and
+  // any disagreement between a copy and its recomputation refuses — the same
+  // doctrine as the adapter check below, applied to the whole chain.
+  //
+  // The honest boundary, stated rather than papered over: the artifact cannot
+  // prove the sessions RAN — the transcripts do not travel in it. That burden
+  // stays with committedness plus the VERBATIM raw first records archived per
+  // arm, which a reader holding the transcripts can re-verify. What the
+  // artifact does carry, this function refuses to take on faith.
+
+  // The protocol component of the calibration key: named, never defaulted.
+  // The old fallback labelled MISSING provenance as the registered protocol.
+  if (typeof probe.preDeclaration !== "string" || !probe.preDeclaration.includes("PREMISES.md § B12")) {
+    fail(
+      `the probe names no registered protocol (preDeclaration: ${JSON.stringify(probe.preDeclaration ?? null)}) — ` +
+        "it must reference PREMISES.md § B12; a fallback label would mark missing provenance as valid"
+    );
+  }
+  const ctx = probe.context ?? {};
+  if (typeof ctx.prompt !== "string" || ctx.prompt.length === 0) {
+    fail("the probe records no session prompt — the protocol fixes one prompt, identical across arms");
+  }
+  const shape = ctx.argvShape ?? {};
+  // "--strict-mcp-config" does not contain the substring "--mcp-config", so
+  // these three includes-checks pin the registered shape: both arms strict,
+  // the server config on the treatment arm only.
+  if (typeof shape.treatment !== "string" || !shape.treatment.includes("--strict-mcp-config") || !shape.treatment.includes("--mcp-config")) {
+    fail("the probe's treatment argv shape does not match the registered protocol (both arms strict; --mcp-config on treatment)");
+  }
+  if (typeof shape.control !== "string" || !shape.control.includes("--strict-mcp-config") || shape.control.includes("--mcp-config")) {
+    fail("the probe's control argv shape does not match the registered protocol (strict, and NO --mcp-config)");
+  }
+
+  // k = 3 is the pre-declared CHOSEN constant; the tolerance-zero rule is the
+  // sustained recomputation below.
+  const reps = probe.replicates;
+  if (!Array.isArray(reps)) fail("the probe carries no replicate records — the summary cannot be re-verified against nothing");
+  if (reps.length !== 3) fail(`the registered protocol's k is 3 (a CHOSEN constant, labelled in the pre-declaration); the artifact carries ${reps.length} replicate(s)`);
+  const sessionIds = [];
+  const deltas = [];
+  reps.forEach((rep, i) => {
+    const n = i + 1;
+    for (const armName of ["treatment", "control"]) {
+      const a = rep?.[armName];
+      if (!a || typeof a !== "object") fail(`replicate ${n} lacks a ${armName} record`);
+      const f = a.first ?? {};
+      for (const k of ["input", "cacheCreation", "cacheRead"]) {
+        if (!Number.isFinite(f[k])) fail(`replicate ${n} ${armName} first.${k} is ${String(f[k])} — not a finite number`);
+      }
+      // The cache-invariant total the second postscript registered: every
+      // prompt token lands in exactly one of the three classes.
+      const recomputedPrompt = f.input + f.cacheCreation + f.cacheRead;
+      if (recomputedPrompt !== a.promptTokens) {
+        fail(`replicate ${n} ${armName} promptTokens ${String(a.promptTokens)} != recomputed input+cacheCreation+cacheRead ${recomputedPrompt} — the artifact's own copies disagree`);
+      }
+      if (typeof a.sessionId !== "string" || a.sessionId.length === 0) fail(`replicate ${n} ${armName} carries no sessionId`);
+      sessionIds.push(a.sessionId);
+      // The verbatim raw record is the artifact's own evidence for the
+      // extraction — so the extraction is checked against it.
+      let raw = null;
+      try {
+        raw = JSON.parse(a.firstRecordRaw);
+      } catch {
+        fail(`replicate ${n} ${armName} firstRecordRaw is not JSON — the raw evidence is unreadable`);
+      }
+      if (raw.type !== "assistant" || raw.isApiErrorMessage === true) {
+        fail(`replicate ${n} ${armName} firstRecordRaw is not an admissible assistant record`);
+      }
+      if (raw.requestId !== f.requestId) fail(`replicate ${n} ${armName} firstRecordRaw requestId ${String(raw.requestId)} != first.requestId ${String(f.requestId)}`);
+      if (raw.sessionId !== a.sessionId) fail(`replicate ${n} ${armName} firstRecordRaw sessionId ${String(raw.sessionId)} != the record's ${a.sessionId}`);
+      const u = raw.message?.usage ?? {};
+      if ((u.input_tokens ?? 0) !== f.input || (u.cache_creation_input_tokens ?? 0) !== f.cacheCreation || (u.cache_read_input_tokens ?? 0) !== f.cacheRead) {
+        fail(
+          `replicate ${n} ${armName} firstRecordRaw usage (${u.input_tokens}/${u.cache_creation_input_tokens}/${u.cache_read_input_tokens}) ` +
+            `disagrees with the extracted first (${f.input}/${f.cacheCreation}/${f.cacheRead})`
+        );
+      }
+    }
+    if (rep.treatment.first?.model !== rep.control.first?.model) {
+      fail(`replicate ${n} arms ran different models (${String(rep.treatment.first?.model)} vs ${String(rep.control.first?.model)}) — the pairing is the protocol`);
+    }
+    const d = rep.treatment.promptTokens - rep.control.promptTokens;
+    if (rep.deltaTokens !== d) fail(`replicate ${n} deltaTokens ${String(rep.deltaTokens)} != recomputed treatment−control ${d}`);
+    deltas.push(d);
+  });
+  if (new Set(sessionIds).size !== 6) {
+    fail("the six replicate sessions do not carry six distinct session ids — fresh sessions are the protocol, and a reused id is a resumed session");
+  }
+  if (deltas.some((d) => d < 0)) {
+    fail(`recomputed deltas ${JSON.stringify(deltas)} include a negative — outside the pre-declared domain (treatment minus control; a negative says the arms are reversed or the measurement is wrong)`);
+  }
+  if (!Array.isArray(probe.deltasTokens) || probe.deltasTokens.length !== 3 || probe.deltasTokens.some((v, i) => v !== deltas[i])) {
+    fail(`deltasTokens ${JSON.stringify(probe.deltasTokens ?? null)} != recomputed ${JSON.stringify(deltas)} — the summary and the records disagree`);
+  }
+  const recomputedSustained = deltas.every((d) => Number.isFinite(d) && d === deltas[0]) && deltas[0] >= 0;
+  if (probe.sustained !== recomputedSustained) {
+    fail(`sustained is claimed ${String(probe.sustained)} but the replicate records recompute ${recomputedSustained} — the claim is not the measurement`);
+  }
   if (probe.sustained !== true) fail(`the probe did not sustain (sustained: ${String(probe.sustained)}) — the pre-declared branch for an unsustained probe is retract-and-re-register, not reuse`);
   const delta = probe.deltaTokens;
   if (typeof delta !== "number" || !Number.isFinite(delta)) fail(`deltaTokens is ${String(delta)} — absent or non-finite`);
-  if (delta < 0) fail(`deltaTokens is ${delta} — negative, outside the pre-declared domain`);
+  if (delta !== deltas[0]) fail(`deltaTokens ${delta} != the recomputed replicate delta ${deltas[0]}`);
   // Two copies that are never compared is how the meter and the oracle drifted
   // apart four times, so the adapter is recomputed and must agree byte for byte.
   const recomputed = Math.round(delta * 3.7 * 10) / 10;
   if (recomputed !== probe.installedCharsAdapter) {
     fail(`adapter disagrees: recomputed ${recomputed} != artifact's installedCharsAdapter ${String(probe.installedCharsAdapter)}`);
   }
-  const ctx = probe.context ?? {};
-  if (typeof probe.runId !== "string" || probe.runId.length === 0) fail("the probe artifact carries no runId — a value with no provenance is refused");
   if (ctx.claudeBinarySha256 !== live.binarySha256) {
     fail(`calibration key moved: probe binary sha256 ${String(ctx.claudeBinarySha256)} != live ${live.binarySha256} — the value is re-taken, never reused across binaries`);
   }
@@ -768,7 +872,9 @@ export function validateInstalledCharsProbe(probe, live) {
       mcpConfigSha256: ctx.mcpConfigSha256 ?? null,
       policyBlobSha256: ctx.policyBlobSha256 ?? null,
       extraArgs: ctx.extraArgs ?? [],
-      protocol: typeof probe.preDeclaration === "string" ? probe.preDeclaration : "PREMISES.md § B12",
+      // Never defaulted — validated above; a fallback here would label missing
+      // provenance as the registered protocol.
+      protocol: probe.preDeclaration,
     },
   };
 }

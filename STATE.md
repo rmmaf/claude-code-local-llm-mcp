@@ -5,21 +5,21 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**THE F24 HARNESS PASS SHIPPED, THROUGH TWO CODEX LAYERS.** The planning gate
-(6 frozen-text readings: 3 confirmed, 3 REFUTED — the refutations shaped the
-code), then an adversarial review of the DIFF (3 HIGH: 2 fixed same-pass, 1
-declined-as-code and registered). `observe()` now: resolves `installedChars`
-from COMMITTED evidence only — repo-relative under `evidence/`, byte-identical
-to HEAD's blob, sha REQUIRED — with the calibration key asserted component by
-component (any move refuses; sealed blobs force a re-probe); delivers per-arm
-policy blobs via `--append-system-prompt` (VOID 12); restores and pre/post
-hashes the memory snapshot (VOID 13) and the seven instruction covariates;
-sweeps artifact 1's FULL declaration inventory (acceptance predicate with its
-DECLARED expected exit — now consumed by `accepted` —, verification commands,
-caps, scoring command, the harness's own sha asserted against the running
-script). The control arm records a NAMED absence — a control value, even 0,
-is a second `O` (refuted reading 3). All guards fire in
-`tests/cost-meter.test.ts`; gate at the 4-failure Windows baseline.
+**THE F24 HARNESS PASS SHIPPED, THROUGH THREE ADVERSARIAL ROUNDS.** Planning
+gate (6 readings, 3 REFUTED — they shaped the code); diff review (3 HIGH: 2
+fixed, 1 declined-as-code, registered); branch review (1 HIGH, fixed: the
+validator RECOMPUTES the probe from its replicate records — raws vs
+extraction, k=3, distinct sessions, model pairing, deltas/sustained — no
+trusted summary, no protocol fallback; the real artifact passes, re-verified
+mechanically). `observe()` resolves `installedChars` from COMMITTED evidence
+only (under `evidence/`, byte-identical to HEAD's blob, sha REQUIRED), the key
+asserted component by component (any move refuses; sealed blobs force a
+re-probe); delivers per-arm policy blobs via `--append-system-prompt`
+(VOID 12); restores and pre/post hashes memory (VOID 13) and the seven
+instruction covariates; sweeps artifact 1's FULL inventory (acceptance with
+DECLARED expected exit, now consumed by `accepted`; commands, caps, scoring
+command, the harness's own sha). Control arm: NAMED absence — a control value,
+even 0, is a second `O`. All guards fire; gate at the 4-failure baseline.
 
 ## Next action
 

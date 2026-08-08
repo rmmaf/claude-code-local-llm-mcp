@@ -2497,19 +2497,77 @@ describe("the B12 harness", () => {
     // functions: the `classifyRun` precedent, testable without a session.
     const load = async () => import("../scripts/b12-run.mjs");
 
-    // The committed artifact's shape, reduced to the fields the validator reads.
-    const probe = () => ({
-      runId: "probe-run-id",
-      sustained: true,
-      deltaTokens: 84,
-      installedCharsAdapter: 310.8,
-      preDeclaration: "PREMISES.md § B12",
-      context: {
-        claudeBinarySha256: "bin-sha",
-        mcpConfigSha256: "mcp-sha",
-        policyBlobSha256: null as string | null,
-      },
-    });
+    // A COHERENT artifact, because the validator RECOMPUTES instead of
+    // trusting: the third adversarial round found the old shape — summary
+    // fields read on faith — meant a committed JSON with a fabricated delta
+    // calibrated every treatment observation. `pairs` is one
+    // [treatmentPromptTokens, controlPromptTokens] per replicate; every
+    // derived field (deltas, sustained, adapter, raw records) follows from it,
+    // so a test that wants incoherence must INTRODUCE it, visibly.
+    const rawFor = (sessionId: string, requestId: string, input: number, cacheCreation: number, cacheRead: number) =>
+      JSON.stringify({
+        type: "assistant",
+        sessionId,
+        requestId,
+        uuid: `u-${requestId}`,
+        message: {
+          model: "test-model",
+          usage: {
+            input_tokens: input,
+            cache_creation_input_tokens: cacheCreation,
+            cache_read_input_tokens: cacheRead,
+            output_tokens: 4,
+          },
+        },
+      });
+    const armRecord = (arm: string, n: number, promptTokens: number) => {
+      const input = 2;
+      const cacheCreation = 0;
+      const cacheRead = promptTokens - input;
+      const sessionId = `sess-${arm}-${n}`;
+      const requestId = `req-${arm}-${n}`;
+      return {
+        arm,
+        replicate: n,
+        sessionId,
+        first: { requestId, model: "test-model", input, cacheCreation, cacheRead },
+        firstRecordRaw: rawFor(sessionId, requestId, input, cacheCreation, cacheRead),
+        promptTokens,
+      };
+    };
+    const probe = (pairs: Array<[number, number]> = [
+      [22_099, 22_015],
+      [22_099, 22_015],
+      [22_099, 22_015],
+    ]) => {
+      const replicates = pairs.map(([t, c], i) => ({
+        replicate: i + 1,
+        treatment: armRecord("treatment", i + 1, t),
+        control: armRecord("control", i + 1, c),
+        deltaTokens: t - c,
+      }));
+      const deltas = pairs.map(([t, c]) => t - c);
+      const sustained = deltas.every((d) => d === deltas[0]) && (deltas[0] as number) >= 0;
+      return {
+        runId: "probe-run-id",
+        sustained,
+        deltasTokens: deltas,
+        deltaTokens: deltas[0],
+        installedCharsAdapter: Math.round((deltas[0] as number) * 3.7 * 10) / 10,
+        preDeclaration: "PREMISES.md § B12 — test fixture",
+        context: {
+          claudeBinarySha256: "bin-sha",
+          mcpConfigSha256: "mcp-sha",
+          policyBlobSha256: null as string | null,
+          prompt: "Reply with exactly: ok. Do not use any tools.",
+          argvShape: {
+            treatment: "claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg> --output-format json -- <prompt>",
+            control: "claude --print --session-id <id> --strict-mcp-config --output-format json -- <prompt>",
+          },
+        },
+        replicates,
+      };
+    };
     const live = () => ({
       binarySha256: "bin-sha",
       mcpConfigSha256: "mcp-sha" as string | null,
@@ -2524,6 +2582,9 @@ describe("the B12 harness", () => {
       expect(rec.deltaTokens).toBe(84);
       expect(rec.probeRunId).toBe("probe-run-id");
       expect(rec.calibrationKey.policyBlobSha256).toBeNull();
+      // The protocol is the artifact's own registered reference, never a
+      // fallback — the old default labelled missing provenance as valid.
+      expect(rec.calibrationKey.protocol).toBe("PREMISES.md § B12 — test fixture");
     });
 
     it("accepts a sustained ZERO delta — zero-measured is not zero-defaulted", async () => {
@@ -2531,19 +2592,49 @@ describe("the B12 harness", () => {
       // nothing resident is a measurement, carries provenance, and must pass —
       // this is the positive control proving the guard tells the two zeros apart.
       const { validateInstalledCharsProbe } = await load();
-      const p = { ...probe(), deltaTokens: 0, installedCharsAdapter: 0 };
+      const p = probe([
+        [22_099, 22_099],
+        [22_099, 22_099],
+        [22_099, 22_099],
+      ]);
       expect(validateInstalledCharsProbe(p, live()).value).toBe(0);
     });
 
-    it("fires on a negative delta", async () => {
+    it("fires on a negative recomputed delta — reversed arms cannot calibrate", async () => {
       const { validateInstalledCharsProbe } = await load();
-      const p = { ...probe(), deltaTokens: -84, installedCharsAdapter: -310.8 };
+      const p = probe([
+        [22_015, 22_099],
+        [22_015, 22_099],
+        [22_015, 22_099],
+      ]);
       expect(() => validateInstalledCharsProbe(p, live())).toThrow(/negative/);
     });
 
-    it("fires on a non-finite or absent delta", async () => {
+    it("fires when the summary delta is fabricated over honest records", async () => {
+      // THE THIRD ROUND'S CENTRAL CASE: records saying 84 with a summary saying
+      // anything else. The old validator read only the summary.
       const { validateInstalledCharsProbe } = await load();
-      expect(() => validateInstalledCharsProbe({ ...probe(), deltaTokens: Number.NaN }, live())).toThrow(/non-finite/);
+      const p = probe() as Record<string, unknown>;
+      p.deltaTokens = 100;
+      p.installedCharsAdapter = 370;
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/recomputed replicate delta/);
+      const p2 = probe() as Record<string, unknown>;
+      p2.deltasTokens = [100, 100, 100];
+      expect(() => validateInstalledCharsProbe(p2, live())).toThrow(/summary and the records disagree/);
+      const p3 = probe([
+        [22_099, 22_015],
+        [22_100, 22_015],
+        [22_099, 22_015],
+      ]) as Record<string, unknown>;
+      p3.sustained = true; // claimed over 84/85/84
+      expect(() => validateInstalledCharsProbe(p3, live())).toThrow(/claim is not the measurement/);
+    });
+
+    it("fires on a non-finite or absent summary delta", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const withNaN = probe() as Record<string, unknown>;
+      withNaN.deltaTokens = Number.NaN;
+      expect(() => validateInstalledCharsProbe(withNaN, live())).toThrow(/non-finite/);
       const absent = probe() as Record<string, unknown>;
       delete absent.deltaTokens;
       expect(() => validateInstalledCharsProbe(absent, live())).toThrow(/absent or non-finite/);
@@ -2551,7 +2642,61 @@ describe("the B12 harness", () => {
 
     it("fires on an unsustained probe — the pre-declared branch is retract, not reuse", async () => {
       const { validateInstalledCharsProbe } = await load();
-      expect(() => validateInstalledCharsProbe({ ...probe(), sustained: false }, live())).toThrow(/did not sustain/);
+      const p = probe([
+        [22_099, 22_015],
+        [22_100, 22_015],
+        [22_099, 22_015],
+      ]);
+      expect(p.sustained).toBe(false); // the fixture computed it honestly
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/did not sustain/);
+    });
+
+    it("fires on every incoherence between the records and their copies", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      // No replicates at all — the summary has nothing to be re-verified against.
+      const bare = probe() as Record<string, unknown>;
+      delete bare.replicates;
+      expect(() => validateInstalledCharsProbe(bare, live())).toThrow(/no replicate records/);
+      // k is a CHOSEN constant: 3, exactly.
+      expect(() =>
+        validateInstalledCharsProbe(
+          probe([
+            [22_099, 22_015],
+            [22_099, 22_015],
+          ]),
+          live()
+        )
+      ).toThrow(/k is 3/);
+      // A promptTokens copy that disagrees with its own components.
+      const badCopy = probe();
+      badCopy.replicates[0]!.control.promptTokens = 22_016;
+      expect(() => validateInstalledCharsProbe(badCopy, live())).toThrow(/own copies disagree/);
+      // Raw evidence disagreeing with the extraction (components kept
+      // internally consistent so the raw check is what fires).
+      const badRaw = probe();
+      badRaw.replicates[0]!.treatment.first.cacheRead += 1;
+      badRaw.replicates[0]!.treatment.promptTokens += 1;
+      expect(() => validateInstalledCharsProbe(badRaw, live())).toThrow(/firstRecordRaw usage/);
+      // A reused session id — a resumed session is not a fresh one.
+      const reused = probe();
+      reused.replicates[1]!.control = armRecord("control", 1, 22_015);
+      expect(() => validateInstalledCharsProbe(reused, live())).toThrow(/distinct session ids/);
+      // Arms of one replicate on different models.
+      const mixed = probe();
+      mixed.replicates[2]!.control.first.model = "other-model";
+      expect(() => validateInstalledCharsProbe(mixed, live())).toThrow(/different models/);
+    });
+
+    it("fires on protocol metadata that is missing or wrong-shaped", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      // Missing preDeclaration: the old fallback labelled this VALID.
+      const noProto = probe() as Record<string, unknown>;
+      delete noProto.preDeclaration;
+      expect(() => validateInstalledCharsProbe(noProto, live())).toThrow(/names no registered protocol/);
+      // A control arm whose argv carries the server config is two treatments.
+      const badShape = probe();
+      badShape.context.argvShape.control = badShape.context.argvShape.treatment;
+      expect(() => validateInstalledCharsProbe(badShape, live())).toThrow(/control argv shape/);
     });
 
     it("fires when the binary moved under the calibration key", async () => {
