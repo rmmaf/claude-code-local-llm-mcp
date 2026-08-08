@@ -5,40 +5,40 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**F24's archive half: written, wired, gated twice, committed.** Gate at the
-baseline 4; tsc green. `capture.ts` builds `design.artifacts` 6 as a value;
-`observe()` calls it before `git worktree remove` destroys the tree, then commits
-it and checks every file's blob against `HEAD`.
+**A full doc-truth sweep landed** — every comment, docstring and markdown file
+checked against the code it describes, in two rounds, each finding refuted
+adversarially first. Gate at the baseline 4, tsc green. 81 of 101 round-1
+candidates survived; 18 more in round 2.
 
-- **The reduction is `RawRecord`, the parser's own parse target.** Clause 6 says
-  "the fields the meter reads", then enumerates eight that cannot rebuild a
-  `Transcript`. The criterion governs; a type assert names any key that drifts.
-- **There is no run-level telemetry log** — every arm writes into its own
-  worktree. Identity keys on the ARCHIVE PATH, so ordinals restart per file.
-- **Three headings now**; five findings are REGISTERED LIMITS that never close.
-  A sixth came from gate 2: `voidConditions` 5 freezes `src/cost/**` but not
-  `dist/**`, so a hand-edited compiled capture fabricates evidence with every
-  frozen source intact. Pinning it would mint; both hashes are recorded instead.
+- **The audit of my OWN corrections found 12 false claims, three of them high.**
+  A confidently-worded wrong correction is worse than the vague text it
+  replaced. Round 2 existed for that, and it earned its place.
+- **Cite by symbol, not by line.** The repo's own rule (`FINDINGS.md`, "cited by
+  its text from here on") settled ~15 findings at once — and settled them
+  AGAINST re-pinning numbers that rot again a week later.
+- **Three dead exports removed**: `serializeChecks`, `statusInputSchema`, and
+  `repair.ts`'s `ToolError` re-export, whose comment named a phantom consumer.
 
 ## Next action
 
-**F24 IS NOT CLOSED.** Still owed: `installedChars` (measured nowhere, only the
-harness can take it, arm-dependent); the memory restore and the seven
-`design.covariates` hashes, one of which — the allowlist visible in the system
-prompt — is not measurable from outside; and artifacts 7 and 11, UNIT 5's.
+**`contract-stability`'s ladder is outside its own stated constraint.** It names
+PATHS and the files grew under it: `report.ts` at 59,272 B now exceeds the
+~51,607 B pre-flight ceiling, so L9 would measure a request the server refuses
+to send. Re-pick the ladder before any future run; do not re-type its numbers.
 
-**No test exercises `observe()`** — not the capture call, the config refusal, the
-run row, or the commit barrier. All need a manifest, sealable only after Phase 3.
+**Two byte-identical duplications found, deliberately NOT fixed** — a refactor,
+not a doc pass: `wordCap` (scaffold/shared) and `emptyLedger` (coverage/terms).
+
+**`b12-scorer-selftest.sh` has not been RUN** since the stub guard's refusal text
+changed. Its asserted substring survives and `bash -n` passes — but that is
+parsing, not running, which is the exact failure that file exists to prevent.
 
 ## Do not redo
 
-- **Four `expect`s in a row is one control and three decorations.** The first
-  failure ends the test; the rest never execute. Use `expect.soft`.
-- **A defect can accidentally be correct**: `.reverse()` on a two-file walk gave
-  the SORTED order, since `.` sorts before the path separator.
-- **PUBLISHING A DISCREPANCY IS NOT FIXING IT.** `dirtyAtAcceptance` reported it;
-  `admissionRule` 3 requires exit 0 AT the end commit. Make the predicate true.
-- **A guard that proves EXISTENCE proves nothing.** `ls-tree` saw the directory;
-  a pre-commit hook can drop one file and pass every check. Compare blobs.
-- **Codex: eleven for eleven.** Verify its citations, then concede. And the gate
-  is the verification route — never vitest through Bash.
+- **A RETRACTION CAN ROT.** README's two still asserted in the present tense a
+  defect repaired days earlier, gated on a premise that can never hold. Fix the
+  tense and the pointer; never delete the retraction itself.
+- **Amendments here are append-only.** ROADMAP's "G1 remains `open`" was already
+  false nine hours after it was written. The remedy is a dated erratum.
+- **Never back-fill an append-only record.** Three run ids are missing from
+  `MEASUREMENTS.jsonl`; writing them by hand today would fabricate provenance.
