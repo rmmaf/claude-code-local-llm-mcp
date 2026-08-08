@@ -65,7 +65,16 @@ export interface TermsInput {
    * overlays the manifest's value onto the loaded rates before calling here.
    */
   rates: Rates;
-  /** Measured, never assumed: the wire JSON of `tools/list` plus the CLAUDE.md block. */
+  /**
+   * Measured, never assumed — and measured as `PREMISES.md § B12`'s registered
+   * operationalization, not as wire JSON: the per-arm RESIDENT system-prompt
+   * delta on the pinned binary (paired first-request total-prompt-token delta,
+   * treatment − control), times the 3.7 adapter so the frozen divisor cancels.
+   * The wire JSON of `tools/list` measures what the server SENDS, which under
+   * schema deferral is not what the client makes resident — two quantities
+   * sharing this name was the defect; the harness supplies the calibrated one,
+   * with provenance, and refuses a value whose calibration key moved.
+   */
   installedChars: number;
   /** Ids more than one session's transcript carries. Empty means "checked and none". */
   ambiguousIds: ReadonlySet<string>;

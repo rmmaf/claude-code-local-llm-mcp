@@ -2489,6 +2489,242 @@ describe("the B12 harness", () => {
       runNode(process.execPath, [script, "snapshot", "--root", root], { cwd: process.cwd() })
     ).rejects.toThrow(/REFUSED/);
   });
+
+  describe("the F24 pass: every new guard shown FIRING", () => {
+    // The house rule — `DECISIONS.md § a check that cannot fail is worse than no
+    // check` — applied to the guards this pass added, the same shape VOID 6
+    // demands of the meter's own six controls. All on the exported pure
+    // functions: the `classifyRun` precedent, testable without a session.
+    const load = async () => import("../scripts/b12-run.mjs");
+
+    // The committed artifact's shape, reduced to the fields the validator reads.
+    const probe = () => ({
+      runId: "probe-run-id",
+      sustained: true,
+      deltaTokens: 84,
+      installedCharsAdapter: 310.8,
+      preDeclaration: "PREMISES.md § B12",
+      context: {
+        claudeBinarySha256: "bin-sha",
+        mcpConfigSha256: "mcp-sha",
+        policyBlobSha256: null as string | null,
+      },
+    });
+    const live = () => ({
+      binarySha256: "bin-sha",
+      mcpConfigSha256: "mcp-sha" as string | null,
+      policyBlobSha256: null as string | null,
+      extraArgs: [] as string[],
+    });
+
+    it("accepts a matching key and returns the provenance-carrying record", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const rec = validateInstalledCharsProbe(probe(), live());
+      expect(rec.value).toBe(310.8);
+      expect(rec.deltaTokens).toBe(84);
+      expect(rec.probeRunId).toBe("probe-run-id");
+      expect(rec.calibrationKey.policyBlobSha256).toBeNull();
+    });
+
+    it("accepts a sustained ZERO delta — zero-measured is not zero-defaulted", async () => {
+      // The domain guard refuses ABSENCE, not smallness. A probe that measured
+      // nothing resident is a measurement, carries provenance, and must pass —
+      // this is the positive control proving the guard tells the two zeros apart.
+      const { validateInstalledCharsProbe } = await load();
+      const p = { ...probe(), deltaTokens: 0, installedCharsAdapter: 0 };
+      expect(validateInstalledCharsProbe(p, live()).value).toBe(0);
+    });
+
+    it("fires on a negative delta", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const p = { ...probe(), deltaTokens: -84, installedCharsAdapter: -310.8 };
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/negative/);
+    });
+
+    it("fires on a non-finite or absent delta", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe({ ...probe(), deltaTokens: Number.NaN }, live())).toThrow(/non-finite/);
+      const absent = probe() as Record<string, unknown>;
+      delete absent.deltaTokens;
+      expect(() => validateInstalledCharsProbe(absent, live())).toThrow(/absent or non-finite/);
+    });
+
+    it("fires on an unsustained probe — the pre-declared branch is retract, not reuse", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe({ ...probe(), sustained: false }, live())).toThrow(/did not sustain/);
+    });
+
+    it("fires when the binary moved under the calibration key", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe(probe(), { ...live(), binarySha256: "other-bin" })).toThrow(
+        /binary sha256/
+      );
+    });
+
+    it("fires when the manifest seals policy blobs the probe never saw", async () => {
+      // The committed probe pre-dates any sealed blob (`policyBlobSha256: null`),
+      // so the first manifest that carries blobs MUST refuse until a re-probe
+      // exists — this refusal is the mechanism that keeps the re-take rule from
+      // being forgotten, and it is asserted here so it cannot rot silently.
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe(probe(), { ...live(), policyBlobSha256: "sealed-blob-sha" })).toThrow(
+        /policy-blob .* re-probe/
+      );
+    });
+
+    it("fires when the manifest pins extraArgs the probe ran without", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe(probe(), { ...live(), extraArgs: ["--model", "x"] })).toThrow(
+        /extraArgs/
+      );
+    });
+
+    it("fires when the recomputed adapter disagrees with the artifact's copy", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      expect(() => validateInstalledCharsProbe({ ...probe(), installedCharsAdapter: 311 }, live())).toThrow(
+        /adapter disagrees/
+      );
+    });
+
+    // A manifest that satisfies the FULL design.artifacts 1 sweep. Kept in one
+    // place so stripping a single field is provably the only difference.
+    const completeManifest = () => ({
+      abPairs: [],
+      pinned: {
+        claudeCodeVersion: "9.9.9",
+        claudeBinarySha256: "bin-sha",
+        ratesSha256: "rates-sha",
+        clientTruncationCap: 30_000,
+        pacingCacheWriteShareCeiling: 0.5,
+        perTaskDenominatorShareCap: 0.25,
+        scoringCommand: "node dist/cost/cli.js --score",
+        b12RunSha256: "harness-sha",
+        claudeMdSha256: "claudemd-sha",
+        settingsSha256s: { settings: null, settingsLocal: null },
+        installedCharsProbe: "evidence/probe.json",
+        installedCharsProbeSha256: "probe-sha",
+      },
+      tasks: [
+        {
+          id: "t1",
+          prompt: "fix it",
+          promptSha256: "abc",
+          baseCommit: "deadbeef",
+          verificationStratum: "test-red",
+          expectedSubagentStratum: "solo",
+          acceptance: ["npm test"],
+          acceptanceExpectedExit: 0,
+          verificationCommands: ["npx tsc --noEmit"],
+          gateCategory: "all",
+          repairMaxRounds: 3,
+          fileScope: ["src/a.ts"],
+        },
+      ],
+    });
+
+    it("reports no gaps on the full artifact-1 inventory — the green path exists", async () => {
+      const { manifestDeclarationGaps } = await load();
+      expect(manifestDeclarationGaps(completeManifest())).toHaveLength(0);
+    });
+
+    it("fires one gap per stripped declaration, each citing the clause that requires it", async () => {
+      // FIRST shipped checking three task fields; the adversarial review found
+      // the omission decides real outcomes (a task with no acceptance predicate
+      // archived accepted: null while remaining valid — unscorable under
+      // admissionRule 3 after the session was spent). Every row here is a
+      // guard shown FIRING; the justification classes stay SEPARATE — F25 for
+      // verificationStratum, artifact-1 completeness for the rest.
+      const { manifestDeclarationGaps } = await load();
+      const taskCases: Array<[string, RegExp]> = [
+        ["id", /carries no id/],
+        ["prompt", /carries no prompt/],
+        ["verificationStratum", /verificationStratum.*F25/],
+        ["expectedSubagentStratum", /expectedSubagentStratum.*by analogy/],
+        ["promptSha256", /promptSha256.*not compared-if-present/],
+        ["acceptance", /acceptance predicate.*admissionRule 3/],
+        ["acceptanceExpectedExit", /acceptanceExpectedExit.*expected exit code/],
+        ["verificationCommands", /verificationCommands.*verification command string/],
+        ["gateCategory", /gateCategory.*frozen gate/],
+        ["repairMaxRounds", /repairMaxRounds.*max_rounds/],
+        ["fileScope", /fileScope.*admissionRule 7/],
+        ["baseCommit", /baseCommit.*base commit SHA/],
+      ];
+      for (const [field, expected] of taskCases) {
+        const m = completeManifest();
+        delete (m.tasks[0] as Record<string, unknown>)[field];
+        const gaps = manifestDeclarationGaps(m);
+        expect.soft(gaps, `stripping task.${field} fired no gap`).toHaveLength(1);
+        expect.soft(gaps[0], `task.${field}'s gap cites the wrong clause`).toMatch(expected);
+      }
+      const pinnedCases: Array<[string, RegExp]> = [
+        ["claudeCodeVersion", /claudeCodeVersion/],
+        ["claudeBinarySha256", /claudeBinarySha256/],
+        ["ratesSha256", /ratesSha256/],
+        ["clientTruncationCap", /clientTruncationCap.*voidConditions 8/],
+        ["pacingCacheWriteShareCeiling", /CHOSEN constants/],
+        ["perTaskDenominatorShareCap", /CHOSEN constant/],
+        ["scoringCommand", /scoringCommand.*voidConditions 19/],
+        ["b12RunSha256", /b12RunSha256.*scripts\/b12-run\.mjs/],
+        ["claudeMdSha256", /claudeMdSha256/],
+        ["settingsSha256s", /settings and settingsLocal/],
+        ["installedCharsProbe", /no provenance/],
+        ["installedCharsProbeSha256", /not provenance/],
+      ];
+      for (const [field, expected] of pinnedCases) {
+        const m = completeManifest();
+        delete (m.pinned as Record<string, unknown>)[field];
+        const gaps = manifestDeclarationGaps(m);
+        expect.soft(gaps, `stripping pinned.${field} fired no gap`).toHaveLength(1);
+        expect.soft(gaps[0], `pinned.${field}'s gap cites the wrong clause`).toMatch(expected);
+      }
+      const noPairs = completeManifest() as Record<string, unknown>;
+      delete noPairs.abPairs;
+      expect(manifestDeclarationGaps(noPairs)[0]).toMatch(/abPairs.*ABBA/);
+    });
+
+    it("accepts only committed evidence as a probe source", async () => {
+      // The review's high finding: with the path unconstrained and the sha
+      // compared only if pinned, a fabricated working-tree JSON with
+      // `sustained: true` could calibrate O_o for every treatment observation.
+      // Three refusals and one pass, all deterministic against this repo:
+      const { committedEvidenceCheck } = await load();
+      // Absolute paths escape the inventory.
+      expect(committedEvidenceCheck(path.join(os.homedir(), "probe.json")).why).toMatch(/repo-relative under evidence\//);
+      // Paths outside evidence/ are not the append-only inventory.
+      expect(committedEvidenceCheck("STATE.md").why).toMatch(/must live under evidence\//);
+      // A file HEAD does not carry is a working-tree fabrication.
+      expect(committedEvidenceCheck("evidence/does-not-exist.probe.json").why).toMatch(/does not exist on disk/);
+      // The committed, sha-frozen pre-registration passes: in HEAD, bytes equal.
+      const ok = committedEvidenceCheck("evidence/2026-08-05-b12-preregistration.json");
+      expect(ok.ok).toBe(true);
+      expect(ok.file).toContain("2026-08-05-b12-preregistration");
+      // The disk-vs-HEAD blob comparison itself is the commit barrier's own
+      // tested shape (hash-object vs rev-parse HEAD:<path>), reused verbatim.
+    });
+
+    it("hashes the memory directory so a restore is provable and a write is visible", async () => {
+      const { hashMemoryDir } = await load();
+      const root = tempRoot();
+      const a = path.join(root, "mem-a");
+      const b = path.join(root, "mem-b");
+      for (const dir of [a, b]) {
+        await fs.mkdir(path.join(dir, "sub"), { recursive: true });
+        await fs.writeFile(path.join(dir, "MEMORY.md"), "index\n", "utf8");
+        await fs.writeFile(path.join(dir, "sub", "note.md"), "fact\n", "utf8");
+      }
+      const ha = hashMemoryDir(a);
+      expect(ha.files).toBe(2);
+      // A faithful copy reproduces the hash — which is what lets the harness
+      // assert the restore against the manifest's pin.
+      expect(hashMemoryDir(b).sha256).toBe(ha.sha256);
+      // One byte written by a session moves it — the VOID 13 fact.
+      await fs.writeFile(path.join(b, "sub", "note.md"), "fact!\n", "utf8");
+      expect(hashMemoryDir(b).sha256).not.toBe(ha.sha256);
+      // Absent is a fact with a hash, not an error: the restore target does not
+      // exist yet for a fresh worktree slug.
+      expect(hashMemoryDir(path.join(root, "missing")).files).toBe(0);
+    });
+  });
 });
 
 describe("against a real transcript, when one is present", () => {

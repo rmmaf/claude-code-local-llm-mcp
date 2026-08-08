@@ -68,3 +68,68 @@ export function classifyRun(input: {
   slugsBefore: number;
   slugsAfter: number;
 }): { outcome: ClassifiedOutcome; censored: boolean; valid: boolean; reasons: string[] };
+
+/**
+ * Every declaration `design.artifacts` 1 requires of the manifest that is
+ * missing — the FULL inventory sweep (run-level pins, caps, scoring command,
+ * per-task acceptance predicate with expected exit, verification commands,
+ * strata, scopes). Two justification classes: F25's `verificationStratum`
+ * route, and artifact-1 completeness for everything else. Pure; `observe`
+ * refuses on a non-empty list, `preflight` reports it.
+ */
+export function manifestDeclarationGaps(manifest: unknown): string[];
+
+/**
+ * The probe artifact must be committed evidence: repo-relative under
+ * `evidence/`, present in HEAD, and byte-identical to HEAD's blob. Closes the
+ * reviewed trust boundary where a fabricated working-tree JSON could calibrate
+ * `O_o`.
+ */
+export function committedEvidenceCheck(declaredPath: string): {
+  ok: boolean;
+  file: string | null;
+  why: string | null;
+};
+
+/**
+ * sha256 over sorted (relative path, content sha256) pairs, separators
+ * normalised to "/". A missing or empty directory hashes as the empty list
+ * with `files: 0`.
+ */
+export function hashMemoryDir(dir: string): { sha256: string; files: number };
+
+/**
+ * The treatment arm's calibrated installation term. ONE `O_o` — the control
+ * arm never carries a value; see the implementation's header for why 0 would
+ * be a second `O`.
+ */
+export interface InstalledCharsRecord {
+  value: number;
+  unit: "chars";
+  adapter: string;
+  deltaTokens: number;
+  probeRunId: string;
+  calibrationKey: {
+    binarySha256: string;
+    mcpConfigSha256: string | null;
+    policyBlobSha256: string | null;
+    extraArgs: string[];
+    protocol: string;
+  };
+}
+
+/**
+ * Validates the committed probe artifact against the LIVE observation and
+ * returns the provenance-carrying record, or THROWS with the failing
+ * calibration-key component named. Pure — the negative controls fire on it
+ * without spending a session.
+ */
+export function validateInstalledCharsProbe(
+  probe: unknown,
+  live: {
+    binarySha256: string;
+    mcpConfigSha256: string | null;
+    policyBlobSha256: string | null;
+    extraArgs: readonly string[];
+  }
+): InstalledCharsRecord;
