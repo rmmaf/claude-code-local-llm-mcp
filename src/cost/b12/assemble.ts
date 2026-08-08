@@ -552,10 +552,36 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
     fired.push({ name: "void(execution_error)", detail: "the lineage holds no billed assistant turn (admissionRule 12)" });
   }
 
-  if (ctx.pinnedVersion !== null && record.binaryVersion !== null && record.binaryVersion !== ctx.pinnedVersion) {
-    fired.push({ name: "void(version_drift)", detail: `version ${record.binaryVersion} against the pinned ${ctx.pinnedVersion} (voidConditions 7)` });
-  } else if (ctx.pinnedBinarySha !== null && record.binarySha256 !== null && record.binarySha256 !== ctx.pinnedBinarySha) {
-    fired.push({ name: "void(version_drift)", detail: "binary sha256 differs from the manifest's pin (voidConditions 7)" });
+  // FAIL CLOSED (the sixth diff round's second finding): the pin is the
+  // commitment, so an archived binary that cannot SHOW its version or sha
+  // against an existing pin is not the pinned binary — absence fires exactly
+  // like drift, with the absent side named. Version and sha are compared
+  // INDEPENDENTLY; a drift in one is not permission to skip the other. The
+  // harness refuses to WRITE an observation without both (`claudeBinary`), so
+  // absence here is a partial or tampered archive, never a lawful shape.
+  //
+  // The version comparison REPLAYS the harness's own gate (`assertPinned`:
+  // the recorded string is raw `claude --version` output and must CONTAIN the
+  // pin) — a second, stricter rule here would fire on every lawful run, the
+  // two-implementations drift this repository documents. The sha comparison
+  // is strict equality on both sides already.
+  const versionReasons: string[] = [];
+  if (ctx.pinnedVersion !== null) {
+    if (record.binaryVersion === null) {
+      versionReasons.push("the archive carries no binary version to hold against the pin");
+    } else if (!record.binaryVersion.includes(ctx.pinnedVersion)) {
+      versionReasons.push(`version ${record.binaryVersion} does not carry the pinned ${ctx.pinnedVersion}`);
+    }
+  }
+  if (ctx.pinnedBinarySha !== null) {
+    if (record.binarySha256 === null) {
+      versionReasons.push("the archive carries no binary sha256 to hold against the pin");
+    } else if (record.binarySha256 !== ctx.pinnedBinarySha) {
+      versionReasons.push("binary sha256 differs from the manifest's pin");
+    }
+  }
+  if (versionReasons.length > 0) {
+    fired.push({ name: "void(version_drift)", detail: `${versionReasons.join("; ")} (voidConditions 7)` });
   }
 
   const triggers = instrumentWriteTriggers(obs.lineageRecords);

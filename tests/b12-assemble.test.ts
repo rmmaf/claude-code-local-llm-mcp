@@ -379,6 +379,40 @@ describe("the disposition table — every predicate FIRING, with its control", (
     expect(check(out.result, "voidConditions 7").fired).toBe(true);
   });
 
+  it("void(version_drift) FAILS CLOSED on absent binary evidence — the sixth round's second finding", () => {
+    // An archived binary that cannot SHOW its version or sha against an
+    // existing pin is not the pinned binary; the harness never writes an
+    // observation without both, so absence is a partial or tampered archive.
+    const noVersion = assemble(
+      archiveOf({ observations: [obsOf("t1", { record: { binaryVersion: null } })] })
+    );
+    expect(cfOf(noVersion, "t1")!.disposition).toBe("void(version_drift)");
+    expect(cfOf(noVersion, "t1")!.firedPredicates.join(" ")).toMatch(/no binary version/);
+    const noSha = assemble(
+      archiveOf({ observations: [obsOf("t1", { record: { binarySha256: null } })] })
+    );
+    expect(cfOf(noSha, "t1")!.disposition).toBe("void(version_drift)");
+    expect(cfOf(noSha, "t1")!.firedPredicates.join(" ")).toMatch(/no binary sha256/);
+    // both absent: BOTH named — the sides are compared independently
+    const neither = assemble(
+      archiveOf({ observations: [obsOf("t1", { record: { binaryVersion: null, binarySha256: null } })] })
+    );
+    const detail = cfOf(neither, "t1")!.firedPredicates.join(" ");
+    expect(detail).toMatch(/no binary version/);
+    expect(detail).toMatch(/no binary sha256/);
+  });
+
+  it("the version comparison replays the harness's own gate — raw `claude --version` output CARRIES the pin", () => {
+    // `assertPinned` records the raw version string and requires it to
+    // contain the pin; a stricter equality here would fire on every lawful
+    // run — the two-implementations drift this repository documents.
+    const raw = assemble(
+      archiveOf({ observations: [obsOf("t1", { record: { binaryVersion: "2.1.221 (Claude Code)" } })] })
+    );
+    expect(cfOf(raw, "t1")!.disposition).toBe("scored");
+    expect(check(raw.result, "voidConditions 7").fired).toBe(false);
+  });
+
   it("void(instrument_write) when a tool_use touches the telemetry log — run-level via clause 9", () => {
     const sessionId = "sess-t1-1";
     const records = [

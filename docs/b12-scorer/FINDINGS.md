@@ -605,6 +605,46 @@ refusing:**
   pure-suite default now supplies the matching invocation, because a CLEAN
   archive is one that can show its command, not one nobody asked.
 
+**A SIXTH ROUND RETURNED TWO HIGH — BOTH CONFIRMED, BOTH FIXED; ONE
+SELF-CAUGHT DIVERGENCE FIXED INSIDE THE SAME REPAIR ZONE:**
+
+- **The worktree collided BEFORE the atomic claim could protect anything.**
+  `claimObsDir` (third round) made the EVIDENCE naming atomic — but it runs
+  after the observation executes, and until then every same-task/arm process
+  shared one fixed `.b12/<task>-<arm>` path whose startup recursively deletes
+  whatever sits there: a concurrent invocation destroyed THIS process's live
+  worktree mid-observation, exactly the in-flight evidence the claim was
+  built to preserve. The worktree path is now PROCESS-UNIQUE
+  (`.b12/<task>-<arm>-<token12>`): still one safe segment under `.b12/`, so
+  the containment wall holds unchanged; lineage capture, snapshots and the
+  memory restore all derive the slug FROM the path, so a fresh path is only
+  a fresh slug (verified against `projectSlugDirs` and `projectSlugDirFor`
+  before shipping). Codex's "claim before the worktree" alternative was
+  REJECTED with reasoning on the face: an early claim leaves an empty
+  claimed directory in append-only `evidence/` on every mid-flight refusal,
+  converting "a refusal costs nothing to discover" (the harness's own
+  registered economics) into a permanent void at scoring time. The
+  shared-index half: the evidence commit runs in the main repository, so the
+  loser of an `index.lock` race now RETRIES bounded
+  (`gitCommitEvidenceRetrying`, 5 attempts, non-lock failures still refuse
+  immediately) instead of refusing an observation that already paid for its
+  session. A true concurrent same-task test needs real sessions — registered
+  below with the real run, not simulated here.
+- **An archived binary with NO version or sha read as the pinned one.** The
+  per-observation predicate fired only when pin AND archived value both
+  existed and differed; with either archived field absent the archive-level
+  check published "every observation matches" on no evidence. Fails CLOSED
+  now: an existing pin with an absent archived side fires
+  `void(version_drift)` naming the absence, and version and sha are compared
+  INDEPENDENTLY — a drift in one is not permission to skip the other.
+  Self-caught in the same lines: the scorer compared version by STRICT
+  EQUALITY while the harness's own gate (`assertPinned`) records raw
+  `claude --version` output and requires it to CONTAIN the pin — the
+  stricter second rule would have false-fired on every lawful run, the
+  two-implementations drift this repository documents. The scorer now
+  replays the harness's registered comparison, with the raw-output negative
+  control pinned in the suite.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced
@@ -618,6 +658,10 @@ refusing:**
   binding covers `observation.json`, `archive.json` and the runlog because
   those carry identity; the snapshots carry none, so their binding waits on
   the harness writing one — a run-time change, not a scoring-time mint.
+- **A concurrent same-task execution test** (harness-side): the sixth round's
+  unique worktree path and commit retry are exercised by real sessions only —
+  two live processes on one task/arm belong to the real run's protocol, not
+  to a fixture that would prove the mock instead of the harness.
 
 **Two readings of mine were REFUTED and are recorded as refuted:**
 

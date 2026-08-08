@@ -64,6 +64,35 @@ function git(args, cwd = REPO) {
   return r.out.trim();
 }
 
+/**
+ * The shared-index half of the concurrency story (the sixth diff round's
+ * first finding): each observation runs in its own worktree, but the evidence
+ * commit runs in THIS repository, and two concurrent observations contend on
+ * `.git/index.lock`. Git's own lock already prevents corruption; what it
+ * hands the loser is a visible failure — so the loser RETRIES, bounded,
+ * instead of refusing an observation that already paid for its session. Any
+ * failure that is not lock contention still refuses immediately, and the
+ * staged-emptiness wall inside the loop is the same wall as before.
+ */
+async function gitCommitEvidenceRetrying(relDir, relLog, message) {
+  const LOCKED = /index\.lock|Another git process|could not lock/i;
+  for (let attempt = 1; ; attempt++) {
+    const add = run("git", ["-C", REPO, "add", "--", relDir, relLog]);
+    if (add.code === 0) {
+      const staged = git(["diff", "--cached", "--name-only", "--", relDir]);
+      if (staged.trim() === "") refuse(`nothing staged under ${relDir} — the archive did not reach the index`);
+      const commit = run("git", ["-C", REPO, "commit", "-m", message, "--", relDir, relLog]);
+      if (commit.code === 0) return;
+      if (!LOCKED.test(`${commit.err}\n${commit.out}`) || attempt >= 5) {
+        refuse(`git commit failed after ${attempt} attempt(s): ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}`);
+      }
+    } else if (!LOCKED.test(`${add.err}\n${add.out}`) || attempt >= 5) {
+      refuse(`git add failed after ${attempt} attempt(s): ${(add.err.trim() || add.out.trim()).slice(0, 300)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+  }
+}
+
 function sha256File(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
@@ -1430,7 +1459,23 @@ async function observe(args) {
   // moves the result by more than the gap between the fall line and the hold.
   if (!task.baseCommit) refuse(`task ${task.id} declares no baseCommit`);
   const b12Root = path.join(REPO, ".b12");
-  const treeDir = path.join(b12Root, `${task.id}-${arm}`);
+  // PROCESS-UNIQUE, not per-task/arm (the sixth diff round's first finding):
+  // a fixed `.b12/<task>-<arm>` path plus the recursive delete below meant a
+  // concurrent invocation of the same task/arm deleted THIS process's LIVE
+  // worktree mid-observation — destroying exactly the in-flight evidence the
+  // atomic `claimObsDir` was built to preserve at archive time. The token
+  // keeps the path one safe segment below `.b12/` (the containment wall
+  // holds unchanged); the lineage capture, the snapshots and the memory
+  // restore all derive the slug FROM the path, so a fresh path is only a
+  // fresh slug. The evidence claim stays at the END on purpose: claiming
+  // before the session would leave an empty claimed directory in append-only
+  // `evidence/` on every mid-flight refusal, converting "a refusal costs
+  // nothing to discover" into a permanent void at scoring time.
+  const processToken = createHash("sha256")
+    .update(`${process.pid}:${stamp()}:${Math.random()}`)
+    .digest("hex")
+    .slice(0, 12);
+  const treeDir = path.join(b12Root, `${task.id}-${arm}-${processToken}`);
   // THE SECOND WALL before the recursive delete: the id grammar above already
   // refuses traversal, but a path that is about to be `rmSync`'d recursively
   // earns its own containment proof — exactly one segment below `.b12/`,
@@ -1865,10 +1910,7 @@ async function observe(args) {
   // would leave the archive uncommitted and the run looking clean.
   const relDir = path.relative(REPO, dir).split(path.sep).join("/");
   const relLog = path.relative(REPO, runLog).split(path.sep).join("/");
-  git(["add", "--", relDir, relLog]);
-  const staged = git(["diff", "--cached", "--name-only", "--", relDir]);
-  if (staged.trim() === "") refuse(`nothing staged under ${relDir} — the archive did not reach the index`);
-  git(["commit", "-m", `evidence: ${runId} ${task.id}/${arm}`, "--", relDir, relLog]);
+  await gitCommitEvidenceRetrying(relDir, relLog, `evidence: ${runId} ${task.id}/${arm}`);
 
   // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
   //
