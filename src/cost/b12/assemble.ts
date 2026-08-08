@@ -206,19 +206,28 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   const allTreatment = archive.observations.filter((o) => o.arm === "treatment");
   const control = archive.observations.filter((o) => o.arm === "control");
 
-  // A SUSPECT IDENTITY SOURCE PRICES NOTHING (the diff review's third
-  // finding). An observation whose telemetry is corrupt, drifted or missing is
-  // refused terms and kept out of the universe — its rows cannot be trusted to
-  // price ANY window — and the artifact-6 integrity check below fires, so the
-  // run VOIDS instead of scoring the surviving subset.
-  const treatment = allTreatment.filter((o) => o.telemetryIntact);
+  // A SUSPECT SOURCE PRICES NOTHING. An observation whose telemetry is
+  // corrupt, drifted or missing (the first diff round's third finding), or
+  // whose files `git status` shows differing from HEAD (the second round's
+  // first finding — the replay must read the COMMITTED archive, and a dirty
+  // path is positive evidence it is not), is refused terms and kept out of
+  // the universe; the matching check fires, so the run VOIDS instead of
+  // scoring around the tampering. `evidenceCommitted: null` — committedness
+  // UNSHOWABLE, no repository to ask — is not evidence of tampering: the
+  // run-level check still fires, but terms are computed and published under
+  // the void, because the partial bracket is owed either way.
+  const suspect = (o: ArchivedObservation): string[] => [
+    ...(o.telemetryIntact ? [] : ["the telemetry identity source is not intact"]),
+    ...(o.evidenceCommitted === false ? ["on-disk files differ from HEAD — the replay is not reading the committed archive"] : []),
+  ];
+  const treatment = allTreatment.filter((o) => suspect(o).length === 0);
   const integrityFailures: DeclarationFailure[] = allTreatment
-    .filter((o) => !o.telemetryIntact)
+    .filter((o) => suspect(o).length > 0)
     .map((o) => ({
       taskId: o.taskId,
       arm: o.arm,
       attempt: o.attempt,
-      reasons: o.problems.length > 0 ? [...o.problems] : ["the telemetry identity source is not intact"],
+      reasons: [...suspect(o), ...o.problems],
     }));
   checks.push({
     clause: "design.artifacts 6 — telemetry integrity",
@@ -791,16 +800,36 @@ function buildArchiveChecks(ctx: ChecksContext): void {
     checks.push({ clause, fired, detail });
   };
 
-  // artifact 1 — the manifest's own committedness and freeze.
+  // artifact 1 — the manifest's own committedness and freeze. THE BYTES, not
+  // the path: `manifestMatchesHead === false` means a blob exists at the path
+  // while the bytes being scored are somebody's uncommitted edit (the second
+  // diff-round finding).
   const gitP = archive.git;
   push(
     "design.artifacts 1 — manifest blob",
-    gitP.manifestBlobSha256 === null || gitP.manifestCommitsAfterStart.length > 0,
+    gitP.manifestBlobSha256 === null ||
+      gitP.manifestMatchesHead === false ||
+      gitP.manifestCommitsAfterStart.length > 0,
     gitP.manifestBlobSha256 === null
       ? "HEAD carries no manifest blob — the manifest is not committed evidence"
-      : gitP.manifestCommitsAfterStart.length > 0
-        ? `${gitP.manifestCommitsAfterStart.length} commit(s) touched the manifest after the earliest session start (${gitP.manifestCommitsAfterStart.join(", ")})`
-        : `blob ${gitP.manifestBlobSha256} in HEAD, untouched since the earliest session start`
+      : gitP.manifestMatchesHead === false
+        ? "the manifest bytes being scored are NOT HEAD's blob — an uncommitted edit is not the sealed manifest"
+        : gitP.manifestCommitsAfterStart.length > 0
+          ? `${gitP.manifestCommitsAfterStart.length} commit(s) touched the manifest after the earliest session start (${gitP.manifestCommitsAfterStart.join(", ")})`
+          : `blob ${gitP.manifestBlobSha256} in HEAD, byte-identical to the scored bytes, untouched since the earliest session start`
+  );
+
+  // design.artifacts 6 — the replay reads COMMITTED evidence, shown rather
+  // than assumed. `unshowable` fires too: no repository to ask is not clean.
+  const committed = archive.evidenceCommitted;
+  push(
+    "design.artifacts 6 — committed evidence",
+    committed.state !== "clean",
+    committed.state === "clean"
+      ? "git status shows the manifest, the runlog and every observation directory byte-identical to HEAD"
+      : committed.state === "dirty"
+        ? `${committed.dirty.length} path(s) differ from HEAD (${committed.dirty.slice(0, 5).join(", ")}${committed.dirty.length > 5 ? ", …" : ""}) — the replay is not reading the committed archive`
+        : "committedness is UNSHOWABLE — git could not answer, and absence of proof is never read as clean"
   );
 
   // voidConditions 2 — the committed order, replayed from the runlog.

@@ -35,6 +35,7 @@ import type { RawRecord, Transcript } from "../transcript.js";
 import { identify } from "./coverage.js";
 import type {
   ArchivedObservation,
+  CommittedEvidenceState,
   ManifestTask,
   ObservationRecord,
   PriorRun,
@@ -213,11 +214,22 @@ export function rebuildLineageTranscript(
   const records: unknown[] = [];
   const files: string[] = [];
   let skippedLines = 0;
+  // A record that is not an object is DROPPED WITH A COUNT, never fatal — the
+  // parser's own rule for the same situation (`reduceRecord` returns null for
+  // it at capture time, `readTranscript` counts an unparseable line), applied
+  // here so a JSON-valid `null` in a hostile archive cannot abort the result
+  // artifact a registered run is owed (the third diff-round finding).
+  let malformed = 0;
   for (const entry of archiveJson.lineage) {
     if (!isObject(entry)) return { transcript: null, records, files, problem: "a lineage entry is not an object" };
     files.push(str(entry.sourcePath) ?? "(unknown source)");
     skippedLines += int(entry.droppedLines) ?? 0;
-    if (Array.isArray(entry.records)) records.push(...entry.records);
+    if (Array.isArray(entry.records)) {
+      for (const record of entry.records) {
+        if (isObject(record)) records.push(record);
+        else malformed++;
+      }
+    }
   }
   const sessionId = str(archiveJson.sessionId);
   if (files.length === 0) {
@@ -227,10 +239,18 @@ export function rebuildLineageTranscript(
   }
   const transcript = transcriptFromRecords(records as RawRecord[], {
     files,
-    skippedLines,
+    skippedLines: skippedLines + malformed,
     ...(sessionId !== null ? { sessionId } : {}),
   });
-  return { transcript, records, files, problem: null };
+  return {
+    transcript,
+    records,
+    files,
+    problem:
+      malformed > 0
+        ? `${malformed} archived lineage record(s) are not objects — dropped with this count, the parser's own rule for an unparseable line`
+        : null,
+  };
 }
 
 /**
@@ -290,12 +310,27 @@ const RATES_FROZEN_COMMIT = "3541625";
  * problems, not throws: scoring on a machine without the history still owes an
  * artifact, one that SAYS these facts were unavailable.
  */
-export function collectGitFacts(repoRoot: string, runId: string, earliestStartTs: string | null): RunGitFacts {
+export function collectGitFacts(
+  repoRoot: string,
+  runId: string,
+  earliestStartTs: string | null,
+  manifestBytes: string | null
+): RunGitFacts {
   const problems: string[] = [];
   const manifestRel = `evidence/${runId}.b12.tasks.json`;
 
   const blob = git(repoRoot, ["rev-parse", `HEAD:${manifestRel}`]);
   if (!blob.ok) problems.push(`HEAD does not carry ${manifestRel} — the manifest is not committed evidence`);
+
+  // THE BYTES, NOT THE PATH (the second diff-round finding): a blob existing
+  // at the manifest's path proves nothing about the bytes that were parsed.
+  // The scored manifest must BE HEAD's, byte for byte.
+  let manifestMatchesHead: boolean | null = null;
+  if (blob.ok && manifestBytes !== null) {
+    const show = spawnSync("git", ["show", `HEAD:${manifestRel}`], { cwd: repoRoot, encoding: "utf8" });
+    if (show.status === 0) manifestMatchesHead = show.stdout === manifestBytes;
+    else problems.push(`git show HEAD:${manifestRel} failed — the manifest bytes cannot be bound to HEAD`);
+  }
 
   // Artifact 1: "any commit touching it dated after the earliest session start
   // is a VOID". Commit DATES compared against the run's own earliest start.
@@ -332,10 +367,53 @@ export function collectGitFacts(repoRoot: string, runId: string, earliestStartTs
 
   return {
     manifestBlobSha256: blob.ok ? blob.out : null,
+    manifestMatchesHead,
     manifestCommitsAfterStart,
     ratesSha256AtFrozenCommit,
     problems,
   };
+}
+
+/**
+ * Parse `git status --porcelain` output into the paths that differ from HEAD.
+ * Modified, staged, deleted and untracked alike — every line names a path
+ * whose on-disk state is NOT the committed evidence. Pure, so the hostile
+ * cases are testable without a repository.
+ */
+export function parsePorcelain(output: string): string[] {
+  const dirty: string[] = [];
+  for (const line of output.split("\n")) {
+    if (line.trim() === "") continue;
+    // porcelain v1: two status columns, a space, then the path (quoted when it
+    // needs escaping; renames carry `old -> new` and the NEW path is on disk).
+    let rest = line.slice(3);
+    const arrow = rest.indexOf(" -> ");
+    if (arrow !== -1) rest = rest.slice(arrow + 4);
+    if (rest.startsWith('"') && rest.endsWith('"')) rest = rest.slice(1, -1);
+    dirty.push(rest);
+  }
+  return dirty.sort();
+}
+
+/**
+ * The scoring input set against HEAD — the first diff-round finding's fix.
+ * ONE `git status` over the manifest, the runlog and the whole run directory;
+ * a failure to answer is `unshowable`, which the check layer treats as fired,
+ * never as clean.
+ */
+export function committedEvidenceState(repoRoot: string, runId: string): CommittedEvidenceState {
+  const paths = [
+    `evidence/${runId}.b12.tasks.json`,
+    `evidence/${runId}.b12.runlog.jsonl`,
+    `evidence/${runId}`,
+  ];
+  const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all", "--", ...paths], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (status.status !== 0 || status.stdout === null) return { state: "unshowable", dirty: [] };
+  const dirty = parsePorcelain(status.stdout);
+  return { state: dirty.length === 0 ? "clean" : "dirty", dirty };
 }
 
 /**
@@ -530,6 +608,16 @@ export async function readRunArchive(repoRoot: string, runId: string): Promise<R
   const cap = manifest.pinned.clientTruncationCap;
   const earliestStart = runlog.rows.length > 0 ? (runlog.rows[0]?.ts ?? null) : null;
 
+  // THE REPLAY MUST READ THE COMMITTED BYTES (the first diff-round finding).
+  // One `git status` over the whole scoring input set; any path it names is
+  // evidence the disk is NOT the archive, and the owning observation is
+  // marked so `assemble` refuses its terms rather than pricing a fabrication.
+  const committed = committedEvidenceState(repoRoot, runId);
+  for (const obs of observations) {
+    obs.evidenceCommitted =
+      committed.state === "unshowable" ? null : !committed.dirty.some((p) => p === obs.dir || p.startsWith(`${obs.dir}/`));
+  }
+
   return loadRates(repoRoot).then((loaded) => {
     const rates =
       typeof cap === "number" && Number.isFinite(cap) && cap > 0
@@ -546,8 +634,9 @@ export async function readRunArchive(repoRoot: string, runId: string): Promise<R
       runlog,
       rates,
       ratesSha256: ratesBytes === null ? "" : sha256(ratesBytes),
-      git: collectGitFacts(repoRoot, runId, earliestStart),
+      git: collectGitFacts(repoRoot, runId, earliestStart, manifestBytes),
       register: collectRegister(repoRoot, runId),
+      evidenceCommitted: committed,
       problems,
     };
   });
@@ -643,6 +732,9 @@ function readObservationDir(
     attempt: id.attempt,
     dir: rel(repoRoot, dir),
     telemetryIntact,
+    // Filled by `readRunArchive` from the one `git status` over the run —
+    // a per-file check here would be one subprocess per file per observation.
+    evidenceCommitted: null,
     record,
     lineageRecords: lineage.records,
     lineageFiles: lineage.files,

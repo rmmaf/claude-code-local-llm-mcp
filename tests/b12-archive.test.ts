@@ -17,10 +17,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   collectGitFacts,
+  committedEvidenceState,
   narrowObservationRecord,
   narrowRunlogRow,
   parseJsonl,
   parseObsDirName,
+  parsePorcelain,
   readRunArchive,
   rebuildLineageTranscript,
   telemetryDrift,
@@ -127,6 +129,27 @@ describe("rebuildLineageTranscript — ONE parser rule, two feeders", () => {
     expect(rebuilt.problem).toMatch(/empty/);
     expect(rebuildLineageTranscript({ lineage: "nope" }).problem).toMatch(/no lineage array/);
   });
+
+  it("a JSON-valid non-object lineage record is dropped with a count, never a crash", () => {
+    // The diff round's third finding: `null` is valid JSON, and dereferencing
+    // it aborted the result artifact a registered run is owed. The parser's
+    // own rule applies — an unparseable record is counted, never fatal.
+    const rebuilt = rebuildLineageTranscript({
+      sessionId: "sess-1",
+      lineage: [
+        {
+          sourcePath: "/fake/sess-1.jsonl",
+          sessionId: "sess-1",
+          requestIds: ["rq-1"],
+          droppedLines: 0,
+          records: [null, 42, JSON.parse(req("rq-1", 0, { write1h: 100 }))],
+        },
+      ],
+    });
+    expect(rebuilt.problem).toMatch(/2 archived lineage record\(s\) are not objects/);
+    expect(rebuilt.transcript?.requests).toHaveLength(1);
+    expect(rebuilt.transcript?.skippedLines).toBe(2);
+  });
 });
 
 describe("readRunArchive — the hostile disk", () => {
@@ -193,8 +216,35 @@ describe("readRunArchive — the hostile disk", () => {
   });
 
   it("collectGitFacts without a start timestamp says the date VOID cannot be checked", () => {
-    const facts = collectGitFacts(scratch.tempRoot(), "replay-01", null);
+    const facts = collectGitFacts(scratch.tempRoot(), "replay-01", null, null);
     expect(facts.problems.join(" ")).toMatch(/no earliest session start/);
+  });
+
+  it("committedness outside a repository is UNSHOWABLE — never clean — and porcelain parses every dirty shape", () => {
+    expect(committedEvidenceState(scratch.tempRoot(), "replay-01").state).toBe("unshowable");
+    expect(parsePorcelain("")).toEqual([]);
+    expect(
+      parsePorcelain(
+        ' M evidence/r/obs-t1-treatment/telemetry.jsonl\n?? evidence/r/fabricated.json\nR  a.json -> evidence/r.b12.tasks.json\n'
+      )
+    ).toEqual([
+      "evidence/r.b12.tasks.json",
+      "evidence/r/fabricated.json",
+      "evidence/r/obs-t1-treatment/telemetry.jsonl",
+    ]);
+  });
+
+  it("a hostile null lineage record in the archive does not abort emission end to end", async () => {
+    const root = await fixtureCopy(async (r) => {
+      const file = path.join(r, OBS, "archive.json");
+      const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+      parsed.lineage[0].records.unshift(null);
+      await fs.writeFile(file, JSON.stringify(parsed, null, 2), "utf8");
+    });
+    const emitted = await emitRun(root, "replay-01");
+    expect(emitted.verdict).toBe("void"); // still a RESULT, never a crash
+    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
+    expect(result.archiveProblems.join(" ")).toMatch(/not objects/);
   });
 });
 
@@ -238,6 +288,11 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     expect(result.verdict).toBe("void");
     expect(result.voidClause).toMatch(/^design\.artifacts 1/);
     expect(result.archiveChecks.find((c) => c.clause.startsWith("voidConditions 8"))!.fired).toBe(true);
+    // outside a repository committedness is UNSHOWABLE — fired, never clean —
+    // while the terms above still published (the partial bracket is owed)
+    const committed = result.archiveChecks.find((c) => c.clause.includes("committed evidence"))!;
+    expect(committed.fired).toBe(true);
+    expect(committed.detail).toMatch(/UNSHOWABLE/);
     expect(result.uncheckedClauses).toHaveLength(3);
     expect(result.scoringCommand).toEqual({
       pinned: "node dist/cost/b12/emit.js replay-01",

@@ -805,6 +805,15 @@ export interface ArchivedObservation {
    * scoring the surviving subset (the diff review's third finding).
    */
   telemetryIntact: boolean;
+  /**
+   * FALSE when `git status` shows any of this observation's files differing
+   * from HEAD — positive evidence the replay is not reading the committed
+   * archive, handled like tampering (no terms). NULL when committedness could
+   * not be shown at all (no repository); the run-level check still fires, but
+   * absence of proof is not proof of tampering, so terms are still computed
+   * and published under the void.
+   */
+  evidenceCommitted: boolean | null;
   record: ObservationRecord | null;
   /** `archive.json`'s lineage records, flat, in file order — for predicates that
    * need raw content (instrument-write detection reads tool_use inputs). */
@@ -835,11 +844,30 @@ export interface RunRegister {
 export interface RunGitFacts {
   /** `HEAD:evidence/<runId>.b12.tasks.json`, for artifact 1's blob-hash-in-summary. */
   manifestBlobSha256: string | null;
+  /**
+   * Whether the manifest BYTES being scored are HEAD's — a blob existing at
+   * the path proves nothing about the bytes that were parsed (the second
+   * diff-round finding). Null when git could not answer.
+   */
+  manifestMatchesHead: boolean | null;
   /** Commits touching the manifest dated after the earliest session start — artifact 1 voids on any. */
   manifestCommitsAfterStart: string[];
   /** The rates blob at the frozen commit `3541625`, for `voidConditions` 4's byte-identity. */
   ratesSha256AtFrozenCommit: string | null;
   problems: string[];
+}
+
+/**
+ * Whether the scoring input set on disk IS the committed evidence. The commit
+ * barrier proves the original WRITE; nothing before this proved the REPLAY
+ * reads the same bytes (the first diff-round finding). `dirty` lists every
+ * path `git status` shows as differing from HEAD — modified, staged or
+ * untracked alike; `unshowable` means git could not answer (scoring outside a
+ * repository), which is never read as clean.
+ */
+export interface CommittedEvidenceState {
+  state: "clean" | "dirty" | "unshowable";
+  dirty: string[];
 }
 
 /**
@@ -862,6 +890,8 @@ export interface RunArchive {
   ratesSha256: string;
   git: RunGitFacts;
   register: RunRegister;
+  /** The whole scoring input set — manifest, runlog, observation dirs — against HEAD. */
+  evidenceCommitted: CommittedEvidenceState;
   problems: string[];
 }
 

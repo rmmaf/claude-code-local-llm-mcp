@@ -492,6 +492,32 @@ once. Each fix ships FIRING:
   missing restoration hash, or missing pre/post memory hashes — unshowable
   is not clean, the same principle the audit seam applies to clauses 4–6.
 
+**A SECOND ADVERSARIAL ROUND (the branch diff) RETURNED THREE MORE — ALL
+CONFIRMED, ALL FIXED.** The first round closed the boundaries the pass had
+ADDED; this one closed the boundary the pass had INHERITED: the commit
+barrier proves the original WRITE, and nothing proved the REPLAY reads the
+same bytes.
+
+- **Observation evidence was read from the mutable working tree.** Editing
+  `telemetry.jsonl` and `archive.json`'s copy CONSISTENTLY bypassed the drift
+  check. Now one `git status --porcelain` spans the manifest, the runlog and
+  every observation directory: a DIRTY path is positive evidence of tampering
+  — the owning observation loses its terms (integrity route) — and
+  UNSHOWABLE (no repository to ask) fires the committed-evidence check
+  without fabricating a tampering claim: terms publish under the void,
+  because the partial bracket is owed either way. The distinction is the
+  registered shape: mismatch ≠ absence of proof.
+- **The manifest's committedness never bound the BYTES.** A blob existing at
+  the path proved nothing about the bytes parsed. `git show HEAD:<manifest>`
+  is now compared byte-for-byte with what was read; inequality fires
+  artifact 1 by name.
+- **A JSON-valid `null` in an archived lineage crashed the emitter** —
+  violating this unit's own "nothing throws to avoid producing an artifact".
+  Resolved by the PRODUCTION parser's own rule for the same situation: a
+  non-object record is dropped WITH A COUNT (`reduceRecord`/`skippedLines`
+  do exactly this), reported, never fatal — end-to-end control: a hostile
+  null still yields a committed-shaped result artifact.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced

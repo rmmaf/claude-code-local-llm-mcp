@@ -184,6 +184,7 @@ function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
     attempt,
     dir: `evidence/${RUN}/${dirName}`,
     telemetryIntact: true,
+    evidenceCommitted: true,
     record,
     lineageRecords: records,
     lineageFiles: files,
@@ -259,6 +260,7 @@ interface ArchiveOver {
   pinned?: Record<string, unknown>;
   git?: Partial<RunArchive["git"]>;
   register?: RunArchive["register"];
+  evidenceCommitted?: RunArchive["evidenceCommitted"];
   ratesSha256?: string;
   problems?: string[];
 }
@@ -276,12 +278,14 @@ function archiveOf(over: ArchiveOver = {}): RunArchive {
     ratesSha256: over.ratesSha256 ?? H64("a"),
     git: {
       manifestBlobSha256: "blob-in-head",
+      manifestMatchesHead: true,
       manifestCommitsAfterStart: [],
       ratesSha256AtFrozenCommit: H64("a"),
       problems: [],
       ...(over.git ?? {}),
     },
     register: over.register ?? { priorRuns: [], discrepancies: [] },
+    evidenceCommitted: over.evidenceCommitted ?? { state: "clean", dirty: [] },
     problems: over.problems ?? [],
   };
 }
@@ -815,7 +819,12 @@ describe("the diff review's trust boundaries — absent evidence is never clean"
       })
     );
     expect(out.result.integrityFailures).toEqual([
-      { taskId: "t2", arm: "treatment", attempt: 1, reasons: ["telemetry.jsonl carries 1 corrupt line(s)"] },
+      {
+        taskId: "t2",
+        arm: "treatment",
+        attempt: 1,
+        reasons: ["the telemetry identity source is not intact", "telemetry.jsonl carries 1 corrupt line(s)"],
+      },
     ]);
     expect(check(out.result, "design.artifacts 6").fired).toBe(true);
     expect(cfOf(out, "t2")).toBeUndefined(); // no terms from a tampered source
@@ -839,6 +848,43 @@ describe("the diff review's trust boundaries — absent evidence is never clean"
     const noPin = assemble(archiveOf({ pinned: { memorySnapshotSha256: undefined } }));
     expect(check(noPin.result, "voidConditions 13").fired).toBe(true);
     expect(check(noPin.result, "voidConditions 13").detail).toMatch(/pins no memory snapshot/);
+  });
+
+  it("evidence that differs from HEAD prices nothing — dirty files bar terms and fire the committed-evidence check", () => {
+    // The second diff round's first finding: the commit barrier proves the
+    // WRITE; the replay must prove the READ. A dirty path is positive
+    // evidence of tampering, so the observation loses its terms too.
+    const dirtyObs = { ...obsOf("t2"), evidenceCommitted: false };
+    const out = assemble(
+      archiveOf({
+        tasks: [taskOf("t1"), taskOf("t2")],
+        observations: [obsOf("t1"), dirtyObs],
+        evidenceCommitted: { state: "dirty", dirty: [`evidence/${RUN}/obs-t2-treatment/telemetry.jsonl`] },
+      })
+    );
+    expect(check(out.result, "design.artifacts 6 — committed evidence").fired).toBe(true);
+    expect(cfOf(out, "t2")).toBeUndefined();
+    expect(out.result.integrityFailures[0]!.reasons.join(" ")).toMatch(/differ from HEAD/);
+    // control: a clean state holds the check quiet
+    expect(check(assemble(archiveOf()).result, "design.artifacts 6 — committed evidence").fired).toBe(false);
+  });
+
+  it("UNSHOWABLE committedness fires the check but does not fabricate a tampering claim — terms still publish", () => {
+    const unshowable = { ...obsOf("t1"), evidenceCommitted: null };
+    const out = assemble(
+      archiveOf({ observations: [unshowable], evidenceCommitted: { state: "unshowable", dirty: [] } })
+    );
+    expect(check(out.result, "design.artifacts 6 — committed evidence").fired).toBe(true);
+    expect(check(out.result, "design.artifacts 6 — committed evidence").detail).toMatch(/UNSHOWABLE/);
+    expect(cfOf(out, "t1")).toBeDefined(); // the partial bracket is owed either way
+    expect(out.result.verdict).toBe("void");
+  });
+
+  it("a manifest whose scored bytes are not HEAD's blob fires artifact 1 — a path proves nothing about bytes", () => {
+    const out = assemble(archiveOf({ git: { manifestMatchesHead: false } }));
+    const c = check(out.result, "design.artifacts 1");
+    expect(c.fired).toBe(true);
+    expect(c.detail).toMatch(/NOT HEAD's blob/);
   });
 
   it("clause 19 compares the derived ambiguity universe against the SEALED invocation inventory", () => {
