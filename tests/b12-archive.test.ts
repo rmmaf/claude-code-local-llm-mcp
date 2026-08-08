@@ -195,6 +195,62 @@ describe("readRunArchive — the hostile disk", () => {
     expect(drifted.observations[0]!.problems.join(" ")).toMatch(/telemetry\.jsonl holds 1 row/);
   });
 
+  it("cross-wired identity is refused terms — copied evidence cannot borrow a directory's name", async () => {
+    // The fifth diff round's first finding: the directory picks the manifest
+    // task, so evidence naming another task, run or session must not price
+    // anything under this directory's name.
+    const crossTask = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "observation.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        parsed.taskId = "t2";
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(crossTask.observations[0]!.identityIntact).toBe(false);
+    expect(crossTask.observations[0]!.problems.join(" ")).toMatch(
+      /names t2\/treatment while the directory names t1\/treatment/
+    );
+    // end to end: an integrity failure with no terms, never a scored bracket
+    const { result } = assembleRun({
+      archive: crossTask,
+      gitAudit: { ran: false },
+      scoringCommandActual: "node dist/cost/b12/emit.js replay-01",
+    });
+    expect(result.integrityFailures).toHaveLength(1);
+    expect(result.integrityFailures[0]!.reasons.join(" ")).toMatch(/cross-wired or unshowable/);
+    expect(result.admitted).toBe(0);
+
+    const crossRun = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "observation.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        parsed.runId = "some-other-run";
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(crossRun.observations[0]!.identityIntact).toBe(false);
+    expect(crossRun.observations[0]!.problems.join(" ")).toMatch(
+      /names run some-other-run while the archive is replay-01's/
+    );
+
+    const crossSession = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "archive.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        parsed.sessionId = "sess-evil";
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(crossSession.observations[0]!.identityIntact).toBe(false);
+    expect(crossSession.observations[0]!.problems.join(" ")).toMatch(/seals session sess-evil/);
+    // the negative control: the untouched fixture binds — asserted by the
+    // committed-fixture test above via `problems: []`
+  });
+
   it("an extra directory is reported and a missing runlog is reported", async () => {
     const extra = await readRunArchive(
       await fixtureCopy((root) => fs.mkdir(path.join(root, "evidence", "replay-01", "scratch-notes"))),

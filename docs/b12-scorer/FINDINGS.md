@@ -574,6 +574,37 @@ times, found inside the fixes themselves:**
   names which, and "unverified pricing is not frozen pricing" is on the
   face.
 
+**A FIFTH ROUND RETURNED ONE HIGH AND ONE MEDIUM — BOTH CONFIRMED, BOTH
+FIXED. Both are the same class again: a trust check that reported instead of
+refusing:**
+
+- **Cross-wired evidence was scored under the directory's name.** An
+  `observation.json` naming another task or arm than its directory only
+  appended a diagnostic; the assembler then picked the manifest task from the
+  DIRECTORY and priced the mismatched record's acceptance and telemetry under
+  it — copied evidence could apply one task's result to another. Identity is
+  now a binding: record↔directory (task, arm), record↔run (`runId`),
+  record↔sealed archive (`archive.json`'s task, arm, session), each absence
+  or disagreement setting `identityIntact` false — and a suspect identity
+  prices NOTHING (integrity failure, no terms, the artifact-6 check fires,
+  now labelled "archive integrity"). The runlog side binds too, in clause 2's
+  replay: a row naming another run is foreign evidence, and per task the
+  rows' sessions must equal the attempts' sessions as MULTISETS — count
+  equality says every attempt HAS a row, the session binding says the rows
+  are THESE attempts' rows. Codex also asked for a snapshot binding; the
+  snapshot files carry no identity fields, and inventing one at scoring time
+  would bind nothing — declined for that sub-part, harness-side stamping
+  registered as future work, not minted here.
+- **Clause 19 read clean with either side of the comparison ABSENT.** The
+  check fired only when the pinned and actual commands both existed AND
+  differed — an absent pin or an unsupplied invocation passed while the
+  detail admitted the gap, a verdict bypass in waiting once F23 removes the
+  always-fired clause 8. It now fails CLOSED: fired unless both values exist
+  and are equal, the detail naming the absent side — an invocation that
+  cannot be shown to be the registered one is not the registered one. The
+  pure-suite default now supplies the matching invocation, because a CLEAN
+  archive is one that can show its command, not one nobody asked.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced
@@ -583,6 +614,10 @@ times, found inside the fixes themselves:**
   seam and the pre-declaration exist; the tool does not.
 - **A REAL run's committed archive** for artifact 11's replay — the fixture
   replay exercises the full path; only a run can supply the real object.
+- **Identity stamps on the snapshot files** (harness-side): the fifth round's
+  binding covers `observation.json`, `archive.json` and the runlog because
+  those carry identity; the snapshots carry none, so their binding waits on
+  the harness writing one — a run-time change, not a scoring-time mint.
 
 **Two readings of mine were REFUTED and are recorded as refuted:**
 

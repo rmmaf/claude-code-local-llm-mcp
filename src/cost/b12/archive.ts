@@ -627,7 +627,7 @@ export async function readRunArchive(repoRoot: string, runId: string): Promise<R
       problems.push(`evidence/${runId}/${name} is not an observation directory the harness writes — extra material, reported`);
       continue;
     }
-    observations.push(readObservationDir(repoRoot, path.join(runDir, name), parsedName));
+    observations.push(readObservationDir(repoRoot, path.join(runDir, name), parsedName, runId));
   }
   // Committed task order first, attempts ascending — DERIVED from the manifest,
   // never from directory enumeration: the metamorphic pair in the oracle holds
@@ -713,7 +713,8 @@ const OBS_FILES = [
 function readObservationDir(
   repoRoot: string,
   dir: string,
-  id: { taskId: string; arm: "treatment" | "control"; attempt: number }
+  id: { taskId: string; arm: "treatment" | "control"; attempt: number },
+  runId: string
 ): ArchivedObservation {
   const problems: string[] = [];
   const readJson = (name: string): unknown => {
@@ -738,13 +739,55 @@ function readObservationDir(
   const observationRaw = readJson("observation.json");
   const record = narrowObservationRecord(observationRaw);
   if (observationRaw !== null && record === null) problems.push("observation.json is not an object");
-  if (record !== null && (record.taskId !== id.taskId || record.arm !== id.arm)) {
-    problems.push(
-      `observation.json names ${record.taskId}/${record.arm} while the directory names ${id.taskId}/${id.arm}`
-    );
+
+  // THE IDENTITY BINDING (the fifth diff round's first finding). The directory
+  // name decides WHICH manifest task this evidence is priced under, so every
+  // identity the evidence itself carries must agree with it — record and
+  // sealed archive naming task, arm, run and session consistently. A
+  // disagreement is cross-wired or copied evidence; an ABSENT identity is one
+  // that cannot be shown bound. Either way `identityIntact` goes false and
+  // `assemble` refuses terms instead of pricing another task's evidence under
+  // this task's name.
+  const identityProblems: string[] = [];
+  if (record === null) {
+    identityProblems.push("observation.json is unreadable — the observation's identity is unshowable");
+  } else {
+    if (record.taskId !== id.taskId || record.arm !== id.arm) {
+      identityProblems.push(
+        `observation.json names ${record.taskId}/${record.arm} while the directory names ${id.taskId}/${id.arm}`
+      );
+    }
+    if (record.runId !== runId) {
+      identityProblems.push(
+        `observation.json names run ${record.runId ?? "(absent)"} while the archive is ${runId}'s`
+      );
+    }
+    if (record.sessionId === "") {
+      identityProblems.push("observation.json carries no sessionId — the session binding is unshowable");
+    }
   }
 
   const archiveJson = readJson("archive.json");
+  if (!isObject(archiveJson)) {
+    identityProblems.push("archive.json is unreadable — the sealed identity binding is unshowable");
+  } else {
+    const sealedTask = str(archiveJson.taskId);
+    const sealedArm = str(archiveJson.arm);
+    const sealedSession = str(archiveJson.sessionId);
+    if (sealedTask !== id.taskId || sealedArm !== id.arm) {
+      identityProblems.push(
+        `archive.json names ${sealedTask ?? "(absent)"}/${sealedArm ?? "(absent)"} while the directory names ${id.taskId}/${id.arm}`
+      );
+    }
+    if (record !== null && sealedSession !== record.sessionId) {
+      identityProblems.push(
+        `archive.json seals session ${sealedSession ?? "(absent)"} while observation.json names ${record.sessionId}`
+      );
+    }
+  }
+  const identityIntact = identityProblems.length === 0;
+  problems.push(...identityProblems);
+
   const lineage = rebuildLineageTranscript(archiveJson);
   if (lineage.problem !== null) problems.push(lineage.problem);
 
@@ -790,6 +833,7 @@ function readObservationDir(
     attempt: id.attempt,
     dir: rel(repoRoot, dir),
     telemetryIntact,
+    identityIntact,
     // Filled by `readRunArchive` from the one `git status` over the run —
     // a per-file check here would be one subprocess per file per observation.
     evidenceCommitted: null,

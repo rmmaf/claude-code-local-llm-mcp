@@ -207,17 +207,24 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   const control = archive.observations.filter((o) => o.arm === "control");
 
   // A SUSPECT SOURCE PRICES NOTHING. An observation whose telemetry is
-  // corrupt, drifted or missing (the first diff round's third finding), or
-  // whose files `git status` shows differing from HEAD (the second round's
-  // first finding — the replay must read the COMMITTED archive, and a dirty
-  // path is positive evidence it is not), is refused terms and kept out of
-  // the universe; the matching check fires, so the run VOIDS instead of
-  // scoring around the tampering. `evidenceCommitted: null` — committedness
-  // UNSHOWABLE, no repository to ask — is not evidence of tampering: the
-  // run-level check still fires, but terms are computed and published under
-  // the void, because the partial bracket is owed either way.
+  // corrupt, drifted or missing (the first diff round's third finding), whose
+  // own evidence names another task, arm, run or session than the directory
+  // it was scored from (the fifth round's first finding — the directory picks
+  // the manifest task, so cross-wired evidence would price one task's work
+  // under another's name), or whose files `git status` shows differing from
+  // HEAD (the second round's first finding — the replay must read the
+  // COMMITTED archive, and a dirty path is positive evidence it is not), is
+  // refused terms and kept out of the universe; the matching check fires, so
+  // the run VOIDS instead of scoring around the tampering.
+  // `evidenceCommitted: null` — committedness UNSHOWABLE, no repository to
+  // ask — is not evidence of tampering: the run-level check still fires, but
+  // terms are computed and published under the void, because the partial
+  // bracket is owed either way.
   const suspect = (o: ArchivedObservation): string[] => [
     ...(o.telemetryIntact ? [] : ["the telemetry identity source is not intact"]),
+    ...(o.identityIntact
+      ? []
+      : ["the observation's identity is cross-wired or unshowable — evidence that cannot be bound to its task, arm, run and session may not price anything"]),
     ...(o.evidenceCommitted === false ? ["on-disk files differ from HEAD — the replay is not reading the committed archive"] : []),
   ];
   const treatment = allTreatment.filter((o) => suspect(o).length === 0);
@@ -230,12 +237,12 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
       reasons: [...suspect(o), ...o.problems],
     }));
   checks.push({
-    clause: "design.artifacts 6 — telemetry integrity",
+    clause: "design.artifacts 6 — archive integrity",
     fired: integrityFailures.length > 0,
     detail:
       integrityFailures.length > 0
-        ? `${integrityFailures.length} observation(s) carry a corrupt, drifted or missing telemetry.jsonl — no terms are computed from a suspect identity source, and the ledger's domain is short by their rows`
-        : "every observation's telemetry.jsonl is intact and byte-consistent with archive.json's sealed copy",
+        ? `${integrityFailures.length} observation(s) carry a corrupt, drifted or missing telemetry.jsonl or an identity that does not bind to the directory scored — no terms are computed from a suspect source, and the ledger's domain is short by their rows`
+        : "every observation's telemetry.jsonl is intact and byte-consistent with archive.json's sealed copy, and every identity binds to its directory",
   });
   checks.push({
     clause: "admissionRule 13 — control arms",
@@ -1026,17 +1033,23 @@ function buildArchiveChecks(ctx: ChecksContext): void {
       );
     }
   }
+  // FAIL CLOSED (the fifth diff round's second finding): the clause certifies
+  // that the REGISTERED command scored the run, and a certification needs both
+  // sides — an absent pin or an unsupplied invocation is an unverified
+  // command, never a clean one.
   const pinnedCommand = typeof pinned.scoringCommand === "string" ? pinned.scoringCommand : null;
   const commandFired =
-    pinnedCommand !== null && ctx.scoringCommandActual !== null && pinnedCommand !== ctx.scoringCommandActual;
+    pinnedCommand === null || ctx.scoringCommandActual === null || pinnedCommand !== ctx.scoringCommandActual;
   push(
     "voidConditions 19 — scoring command and ambiguity set",
     commandFired || idMismatches.length > 0,
     commandFired
-      ? `the scoring invocation (${ctx.scoringCommandActual}) differs from the committed string (${pinnedCommand})`
+      ? pinnedCommand !== null && ctx.scoringCommandActual !== null
+        ? `the scoring invocation (${ctx.scoringCommandActual}) differs from the committed string (${pinnedCommand})`
+        : `${pinnedCommand === null ? "no scoring command is pinned in the manifest; " : ""}${ctx.scoringCommandActual === null ? "the actual invocation was not supplied; " : ""}an invocation that cannot be shown to be the registered one is not the registered one`
       : idMismatches.length > 0
         ? `the id set the ambiguity check saw is not the archive's sealed inventory: ${idMismatches.join("; ")}`
-        : `${pinnedCommand === null ? "no scoring command is pinned (manifest gap); " : ""}${ctx.scoringCommandActual === null ? "the actual invocation was not supplied (reported, not defaulted); " : ""}the ambiguity set equals every observation's sealed invocation-id inventory and is published on the face`
+        : "the scoring invocation equals the committed string, and the ambiguity set equals every observation's sealed invocation-id inventory, published on the face"
   );
 
   // voidConditions 20 — pacing, per observation, and the ceiling's presence.
@@ -1065,6 +1078,15 @@ export function committedOrderReplay(archive: RunArchive): string | null {
     return `the runlog carries ${archive.runlog.corruptLines} corrupt line(s), so the committed order cannot be fully replayed`;
   }
 
+  // A row naming another run inside `evidence/<runId>.b12.runlog.jsonl` is
+  // foreign evidence — this run's order cannot be replayed over it (the fifth
+  // diff round's first finding, the run half of the identity binding).
+  for (const row of archive.runlog.rows) {
+    if (row.runId !== archive.runId) {
+      return `the runlog carries a row naming run ${row.runId} — foreign evidence in ${archive.runId}'s log, over which this run's order cannot be replayed`;
+    }
+  }
+
   // ABSENT EVIDENCE IS NOT COMPLIANCE (the diff review's second finding). The
   // harness appends one machine-written row per observation (`design.artifacts`
   // 10), so every archived treatment attempt must have its row and every row
@@ -1091,6 +1113,36 @@ export function committedOrderReplay(archive: RunArchive): string | null {
     if (!attemptCount.has(taskId)) {
       return `the runlog records ${rows} row(s) for task ${taskId} but no observation directory survives — evidence was destroyed`;
     }
+  }
+
+  // THE SESSION BINDING (the fifth diff round's first finding). Count equality
+  // says every attempt HAS a row; it does not say the rows are THESE attempts'
+  // rows. The harness stamps both sides with the session that executed, so per
+  // task the two inventories must agree as MULTISETS — order-free, because
+  // `admissionRule` 12 already says re-runs are not order events. An empty
+  // session on either side is a binding that cannot be shown, and refuses.
+  const sessionsOf = new Map<string, string[]>();
+  for (const row of archive.runlog.rows) {
+    if (row.arm !== "treatment") continue;
+    if (row.sessionId === "") {
+      return `a runlog row for task ${row.taskId} carries no sessionId — a row that cannot be bound to its session cannot be shown to be any attempt's row`;
+    }
+    const list = sessionsOf.get(row.taskId);
+    if (list) list.push(row.sessionId);
+    else sessionsOf.set(row.taskId, [row.sessionId]);
+  }
+  for (const obs of archive.observations) {
+    if (obs.arm !== "treatment") continue;
+    const session = obs.record?.sessionId ?? "";
+    if (session === "") {
+      return `the archived attempt at ${obs.dir} carries no sessionId — it cannot be bound to its runlog row`;
+    }
+    const rows = sessionsOf.get(obs.taskId) ?? [];
+    const at = rows.indexOf(session);
+    if (at === -1) {
+      return `the archived attempt at ${obs.dir} ran as session ${session}, which no runlog row for ${obs.taskId} records — the rows cannot be shown to be these attempts' rows`;
+    }
+    rows.splice(at, 1);
   }
 
   const order = new Map(archive.manifest.tasks.map((t, i) => [t.id, i]));

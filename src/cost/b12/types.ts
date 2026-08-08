@@ -810,6 +810,16 @@ export interface ArchivedObservation {
    */
   telemetryIntact: boolean;
   /**
+   * FALSE the moment the evidence's own identity does not bind to the
+   * directory it was scored from — `observation.json` or `archive.json` naming
+   * another task, arm, run or session, or carrying no identity to check. The
+   * directory name decides WHICH manifest task the evidence is priced under,
+   * so cross-wired or copied evidence would apply one task's acceptance and
+   * telemetry to another; `assemble` refuses terms instead (the fifth diff
+   * round's first finding).
+   */
+  identityIntact: boolean;
+  /**
    * FALSE when `git status` shows any of this observation's files differing
    * from HEAD — positive evidence the replay is not reading the committed
    * archive, handled like tampering (no terms). NULL when committedness could

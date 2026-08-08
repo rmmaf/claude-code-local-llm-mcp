@@ -150,6 +150,7 @@ interface ObsOver {
   snapshotBefore?: ArchivedObservation["snapshotBefore"];
   snapshotAfter?: ArchivedObservation["snapshotAfter"];
   invocationIds?: string[];
+  identityIntact?: boolean;
 }
 
 function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
@@ -185,6 +186,7 @@ function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
     attempt,
     dir: `evidence/${RUN}/${dirName}`,
     telemetryIntact: true,
+    identityIntact: over.identityIntact ?? true,
     evidenceCommitted: true,
     record,
     lineageRecords: records,
@@ -293,7 +295,10 @@ function archiveOf(over: ArchiveOver = {}): RunArchive {
 
 const AUDIT_CLEAN: GitAudit = { ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } };
 
-function assemble(archive: RunArchive, gitAudit: GitAudit = AUDIT_CLEAN, actual: string | null = null) {
+// The default actual invocation MATCHES the pin: `voidConditions` 19 fails
+// closed on an absent side (the fifth diff round's second finding), so a
+// clean default archive must supply the invocation it was scored by.
+function assemble(archive: RunArchive, gitAudit: GitAudit = AUDIT_CLEAN, actual: string | null = PINNED.scoringCommand) {
   return assembleRun({ archive, gitAudit, scoringCommandActual: actual });
 }
 
@@ -650,12 +655,14 @@ describe("selection — the committed order, and the metamorphic pair", () => {
 
 describe("committedOrderReplay — voidConditions 3's order half, retrospective", () => {
   const tasks = [taskOf("t1"), taskOf("t2"), taskOf("t3")];
-  const row = (taskId: string, i: number): RunlogRow => ({
+  // The session must be the attempt's own — the binding half of clause 2's
+  // replay refuses a row it cannot show to be an attempt's row.
+  const row = (taskId: string, i: number, attempt = 1): RunlogRow => ({
     ts: at(i * 1_000),
     runId: RUN,
     taskId,
     arm: "treatment",
-    sessionId: `sess-${taskId}`,
+    sessionId: `sess-${taskId}-${attempt}`,
     outcome: "completed",
     valid: true,
     accepted: true,
@@ -672,7 +679,7 @@ describe("committedOrderReplay — voidConditions 3's order half, retrospective"
     const archive = archiveOf({
       tasks,
       observations: [obsOf("t1"), obsOf("t2"), obsOf("t1", { attempt: 2 })],
-      runlogRows: [row("t1", 0), row("t2", 1), row("t1", 2)],
+      runlogRows: [row("t1", 0), row("t2", 1), row("t1", 2, 2)],
     });
     expect(committedOrderReplay(archive)).toBeNull();
   });
@@ -700,6 +707,36 @@ describe("committedOrderReplay — voidConditions 3's order half, retrospective"
         archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [row("t1", 0), row("t2", 1)] })
       )
     ).toMatch(/no observation directory survives/);
+  });
+
+  it("the rows must be THESE attempts' rows — the fifth round's session and run bindings", () => {
+    // Count equality holds but the row records another session: the
+    // correspondence the counts assert is fake, and the replay refuses.
+    expect(
+      committedOrderReplay(
+        archiveOf({
+          tasks,
+          observations: [obsOf("t1")],
+          runlogRows: [{ ...row("t1", 0), sessionId: "sess-somebody-else" }],
+        })
+      )
+    ).toMatch(/no runlog row for t1 records/);
+    // A row naming another run is foreign evidence in this run's log.
+    expect(
+      committedOrderReplay(
+        archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [{ ...row("t1", 0), runId: "other-run" }] })
+      )
+    ).toMatch(/foreign evidence/);
+    // An empty sessionId on either side is a binding that cannot be shown.
+    expect(
+      committedOrderReplay(
+        archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [{ ...row("t1", 0), sessionId: "" }] })
+      )
+    ).toMatch(/cannot be bound to its session/);
+    // the negative control: the attempt's own session replays clean
+    expect(
+      committedOrderReplay(archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [row("t1", 0)] }))
+    ).toBeNull();
   });
 });
 
@@ -803,6 +840,17 @@ describe("the archive-level clauses — each fired and each held", () => {
     expect(Array.isArray(match.result.ambiguityIdSet)).toBe(true);
   });
 
+  it("voidConditions 19 FAILS CLOSED — an absent pin or an unsupplied invocation is never clean", () => {
+    // The fifth diff round's second finding: certifying "the registered
+    // command scored this run" needs both sides of the comparison.
+    const noActual = assemble(archiveOf(), AUDIT_CLEAN, null);
+    expect(check(noActual.result, "voidConditions 19").fired).toBe(true);
+    expect(check(noActual.result, "voidConditions 19").detail).toMatch(/not supplied/);
+    const noPin = assemble(archiveOf({ pinned: { scoringCommand: undefined } }));
+    expect(check(noPin.result, "voidConditions 19").fired).toBe(true);
+    expect(check(noPin.result, "voidConditions 19").detail).toMatch(/no scoring command is pinned/);
+  });
+
   it("voidConditions 7 and 20 fire when their pins are absent — a sealed manifest carries both", () => {
     const noVersion = assemble(archiveOf({ pinned: { claudeCodeVersion: undefined } }));
     expect(check(noVersion.result, "voidConditions 7").fired).toBe(true);
@@ -832,6 +880,26 @@ describe("the diff review's trust boundaries — absent evidence is never clean"
     expect(cfOf(out, "t1")).toBeDefined();
     // the negative control: an intact archive holds the check quiet
     expect(check(assemble(archiveOf()).result, "design.artifacts 6").fired).toBe(false);
+  });
+
+  it("cross-wired identity prices NOTHING — the fifth round's first finding", () => {
+    // Evidence whose own identity does not bind to the directory it was
+    // scored from would apply one task's acceptance and telemetry to another;
+    // it is an integrity failure with no terms, never a scored observation.
+    const crossWired = obsOf("t2", {
+      identityIntact: false,
+    });
+    crossWired.problems.push("observation.json names t9/treatment while the directory names t2/treatment");
+    const out = assemble(
+      archiveOf({ tasks: [taskOf("t1"), taskOf("t2")], observations: [obsOf("t1"), crossWired] })
+    );
+    expect(check(out.result, "design.artifacts 6").fired).toBe(true);
+    expect(cfOf(out, "t2")).toBeUndefined(); // no terms under a borrowed name
+    expect(out.result.integrityFailures).toHaveLength(1);
+    expect(out.result.integrityFailures[0]!.reasons.join(" ")).toMatch(/cross-wired or unshowable/);
+    expect(out.result.verdict).toBe("void");
+    // the negative control: a bound identity computes terms as ever
+    expect(cfOf(assemble(archiveOf()), "t1")).toBeDefined();
   });
 
   it("a record with NO instruction hashes fires clause 12 — unshowable is not clean", () => {
