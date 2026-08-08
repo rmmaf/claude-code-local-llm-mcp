@@ -752,6 +752,10 @@ export interface ObservationRecord {
   arm: string;
   sessionId: string;
   runId: string | null;
+  /** The PRE-execution timestamp — what "the earliest session start" means.
+   * The runlog row's `ts` is written at observation END and anchoring the
+   * manifest-freeze window there left a gap the length of the session. */
+  started: string | null;
   outcome: string | null;
   valid: boolean | null;
   invalidReasons: string[];
@@ -850,8 +854,14 @@ export interface RunGitFacts {
    * diff-round finding). Null when git could not answer.
    */
   manifestMatchesHead: boolean | null;
-  /** Commits touching the manifest dated after the earliest session start — artifact 1 voids on any. */
-  manifestCommitsAfterStart: string[];
+  /**
+   * Commits touching the manifest dated after the earliest session start —
+   * artifact 1 voids on any. NULL when the freeze window could not be
+   * established (no trustworthy start, or git could not answer): fail CLOSED —
+   * the artifact-1 check fires on null, because a freeze that cannot be shown
+   * held is not a freeze.
+   */
+  manifestCommitsAfterStart: string[] | null;
   /** The rates blob at the frozen commit `3541625`, for `voidConditions` 4's byte-identity. */
   ratesSha256AtFrozenCommit: string | null;
   problems: string[];

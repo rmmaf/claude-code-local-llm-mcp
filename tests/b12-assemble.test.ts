@@ -119,6 +119,7 @@ function recordOf(taskId: string, sessionId: string, over: Partial<ObservationRe
     arm: "treatment",
     sessionId,
     runId: RUN,
+    started: at(-500),
     outcome: "completed",
     valid: true,
     invalidReasons: [],
@@ -885,6 +886,25 @@ describe("the diff review's trust boundaries — absent evidence is never clean"
     const c = check(out.result, "design.artifacts 1");
     expect(c.fired).toBe(true);
     expect(c.detail).toMatch(/NOT HEAD's blob/);
+  });
+
+  it("an unestablishable freeze window fires artifact 1 — a freeze that cannot be shown held is not a freeze", () => {
+    // The fourth adversarial round: the window was anchored on the runlog
+    // row's END-of-observation ts, and a null anchor read as "held".
+    const out = assemble(archiveOf({ git: { manifestCommitsAfterStart: null } }));
+    const c = check(out.result, "design.artifacts 1");
+    expect(c.fired).toBe(true);
+    expect(c.detail).toMatch(/freeze window could not be established/);
+  });
+
+  it("rates verification fails CLOSED — an absent pin or an unreadable frozen blob is never clean", () => {
+    const noFrozen = assemble(archiveOf({ git: { ratesSha256AtFrozenCommit: null } }));
+    expect(check(noFrozen.result, "voidConditions 4 — rates").fired).toBe(true);
+    expect(check(noFrozen.result, "voidConditions 4 — rates").detail).toMatch(/cannot be SHOWN/);
+    const noPin = assemble(archiveOf({ pinned: { ratesSha256: undefined } }));
+    expect(check(noPin.result, "voidConditions 4 — rates").fired).toBe(true);
+    // the control: with all three hashes present and equal, the check is quiet
+    expect(check(assemble(archiveOf()).result, "voidConditions 4 — rates").fired).toBe(false);
   });
 
   it("a register that cannot be shown complete fires clause 1's check — discrepancies are never mere annotations", () => {

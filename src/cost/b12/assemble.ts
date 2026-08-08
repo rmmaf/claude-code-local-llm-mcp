@@ -809,14 +809,17 @@ function buildArchiveChecks(ctx: ChecksContext): void {
     "design.artifacts 1 — manifest blob",
     gitP.manifestBlobSha256 === null ||
       gitP.manifestMatchesHead === false ||
+      gitP.manifestCommitsAfterStart === null ||
       gitP.manifestCommitsAfterStart.length > 0,
     gitP.manifestBlobSha256 === null
       ? "HEAD carries no manifest blob — the manifest is not committed evidence"
       : gitP.manifestMatchesHead === false
         ? "the manifest bytes being scored are NOT HEAD's blob — an uncommitted edit is not the sealed manifest"
-        : gitP.manifestCommitsAfterStart.length > 0
-          ? `${gitP.manifestCommitsAfterStart.length} commit(s) touched the manifest after the earliest session start (${gitP.manifestCommitsAfterStart.join(", ")})`
-          : `blob ${gitP.manifestBlobSha256} in HEAD, byte-identical to the scored bytes, untouched since the earliest session start`
+        : gitP.manifestCommitsAfterStart === null
+          ? "the freeze window could not be established (no trustworthy session start, or git could not answer) — a freeze that cannot be shown held is not a freeze"
+          : gitP.manifestCommitsAfterStart.length > 0
+            ? `${gitP.manifestCommitsAfterStart.length} commit(s) touched the manifest after the earliest session start (${gitP.manifestCommitsAfterStart.join(", ")})`
+            : `blob ${gitP.manifestBlobSha256} in HEAD, byte-identical to the scored bytes, untouched since the earliest session start`
   );
 
   // voidConditions 1 — the register's SHOWABILITY (the third adversarial
@@ -856,19 +859,25 @@ function buildArchiveChecks(ctx: ChecksContext): void {
   );
 
   // voidConditions 4 — rates.json byte-identity, the one clause-4 item the
-  // archive itself can check; the rest belongs to the git audit input.
+  // archive itself can check; the rest belongs to the git audit input. FAIL
+  // CLOSED (the fourth adversarial round): with the frozen blob unreachable
+  // AND the pin absent, this check once read clean and its detail CLAIMED an
+  // identity nothing had shown — an unverified pricing input is not a frozen
+  // one.
   const pinnedRates = typeof pinned.ratesSha256 === "string" ? pinned.ratesSha256 : null;
   const frozen = gitP.ratesSha256AtFrozenCommit;
-  const ratesFired =
-    archive.ratesSha256 === "" ||
-    (frozen !== null && archive.ratesSha256 !== frozen) ||
-    (pinnedRates !== null && archive.ratesSha256 !== pinnedRates);
+  const ratesUnverifiable =
+    archive.ratesSha256 === "" || pinnedRates === null || frozen === null;
+  const ratesMismatch =
+    !ratesUnverifiable && (archive.ratesSha256 !== frozen || archive.ratesSha256 !== pinnedRates);
   push(
     "voidConditions 4 — rates.json frozen",
-    ratesFired,
-    ratesFired
-      ? `rates.json (${archive.ratesSha256 || "absent"}) does not match ${frozen !== null && archive.ratesSha256 !== frozen ? `the frozen commit's blob (${frozen})` : `the manifest pin (${pinnedRates})`}`
-      : "rates.json is byte-identical to the frozen commit's blob and the manifest pin"
+    ratesUnverifiable || ratesMismatch,
+    ratesMismatch
+      ? `rates.json (${archive.ratesSha256}) does not match ${archive.ratesSha256 !== frozen ? `the frozen commit's blob (${frozen})` : `the manifest pin (${pinnedRates})`}`
+      : ratesUnverifiable
+        ? `the byte-identity cannot be SHOWN: ${archive.ratesSha256 === "" ? "rates.json is absent; " : ""}${pinnedRates === null ? "the manifest pins no ratesSha256; " : ""}${frozen === null ? "the frozen commit's blob could not be read; " : ""}unverified pricing is not frozen pricing`
+        : "rates.json is byte-identical to the frozen commit's blob and the manifest pin"
   );
 
   // voidConditions 7 — version pin, per observation, plus the pin's presence.

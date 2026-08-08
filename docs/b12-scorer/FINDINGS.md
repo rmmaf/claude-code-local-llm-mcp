@@ -552,6 +552,28 @@ WITH ITS CITATION:**
   is constantly true until F23 lands; a run-time probe of a compile-time
   shape would be theater, and nothing runs before F23 anyway.
 
+**A FOURTH ROUND RETURNED TWO HIGH — BOTH CONFIRMED, BOTH FIXED. Both are
+fail-open instances of the principle the pass had already registered three
+times, found inside the fixes themselves:**
+
+- **The freeze window was anchored at the WRONG END of the session.**
+  Artifact 1 says "dated after the earliest session START"; the anchor was
+  the first runlog row's `ts` — written at observation END — so a manifest
+  commit DURING a long first session escaped the window entirely.
+  `observation.started` (pre-execution, recorded all along, discarded by the
+  narrower) is now preserved, and `earliestSessionStart` takes the MINIMUM
+  across every start-preceding timestamp the archive holds (`started`, the
+  pre-snapshot's `ts`, the runlog rows). Fail CLOSED: no trustworthy anchor →
+  `manifestCommitsAfterStart` is null, and null FIRES artifact 1 — a freeze
+  that cannot be shown held is not a freeze.
+- **The rates check read clean with BOTH references unavailable — and its
+  detail CLAIMED an identity nothing had shown.** With the frozen commit's
+  blob unreachable and the manifest pin absent, any working-tree rates file
+  passed. Now the check fires when the pin is absent, when the frozen blob
+  cannot be read, or on any inequality among disk/pin/frozen — the detail
+  names which, and "unverified pricing is not frozen pricing" is on the
+  face.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced

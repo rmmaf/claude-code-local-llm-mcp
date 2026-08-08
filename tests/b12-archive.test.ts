@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   collectGitFacts,
   committedEvidenceState,
+  earliestSessionStart,
   narrowObservationRecord,
   narrowRunlogRow,
   parseJsonl,
@@ -215,9 +216,28 @@ describe("readRunArchive — the hostile disk", () => {
     await expect(readRunArchive(root, "replay-01")).rejects.toThrow();
   });
 
-  it("collectGitFacts without a start timestamp says the date VOID cannot be checked", () => {
+  it("collectGitFacts without a start timestamp FAILS CLOSED — null commits, not an empty list", () => {
     const facts = collectGitFacts(scratch.tempRoot(), "replay-01", null, null);
     expect(facts.problems.join(" ")).toMatch(/no earliest session start/);
+    expect(facts.manifestCommitsAfterStart).toBeNull();
+  });
+
+  it("the freeze anchor is the earliest session START, never the runlog's end-of-observation ts", () => {
+    // The fourth adversarial round: a manifest commit DURING a long session
+    // carried a date before the runlog append and escaped the window. The
+    // anchor must be the pre-execution minimum.
+    const obs = {
+      record: { started: "2023-11-14T22:13:20.000Z" },
+      snapshotBefore: { ts: "2023-11-14T22:13:19.000Z" },
+    } as never;
+    const runlogRow = { ts: "2023-11-14T23:59:00.000Z" } as never; // appended an hour later
+    expect(earliestSessionStart([obs], [runlogRow])).toBe("2023-11-14T22:13:19.000Z");
+    // a commit at 22:30 is INSIDE this window; anchored on the runlog it was not
+    expect(Date.parse("2023-11-14T22:30:00.000Z")).toBeGreaterThan(
+      Date.parse(earliestSessionStart([obs], [runlogRow])!)
+    );
+    expect(earliestSessionStart([], [])).toBeNull();
+    expect(earliestSessionStart([{ record: { started: "not a date" }, snapshotBefore: null } as never], [])).toBeNull();
   });
 
   it("committedness outside a repository is UNSHOWABLE — never clean — and porcelain parses every dirty shape", () => {

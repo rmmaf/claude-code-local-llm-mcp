@@ -146,6 +146,7 @@ export function narrowObservationRecord(raw: unknown): ObservationRecord | null 
     arm: str(raw.arm) ?? "",
     sessionId: str(raw.sessionId) ?? "",
     runId: str(raw.runId),
+    started: str(raw.started),
     outcome: str(raw.outcome),
     valid: bool(raw.valid),
     invalidReasons: strings(raw.invalidReasons),
@@ -342,8 +343,10 @@ export function collectGitFacts(
   }
 
   // Artifact 1: "any commit touching it dated after the earliest session start
-  // is a VOID". Commit DATES compared against the run's own earliest start.
-  let manifestCommitsAfterStart: string[] = [];
+  // is a VOID". Commit DATES compared against the run's own earliest start —
+  // and FAIL CLOSED: null (not an empty list) when the window cannot be
+  // established, so the artifact-1 check fires instead of reading "held".
+  let manifestCommitsAfterStart: string[] | null = null;
   if (earliestStartTs !== null) {
     const log = git(repoRoot, ["log", "--format=%H %cI", "--", manifestRel]);
     if (log.ok && log.out !== "") {
@@ -355,6 +358,8 @@ export function collectGitFacts(
         .map((parts) => parts[0]!);
     } else if (!log.ok) {
       problems.push(`git log over ${manifestRel} failed — the manifest-commit-date VOID cannot be checked`);
+    } else {
+      manifestCommitsAfterStart = [];
     }
   } else {
     problems.push("no earliest session start could be established, so the manifest-commit-date VOID cannot be checked");
@@ -541,6 +546,35 @@ const rel = (repoRoot: string, abs: string): string =>
   path.relative(repoRoot, abs).split(path.sep).join("/");
 
 /**
+ * "The earliest session START" — artifact 1's freeze anchor. The runlog row's
+ * `ts` is written at observation END, and anchoring there left a gap the
+ * length of the first session (the fourth adversarial round): a manifest
+ * commit DURING that session carried an earlier date and escaped. So the
+ * anchor is the MINIMUM across every timestamp the archive holds that
+ * precedes or opens a session — `observation.started` (pre-execution), the
+ * pre-snapshot's `ts`, and the runlog rows — and null when none parses, which
+ * the check layer fails CLOSED on.
+ */
+export function earliestSessionStart(
+  observations: readonly ArchivedObservation[],
+  runlogRows: readonly RunlogRow[]
+): string | null {
+  const candidates: string[] = [];
+  for (const obs of observations) {
+    if (obs.record?.started != null) candidates.push(obs.record.started);
+    if (obs.snapshotBefore?.ts != null) candidates.push(obs.snapshotBefore.ts);
+  }
+  for (const row of runlogRows) candidates.push(row.ts);
+  let best: string | null = null;
+  for (const ts of candidates) {
+    const ms = Date.parse(ts);
+    if (Number.isNaN(ms)) continue;
+    if (best === null || ms < Date.parse(best)) best = ts;
+  }
+  return best;
+}
+
+/**
  * Read the whole committed run archive back as one value.
  *
  * The ONE throw: a manifest that cannot be read or parsed. With no task list
@@ -630,7 +664,7 @@ export async function readRunArchive(repoRoot: string, runId: string): Promise<R
   const ratesBytes = existsSync(ratesPath) ? readFileSync(ratesPath) : null;
   if (ratesBytes === null) problems.push(`${RATES_REL_PATH} is absent — nothing prices the run`);
   const cap = manifest.pinned.clientTruncationCap;
-  const earliestStart = runlog.rows.length > 0 ? (runlog.rows[0]?.ts ?? null) : null;
+  const earliestStart = earliestSessionStart(observations, runlog.rows);
 
   // THE REPLAY MUST READ THE COMMITTED BYTES (the first diff-round finding).
   // One `git status` over the whole scoring input set; any path it names is
