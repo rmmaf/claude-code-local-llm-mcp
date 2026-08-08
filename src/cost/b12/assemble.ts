@@ -819,6 +819,20 @@ function buildArchiveChecks(ctx: ChecksContext): void {
           : `blob ${gitP.manifestBlobSha256} in HEAD, byte-identical to the scored bytes, untouched since the earliest session start`
   );
 
+  // voidConditions 1 — the register's SHOWABILITY (the third adversarial
+  // round). `aggregate`'s decide() voids on an abandoned prior run it can SEE;
+  // this fires when the register itself cannot be shown — a manifest with no
+  // row, a row with no manifest, uncommitted or unreadable registration
+  // state — because a register that cannot be listed with confidence is the
+  // omission clause 1 calls "itself a VOID".
+  push(
+    "voidConditions 1 — the register",
+    archive.register.discrepancies.length > 0,
+    archive.register.discrepancies.length > 0
+      ? `the register cannot be shown complete: ${archive.register.discrepancies.join("; ")}`
+      : `${archive.register.priorRuns.length} previously registered run(s), every one enumerated from HEAD with its committed result state`
+  );
+
   // design.artifacts 6 — the replay reads COMMITTED evidence, shown rather
   // than assumed. `unshowable` fires too: no repository to ask is not clean.
   const committed = archive.evidenceCommitted;

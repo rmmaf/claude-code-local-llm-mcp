@@ -29,7 +29,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -441,6 +441,27 @@ function resolveMcpConfig(manifest) {
  */
 export function obsDirName(taskId, arm, attempt) {
   return `obs-${taskId}-${arm}${attempt === 1 ? "" : `-r${attempt}`}`;
+}
+
+/**
+ * Claim the observation directory ATOMICALLY. The exists-then-create shape had
+ * a race: two `observe` processes for one task/arm could both see attempt N
+ * free, then overwrite each other's six files — destroying exactly what
+ * `admissionRule` 12 preserves (the third adversarial round on the UNIT-5
+ * diff). A NON-recursive `mkdirSync` is the claim: the filesystem hands the
+ * directory to exactly one caller, the loser gets `EEXIST` and tries N+1.
+ */
+export function claimObsDir(runEvidenceDir, taskId, arm) {
+  mkdirSync(runEvidenceDir, { recursive: true });
+  for (let attempt = 1; ; attempt++) {
+    const dir = path.join(runEvidenceDir, obsDirName(taskId, arm, attempt));
+    try {
+      mkdirSync(dir);
+      return { dir, attempt };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+  }
 }
 
 export function manifestDeclarationGaps(manifest) {
@@ -1663,11 +1684,9 @@ async function observe(args) {
   // blobs, both of which destroy exactly what the clause preserves. Found by
   // the UNIT-5 plan gate (FINDINGS.md); the scorer's `parseObsDirName` reads
   // the same grammar back — the round trip is pinned in `cost-meter.test.ts`.
-  // Which attempt SCORES is the scorer's registered convention, not decided here.
-  let attempt = 1;
-  while (existsSync(path.join(REPO, "evidence", runId, obsDirName(task.id, arm, attempt)))) attempt++;
-  const dir = path.join(REPO, "evidence", runId, obsDirName(task.id, arm, attempt));
-  mkdirSync(dir, { recursive: true });
+  // Which attempt SCORES is the scorer's registered convention, not decided
+  // here. The claim is ATOMIC — see `claimObsDir`.
+  const { dir } = claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
 
   // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the
   // only window in which the tree and its `.local-coder/telemetry.jsonl` are
@@ -1813,22 +1832,24 @@ async function observe(args) {
 
   // A machine-written row per observation, `design.artifacts` 10: "whose `ts` is
   // read from the system clock in the same command that writes it".
+  // APPEND, never read-concat-write: the old shape lost rows under two
+  // concurrent observes (both read, both write, one row gone) — and a missing
+  // row is what the scorer's replay now refuses the whole order over. A
+  // single-line O_APPEND write is the atomic unit the log was designed around.
   const runLog = path.join(REPO, "evidence", `${runId}.b12.runlog.jsonl`);
-  writeFileSync(
+  appendFileSync(
     runLog,
-    (existsSync(runLog) ? readFileSync(runLog, "utf8") : "") +
-      JSON.stringify({
-        ts: stamp(),
-        runId,
-        taskId: task.id,
-        arm,
-        sessionId,
-        outcome: verdict.outcome,
-        valid: observation.valid,
-        accepted: observation.accepted,
-        originated: originated.length,
-      }) +
-      "\n",
+    JSON.stringify({
+      ts: stamp(),
+      runId,
+      taskId: task.id,
+      arm,
+      sessionId,
+      outcome: verdict.outcome,
+      valid: observation.valid,
+      accepted: observation.accepted,
+      originated: originated.length,
+    }) + "\n",
     "utf8"
   );
 

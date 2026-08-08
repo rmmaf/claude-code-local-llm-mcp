@@ -293,6 +293,9 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     const committed = result.archiveChecks.find((c) => c.clause.includes("committed evidence"))!;
     expect(committed.fired).toBe(true);
     expect(committed.detail).toMatch(/UNSHOWABLE/);
+    // and the register cannot be enumerated outside a repository either —
+    // fired for the same reason, with the discrepancies on the face
+    expect(result.archiveChecks.find((c) => c.clause.includes("the register"))!.fired).toBe(true);
     expect(result.uncheckedClauses).toHaveLength(3);
     expect(result.scoringCommand).toEqual({
       pinned: "node dist/cost/b12/emit.js replay-01",

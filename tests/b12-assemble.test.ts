@@ -887,6 +887,25 @@ describe("the diff review's trust boundaries — absent evidence is never clean"
     expect(c.detail).toMatch(/NOT HEAD's blob/);
   });
 
+  it("a register that cannot be shown complete fires clause 1's check — discrepancies are never mere annotations", () => {
+    // The third adversarial round: a locally deleted MEASUREMENTS row turned
+    // an abandoned run into a reported-but-deciding-nothing discrepancy.
+    const out = assemble(
+      archiveOf({
+        register: {
+          priorRuns: [],
+          discrepancies: [
+            "evidence/old-run.b12.tasks.json is committed but MEASUREMENTS.jsonl carries no old-run row — registration is conjunctive and this is neither registered nor clean",
+          ],
+        },
+      })
+    );
+    const c = check(out.result, "voidConditions 1 — the register");
+    expect(c.fired).toBe(true);
+    expect(c.detail).toMatch(/cannot be shown complete/);
+    expect(check(assemble(archiveOf()).result, "voidConditions 1 — the register").fired).toBe(false);
+  });
+
   it("clause 19 compares the derived ambiguity universe against the SEALED invocation inventory", () => {
     // A sealed id the rebuilt transcript no longer carries means a tool result
     // was dropped somewhere — the ambiguity universe silently shrank.

@@ -50,6 +50,15 @@ import type {
 const sha256 = (bytes: string | Buffer): string =>
   createHash("sha256").update(bytes).digest("hex");
 
+/**
+ * The comparison `git status` itself applies: autocrlf checkouts materialise
+ * an LF blob as CRLF on disk, and byte-identity would call every Windows
+ * checkout tampered. Line endings are the ONE transformation git performs on
+ * checkout, so they are the one this normalises away.
+ */
+export const sameCommittedText = (a: string, b: string): boolean =>
+  a.replace(/\r\n/g, "\n").trim() === b.replace(/\r\n/g, "\n").trim();
+
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -328,7 +337,7 @@ export function collectGitFacts(
   let manifestMatchesHead: boolean | null = null;
   if (blob.ok && manifestBytes !== null) {
     const show = spawnSync("git", ["show", `HEAD:${manifestRel}`], { cwd: repoRoot, encoding: "utf8" });
-    if (show.status === 0) manifestMatchesHead = show.stdout === manifestBytes;
+    if (show.status === 0) manifestMatchesHead = sameCommittedText(show.stdout ?? "", manifestBytes);
     else problems.push(`git show HEAD:${manifestRel} failed — the manifest bytes cannot be bound to HEAD`);
   }
 
@@ -406,6 +415,7 @@ export function committedEvidenceState(repoRoot: string, runId: string): Committ
     `evidence/${runId}.b12.tasks.json`,
     `evidence/${runId}.b12.runlog.jsonl`,
     `evidence/${runId}`,
+    "MEASUREMENTS.jsonl",
   ];
   const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all", "--", ...paths], {
     cwd: repoRoot,
@@ -437,15 +447,29 @@ export function collectRegister(repoRoot: string, selfRunId: string): RunRegiste
     discrepancies.push("git ls-tree over evidence/ failed — committed manifests could not be enumerated");
   }
 
+  // FROM HEAD, like the manifests and results beside it — the register IS
+  // committed state, and reading the working tree let a locally deleted row
+  // make an abandoned run vanish from `priorRuns` (the third adversarial
+  // round). The on-disk copy is compared so uncommitted registration state is
+  // a named discrepancy rather than silently authoritative.
   const rowIds = new Set<string>();
-  const measurementsPath = path.join(repoRoot, "MEASUREMENTS.jsonl");
-  if (existsSync(measurementsPath)) {
-    const { rows } = parseJsonl(readFileSync(measurementsPath, "utf8"));
+  const showMeasurements = git(repoRoot, ["show", "HEAD:MEASUREMENTS.jsonl"]);
+  if (showMeasurements.ok) {
+    const { rows } = parseJsonl(showMeasurements.out);
     for (const row of rows) {
       if (isObject(row) && typeof row.run_id === "string") rowIds.add(row.run_id);
     }
+    const measurementsPath = path.join(repoRoot, "MEASUREMENTS.jsonl");
+    const onDisk = existsSync(measurementsPath) ? readFileSync(measurementsPath, "utf8") : null;
+    if (onDisk === null) {
+      discrepancies.push("MEASUREMENTS.jsonl is committed but absent from disk — the working tree is not the archive");
+    } else if (!sameCommittedText(onDisk, showMeasurements.out)) {
+      discrepancies.push(
+        "on-disk MEASUREMENTS.jsonl differs from HEAD — registration rows are read from HEAD, and the working tree carries uncommitted registration state"
+      );
+    }
   } else {
-    discrepancies.push("MEASUREMENTS.jsonl is absent — registration rows could not be read");
+    discrepancies.push("MEASUREMENTS.jsonl could not be read from HEAD — no registration row can be shown, and unshowable is not clean");
   }
 
   const priorRuns: PriorRun[] = [];

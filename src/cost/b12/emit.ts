@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { readRunArchive } from "./archive.js";
+import { readRunArchive, sameCommittedText } from "./archive.js";
 import { assembleRun } from "./assemble.js";
 import type { GitAudit } from "./types.js";
 
@@ -95,7 +95,9 @@ export function committedAuditCheck(
   if (show.status !== 0) {
     return { ok: false, bytes: null, why: `HEAD does not carry ${expectedRel} — the audit is not committed evidence` };
   }
-  if (show.stdout !== onDisk) {
+  // The comparison `git status` applies — autocrlf may materialise the LF blob
+  // as CRLF on disk, and byte-identity would refuse every Windows checkout.
+  if (sameCommittedText(show.stdout ?? "", onDisk) === false) {
     return { ok: false, bytes: null, why: `${expectedRel} differs from HEAD's blob — uncommitted edits are not evidence` };
   }
   return { ok: true, bytes: onDisk, why: null };

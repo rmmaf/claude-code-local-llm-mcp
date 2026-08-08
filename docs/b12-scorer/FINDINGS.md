@@ -518,6 +518,40 @@ same bytes.
   do exactly this), reported, never fatal — end-to-end control: a hostile
   null still yields a committed-shaped result artifact.
 
+**A THIRD ROUND RETURNED THREE HIGH — TWO CONFIRMED AND FIXED, ONE DECLINED
+WITH ITS CITATION:**
+
+- **CONFIRMED: the register was read from the working tree.** Manifests and
+  results came from HEAD while `MEASUREMENTS.jsonl` came from disk — a
+  locally deleted row made an abandoned run (clause 1's own VOID) vanish
+  into a deciding-nothing discrepancy. Registration rows now come from
+  `HEAD:MEASUREMENTS.jsonl`, the on-disk copy is compared (a named
+  discrepancy when it differs), the file joined the committed-evidence
+  sweep, and **discrepancies FIRE a clause-1 check**: a register that cannot
+  be listed with confidence is the omission the clause calls "itself a
+  VOID". One correction the fix itself needed: the three byte-compares
+  (manifest, audit, register) normalise CRLF — autocrlf materialises an LF
+  blob as CRLF on Windows, and byte-identity would have called every
+  Windows checkout tampered; line endings are the one transformation git
+  performs on checkout, so they are the one normalised away.
+- **CONFIRMED: attempt allocation raced.** Exists-then-create let two
+  `observe` processes claim one directory and overwrite each other's six
+  files — destroying what `admissionRule` 12 preserves — and the runlog's
+  read-concat-write LOST rows under concurrency, which the order replay now
+  refuses whole runs over. The claim is a NON-recursive `mkdirSync`
+  (`claimObsDir`: the filesystem hands the directory to exactly one caller,
+  `EEXIST` tries N+1) and the runlog row is a single-line `appendFileSync`.
+  A concurrent git commit still fails loudly on the index lock — the
+  barrier's own refusal.
+- **DECLINED: "derive clause 8's predicate and make a non-void verdict
+  reachable".** That is F23 by its own entry — "a second full pass of the
+  whole arithmetic … changes `B12Result` and belongs in its own pass with
+  its own controls" — and the always-firing check was CONFIRMED by the plan
+  gate (R6) and registered here, in STATE.md and in UNIT-5.md. The artifact
+  structurally cannot carry two brackets, so the missing-evidence predicate
+  is constantly true until F23 lands; a run-time probe of a compile-time
+  shape would be theater, and nothing runs before F23 anyway.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced

@@ -87,6 +87,17 @@ export function manifestDeclarationGaps(manifest: unknown): string[];
 export function obsDirName(taskId: string, arm: string, attempt: number): string;
 
 /**
+ * Claim the observation directory ATOMICALLY — a non-recursive `mkdirSync` is
+ * the claim, `EEXIST` loses the race and tries the next attempt. Closes the
+ * concurrent-observe overwrite the third adversarial round found.
+ */
+export function claimObsDir(
+  runEvidenceDir: string,
+  taskId: string,
+  arm: string
+): { dir: string; attempt: number };
+
+/**
  * The probe artifact must be committed evidence: repo-relative under
  * `evidence/`, present in HEAD, and byte-identical to HEAD's blob. Closes the
  * reviewed trust boundary where a fabricated working-tree JSON could calibrate

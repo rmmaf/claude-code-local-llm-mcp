@@ -2518,6 +2518,26 @@ describe("the B12 harness", () => {
       // attempt.
       expect(parseObsDirName("obs-t1-treatment-r1")).toBeNull();
     });
+
+    it("claimObsDir claims atomically — an existing attempt is never reused, never clobbered", async () => {
+      // The third adversarial round: exists-then-create let two observes pick
+      // one directory and overwrite each other's six files. The non-recursive
+      // mkdir IS the claim; a second caller gets the next attempt.
+      const { claimObsDir } = await import("../scripts/b12-run.mjs");
+      const root = makeTempRoot("b12-claim-");
+      try {
+        const first = claimObsDir(root, "t1", "treatment");
+        const second = claimObsDir(root, "t1", "treatment");
+        const third = claimObsDir(root, "t1", "treatment");
+        expect(first.attempt).toBe(1);
+        expect(second.attempt).toBe(2);
+        expect(third.attempt).toBe(3);
+        expect(new Set([first.dir, second.dir, third.dir]).size).toBe(3);
+        expect(path.basename(second.dir)).toBe("obs-t1-treatment-r2");
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("the F24 pass: every new guard shown FIRING", () => {
