@@ -289,9 +289,3 @@ export async function loadChecks(root: string): Promise<LoadedChecks> {
   return { specs: parseSpecs(parsed), detected: false };
 }
 
-/** Serialize detected checks so a caller can pin them by writing the file. */
-export function serializeChecks(specs: CheckSpec[]): string {
-  return `${JSON.stringify({ checks: specs }, null, 2)}
-`;
-}
-

@@ -21,8 +21,6 @@ Use it: at the start of a session, or to diagnose why implement/fix/scaffold cal
 
 Do NOT use it as a per-call precondition — implement/fix/scaffold surface their own errors. To choose a model by objective + memory, use the \`models\` tool instead. Takes no arguments.`;
 
-export const statusInputSchema = {};
-
 export interface StatusResult {
   reachable: boolean;
   hint?: string;

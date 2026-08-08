@@ -1020,6 +1020,3 @@ async function repairLoop(
   return result;
 }
 
-/** Re-exported so the server can surface the same error type as the other tools. */
-export { ToolError };
-
