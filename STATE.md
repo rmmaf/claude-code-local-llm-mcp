@@ -5,31 +5,29 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**ITEM (c) IS DECIDED — repair, ONE `O_o`.** The owner took it 2026-08-08 after
-a four-layer verified dossier (direct read; six adversarial refuters; a Codex
-gate on the frozen text — five readings, one refuted; a Codex review of the
-dossier itself). The pre-declaration is REGISTERED in `PREMISES.md § B12`:
-estimator (paired first-request usage delta, treatment − control), unit
-adapter (tokens × 3.7 through the chars interface), calibration key (binary
-sha256 × arm × MCP-config hash × policy-blob hash × protocol), k = 3 and
-tolerance 0 both labelled CHOSEN, and the give-up branch — any spread, any
-negative — is retract-and-re-register, fixed now. `DECISIONS.md § The term the
-design promised` carries the postscript, including the DECLINED O-bracket.
-
-- **The review killed my first recommendation** (O-bracket): two O values with
-  verdict-dependent assignment is design change under `voidConditions` 4.
-- **An unmeasured term reaches NO verdict**: NaN blocks hold AND fall and can
-  fire spurious clause-17/18 VOIDs; a finite sentinel (0) passes `holdsIf` 6.
+**ITEM (c) IS DECIDED — repair, ONE `O_o` — and the probe already ran.** The
+owner took (c) 2026-08-08 on a four-layer verified dossier (direct read; six
+refuters; Codex gate on the frozen text; Codex review of the dossier, which
+KILLED the O-bracket — two O values with verdict-dependent assignment is
+design change under `voidConditions` 4). Pre-declaration in `PREMISES.md §
+B12` with two dated postscripts, both written before any delta existed;
+decision + result postscripts in `DECISIONS.md § The term the design
+promised`. An unmeasured term reaches NO verdict (NaN blocks hold AND fall);
+a finite sentinel passes `holdsIf` 6 — provenance at write time is the guard.
 
 ## Next action
 
-**THE PROBE, on the Mac, on the pinned binary** — per the pre-declaration,
-which is already fixed and may not be adjusted to fit the result: 3 fresh
-scratch replicates per arm, first-billed-request input-class tokens, deltas
-must be identical, non-negative, finite. Sustained ⇒ the F24 harness pass
-(measure + commit `installedChars` per observation; instruction/memory hashes;
-`--append-system-prompt` per arm; F25's manifest-refusal preflight). Not
-sustained ⇒ retract and re-register, probe artifacts as the recorded cause.
+**THE PROBE RAN AND SUSTAINED — 84, 84, 84 tokens.** (b) is answered by
+measurement: schemas are DEFERRED on 2.1.221; the resident delta is 84 tokens
+(310.8 chars via the ×3.7 adapter) against 16,127 wire chars; ToolSearch
+round trips self-charge through `A_o`. Two refusals became registered facts
+first: account connectors (→ both arms strict, probe AND `observe()`) and
+cross-session prefix caching (→ the statistic is the cache-invariant total).
+Artifact + verbatim MEASUREMENTS row:
+`2026-08-08-mac-b12-installedchars-50de3b3-144422`. **Next: the F24 harness
+pass** — wire `installedChars` per observation with domain validation
+(finite, ≥0, provenance), instruction/memory hashes, `--append-system-prompt`
+per arm, F25's manifest-refusal preflight. Then UNIT 5.
 
 **Still blocking a run even after (c):** F23 (clause 8 wants two BRACKETS,
 artifact carries two byte sums — a compliant run VOIDs as shipped); Phase-3

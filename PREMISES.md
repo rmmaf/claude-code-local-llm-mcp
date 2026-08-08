@@ -1828,6 +1828,39 @@ defect, and it pinned four of them in place.
     directional claim "smaller `O` moves `R` toward the hold" holds only on a
     positive denominator, and a reader of the artifact should see that
     precondition's state rather than assume it.
+  - **Postscript, 2026-08-08, before any replicate ran — both arms are
+    STRICT.** The probe's first execution refused at its own preconditions and
+    the refusal surfaced a measured fact: the work Mac carries ~30 claude.ai
+    ACCOUNT connectors (`claude mcp list`), which `claude mcp remove` cannot
+    remove. With the treatment arm un-strict — the parenthetical shape this
+    entry inherited from `observe()` — they merge into one arm only, and the
+    arms differ by the account's roster as well as by this server: two
+    treatments. So the protocol's argv is clarified, not changed in what it
+    measures: treatment `--strict-mcp-config --mcp-config <cfg>`, control
+    `--strict-mcp-config`, and `observe()` was corrected identically in the
+    same commit. Either strict excludes the account state (clean) or it lands
+    in BOTH arms and cancels in the paired subtraction — in both worlds the
+    delta isolates the server, which is the criterion ("identical but for the
+    arm") this entry already fixed. The connector roster is recorded in the
+    probe artifact. No replicate had run when this was written; the refusal
+    transcript above it is the evidence.
+  - **Second postscript, same day, still before any delta — the statistic is
+    the TOTAL prompt size, because the API refuted the zero-cacheRead form.**
+    The protocol above said "input and cacheWrite classes; a non-zero
+    cacheRead on it voids the replicate", on the assumption that a fresh
+    session's first request reads no cache. Measured false on the second
+    execution: **cacheRead = 22,099 on a brand-new session id**, run right
+    after the proof session — prompt cache is prefix-keyed ACROSS sessions,
+    so back-to-back same-shape sessions inside the TTL ALWAYS read cache, and
+    the zero-cacheRead requirement is unsatisfiable by the protocol's own
+    back-to-back design. The amended statistic is the first billed request's
+    **input + cacheWrite + cacheRead** — every prompt token lands in exactly
+    one of the three classes, so the sum is the total resident prompt,
+    invariant to cache state, and it is the same quantity this entry named
+    from the start (the per-arm resident delta). k, the tolerance, the
+    sustained rule and the give-up branch are untouched. No delta existed
+    when this was written: the probe refused at replicate 1, treatment,
+    before any pair completed, and that refusal transcript is the evidence.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
