@@ -401,7 +401,10 @@ export async function readTranscript(
   }
 
   // Pass 1: dedup usage by requestId, but collect tool_use blocks from EVERY
-  // record of that request — the usage repeats, the content blocks do not.
+  // record of that request — the content blocks do not repeat, and the usage
+  // repeats only ALMOST (see "THE LAST RECORD OF A GROUP CARRIES THE USAGE"
+  // below: `output_tokens` grows across the group, which is why the last record
+  // wins rather than the first).
   const byRequest = new Map<string, BilledRequest>();
   const toolNames = new Map<string, string>();
   /**

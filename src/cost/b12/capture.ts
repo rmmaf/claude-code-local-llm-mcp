@@ -57,7 +57,7 @@ export type MeteredRecord = RawRecord;
 
 /**
  * Every key of `MeteredRecord`, listed once so the projection can be written as
- * a loop instead of thirteen hand-copied lines.
+ * a loop instead of twelve hand-copied lines.
  *
  * **THE ASSERT BELOW IS THE POINT.** `RawRecord`'s fields are all optional, so
  * adding one would NOT break an object literal that omits it — the archive would
@@ -215,14 +215,18 @@ export interface ObservationArchive {
   /** The manifest's declared scope for this task, labelled, never enforced. */
   declaredFileScope: string[] | null;
   /**
-   * Whether the worktree had uncommitted changes when acceptance ran.
+   * Whether the worktree was dirty when the capture was taken — which is AFTER
+   * acceptance, so it answers "did the ACCEPTANCE COMMAND write into the tree":
+   * coverage output, a build directory, a lock file.
    *
-   * `observation.json`'s `endCommit` is `git rev-parse HEAD`, and the acceptance
-   * command runs against the WORKING TREE. An arm that edits without committing
-   * — the ordinary case — earns an exit code on files no recorded commit
-   * contains, and `accepted` is what separates a TASK from an ATTEMPT. Reported,
-   * deciding nothing: the frozen text supplies no disposition for it, and
-   * `sourceFiles` above is what makes the state recoverable regardless.
+   * It is not "did the arm commit its work". The harness commits whatever the
+   * arm left, in the arm's own throwaway worktree, BEFORE acceptance runs, and
+   * `endCommit` names that commit — so `admissionRule` 3's "exits 0 at its end
+   * commit" is true by construction rather than by hope. The arm's own habit is
+   * recorded separately as `armLeftUncommitted` on the observation.
+   *
+   * Reported, deciding nothing: the frozen text supplies no disposition for it,
+   * and `sourceFiles` above hashes whatever the command left behind.
    */
   dirtyAtCapture: boolean;
 }

@@ -48,9 +48,15 @@ export interface Rates {
   multipliers: RateMultipliers;
   models: Record<string, ModelRate>;
   /**
-   * Characters per token, used ONLY to turn measured byte counts (tool output
-   * we suppressed) into an estimated token count. Every figure derived from it
-   * is labeled an estimate; nothing in the absolute accounting touches it.
+   * Characters per token, used to turn measured CHARACTER counts into an
+   * estimated token count. Two call sites, both counterfactual and neither in
+   * the absolute accounting: the tool output we suppressed, and
+   * `unitsAddedByInstallation`'s `installedChars` — the server's own tool
+   * descriptions, charged at position 0 of every segment.
+   *
+   * Nothing in the absolute accounting touches it. The suppression figures are
+   * labeled an estimate on the report; `unitsAddedByInstallation` returns a bare
+   * number, so its caller carries that label — B12 keeps it as `oO`.
    */
   charsPerToken: number;
   /**

@@ -165,10 +165,12 @@ export async function getLoadedLmsModels(
  *
  * Returns null — meaning "do not check" — whenever the answer is not knowable,
  * and that is the whole design: the context pre-flight refuses requests, so a
- * GUESS here would refuse valid work. Null is the honest answer in three cases:
- * `lms` is unavailable, nothing is loaded (JIT will load on demand, at a context
- * we cannot see yet), or several models are loaded and none matches `wanted`, so
- * we cannot tell which one the request will land on.
+ * GUESS here would refuse valid work. Null is the honest answer in four cases:
+ * `lms` is unavailable; nothing is loaded (JIT will load on demand, at a context
+ * we cannot see yet); `wanted` is named and no loaded id matches it — at ANY
+ * count, including exactly one other model, because that one's window says
+ * nothing about the window `wanted` will be loaded with; or `wanted` is absent
+ * and more than one model is loaded, so nothing says which the request lands on.
  *
  * `wanted` is matched against every identifier spelling `lms` reports, the same
  * fuzzy set `selection.ts` matches on, because the served id and the catalog id

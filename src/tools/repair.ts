@@ -552,7 +552,33 @@ async function repairLoop(
   ctx: RepairContext
 ): Promise<RepairResult> {
   const { now, telemetry, started, snapshots, files, invocationId, vcs, fingerprintBefore } = ctx;
-  const { attempts: roundAttempts, telemetryState } = ctx;
+  const { telemetryState } = ctx;
+  /**
+   * Every model REQUEST, tagged with its round. Deliberately NOT part of
+   * `RoundTrace`, which is returned to Claude and where this project's whole
+   * thesis says bytes are expensive. Telemetry goes to disk and costs no context.
+   * Owned by `runRepair` (see `ctx.attempts`) so an abort cannot discard it.
+   *
+   * PER REQUEST, never summed, at two levels. Per round, because each round
+   * prepends that round's gate failures so the prompt GROWS, and the round most
+   * likely to fill the window is the LAST one — whose output is the one that
+   * gets applied. Per attempt inside the round, because a generation makes up to
+   * two requests and `GenerationResult.usage` is their SUM, while a context
+   * window is a per-request ceiling. Comparing the sum against the window fires
+   * in both directions: a retry carries the whole bad response plus the
+   * corrective message, so its total overshoots what either request cost.
+   *
+   * A round that ENDED IN A THROW still contributes, which is the half that was
+   * missing: `model_output_malformed` is raised after up to two real responses
+   * were received and measured, and that is the case most likely to BE context
+   * exhaustion. Only a round that never got a response contributes nothing —
+   * inventing zeroes there would read as a request that cost nothing rather than
+   * one that never returned.
+   *
+   * The window rides on each attempt rather than on the round, because the model
+   * is resolved per generation and a different model is a different window.
+   */
+  const { attempts: roundAttempts } = ctx;
 
   const maxRounds = args.max_rounds ?? DEFAULT_MAX_ROUNDS;
   const budgetMs = (args.budget_seconds ?? DEFAULT_BUDGET_SECONDS) * 1000;
@@ -654,31 +680,7 @@ async function repairLoop(
   observeGate(gate);
 
   const rounds: RoundTrace[] = [];
-  /**
-   * Every model REQUEST, tagged with its round. Deliberately NOT part of
-   * `RoundTrace`, which is returned to Claude and where this project's whole
-   * thesis says bytes are expensive. Telemetry goes to disk and costs no context.
-   * Owned by `runRepair` (see `ctx.attempts`) so an abort cannot discard it.
-   *
-   * PER REQUEST, never summed, at two levels. Per round, because each round
-   * prepends that round's gate failures so the prompt GROWS, and the round most
-   * likely to fill the window is the LAST one — whose output is the one that
-   * gets applied. Per attempt inside the round, because a generation makes up to
-   * two requests and `GenerationResult.usage` is their SUM, while a context
-   * window is a per-request ceiling. Comparing the sum against the window fires
-   * in both directions: a retry carries the whole bad response plus the
-   * corrective message, so its total overshoots what either request cost.
-   *
-   * A round that ENDED IN A THROW still contributes, which is the half that was
-   * missing: `model_output_malformed` is raised after up to two real responses
-   * were received and measured, and that is the case most likely to BE context
-   * exhaustion. Only a round that never got a response contributes nothing —
-   * inventing zeroes there would read as a request that cost nothing rather than
-   * one that never returned.
-   *
-   * The window rides on each attempt rather than on the round, because the model
-   * is resolved per generation and a different model is a different window.
-   */
+  /** Why the loop stopped: passed, budget, model_failed, concurrent_edit, max_rounds. */
   let stoppedBecause: RepairResult["stopped_because"] = "max_rounds";
 
   // The best state the loop ever produced, kept in memory. Nothing below writes
@@ -1020,3 +1022,4 @@ async function repairLoop(
 
 /** Re-exported so the server can surface the same error type as the other tools. */
 export { ToolError };
+

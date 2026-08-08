@@ -229,13 +229,20 @@ export interface ContextWindowCheck {
  * `<file path=…>` tag lines, and the closing "respond with exactly N blocks"
  * instruction.
  *
- * Fitted, not guessed. Least squares over the 14 measured requests of
+ * Fitted, not guessed. Least squares over the measured requests of
  * `evidence/2026-08-04-mac-11` and `-mac-12-variance` gives
  * `prompt_tokens ≈ 287 + bytes/4.11`, and ~85 of that intercept is the probe
  * spec's own text — which `inputBytes` already counts — leaving ~200 for the
  * fixed scaffolding. Residuals are within ±3% for every request over 9 KB, and
- * the worst under-prediction across all 14 is 2.9%, which `usableFraction`
- * covers.
+ * the worst under-prediction is 2.9%, which `usableFraction` covers.
+ *
+ * This said "the 14 measured requests" and the artifacts do not contain 14 of
+ * anything: mac-11 has 13 rows of which 12 measured (L10 came back
+ * `llm_unreachable`), mac-12-variance repeats the same 13 cases three times for
+ * 38 measured rows, and the two runs share **13 distinct cases** — L01-L10 plus
+ * G1-G3. The count is corrected to what the files show; the fitted coefficients
+ * are left exactly as recorded, since re-deriving them is a measurement and not
+ * a documentation fix.
  */
 const PROMPT_OVERHEAD_TOKENS = 200;
 

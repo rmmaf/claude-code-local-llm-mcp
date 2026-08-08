@@ -86,7 +86,15 @@ export interface CheckReport {
   failure_count: number;
   /** How many were withheld by the cap. */
   truncated: number;
-  /** Repo-relative path to the full raw output, or null when it was empty. */
+  /**
+   * Repo-relative path to the full raw output, or null.
+   *
+   * Null does NOT mean "the output was empty" on its own — it is also null when
+   * the check never launched (the time-budget skip), when `runOne` threw, and
+   * when the spill file itself could not be written (logged as a warning and
+   * surfaced nowhere else in this payload). Read `executed` and `error` before
+   * concluding anything from a null spill.
+   */
   spill: string | null;
   /**
    * Whether the command was actually launched.
@@ -119,7 +127,14 @@ export interface CheckReport {
 export interface GateCoverage {
   /** True when no config file existed and the checks were inferred from disk. */
   autodetected: boolean;
-  /** The exact command line each selected check ran. What was examined, verbatim. */
+  /**
+   * The exact command line of each SELECTED check — what this gate set out to
+   * examine, verbatim.
+   *
+   * Selected, not launched: a check skipped because the time budget ran out is
+   * still listed here, with `executed: false` on its report. Join against
+   * `checks[].executed` before reading this as "what ran".
+   */
   commands: string[];
   /**
    * Files changed since HEAD, or null when git could not answer. A path here

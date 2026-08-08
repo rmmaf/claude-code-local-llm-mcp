@@ -265,9 +265,13 @@ export function parseFailures(kind: CheckKind, stdout: string, stderr: string, r
 }
 
 /**
- * Collapse identical findings and merge the duplicate-per-file case that makes
- * type-checker output so repetitive: same code and message at different
- * locations become one entry carrying the extra locations.
+ * Collapse findings that are identical in all four of path, line, code and
+ * message into one entry, summing their `count`.
+ *
+ * Only exact duplicates merge. Two findings sharing a code and message at
+ * DIFFERENT locations stay separate entries, because the key includes the
+ * location — a failure the reader has to be able to go to is not one the reader
+ * can be told about in aggregate.
  */
 export function dedupe(failures: Failure[]): Failure[] {
   const exact = new Map<string, Failure>();

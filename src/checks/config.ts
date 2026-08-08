@@ -141,6 +141,18 @@ function parseSpecs(raw: unknown): CheckSpec[] {
  * Deliberately conservative: only commands whose config file actually exists
  * are proposed. A check that fails because the tool is not configured is worse
  * than a missing check — it teaches the caller to ignore the gate.
+ *
+ * **ONE REGISTERED EXCEPTION, on the Python branch.** `hasPython` is true for
+ * `pyproject.toml` OR `setup.cfg`, and both propose `ruff`. ruff reads
+ * `pyproject.toml`, `ruff.toml` and `.ruff.toml` — never `setup.cfg` — so a
+ * setup.cfg-only project gets `python -m ruff check .` proposed with no
+ * ruff-readable config on disk. It is not caught by `exec.ts`'s
+ * command-not-found guard either, because the command spawned is `python`, and
+ * an absent module exits non-zero with a message the parser reads as no
+ * findings. `pytest` is correct on both files (it reads `setup.cfg`'s
+ * `[tool:pytest]`). Narrowing ruff to a config file ruff can actually read
+ * would make the sentence above true without exception; that is a behaviour
+ * change and has not been made.
  */
 export async function detectChecks(root: string): Promise<CheckSpec[]> {
   const out: CheckSpec[] = [];
@@ -279,5 +291,7 @@ export async function loadChecks(root: string): Promise<LoadedChecks> {
 
 /** Serialize detected checks so a caller can pin them by writing the file. */
 export function serializeChecks(specs: CheckSpec[]): string {
-  return `${JSON.stringify({ checks: specs }, null, 2)}\n`;
+  return `${JSON.stringify({ checks: specs }, null, 2)}
+`;
 }
+

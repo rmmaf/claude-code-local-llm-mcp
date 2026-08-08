@@ -617,11 +617,22 @@ describe("repair loop", () => {
   });
 
   /**
-   * A round that never got a response contributes nothing. Writing zeroes would
-   * read as a request that cost nothing rather than one that never returned, and
-   * B16 counts requests the pre-flight ADMITTED and that came back.
+   * A round that produced no usable response contributes nothing. Writing zeroes
+   * would read as a request that cost nothing rather than one that yielded
+   * nothing, and B16 counts requests the pre-flight ADMITTED and that came back.
+   *
+   * WHAT THIS FIXTURE ACTUALLY EXERCISES, stated because the title used to
+   * overstate it. `queuedFetch` hardcodes `status: 200` and treats each queued
+   * object as the response BODY, so `{ status: 500, body: "boom" }` arrives as a
+   * 200 carrying that object as JSON — a payload with no `choices`, which fails
+   * to parse. So this pins the UNPARSEABLE-RESPONSE path, not a transport
+   * failure and not a request that never returned. Those two ARE covered
+   * elsewhere in this file, by inline `fetchImpl`s that never resolve and reject
+   * on abort, and by `unreachableFetch` in `tests/helpers.ts`. What no test pins
+   * is whether THOSE rounds also omit `attempts` — `queuedFetch` cannot express
+   * a rejection or a non-2xx, so this assertion cannot be reused for them.
    */
-  it("omits attempts for a round whose request never returned", async () => {
+  it("omits attempts for a round whose response could not be parsed", async () => {
     const root = tempRoot();
     await setup(root);
     const { fetchImpl } = queuedFetch([{ status: 500, body: "boom" }]);
@@ -711,7 +722,7 @@ describe("repair loop", () => {
     expect(detail.model).toBeNull();
   });
 
-  it("records the limits that were RESOLVED, not the ones that were asked for", async () => {
+  it("records the resolved limits when the caller named them", async () => {
     // Both are optional with defaults, so a caller that omits one is measured
     // under a condition it did not register — and no row could say which
     // afterwards. B12's Phase-3 prompt asks a session to pass these through;

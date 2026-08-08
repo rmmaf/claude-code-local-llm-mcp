@@ -82,7 +82,7 @@ describe("subagentShare — covariate 1, the only one the design says gates both
   });
 });
 
-describe("partitionByStrata — five buckets, and the fifth is why there are five", () => {
+describe("partitionByStrata — six buckets, and the last two are why there are six", () => {
   it("splits the verification stratum off the DECLARED field, never off the result", () => {
     const set = [
       terms({ taskId: "a", verificationStratum: "test-red" }),

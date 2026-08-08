@@ -104,12 +104,6 @@ function shareOf(units: CostUnits): Omit<CostUnits, "total"> {
 }
 
 /**
- * Aggregate a transcript into an absolute cost report.
- *
- * Requests are already deduplicated by requestId upstream; every figure here
- * is a direct sum of billed quantities, with no estimation anywhere.
- */
-/**
  * The billed cost of a SUBSET of a transcript's requests, named by `requestId`.
  *
  * `SessionReport.breakdown` is whole-session, and B12's unit of observation is a
@@ -154,6 +148,12 @@ export function breakdownOfRequests(
   return { tokens, units, share: shareOf(units), usd, unpricedKeys: [...unpricedKeys].sort() };
 }
 
+/**
+ * Aggregate a transcript into an absolute cost report.
+ *
+ * Requests are already deduplicated by requestId upstream; every figure here
+ * is a direct sum of billed quantities, with no estimation anywhere.
+ */
 export function buildSessionReport(transcript: Transcript, rates: Rates): SessionReport {
   const models = new Set<string>();
   const segments = new Set<string>();
@@ -211,9 +211,10 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
  *
  *   multiplier(t) = cacheWrite + cacheRead * (T - 1 - t)
  *
- * This is the whole architecture argument in one line. With T-t = 40 and 1h
- * caching it is 6.0x the input rate, which is why keeping a token OUT of the
- * context is worth far more than shortening the reply that mentions it.
+ * This is the whole architecture argument in one line. With t = 0, T = 41 and 1h
+ * caching it is 6.0x the input rate — 2.0 + 0.1 x 40, the case `cost-meter.test.ts`
+ * pins — which is why keeping a token OUT of the context is worth far more than
+ * shortening the reply that mentions it.
  */
 export function positionalMultiplier(t: number, T: number, m: RateMultipliers, ttl: "1h" | "5m" = "1h"): number {
   return writeComponent(m, ttl) + m.cacheRead * Math.max(0, T - 1 - t);
@@ -594,11 +595,6 @@ export interface CounterfactualReport {
    */
   unmatched: number;
   unmatchedUnits: RefusedMagnitude;
-  /**
-   * Refused rows whose magnitude could not be computed — no request matched, so
-   * the amount withheld is UNKNOWN rather than zero. Reported apart from the
-   * unit totals because a sum cannot say "and some unknown amount besides".
-   */
 
   /**
    * EVERY row the join refused, in one number. It exists because `ambiguous` was
@@ -664,22 +660,6 @@ export function isLocalToolResult(record: ToolResultRecord): boolean {
   return record.name !== null && /(^|__)(gate|repair)$/.test(record.name);
 }
 
-/**
- * Narrow the telemetry log to rows this session could plausibly own.
- *
- * The rule that matters: a row is admitted past the time window ONLY when this
- * transcript actually recorded its `invocation_id`. Admitting every id-bearing
- * row on the assumption that the join would drop the foreign ones is unsafe,
- * because the join can be unavailable (`provenanceUnavailable`) — and then the
- * entire telemetry history, every past session of this project, falls through to
- * the timestamp branch and gets attributed here. That inflates `savedFraction`,
- * which is B12, which is `G-stop`: the exact direction of error this meter
- * exists to prevent.
- *
- * Ids this transcript knows skip the window on purpose: the join is exact for
- * them, and a long-running `repair` can finish well after the last billed
- * request through no fault of its own.
- */
 /**
  * Invocation ids carried by more than one session, which therefore belong to
  * none of them.
@@ -833,6 +813,22 @@ export function unitsAddedByInstallation(
   return units;
 }
 
+/**
+ * Narrow the telemetry log to rows this session could plausibly own.
+ *
+ * The rule that matters: a row is admitted past the time window ONLY when this
+ * transcript actually recorded its `invocation_id`. Admitting every id-bearing
+ * row on the assumption that the join would drop the foreign ones is unsafe,
+ * because the join can be unavailable (`provenanceUnavailable`) — and then the
+ * entire telemetry history, every past session of this project, falls through to
+ * the timestamp branch and gets attributed here. That inflates `savedFraction`,
+ * which is B12, which is `G-stop`: the exact direction of error this meter
+ * exists to prevent.
+ *
+ * Ids this transcript knows skip the window on purpose: the join is exact for
+ * them, and a long-running `repair` can finish well after the last billed
+ * request through no fault of its own.
+ */
 export function scopeTelemetry(
   transcript: Transcript,
   telemetry: TelemetryRecord[],

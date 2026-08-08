@@ -1,7 +1,10 @@
 /**
- * Shared fixtures for the B12 scorer's three per-unit oracles.
+ * Shared fixtures for the B12 scorer's four per-unit oracles — `b12-strata`
+ * (UNIT 1), `b12-terms` (UNIT 2), `b12-aggregate` (UNIT 3) and `b12-coverage`
+ * (UNIT 4). It was three when the rule below was written; UNIT 4 arrived later
+ * and this file imports its module directly.
  *
- * WHY THREE FILES AND NOT ONE. The first attempt put all thirteen assertions in
+ * WHY SEPARATE FILES AND NOT ONE. The first attempt put all thirteen assertions in
  * `tests/b12-scorer.test.ts`, and `repair` runs the PROJECT's test command — so a
  * unit could only return `passed: true` once every OTHER unit was implemented
  * too. `run 2026-08-06-mac-b12-phase3` measured the consequence: `repair`
@@ -317,9 +320,18 @@ export function aggregateInput(
 }
 
 /**
- * Twenty admitted observations, five per stratum cell, which is the smallest set
- * the frozen design will score: `admissionRule` 2 fixes the count at exactly 20
- * and `holdsIf` 3 wants five in each of the four cells.
+ * Twenty admitted observations — the smallest set the frozen design will score,
+ * since `admissionRule` 2 fixes the count at exactly 20 and `holdsIf` 3 wants
+ * five in each of the four cells.
+ *
+ * **TEN per cell, not five.** The four cells are two OVERLAPPING two-way splits
+ * of the same twenty — `test-red`/`types-only` on `n % 2`, and `solo`/`multi` on
+ * `n % 4 < 2` — so every observation sits in one cell of each split and each of
+ * the four holds ten. That is twice `holdsIf` 3's floor, so no oracle built on
+ * this fixture is sensitive to the boundary. The `>= 5` / `> 5` distinction is
+ * pinned separately, by the hand-built five-observation cell in
+ * `tests/b12-aggregate.test.ts` — a cell holding exactly five is the only
+ * population that can tell those two rules apart.
  *
  * Anything below it now VOIDs on the count before any arithmetic is read, so a
  * two-observation fixture can no longer say anything about a verdict.

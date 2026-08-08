@@ -163,9 +163,19 @@ export interface ToolDeps {
   onAttempt?: (attempt: GenerationAttempt) => void;
   /**
    * Context window to judge the request against, bypassing both the config
-   * setting and the `lms` probe. `repair` passes its own already-resolved value
-   * so the loop does not re-probe once per round, and tests use it to exercise
-   * the pre-flight without a fake runner. `null` explicitly disables the check.
+   * setting and the `lms` probe. Tests use it to exercise the pre-flight without
+   * a fake runner. `null` explicitly disables the check.
+   *
+   * `repair` deliberately does NOT forward its own resolved value into the loop:
+   * each round resolves its own model and therefore its own window, so a value
+   * resolved once up front would be the wrong one from round two. What the
+   * CALLER put in `deps` still wins all the way down — which is how the suite
+   * stays offline. See the comment above `repairLoop`'s call site.
+   *
+   * `LOCAL_CODER_CONTEXT_TOKENS` is NOT this field and does NOT skip the probe:
+   * it lands in `config.contextTokens`, which `resolveContextTokens` reconciles
+   * with a live `lms ps` and returns the SMALLER of. This field is the only
+   * short-circuit there is.
    */
   contextTokens?: number | null;
 }

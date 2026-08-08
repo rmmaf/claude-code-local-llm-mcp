@@ -1,9 +1,12 @@
 /**
  * The vocabulary of B12's scorer. TYPES ONLY — no arithmetic lives here.
  *
- * This file exists so the three units under `src/cost/b12/` agree about what
+ * This file exists so the four units under `src/cost/b12/` agree about what
  * they are passing each other before any of them is implemented, and so `tsc`
- * enforces that agreement while the bodies are still `throw`. It sits under
+ * enforces that agreement while the bodies are still `throw`. **Both clauses
+ * record why the file was written, not where things stand: all four bodies are
+ * implemented and their oracles green since `coverage.ts` landed, and the count
+ * was three until UNIT 4 joined them.** It sits under
  * `src/` on purpose: `tsconfig.json` covers `src/**` and `tests/**` but not
  * `scripts/**`, so a scoring type defined in a script would be checked by
  * nothing — and this vocabulary is production code besides. `contract-probe.ts`
@@ -232,7 +235,6 @@ export interface SubagentShare {
   stratum: "solo" | "multi";
 }
 
-/** The four cells `holdsIf` 3 requires to be evaluable and on one side of 30%. */
 /**
  * One cell's bracket, WITH THE TWO POPULATIONS IT WAS BUILT FROM.
  *
@@ -270,6 +272,7 @@ export type StratumCell = Evaluable<number> & {
   priced: number;
 };
 
+/** The four cells `holdsIf` 3 requires to be evaluable and on one side of 30%. */
 export interface StrataCells {
   testRed: StratumCell;
   typesOnly: StratumCell;
