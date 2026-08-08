@@ -29,9 +29,9 @@ to send. Re-pick the ladder before any future run; do not re-type its numbers.
 **Two byte-identical duplications found, deliberately NOT fixed** — a refactor,
 not a doc pass: `wordCap` (scaffold/shared) and `emptyLedger` (coverage/terms).
 
-**`b12-scorer-selftest.sh` has not been RUN** since the stub guard's refusal text
-changed. Its asserted substring survives and `bash -n` passes — but that is
-parsing, not running, which is the exact failure that file exists to prevent.
+**`b12-scorer-selftest.sh` RAN and passed** — 50 checks, exit 0, on the Mac at
+`29ef22b`, including `a pin that is not actually a stub refuses`, the one the
+guard's rewritten refusal could have broken.
 
 ## Do not redo
 
