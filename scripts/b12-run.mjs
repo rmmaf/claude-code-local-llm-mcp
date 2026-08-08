@@ -431,6 +431,18 @@ function resolveMcpConfig(manifest) {
  * hitting one on an already-registered run stops the harness but does NOT erase
  * the owed `result.json` — that debt is the operator's, not this exit code's.
  */
+/**
+ * The observation directory's name, attempt N. `admissionRule` 12 archives BOTH
+ * attempts of a re-run, and one name per task/arm cannot hold two — so a first
+ * attempt is `obs-<taskId>-<arm>` (every existing archive keeps its name) and a
+ * re-run is `obs-<taskId>-<arm>-r<N>`. The scorer's `parseObsDirName`
+ * (`src/cost/b12/archive.ts`) reads this grammar back; the round trip is the
+ * negative control in `tests/cost-meter.test.ts`.
+ */
+export function obsDirName(taskId, arm, attempt) {
+  return `obs-${taskId}-${arm}${attempt === 1 ? "" : `-r${attempt}`}`;
+}
+
 export function manifestDeclarationGaps(manifest) {
   const gaps = [];
   const str = (v) => typeof v === "string" && v.length > 0;
@@ -1644,7 +1656,17 @@ async function observe(args) {
   invalid.push(...instructionDriftReasons(instructionPre, instructionPost));
 
   const runId = manifest.runId ?? "b12-unnamed";
-  const dir = path.join(REPO, "evidence", runId, `obs-${task.id}-${arm}`);
+  // A RE-RUN GETS ITS OWN DIRECTORY, `obs-<taskId>-<arm>-r<N>`. `admissionRule`
+  // 12 says "Both attempts are archived and both fractions published", and one
+  // directory per task/arm cannot hold two attempts — the second write would
+  // overwrite the first's evidence or trip the commit barrier against HEAD's
+  // blobs, both of which destroy exactly what the clause preserves. Found by
+  // the UNIT-5 plan gate (FINDINGS.md); the scorer's `parseObsDirName` reads
+  // the same grammar back — the round trip is pinned in `cost-meter.test.ts`.
+  // Which attempt SCORES is the scorer's registered convention, not decided here.
+  let attempt = 1;
+  while (existsSync(path.join(REPO, "evidence", runId, obsDirName(task.id, arm, attempt)))) attempt++;
+  const dir = path.join(REPO, "evidence", runId, obsDirName(task.id, arm, attempt));
   mkdirSync(dir, { recursive: true });
 
   // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the

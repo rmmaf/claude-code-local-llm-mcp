@@ -1861,6 +1861,24 @@ defect, and it pinned four of them in place.
     sustained rule and the give-up branch are untouched. No delta existed
     when this was written: the probe refused at replicate 1, treatment,
     before any pair completed, and that refusal transcript is the evidence.
+- **Pre-declared, 2026-08-08, before any run exists — the ANALYSIS SESSION and
+  the clause 4–6 AUDIT.** Three obligations the UNIT 5 pass surfaced
+  (`UNIT-5.md` "What it creates"; the plan gate's R7/R9, `FINDINGS.md`), added
+  now because after a run is registered they would be rules minted mid-game:
+  1. **The analysis session's transcript is COMMITTED with the run.**
+     `admissionRule` 2 makes "R computed on a partial set" a machine-checkable
+     VOID only if the session that computed it can be read; the scorer reads
+     `.local-coder/telemetry.jsonl` by construction, so this session exists on
+     every scored run.
+  2. **The analysis session is FORBIDDEN from the manifest** — `voidConditions`
+     9 in its own words: "VOID if the session computing the verdict is in the
+     manifest."
+  3. **The scoring invocation requires a COMMITTED clause 4–6 audit artifact**
+     (verdict AND inputs, published on `result.json`'s face for artifact 11's
+     replay). `assemble` takes the audit as an input and publishes clauses 4–6
+     as UNCHECKED when none is supplied — never as "clean" — and **a verdict
+     emitted without one is not final**. The audit computer itself is not yet
+     written; it is a named blocker of a lawful run (`STATE.md`), beside F23.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and

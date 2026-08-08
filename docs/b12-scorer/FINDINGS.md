@@ -404,25 +404,76 @@ and the artifact's own note says the argv is NOT byte-for-byte before a
 manifest exists. The registered argv components stay pinned; the
 sessions-really-ran boundary stays registered above.
 
+**SHIPPED 2026-08-08 — THE UNIT 5 PASS: artifacts 7 and 11, through a plan
+gate.** A Codex gate ran on the PLAN before a line was written — 14 verdicts:
+4 CONFIRM, 5 REFINE (all conceded), 3 REFUTE (two conceded in form and defended
+in substance, one conceded whole), 1 UNDERDETERMINED — and the adjudication is
+in the plan file and summarized here where it changed the shipped shape.
+
+- **The assembler exists**: `archive.ts` (impure — paths, git facts and the
+  register in; a validated `RunArchive` value out; telemetry identity stamped
+  ONCE, keyed on the archive path), `assemble.ts` (pure — dispositions, the
+  committed-order replay, the archive-level clauses 2/7/8/9/11/12/13/14/19/20,
+  `ambiguousIds` run-level, one `computeTerms` per attempt, `runCoverage`,
+  `aggregate`), `emit.ts` (thin — writes BOTH artifacts even on a VOID, never
+  commits). The parser gained its pure half (`transcriptFromRecords`) so the
+  archive feeds the SAME rule the live read does — one rule, two feeders.
+- **Artifact 7 ships wide**: per attempt, both-horizon terms, the per-row
+  vector, the four-class ledgers, subagent share, requests-per-segment, rate
+  keys, SHAs, the SEVEN instruction components pre/post with an EXPLICIT
+  absence-of-aggregate marker (the VOID-21 registration, not a minted hash),
+  both MCP-config facts, F20's dual-reporting inputs, and the pre-declared
+  `A_o + S_o > 0` report per admitted observation (gate R8: counterfactual.json
+  only — artifact 8's inventory is not a licence to enlarge result.json).
+- **Artifact 11's replay runs the REAL path over a COMMITTED fixture archive**
+  (`tests/fixtures/b12-run/` — test material, never evidence):
+  `readRunArchive → assembleRun → emitRun`, the bracket, jackknives, `R_all`,
+  `R_hi⁺`, strata and every admission condition recomputed by hand (gate S4
+  refuted "wait for a real run"; the residue that IS still owed: no archive of
+  a REAL run exists until one runs).
+- **TWO REGISTERED CONVENTIONS, labelled on the artifact** (the
+  `selection.basis` precedent): disposition-name precedence = the closed
+  list's published order, with every fired predicate on the face (gate R4
+  refuted "derived from the frozen text" — it is a convention and says so);
+  a re-run's scored attempt = the LAST (`admissionRule` 12 archives both and
+  publishes both fractions but never says which scores).
+- **`voidConditions` 8 FIRES ON EVERY RUN, by design, until F23's pass** — the
+  artifact carries two byte sums, not two brackets; an assembler that skipped
+  the unimplementable half would publish "no void" over a condition it did not
+  check (gate R6 CONFIRM).
+- **The clause 4–6 audit is an INPUT** with its verdict and inputs on the
+  face; `{ran: false}` yields `uncheckedClauses`, never "clean", and the
+  pre-declaration (`PREMISES.md § B12`) now bars a final verdict without a
+  committed audit (gate R7: `{ran:false}` alone cannot discharge the clauses).
+  **The audit computer is a named blocker of a lawful run** — nobody has
+  written it.
+- **Found by the gate, fixed in the pass** (no own finding number): the obs
+  directory `obs-<taskId>-<arm>` COLLIDES on a re-run, destroying what
+  `admissionRule` 12 preserves — the harness now suffixes `-r<N>` and the
+  scorer parses the same grammar back, round-tripped in the oracle.
+- **F25 at scoring time, registered**: a declaration failure the preflight
+  route cannot reach (hostile archive: `accepted` null with nothing else
+  fired, an unreadable record, a missing `installedChars`) is reported by
+  name in `declarationFailures`, the observation is never admitted (entailed
+  by rules 3/8, not chosen), NO disposition is minted, and the run-level
+  consequence falls out of clause 3's own arithmetic. **Registered limit:**
+  such an observation has no terms, so it is absent from `R_hi⁺`'s "every
+  observation" domain — the omission is published on the artifact rather than
+  papered, and the frozen text supplies no disposition that could carry it.
+- **Registered limit, verdict precedence**: when archive-level clauses fire,
+  the run's `voidClause` names the FIRST in table order and the whole check
+  table is published — the frozen text ranks voids nowhere, so the order is a
+  labelled convention like the two above.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
-- **Artifacts 7 and 11**, which belong to UNIT 5 and could not be written until
-  the above landed — now unblocked.
-- **The `A_o + S_o > 0` assertion-and-report** the pre-declaration names: it
-  lives where `A_o` and `S_o` first exist, which is the assembler, not the
-  harness.
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced
   mechanically by the calibration-key refusal above the moment a manifest
   carries blobs.
-
-Two dependent gaps fall out of the same hole:
-
-- `design.artifacts` 7 (`counterfactual.json`) demands the version, base and end
-  SHAs, the tree hash, and the **instruction-set and memory hashes** per
-  observation. Nothing records the last two anywhere.
-- `design.artifacts` 11 owes a replay test that recomputes every figure and
-  "EVERY admission condition **from the committed archive alone**". That test
-  cannot be written against an archive that does not carry the inputs.
+- **The clause 4–6 audit computer** (see the UNIT 5 block above) — the input
+  seam and the pre-declaration exist; the tool does not.
+- **A REAL run's committed archive** for artifact 11's replay — the fixture
+  replay exercises the full path; only a run can supply the real object.
 
 **Two readings of mine were REFUTED and are recorded as refuted:**
 
@@ -542,6 +593,19 @@ no-minted-disposition argument holds only before registration, and hitting the
 refusal on a registered run does not erase the owed `result.json`. **The finding
 stays OPEN as stated**: the encoding gap in the frozen text is unreachable on a
 compliant run now, not closed.
+
+**THE SCORING-TIME BEHAVIOUR IS REGISTERED TOO, 2026-08-08 (the UNIT 5 pass),
+because a hostile archive can still reach the gap.** The plan gate refuted
+leaving it as an implementation convention. What `assemble` does, registered
+here rather than implied by code: the observation is reported by name in
+`declarationFailures` (F25 cited), it is never admitted — entailed by
+`admissionRule` 3 (a task is scored only against its committed predicate) and
+8 (the declaration is required), not chosen — NO disposition is minted, no
+throw occurs, and the run-level consequence follows from clause 3's own
+arithmetic. A PRESENT-but-corrupt stratum string keeps its terms and flows
+through `partitionByStrata.unknownStratum`, the shipped defence in depth. The
+gap itself remains exactly as stated above: OPEN, an encoding gap in the
+frozen text.
 
 ---
 

@@ -678,3 +678,295 @@ export interface B12Result {
   /** Quoted from the frozen design so the artifact carries its own standard. */
   thresholds: { hold: 0.3; fall: 0.15 };
 }
+
+// ---------------------------------------------------------------------------
+// UNIT 5 — the assembler's vocabulary. `archive.ts` produces `RunArchive`;
+// `assemble.ts` consumes it plus a `GitAudit` and returns the two artifacts.
+// ---------------------------------------------------------------------------
+
+/**
+ * One row of `evidence/<runId>.b12.runlog.jsonl`, as written by `observe()` —
+ * `design.artifacts` 10's machine-written row. The scorer replays the committed
+ * order (`voidConditions` 3) from these.
+ */
+export interface RunlogRow {
+  ts: string;
+  runId: string;
+  taskId: string;
+  arm: string;
+  sessionId: string;
+  outcome: string;
+  valid: boolean;
+  accepted: boolean | null;
+  originated: number;
+}
+
+/**
+ * One task of the sealed manifest, as the SCORER reads it. Fields are nullable
+ * as-read: the harness refuses an incomplete manifest before spending anything
+ * (`manifestDeclarationGaps`), but the scorer runs over a committed archive that
+ * may be hostile, and a missing declaration at THIS layer is `FINDINGS.md` F25 —
+ * reported, never defaulted, never a minted disposition.
+ */
+export interface ManifestTask {
+  id: string;
+  promptSha256: string | null;
+  baseCommit: string | null;
+  verificationStratum: string | null;
+  expectedSubagentStratum: string | null;
+  acceptance: string[] | null;
+  acceptanceExpectedExit: number | null;
+  verificationCommands: string[] | null;
+  gateCategory: string | null;
+  repairMaxRounds: number | null;
+  fileScope: string[] | null;
+}
+
+/** The sealed manifest, narrowed to what scoring reads. `raw` is the whole parse. */
+export interface RunManifest {
+  runId: string;
+  /** The ORDERED task list — the committed order `voidConditions` 3 protects. */
+  tasks: ManifestTask[];
+  /** Run-level pins (`design.artifacts` 1): version, binary sha, rates sha, caps… */
+  pinned: Record<string, unknown>;
+  abPairs: unknown;
+  raw: unknown;
+}
+
+/** A pre/post-observation snapshot, as archived. `requestIds` is the full list. */
+export interface SnapshotFacts {
+  ts: string | null;
+  slugsWalked: number | null;
+  files: number | null;
+  requestIds: string[];
+}
+
+/**
+ * The scorer-read subset of `observation.json`, one field per frozen consumer.
+ * Nullable as-read — see `ManifestTask`. `installedChars` keeps the harness's
+ * own two shapes: a value WITH provenance on the treatment arm, a NAMED absence
+ * on control (never 0 — one `O_o`, `PREMISES.md § B12`).
+ */
+export interface ObservationRecord {
+  taskId: string;
+  arm: string;
+  sessionId: string;
+  runId: string | null;
+  outcome: string | null;
+  valid: boolean | null;
+  invalidReasons: string[];
+  censored: boolean | null;
+  originatedRequestIds: string[];
+  accepted: boolean | null;
+  acceptanceExpectedExit: number | null;
+  baseCommit: string | null;
+  endCommit: string | null;
+  treeHashAtStart: string | null;
+  binaryVersion: string | null;
+  binarySha256: string | null;
+  mcpConfigPassedSha256: string | null;
+  mcpConfigPinned: string | null;
+  policyBlobSha256: string | null;
+  installedChars:
+    | { value: number; adapter?: string; probeRunId?: string }
+    | { value: null; reason: string }
+    | null;
+  memorySnapshotSha256: string | null;
+  /** The seven components, hashed pre and post — `design.covariates` 11. */
+  instructionHashes: { pre: Record<string, string | null>; post: Record<string, string | null> } | null;
+}
+
+/**
+ * One archived observation directory (`evidence/<runId>/obs-<taskId>-<arm>[-rN]/`),
+ * read back as a value.
+ *
+ * `identified` is stamped by `archive.ts`, ONCE, with the repo-relative
+ * `telemetry.jsonl` path as `source` — there is no run-level log, the archive
+ * path IS the identity source (UNIT-5.md step 2, corrected), and nothing
+ * downstream may re-identify a slice.
+ *
+ * `transcript` is the FULL lineage rebuilt from `archive.json`'s reduced
+ * records through `transcriptFromRecords` — the parser's own pure half, fed
+ * from the archive instead of from files. Null when the lineage cannot be
+ * rebuilt, with the reason in `problems`.
+ */
+export interface ArchivedObservation {
+  taskId: string;
+  arm: string;
+  /** 1 for `obs-<t>-<arm>`, N for `obs-<t>-<arm>-rN` (`admissionRule` 12). */
+  attempt: number;
+  /** Repo-relative directory. */
+  dir: string;
+  record: ObservationRecord | null;
+  /** `archive.json`'s lineage records, flat, in file order — for predicates that
+   * need raw content (instrument-write detection reads tool_use inputs). */
+  lineageRecords: unknown[];
+  lineageFiles: string[];
+  transcript: import("../transcript.js").Transcript | null;
+  identified: IdentifiedRow[];
+  telemetrySource: string;
+  invocationIds: string[];
+  snapshotBefore: SnapshotFacts | null;
+  snapshotAfter: SnapshotFacts | null;
+  problems: string[];
+}
+
+/** The register `voidConditions` 1 reads, plus what the cross-check could not reconcile. */
+export interface RunRegister {
+  priorRuns: PriorRun[];
+  /** Manifests with no MEASUREMENTS row, rows with no manifest — reported, per
+   * clause 1's CONJUNCTIVE registration ("committed AND … by the same command"). */
+  discrepancies: string[];
+}
+
+/**
+ * Facts only git can answer, collected by the impure layer and consumed as
+ * VALUES by `assemble` — the same boundary the spec draws for the clause 4–6
+ * audit. Null with a problem when git was unavailable.
+ */
+export interface RunGitFacts {
+  /** `HEAD:evidence/<runId>.b12.tasks.json`, for artifact 1's blob-hash-in-summary. */
+  manifestBlobSha256: string | null;
+  /** Commits touching the manifest dated after the earliest session start — artifact 1 voids on any. */
+  manifestCommitsAfterStart: string[];
+  /** The rates blob at the frozen commit `3541625`, for `voidConditions` 4's byte-identity. */
+  ratesSha256AtFrozenCommit: string | null;
+  problems: string[];
+}
+
+/**
+ * Everything scoring reads, as one value. Produced by `archive.ts` (impure),
+ * consumed by `assemble.ts` (pure). Hostile-disk findings land in `problems`
+ * (run-level) and per-observation `problems` — reported, never thrown: the
+ * result artifact is owed whatever the archive looks like (`admissionRule` 1).
+ */
+export interface RunArchive {
+  runId: string;
+  manifest: RunManifest;
+  /** sha256 of the manifest bytes as read from disk. */
+  manifestSha256: string;
+  observations: ArchivedObservation[];
+  runlog: { rows: RunlogRow[]; corruptLines: number };
+  /** Loaded rates with the manifest's measured `clientTruncationCap` overlaid. */
+  rates: import("../rates.js").Rates;
+  /** sha256 of the rates bytes as read — compared against the manifest pin AND
+   * the frozen-commit blob (`voidConditions` 4). */
+  ratesSha256: string;
+  git: RunGitFacts;
+  register: RunRegister;
+  problems: string[];
+}
+
+/**
+ * The clause 4–6 audit, taken as an INPUT — the spec's own boundary: those
+ * clauses are facts about git history, not about the archive. Its verdict AND
+ * inputs are published on the result face so `design.artifacts` 11 can replay
+ * the decision; `{ran: false}` is NEVER read as "passed" — the clauses it
+ * covers appear in `uncheckedClauses` and the pre-declaration
+ * (`PREMISES.md § B12`) bars a final verdict without a committed audit.
+ */
+export type GitAudit =
+  | { ran: true; verdict: "clean" | "void"; reasons: string[]; inputs: Record<string, string> }
+  | { ran: false };
+
+/** One archive-level clause check, on the artifact's face whether or not it fired. */
+export interface ArchiveCheck {
+  clause: string;
+  fired: boolean;
+  detail: string;
+}
+
+/** A task/arm the frozen text gives NO disposition for — `FINDINGS.md` F25. */
+export interface DeclarationFailure {
+  taskId: string;
+  arm: string;
+  attempt: number;
+  reasons: string[];
+}
+
+/**
+ * One observation of `evidence/<runId>.b12.counterfactual.json` —
+ * `design.artifacts` 7's inventory, per observation.
+ *
+ * `instructionComponents` are the SEVEN components pre/post, never an
+ * aggregate: the VOID-21 composition is unadjudicated and minting a canonical
+ * instruction-set hash was declined (`FINDINGS.md` F24) — `aggregateHash`
+ * carries that absence as a named fact instead of a value.
+ */
+export interface CounterfactualObservation {
+  taskId: string;
+  arm: string;
+  attempt: number;
+  disposition: Disposition;
+  /** Every disposition predicate that matched, not only the named one — the
+   * precedence is a REGISTERED CONVENTION and this is what makes it checkable. */
+  firedPredicates: string[];
+  aO: number;
+  sLo: number;
+  sHi: number;
+  /** Treatment: the calibrated value. Control: the named absence. */
+  oO: number | { value: null; reason: string };
+  /** `A_o + S_o > 0`, asserted per admitted observation and REPORTED, deciding
+   * nothing (`PREMISES.md § B12`). Null on a non-admitted observation. */
+  aPlusSPositive: boolean | null;
+  rows: KeyedRow[];
+  refusals: RefusalLedger;
+  unattributedRefusals: RefusalLedger;
+  subagentShare: Evaluable<SubagentShare>;
+  requestsPerSegment: Array<{ thread: string; segment: number; requests: number }>;
+  rateKeys: string[];
+  perTaskDenominatorShare: number | null;
+  binaryVersion: string | null;
+  binarySha256: string | null;
+  baseCommit: string | null;
+  endCommit: string | null;
+  treeHashAtStart: string | null;
+  instructionComponents: ObservationRecord["instructionHashes"];
+  aggregateHash: { absent: true; reason: string };
+  memorySnapshotSha256: string | null;
+  mcpConfigPinned: string | null;
+  mcpConfigPassed: string | null;
+  /** F20's dual reporting: what a reader needs to recompute `voidConditions` 16
+   * under the other reading of "excluded". */
+  holdExcluded: boolean;
+  gateRepairCalls: number;
+  wouldHaveAddedSum: number;
+  wouldHaveAddedUnsized: number;
+}
+
+/** `evidence/<runId>.b12.counterfactual.json` — `design.artifacts` 7. */
+export interface B12Counterfactual {
+  schema: "b12-counterfactual/1";
+  runId: string;
+  observations: CounterfactualObservation[];
+  declarationFailures: DeclarationFailure[];
+}
+
+/**
+ * `evidence/<runId>.b12.result.json` — `design.artifacts` 8, which is
+ * `B12Result` plus the archive-level face UNIT 5 adds: the clause checks, the
+ * audit, the registered conventions' labels, and the id set `voidConditions` 19
+ * compares. When an archive-level clause fires, `verdict`/`voidClause` here
+ * OVERRIDE `aggregate()`'s — a void the arithmetic cannot see is still a void.
+ */
+export interface B12RunResult extends B12Result {
+  schema: "b12-result/1";
+  manifestSha256: string;
+  manifestBlobSha256: string | null;
+  archiveChecks: ArchiveCheck[];
+  /** Clauses no input allowed anyone to check — 4–6 while `gitAudit.ran` is false.
+   * NEVER empty silently: an unchecked clause published as no-void is the shape
+   * `voidConditions` 8's handling refuses one clause over. */
+  uncheckedClauses: string[];
+  gitAudit: GitAudit;
+  declarationFailures: DeclarationFailure[];
+  /** The registered convention the disposition names were picked under. */
+  dispositionPrecedence: string;
+  /** `voidConditions` 19: the id set the ambiguity check saw, sorted. */
+  ambiguityIdSet: string[];
+  scoringCommand: { pinned: string | null; actual: string | null };
+  /** `admissionRule` 12's re-runs: every attempt reported, the scored one named
+   * (the LAST — a registered convention; the frozen text does not say which). */
+  reruns: Array<{ taskId: string; arm: string; attempts: number; scoredAttempt: number }>;
+  archiveProblems: string[];
+}

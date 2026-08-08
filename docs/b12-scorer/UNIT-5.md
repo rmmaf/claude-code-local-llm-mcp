@@ -33,6 +33,22 @@ four units below it were designed to make it.
 > `RawRecord`, the parser's own declared field set, held to it by a type-level
 > assert — so step 5 below has a lineage to hand `computeTerms`.
 
+> **SHIPPED 2026-08-08, THROUGH A PLAN GATE — AND THE HEADER ABOVE IS NOW
+> HISTORY.** The F24 harness half landed first (`installedChars` with
+> provenance, the seven instruction hashes, the restored memory — see
+> `FINDINGS.md` F24), and then this unit: `archive.ts` / `assemble.ts` /
+> `emit.ts`, with `transcriptFromRecords` extracted so the archive feeds the
+> parser's own rule. The Codex gate on the PLAN corrected four things this
+> spec's reader should know: the disposition-name precedence and the re-run's
+> scored attempt are REGISTERED CONVENTIONS labelled on the artifact, not
+> derivations; clause 8 fires on every run until F23's pass, by design; the
+> clause 4–6 audit is a required INPUT whose absence is published as
+> `uncheckedClauses` (and the audit computer is a named blocker, unwritten);
+> and artifact 11's replay runs the real path over a committed FIXTURE archive
+> now — the residue being that no REAL run's archive exists until one runs.
+> Step 1's F25 handling gained a registered scoring-time route
+> (`declarationFailures`, no minted disposition — `FINDINGS.md` F25).
+
 **NOT PART OF THE PHASE-3 EXPOSURE.** Phase 3 is closed at 1 of 3 and `repair`
 gets no further draw (`PREMISES.md § B12`). UNITs 1–3 were the measured task;
 this is orchestrator work, authored directly, and is not evidence about a local

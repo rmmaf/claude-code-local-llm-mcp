@@ -2490,6 +2490,36 @@ describe("the B12 harness", () => {
     ).rejects.toThrow(/REFUSED/);
   });
 
+  describe("the UNIT-5 pass: the re-run directory grammar, round-tripped", () => {
+    // `admissionRule` 12 archives BOTH attempts; one directory name per
+    // task/arm cannot hold two, so the harness suffixes re-runs and the
+    // scorer's `parseObsDirName` must read the same grammar back — two halves
+    // of one rule, compared here so they cannot drift apart.
+    it("what the harness writes, the scorer parses — and a first attempt keeps its name", async () => {
+      const { obsDirName } = await import("../scripts/b12-run.mjs");
+      const { parseObsDirName } = await import("../src/cost/b12/archive.js");
+      expect(obsDirName("t1", "treatment", 1)).toBe("obs-t1-treatment");
+      expect(parseObsDirName(obsDirName("t1", "treatment", 1))).toEqual({
+        taskId: "t1",
+        arm: "treatment",
+        attempt: 1,
+      });
+      expect(parseObsDirName(obsDirName("fix-the-parser", "control", 3))).toEqual({
+        taskId: "fix-the-parser",
+        arm: "control",
+        attempt: 3,
+      });
+    });
+
+    it("the negative control: a name neither side owns parses to nothing", async () => {
+      const { parseObsDirName } = await import("../src/cost/b12/archive.js");
+      // `-r1` is a name the harness NEVER writes (attempt 1 is unsuffixed), so
+      // accepting it would let a fabricated duplicate directory shadow a first
+      // attempt.
+      expect(parseObsDirName("obs-t1-treatment-r1")).toBeNull();
+    });
+  });
+
   describe("the F24 pass: every new guard shown FIRING", () => {
     // The house rule — `DECISIONS.md § a check that cannot fail is worse than no
     // check` — applied to the guards this pass added, the same shape VOID 6

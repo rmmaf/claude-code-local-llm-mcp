@@ -1,0 +1,33 @@
+{
+  "runId": "replay-01",
+  "pinned": {
+    "claudeCodeVersion": "2.1.221",
+    "claudeBinarySha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "ratesSha256": "b2021e1386c2f022bd81a161aff95e17c4678d54c135bf202c0cc8efd162c9fc",
+    "clientTruncationCap": 30000,
+    "pacingCacheWriteShareCeiling": 1,
+    "perTaskDenominatorShareCap": 0.5,
+    "scoringCommand": "node dist/cost/b12/emit.js replay-01",
+    "memorySnapshotSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "mcpConfigSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "b12RunSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "claudeMdSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "abPairs": [],
+  "tasks": [
+    {
+      "id": "t1",
+      "prompt": "Fix the failing type in src/example.ts.",
+      "promptSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "baseCommit": "0000000000000000000000000000000000000000",
+      "verificationStratum": "types-only",
+      "expectedSubagentStratum": "solo",
+      "acceptance": ["node -e \"process.exit(0)\""],
+      "acceptanceExpectedExit": 0,
+      "verificationCommands": ["npx tsc --noEmit"],
+      "gateCategory": "types",
+      "repairMaxRounds": 3,
+      "fileScope": ["src/"]
+    }
+  ]
+}

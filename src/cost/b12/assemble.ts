@@ -1,0 +1,966 @@
+/**
+ * UNIT 5, the pure core — `RunArchive` + `GitAudit` in, both artifacts out.
+ * Specified by `docs/b12-scorer/UNIT-5.md` as adjudicated in `FINDINGS.md`
+ * (F23–F25) and by the plan gate recorded there: every rule here is a function
+ * of values, every hostile case is constructible without a filesystem, and
+ * NOTHING THROWS to avoid producing an artifact — `admissionRule` 1 owes one
+ * from registration onward, and an exception is the one outcome the frozen
+ * design does not allow.
+ *
+ * TWO REGISTERED CONVENTIONS LIVE HERE, both labelled on the artifact rather
+ * than buried (the `selection.basis` precedent, `FINDINGS.md` F20):
+ *
+ * - **Disposition precedence.** More than one void predicate can be true of one
+ *   observation and the closed list is a single field. The name is picked by
+ *   the order `design.admissionRule`'s opening sentence enumerates the list —
+ *   A CONVENTION, not a frozen rule (the plan gate refuted "derived") — and
+ *   every predicate that fired is published per observation so the pick is
+ *   checkable.
+ * - **A re-run's scored attempt.** `admissionRule` 12 archives both attempts
+ *   and publishes both fractions but does not say which one is the
+ *   observation. The LAST attempt is — a re-run exists to replace — and every
+ *   attempt still gets terms, so both fractions ARE published.
+ *
+ * WHAT THIS FILE DOES NOT DECIDE: `voidConditions` 21's instruction-set-hash
+ * composition and 12's pinned-vs-passed basis (owner adjudications, recorded);
+ * the clause 4–6 audit (an INPUT — facts about git history, not this archive);
+ * F23's second bracket (its own pass — clause 8 fires here until it lands);
+ * F25's encoding gap (reported by name, never given a minted disposition).
+ */
+
+import {
+  breakdownOfRequests,
+  buildCounterfactual,
+  buildSessionReport,
+  invocationOwners,
+  isLocalToolResult,
+  scopeTelemetry,
+} from "../report.js";
+import { rateKey } from "../rates.js";
+import type { Transcript } from "../transcript.js";
+import { aggregate } from "./aggregate.js";
+import { runCoverage } from "./coverage.js";
+import { computeTerms } from "./terms.js";
+import type {
+  ArchiveCheck,
+  ArchivedObservation,
+  B12Counterfactual,
+  B12Observation,
+  B12RunResult,
+  CounterfactualObservation,
+  DeclarationFailure,
+  Disposition,
+  GitAudit,
+  IdentifiedRow,
+  ManifestTask,
+  ObservationTerms,
+  RunArchive,
+} from "./types.js";
+
+/**
+ * The registered precedence — the closed list's own published order, minus the
+ * two non-void members. A convention with a label, not a derivation.
+ */
+export const DISPOSITION_PRECEDENCE: readonly Exclude<
+  Disposition,
+  "scored" | "not_started"
+>[] = [
+  "void(execution_error)",
+  "void(version_drift)",
+  "void(instrument_write)",
+  "void(rate_key_mixed)",
+  "void(withheld)",
+  "void(sibling_inheritance)",
+  "void(task_failed)",
+  "void(pacing)",
+];
+
+export const DISPOSITION_CONVENTION =
+  "first matching predicate in the closed list's published order — a REGISTERED CONVENTION (FINDINGS.md, UNIT 5 pass), checkable via firedPredicates";
+
+/** The instruction components clause 12 compares; `memory` belongs to clause 13. */
+const CLAUSE_12_COMPONENTS = ["claudeMd", "settings", "settingsLocal", "mcpConfigPassed", "policyBlob"] as const;
+
+/**
+ * `admissionRule` 7's three named triggers, textual. The archive keeps
+ * `tool_use` inputs verbatim (the reduction keeps `message.content`), so the
+ * scan is over what the session actually asked its tools to do. Best-effort BY
+ * NATURE — the frozen text names the acts, not a detection procedure — and the
+ * miss direction is stated: a trigger spelled unrecognisably scans clean, which
+ * is why the harness-side run-level VOID exists too.
+ */
+export function instrumentWriteTriggers(lineageRecords: readonly unknown[]): string[] {
+  const markers = ["session-token-walk", "cost/cli", ".local-coder/telemetry.jsonl"];
+  const hits = new Set<string>();
+  for (const raw of lineageRecords) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const message = (raw as { message?: { content?: unknown } }).message;
+    if (message === undefined || !Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (typeof block !== "object" || block === null) continue;
+      const b = block as Record<string, unknown>;
+      if (b.type !== "tool_use") continue;
+      // Windows spellings normalised before matching: a serialized `\\` path
+      // would otherwise hide `.local-coder\telemetry.jsonl` from the scan.
+      const serialized = JSON.stringify(b.input ?? "").replace(/\\\\/g, "/");
+      for (const marker of markers) {
+        if (serialized.includes(marker)) hits.add(marker);
+      }
+    }
+  }
+  return [...hits].sort();
+}
+
+/** Milliseconds per cache TTL — the two classes the rates name. */
+const TTL_MS = { "5m": 300_000, "1h": 3_600_000 } as const;
+
+export interface PacingFacts {
+  maxGapMs: number;
+  shortestTtlMs: number;
+  cacheWriteShare: number;
+  /** Null when within every ceiling; the reason otherwise. */
+  exceeded: string | null;
+}
+
+/**
+ * `admissionRule` 11 over one observation's OWN originated requests: the
+ * inter-request gap against the shortest cache TTL in play, and the cacheWrite
+ * share of `billed_o` against the manifest's frozen ceiling.
+ */
+export function pacingFacts(
+  transcript: Transcript,
+  owned: ReadonlySet<string>,
+  rates: import("../rates.js").Rates,
+  cacheWriteShareCeiling: number | null
+): PacingFacts {
+  const own = transcript.requests
+    .filter((r) => owned.has(r.requestId))
+    .sort((a, b) => a.timestampMs - b.timestampMs);
+  let maxGapMs = 0;
+  for (let i = 1; i < own.length; i++) {
+    maxGapMs = Math.max(maxGapMs, own[i]!.timestampMs - own[i - 1]!.timestampMs);
+  }
+  // "The shortest cache TTL in play": 5m the moment any request wrote to the
+  // 5-minute class, else 1h. A run with no cache writes still re-reads under
+  // some TTL; 1h is the permissive reading and the gap rule stays evaluable.
+  const anyFiveMin = own.some((r) => r.usage.cacheWrite5m > 0);
+  const shortestTtlMs = anyFiveMin ? TTL_MS["5m"] : TTL_MS["1h"];
+
+  const units = breakdownOfRequests(transcript.requests, rates, new Set(owned)).units;
+  const cacheWriteShare = units.total === 0 ? 0 : units.cacheWrite / units.total;
+
+  let exceeded: string | null = null;
+  if (own.length > 1 && maxGapMs > shortestTtlMs) {
+    exceeded = `max inter-request gap ${maxGapMs}ms exceeds the shortest cache TTL in play (${shortestTtlMs}ms)`;
+  } else if (cacheWriteShareCeiling !== null && cacheWriteShare > cacheWriteShareCeiling) {
+    exceeded = `cacheWrite share ${cacheWriteShare.toFixed(4)} exceeds the frozen ceiling ${cacheWriteShareCeiling}`;
+  }
+  return { maxGapMs, shortestTtlMs, cacheWriteShare, exceeded };
+}
+
+/** One scored-track candidate, everything its disposition was decided from. */
+interface Assessed {
+  obs: ArchivedObservation;
+  task: ManifestTask | null;
+  fired: Array<{ name: Disposition; detail: string }>;
+  disposition: Disposition | null;
+  declReasons: string[];
+  terms: ObservationTerms | null;
+  pacing: PacingFacts | null;
+  provenanceUnavailable: boolean | null;
+  requestsPerSegment: Array<{ thread: string; segment: number; requests: number }>;
+}
+
+export interface AssembleInput {
+  archive: RunArchive;
+  gitAudit: GitAudit;
+  /** The emitter's own invocation, for `voidConditions` 19. Null when unknown —
+   * reported as such, never defaulted to the pinned string. */
+  scoringCommandActual: string | null;
+}
+
+export interface AssembleOutput {
+  counterfactual: B12Counterfactual;
+  result: B12RunResult;
+}
+
+const pinnedStr = (pinned: Record<string, unknown>, key: string): string | null =>
+  typeof pinned[key] === "string" ? (pinned[key] as string) : null;
+const pinnedNum = (pinned: Record<string, unknown>, key: string): number | null =>
+  typeof pinned[key] === "number" && Number.isFinite(pinned[key] as number)
+    ? (pinned[key] as number)
+    : null;
+
+export function assembleRun(input: AssembleInput): AssembleOutput {
+  const { archive, gitAudit } = input;
+  const { manifest, rates } = archive;
+  const pinned = manifest.pinned;
+  const problems = [...archive.problems];
+  const checks: ArchiveCheck[] = [];
+  const declarationFailures: DeclarationFailure[] = [];
+  const taskById = new Map(manifest.tasks.map((t) => [t.id, t]));
+
+  // `admissionRule` 13: the control arm never enters the primary verdict — its
+  // observations (present only once the post-verdict A/B has run) are outside
+  // every arithmetic domain here, and their presence is reported.
+  const treatment = archive.observations.filter((o) => o.arm === "treatment");
+  const control = archive.observations.filter((o) => o.arm === "control");
+  checks.push({
+    clause: "admissionRule 13 — control arms",
+    fired: false,
+    detail:
+      control.length === 0
+        ? "no control observations in the archive"
+        : `${control.length} control observation(s) present — outside the primary verdict by rule, reported only`,
+  });
+
+  // ---- run-level joins, each computed ONCE --------------------------------
+  const universe: IdentifiedRow[] = treatment.flatMap((o) => o.identified);
+  const universeRecords = universe.map((r) => r.record);
+  const lineages: Transcript[] = treatment
+    .map((o) => o.transcript)
+    .filter((t): t is Transcript => t !== null);
+  // Run-level, each lineage ONE owner — `unitOfMeasurement`'s rule, and the
+  // reason `computeTerms` takes the set instead of deriving it.
+  const ambiguousIds = invocationOwners(lineages);
+  // `voidConditions` 19's "the id set the ambiguity check saw", published.
+  const ambiguityIdSet = [
+    ...new Set(
+      lineages.flatMap((t) =>
+        t.toolResults
+          .filter(isLocalToolResult)
+          .map((r) => r.invocationId)
+          .filter((id): id is string => id !== null)
+      )
+    ),
+  ].sort();
+
+  const cacheWriteCeiling = pinnedNum(pinned, "pacingCacheWriteShareCeiling");
+  const pinnedVersion = pinnedStr(pinned, "claudeCodeVersion");
+  const pinnedBinarySha = pinnedStr(pinned, "claudeBinarySha256");
+
+  // ---- per-attempt assessment ---------------------------------------------
+  // Temporal order for the cumulative-origination replay: runlog order first
+  // (the machine-written rows), archive order as the fallback.
+  const runlogOrder = new Map<string, number>();
+  archive.runlog.rows.forEach((row, i) => {
+    const key = `${row.taskId}/${row.arm}`;
+    if (!runlogOrder.has(key)) runlogOrder.set(key, i);
+  });
+  const temporal = [...treatment].sort((a, b) => {
+    const ka = runlogOrder.get(`${a.taskId}/${a.arm}`) ?? Number.MAX_SAFE_INTEGER;
+    const kb = runlogOrder.get(`${b.taskId}/${b.arm}`) ?? Number.MAX_SAFE_INTEGER;
+    return ka !== kb ? ka - kb : a.attempt - b.attempt;
+  });
+
+  const assessed: Assessed[] = [];
+  // `admissionRule` 4's cumulative union: every prior snapshot, both sides, and
+  // every previously completed observation's originated set.
+  const cumulative = new Set<string>();
+  for (const obs of temporal) {
+    assessed.push(
+      assessObservation(obs, {
+        task: taskById.get(obs.taskId) ?? null,
+        rates,
+        universe,
+        universeRecords,
+        ambiguousIds,
+        cumulative,
+        cacheWriteShareCeiling: cacheWriteCeiling,
+        pinnedVersion,
+        pinnedBinarySha,
+        declarationFailures,
+        problems,
+      })
+    );
+    for (const id of obs.snapshotBefore?.requestIds ?? []) cumulative.add(id);
+    for (const id of obs.snapshotAfter?.requestIds ?? []) cumulative.add(id);
+    for (const id of obs.record?.originatedRequestIds ?? []) cumulative.add(id);
+  }
+
+  // ---- admissionRule 12: attempts, and the one discretionary re-run --------
+  const byTask = new Map<string, Assessed[]>();
+  for (const a of assessed) {
+    const list = byTask.get(a.obs.taskId) ?? [];
+    list.push(a);
+    byTask.set(a.obs.taskId, list);
+  }
+  for (const list of byTask.values()) list.sort((a, b) => a.obs.attempt - b.obs.attempt);
+
+  const reruns: B12RunResult["reruns"] = [];
+  let discretionaryReruns = 0;
+  const overBudget = new Set<Assessed>();
+  for (const [taskId, list] of byTask) {
+    if (list.length > 1) {
+      reruns.push({
+        taskId,
+        arm: "treatment",
+        attempts: list.length,
+        // THE REGISTERED CONVENTION: the last attempt is the observation.
+        scoredAttempt: list[list.length - 1]!.obs.attempt,
+      });
+    }
+    for (let i = 1; i < list.length; i++) {
+      // A re-run consumes the discretionary budget unless the attempt it
+      // replaces was `void(version_drift)` — clause 12's own carve-out.
+      if (list[i - 1]!.disposition !== "void(version_drift)") {
+        discretionaryReruns++;
+        if (discretionaryReruns > 1) overBudget.add(list[i]!);
+      }
+    }
+  }
+  checks.push({
+    clause: "admissionRule 12 — one discretionary re-run",
+    fired: discretionaryReruns > 1,
+    detail:
+      discretionaryReruns > 1
+        ? `${discretionaryReruns} discretionary re-runs against a budget of 1 — the excess attempts are barred from admission; no voidConditions clause names this, so the run's fate falls to clause 3's own arithmetic`
+        : `${discretionaryReruns} discretionary re-run(s) used of 1`,
+  });
+
+  // ---- selection: the first 20 that admit, IN THE COMMITTED ORDER ---------
+  // The scored-track attempt per task is the LAST one; every other attempt's
+  // terms go to `dropped`, which is how "both fractions published" is a fact.
+  const scoredTrack = new Map<string, Assessed>();
+  for (const [taskId, list] of byTask) scoredTrack.set(taskId, list[list.length - 1]!);
+
+  const admitted: ObservationTerms[] = [];
+  const dropped: ObservationTerms[] = [];
+  const admittedAssessed: Assessed[] = [];
+  for (const task of manifest.tasks) {
+    const a = scoredTrack.get(task.id);
+    if (a === undefined) continue; // not_started — appended to dispositions below
+    const admissible =
+      a.terms !== null &&
+      a.disposition === "scored" &&
+      a.obs.record?.valid === true &&
+      !overBudget.has(a) &&
+      admitted.length < 20;
+    if (admissible) {
+      admitted.push(a.terms!);
+      admittedAssessed.push(a);
+    }
+  }
+  for (const a of assessed) {
+    if (a.terms === null) continue;
+    if (!admitted.includes(a.terms)) dropped.push(a.terms);
+  }
+
+  const coverage = runCoverage(universe, [...admitted, ...dropped]);
+  const base = aggregate({
+    runId: archive.runId,
+    admitted,
+    dropped,
+    coverage,
+    priorRuns: archive.register.priorRuns,
+  });
+
+  // ---- the archive-level clauses, each with its own predicate -------------
+  buildArchiveChecks({
+    archive,
+    assessed,
+    admittedAssessed,
+    checks,
+    scoringCommandActual: input.scoringCommandActual,
+  });
+
+  const uncheckedClauses = gitAudit.ran
+    ? []
+    : [
+        "voidConditions 4 (beyond rates.json, which is checked here)",
+        "voidConditions 5",
+        "voidConditions 6",
+      ];
+  if (gitAudit.ran && gitAudit.verdict === "void") {
+    checks.push({
+      clause: "voidConditions 4–6 — the git audit",
+      fired: true,
+      detail: `the committed audit returned void: ${gitAudit.reasons.join("; ") || "(no reason recorded)"}`,
+    });
+  } else if (gitAudit.ran) {
+    checks.push({ clause: "voidConditions 4–6 — the git audit", fired: false, detail: "the committed audit returned clean" });
+  }
+
+  // ---- verdict: archive-level voids override the arithmetic's -------------
+  // Registered convention: a fired archive-level clause names the run's void
+  // before any arithmetic verdict — the arithmetic presupposes an archive the
+  // clauses have not disqualified. First fired check in table order names it;
+  // the whole table is on the face.
+  const firedChecks = checks.filter((c) => c.fired);
+  const verdict = firedChecks.length > 0 ? ("void" as const) : base.verdict;
+  const voidClause =
+    firedChecks.length > 0 ? `${firedChecks[0]!.clause}: ${firedChecks[0]!.detail}` : base.voidClause;
+
+  // ---- artifact 7 ----------------------------------------------------------
+  const admittedSumA = admitted.reduce((sum, t) => sum + t.aO, 0);
+  const counterfactualObservations = assessed
+    .filter((a) => a.terms !== null)
+    .map((a) => counterfactualOf(a, admitted.includes(a.terms!), admittedSumA));
+
+  // not_started: lawful, and reported with its disposition (`admissionRule` 2).
+  // These are manifest entries with NO observation — they never had terms, so
+  // they are appended here rather than synthesised as zero-valued observations
+  // (a zero A_o is a measurement; absence is not).
+  const notStarted = manifest.tasks
+    .filter((t) => !byTask.has(t.id))
+    .map((t) => ({ taskId: t.id, arm: "treatment" as const, disposition: "not_started" as const }));
+
+  const result: B12RunResult = {
+    ...base,
+    verdict,
+    voidClause,
+    dispositions: [...base.dispositions, ...notStarted],
+    schema: "b12-result/1",
+    manifestSha256: archive.manifestSha256,
+    manifestBlobSha256: archive.git.manifestBlobSha256,
+    archiveChecks: checks,
+    uncheckedClauses,
+    gitAudit,
+    declarationFailures,
+    dispositionPrecedence: DISPOSITION_CONVENTION,
+    ambiguityIdSet,
+    scoringCommand: {
+      pinned: pinnedStr(pinned, "scoringCommand"),
+      actual: input.scoringCommandActual,
+    },
+    reruns,
+    archiveProblems: [...problems, ...archive.observations.flatMap((o) => o.problems.map((p) => `${o.dir}: ${p}`))],
+  };
+
+  return {
+    counterfactual: {
+      schema: "b12-counterfactual/1",
+      runId: archive.runId,
+      observations: counterfactualObservations,
+      declarationFailures,
+    },
+    result,
+  };
+}
+
+interface AssessContext {
+  task: ManifestTask | null;
+  rates: import("../rates.js").Rates;
+  universe: IdentifiedRow[];
+  universeRecords: import("../../telemetry.js").TelemetryRecord[];
+  ambiguousIds: ReadonlySet<string>;
+  cumulative: ReadonlySet<string>;
+  cacheWriteShareCeiling: number | null;
+  pinnedVersion: string | null;
+  pinnedBinarySha: string | null;
+  declarationFailures: DeclarationFailure[];
+  problems: string[];
+}
+
+/**
+ * Decide one attempt's disposition and compute its terms.
+ *
+ * The predicates run over the ARCHIVE — record, rebuilt lineage, snapshots —
+ * never over anything live; every clause citation is on the predicate that
+ * implements it. `firedPredicates` carries every match so the precedence
+ * convention is checkable, and F25's cases leave with a declaration failure
+ * and NO terms — the frozen text supplies no disposition, and `computeTerms`
+ * requires one.
+ */
+function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assessed {
+  const record = obs.record;
+  const fired: Array<{ name: Disposition; detail: string }> = [];
+  const declReasons: string[] = [];
+
+  if (ctx.task === null) {
+    ctx.problems.push(`${obs.dir}: the manifest names no task ${obs.taskId} — extra material outside the committed order`);
+  }
+  if (ctx.task !== null && ctx.task.verificationStratum === null) {
+    declReasons.push(
+      `the manifest declares no verificationStratum for ${obs.taskId} — FINDINGS.md F25: mandated declaration, no disposition for its absence`
+    );
+  }
+
+  if (record === null || obs.transcript === null) {
+    const why = record === null ? "observation.json is unreadable" : "the lineage transcript could not be rebuilt";
+    ctx.declarationFailures.push({
+      taskId: obs.taskId,
+      arm: obs.arm,
+      attempt: obs.attempt,
+      reasons: [...declReasons, `${why} — no disposition can be decided and no terms exist (reported, never defaulted)`],
+    });
+    return {
+      obs,
+      task: ctx.task,
+      fired,
+      disposition: null,
+      declReasons,
+      terms: null,
+      pacing: null,
+      provenanceUnavailable: null,
+      requestsPerSegment: [],
+    };
+  }
+
+  const transcript = obs.transcript;
+  const owned = new Set(record.originatedRequestIds);
+
+  // clause 12's narrow enumeration, over what the archive can show: the
+  // harness's own outcome classification, and a lineage whose admitted record
+  // set holds no billed request at all — "a transcript ending with no
+  // assistant turn" in the metered sense. The third member, an unhandled
+  // exception in the transcript, has no vendor-stable spelling to scan for and
+  // is covered by the outcome half whenever it killed the session.
+  if (record.outcome !== null && ["spawn_failed", "killed_by_signal", "exited_nonzero"].includes(record.outcome)) {
+    fired.push({ name: "void(execution_error)", detail: `harness outcome ${record.outcome} (admissionRule 12's enumeration)` });
+  } else if (transcript.requests.length === 0) {
+    fired.push({ name: "void(execution_error)", detail: "the lineage holds no billed assistant turn (admissionRule 12)" });
+  }
+
+  if (ctx.pinnedVersion !== null && record.binaryVersion !== null && record.binaryVersion !== ctx.pinnedVersion) {
+    fired.push({ name: "void(version_drift)", detail: `version ${record.binaryVersion} against the pinned ${ctx.pinnedVersion} (voidConditions 7)` });
+  } else if (ctx.pinnedBinarySha !== null && record.binarySha256 !== null && record.binarySha256 !== ctx.pinnedBinarySha) {
+    fired.push({ name: "void(version_drift)", detail: "binary sha256 differs from the manifest's pin (voidConditions 7)" });
+  }
+
+  const triggers = instrumentWriteTriggers(obs.lineageRecords);
+  if (triggers.length > 0) {
+    fired.push({ name: "void(instrument_write)", detail: `the session touched ${triggers.join(", ")} (admissionRule 7 — run-level)` });
+  }
+
+  const ownKeys = [
+    ...new Set(
+      transcript.requests.filter((r) => owned.has(r.requestId)).map((r) => rateKey(r.model, r.speed))
+    ),
+  ].sort();
+  if (ownKeys.length > 1) {
+    fired.push({ name: "void(rate_key_mixed)", detail: `this window spans ${ownKeys.join(", ")} (admissionRule 9)` });
+  }
+
+  // `admissionRule` 5 pins withholding to the shipped counter; `admissionRule`
+  // 6 then admits `ambiguous > 0` to the fall arithmetic — so the DISPOSITION
+  // fires on `provenanceUnavailable` alone, and ambiguity stays `scored` with
+  // the hold exclusion derived inside `aggregate` (the plan gate's R4, held).
+  const scopedRecords = scopeTelemetry(transcript, ctx.universeRecords);
+  const scopedSet = new Set(scopedRecords);
+  const identifiedScoped = ctx.universe.filter((r) => scopedSet.has(r.record));
+  const report = buildCounterfactual(
+    transcript,
+    scopedRecords,
+    ctx.rates,
+    buildSessionReport(transcript, ctx.rates),
+    ctx.ambiguousIds
+  );
+  if (report.provenanceUnavailable) {
+    fired.push({ name: "void(withheld)", detail: "provenanceUnavailable — local results with no invocation join (admissionRule 5)" });
+  }
+
+  const inherited = record.originatedRequestIds.filter((id) => ctx.cumulative.has(id));
+  if (inherited.length > 0) {
+    fired.push({
+      name: "void(sibling_inheritance)",
+      detail: `${inherited.length} originated id(s) already in the cumulative union of prior snapshots and completed observations (admissionRule 4)`,
+    });
+  }
+
+  if (record.accepted === false) {
+    fired.push({ name: "void(task_failed)", detail: "the acceptance predicate did not exit as declared at the end commit (admissionRule 3)" });
+  }
+
+  const pacing = pacingFacts(transcript, owned, ctx.rates, ctx.cacheWriteShareCeiling);
+  if (pacing.exceeded !== null) {
+    fired.push({ name: "void(pacing)", detail: `${pacing.exceeded} (admissionRule 11)` });
+  }
+
+  // F25's second case: no predicate ran, so `void(task_failed)` cannot describe
+  // it, and nothing fired, so `scored` would claim a TASK where the frozen text
+  // defines none. No disposition exists; reported, and no terms.
+  if (fired.length === 0 && record.accepted === null) {
+    ctx.declarationFailures.push({
+      taskId: obs.taskId,
+      arm: obs.arm,
+      attempt: obs.attempt,
+      reasons: [
+        ...declReasons,
+        "no acceptance predicate ever ran (accepted is null) — a task is scored only against its committed predicate (admissionRule 3) and the closed list has no member for its absence (FINDINGS.md F25)",
+      ],
+    });
+    return {
+      obs,
+      task: ctx.task,
+      fired,
+      disposition: null,
+      declReasons,
+      terms: null,
+      pacing,
+      provenanceUnavailable: report.provenanceUnavailable,
+      requestsPerSegment: requestsPerSegment(transcript, owned),
+    };
+  }
+
+  // The treatment arm's calibrated `O_o` — with provenance, resolved by the
+  // harness, refused here when a hostile archive dropped it (`holdsIf` 6 needs
+  // it computed for EVERY observation; a default would be an estimate).
+  const installed = record.installedChars;
+  if (installed === null || installed.value === null || !Number.isFinite(installed.value)) {
+    ctx.declarationFailures.push({
+      taskId: obs.taskId,
+      arm: obs.arm,
+      attempt: obs.attempt,
+      reasons: [
+        ...declReasons,
+        "the treatment record carries no calibrated installedChars — holdsIf 6 requires O_o computed, never estimated, and terms cannot be built without it",
+      ],
+    });
+    return {
+      obs,
+      task: ctx.task,
+      fired,
+      disposition: null,
+      declReasons,
+      terms: null,
+      pacing,
+      provenanceUnavailable: report.provenanceUnavailable,
+      requestsPerSegment: requestsPerSegment(transcript, owned),
+    };
+  }
+
+  if (declReasons.length > 0) {
+    // Stratum-only failures still get terms: the synthetic non-member string
+    // below flows into `partitionByStrata.unknownStratum`, which makes both
+    // declared cells unevaluable — the shipped defence-in-depth, not a new
+    // rule. The failure itself is reported beside it.
+    ctx.declarationFailures.push({ taskId: obs.taskId, arm: obs.arm, attempt: obs.attempt, reasons: [...declReasons] });
+  }
+
+  const disposition: Disposition =
+    fired.length > 0 ? pickDisposition(fired) : "scored";
+
+  const b12obs: B12Observation = {
+    taskId: obs.taskId,
+    arm: "treatment",
+    sessionId: record.sessionId,
+    runId: record.runId,
+    originatedRequestIds: record.originatedRequestIds,
+    accepted: record.accepted,
+    valid: record.valid === true,
+    invalidReasons: record.invalidReasons,
+    censored: record.censored === true,
+    baseCommit: record.baseCommit ?? "",
+    endCommit: record.endCommit ?? "",
+    treeHashAtStart: record.treeHashAtStart ?? "",
+    verificationStratum: (ctx.task?.verificationStratum ??
+      "undeclared (FINDINGS.md F25)") as B12Observation["verificationStratum"],
+  };
+
+  const terms = computeTerms({
+    observation: b12obs,
+    transcript,
+    telemetry: identifiedScoped,
+    rates: ctx.rates,
+    installedChars: installed.value,
+    ambiguousIds: ctx.ambiguousIds,
+    disposition,
+  });
+
+  return {
+    obs,
+    task: ctx.task,
+    fired,
+    disposition,
+    declReasons,
+    terms,
+    pacing,
+    provenanceUnavailable: report.provenanceUnavailable,
+    requestsPerSegment: requestsPerSegment(transcript, owned),
+  };
+}
+
+/** First match in the registered precedence; the full list is published beside it. */
+function pickDisposition(fired: ReadonlyArray<{ name: Disposition }>): Disposition {
+  for (const name of DISPOSITION_PRECEDENCE) {
+    if (fired.some((f) => f.name === name)) return name;
+  }
+  // Unreachable while `fired` holds only precedence members; stated, not defaulted.
+  throw new Error("pickDisposition: a fired predicate names no member of the registered precedence");
+}
+
+/** Covariate: this window's own billed requests per thread+segment. */
+function requestsPerSegment(
+  transcript: Transcript,
+  owned: ReadonlySet<string>
+): Array<{ thread: string; segment: number; requests: number }> {
+  const counts = new Map<string, { thread: string; segment: number; requests: number }>();
+  for (const r of transcript.requests) {
+    if (!owned.has(r.requestId)) continue;
+    const key = `${r.thread}#${r.segment}`;
+    const cell = counts.get(key) ?? { thread: r.thread, segment: r.segment, requests: 0 };
+    cell.requests++;
+    counts.set(key, cell);
+  }
+  return [...counts.values()].sort((a, b) =>
+    a.thread === b.thread ? a.segment - b.segment : a.thread < b.thread ? -1 : 1
+  );
+}
+
+/** Artifact 7's per-observation entry, from what was already computed. */
+function counterfactualOf(a: Assessed, isAdmitted: boolean, admittedSumA: number): CounterfactualObservation {
+  const terms = a.terms!;
+  const record = a.obs.record;
+  const classes = ["ambiguous", "unverifiable", "excludedForeign", "unmatched"] as const;
+  const ambiguousCount = terms.refusals.ambiguous.count + terms.unattributedRefusals.ambiguous.count;
+  return {
+    taskId: a.obs.taskId,
+    arm: a.obs.arm,
+    attempt: a.obs.attempt,
+    disposition: terms.disposition,
+    firedPredicates: a.fired.map((f) => `${f.name}: ${f.detail}`),
+    aO: terms.aO,
+    sLo: terms.sLo,
+    sHi: terms.sHi,
+    oO: terms.oO,
+    // `A_o + S_o > 0` per ADMITTED observation, on the deciding (lo) horizon's
+    // denominator — asserted and REPORTED, deciding nothing (PREMISES.md § B12).
+    aPlusSPositive: isAdmitted ? terms.aO + terms.sLo > 0 : null,
+    rows: terms.rows,
+    refusals: terms.refusals,
+    unattributedRefusals: terms.unattributedRefusals,
+    subagentShare: terms.subagentShare,
+    requestsPerSegment: a.requestsPerSegment,
+    rateKeys: terms.rateKeys,
+    perTaskDenominatorShare:
+      isAdmitted && admittedSumA > 0 ? terms.aO / admittedSumA : null,
+    binaryVersion: record?.binaryVersion ?? null,
+    binarySha256: record?.binarySha256 ?? null,
+    baseCommit: record?.baseCommit ?? null,
+    endCommit: record?.endCommit ?? null,
+    treeHashAtStart: record?.treeHashAtStart ?? null,
+    instructionComponents: record?.instructionHashes ?? null,
+    aggregateHash: {
+      absent: true,
+      reason:
+        "voidConditions 21's instruction-set-hash composition is UNADJUDICATED — components only, no minted canonical hash (FINDINGS.md F24)",
+    },
+    memorySnapshotSha256: record?.memorySnapshotSha256 ?? null,
+    mcpConfigPinned: record?.mcpConfigPinned ?? null,
+    mcpConfigPassed: record?.mcpConfigPassedSha256 ?? null,
+    holdExcluded: ambiguousCount > 0,
+    gateRepairCalls: terms.rows.filter(({ row }) => row.tool === "gate" || row.tool === "repair").length,
+    wouldHaveAddedSum: classes.reduce((sum, name) => sum + terms.refusals[name].units, 0),
+    wouldHaveAddedUnsized: classes.reduce((sum, name) => sum + terms.refusals[name].unsized, 0),
+  };
+}
+
+interface ChecksContext {
+  archive: RunArchive;
+  assessed: Assessed[];
+  admittedAssessed: Assessed[];
+  checks: ArchiveCheck[];
+  scoringCommandActual: string | null;
+}
+
+/**
+ * The archive-level clauses of UNIT-5.md step 7 — 2, 7, 8, 9, 11, 12, 13, 14,
+ * 19, 20 — plus artifact 1's manifest facts and the rates byte-identity, each
+ * with its own predicate over the archive, each on the face fired or not.
+ * `aggregate`'s `decide()` already owns 1, 3, 10, 16, 17, 18.
+ */
+function buildArchiveChecks(ctx: ChecksContext): void {
+  const { archive, assessed, checks } = ctx;
+  const pinned = archive.manifest.pinned;
+  const push = (clause: string, fired: boolean, detail: string): void => {
+    checks.push({ clause, fired, detail });
+  };
+
+  // artifact 1 — the manifest's own committedness and freeze.
+  const gitP = archive.git;
+  push(
+    "design.artifacts 1 — manifest blob",
+    gitP.manifestBlobSha256 === null || gitP.manifestCommitsAfterStart.length > 0,
+    gitP.manifestBlobSha256 === null
+      ? "HEAD carries no manifest blob — the manifest is not committed evidence"
+      : gitP.manifestCommitsAfterStart.length > 0
+        ? `${gitP.manifestCommitsAfterStart.length} commit(s) touched the manifest after the earliest session start (${gitP.manifestCommitsAfterStart.join(", ")})`
+        : `blob ${gitP.manifestBlobSha256} in HEAD, untouched since the earliest session start`
+  );
+
+  // voidConditions 2 — the committed order, replayed from the runlog.
+  const orderProblem = committedOrderReplay(archive);
+  push(
+    "voidConditions 2 — committed order",
+    orderProblem !== null,
+    orderProblem ??
+      "every first execution in the runlog respects the manifest's committed order; the partial-set half is carried by the analysis-session obligations (PREMISES.md § B12)"
+  );
+
+  // voidConditions 4 — rates.json byte-identity, the one clause-4 item the
+  // archive itself can check; the rest belongs to the git audit input.
+  const pinnedRates = typeof pinned.ratesSha256 === "string" ? pinned.ratesSha256 : null;
+  const frozen = gitP.ratesSha256AtFrozenCommit;
+  const ratesFired =
+    archive.ratesSha256 === "" ||
+    (frozen !== null && archive.ratesSha256 !== frozen) ||
+    (pinnedRates !== null && archive.ratesSha256 !== pinnedRates);
+  push(
+    "voidConditions 4 — rates.json frozen",
+    ratesFired,
+    ratesFired
+      ? `rates.json (${archive.ratesSha256 || "absent"}) does not match ${frozen !== null && archive.ratesSha256 !== frozen ? `the frozen commit's blob (${frozen})` : `the manifest pin (${pinnedRates})`}`
+      : "rates.json is byte-identical to the frozen commit's blob and the manifest pin"
+  );
+
+  // voidConditions 7 — version pin, per observation, plus the pin's presence.
+  const versionDrifted = assessed.filter((a) => a.fired.some((f) => f.name === "void(version_drift)"));
+  const pinsAbsent = typeof pinned.claudeCodeVersion !== "string" || typeof pinned.claudeBinarySha256 !== "string";
+  push(
+    "voidConditions 7 — version and binary pin",
+    pinsAbsent || versionDrifted.length > 0,
+    pinsAbsent
+      ? "the manifest pins no version/binary sha — nothing to hold the run to"
+      : versionDrifted.length > 0
+        ? `${versionDrifted.length} observation(s) drifted from the pin (a version boundary splits the run into blocks — reported, not pooled)`
+        : "every observation matches the pinned version and binary sha; DISABLE_AUTOUPDATER is asserted by the harness before each observation"
+  );
+
+  // voidConditions 8 — the measured cap, and BOTH BRACKETS (F23: fires until
+  // the second arithmetic pass makes the artifact carry two brackets).
+  const capPinned = typeof pinned.clientTruncationCap === "number" && Number.isFinite(pinned.clientTruncationCap);
+  push(
+    "voidConditions 8 — measured cap and both brackets",
+    true,
+    `${capPinned ? "the cap is pinned" : "NO measured clientTruncationCap is pinned"}; the artifact carries capped and uncapped BYTE SUMS, not the two BRACKETS the clause demands — FINDINGS.md F23, its own pass; this check fires until that pass lands`
+  );
+
+  // voidConditions 9 — instrument contamination, run-level.
+  const contaminated = assessed.filter((a) => a.fired.some((f) => f.name === "void(instrument_write)"));
+  push(
+    "voidConditions 9 — instrument contamination",
+    contaminated.length > 0,
+    contaminated.length > 0
+      ? `${contaminated.length} observation(s) touched the instrument — run-level by rule 7`
+      : "no archived lineage touched the meter, the walk script, or the telemetry log; the verdict-session half is carried by the analysis-session obligations (PREMISES.md § B12)"
+  );
+
+  // voidConditions 11 — base commit per task; the pair half belongs to the A/B.
+  const wrongBase = assessed.filter(
+    (a) => a.task?.baseCommit != null && a.obs.record?.baseCommit != null && a.obs.record.baseCommit !== a.task.baseCommit
+  );
+  push(
+    "voidConditions 11 — declared base commit",
+    wrongBase.length > 0,
+    wrongBase.length > 0
+      ? `${wrongBase.length} observation(s) started from a tree that is not the manifest-declared base commit`
+      : "every observation's baseCommit matches its manifest declaration; cleanliness was asserted by the harness at start (treeHashAtStart recorded); pair tree hashes belong to the A/B pass"
+  );
+
+  // voidConditions 12 — instruction components, intra-arm, from the archived
+  // pre/post hashes. Components ONLY; the pair-level comparison is blocked on
+  // the VOID-21/VOID-12 adjudications (FINDINGS.md F24, registered).
+  const driftedInstruction: string[] = [];
+  const missingPolicy: string[] = [];
+  for (const a of assessed) {
+    const hashes = a.obs.record?.instructionHashes;
+    if (hashes == null) continue;
+    for (const component of CLAUSE_12_COMPONENTS) {
+      if ((hashes.pre[component] ?? null) !== (hashes.post[component] ?? null)) {
+        driftedInstruction.push(`${a.obs.dir}: ${component}`);
+      }
+    }
+    if (a.obs.record?.policyBlobSha256 == null) missingPolicy.push(a.obs.dir);
+  }
+  push(
+    "voidConditions 12 — instruction set",
+    driftedInstruction.length > 0 || missingPolicy.length > 0,
+    driftedInstruction.length > 0
+      ? `component hash moved between start and end: ${driftedInstruction.join("; ")}`
+      : missingPolicy.length > 0
+        ? `the per-arm policy blob hash is absent from ${missingPolicy.length} record(s), which the clause voids by name`
+        : "every component hash held from start to end and every record carries its policy blob hash; the pair-level comparison awaits the registered VOID-12/VOID-21 adjudications"
+  );
+
+  // voidConditions 13 — memory: no writes, restored from the committed snapshot.
+  const memoryPin = typeof pinned.memorySnapshotSha256 === "string" ? pinned.memorySnapshotSha256 : null;
+  const memoryDrift: string[] = [];
+  for (const a of assessed) {
+    const hashes = a.obs.record?.instructionHashes;
+    if (hashes != null && (hashes.pre["memory"] ?? null) !== (hashes.post["memory"] ?? null)) {
+      memoryDrift.push(`${a.obs.dir}: written during the session`);
+    }
+    if (memoryPin !== null && a.obs.record?.memorySnapshotSha256 != null && a.obs.record.memorySnapshotSha256 !== memoryPin) {
+      memoryDrift.push(`${a.obs.dir}: not restored from the pinned snapshot`);
+    }
+  }
+  push(
+    "voidConditions 13 — memory restoration",
+    memoryDrift.length > 0,
+    memoryDrift.length > 0 ? memoryDrift.join("; ") : "every session's memory hash held pre to post and matches the pinned snapshot where pinned"
+  );
+
+  // voidConditions 14 — snapshot scope. The counts are mechanical; "every slug
+  // this repository owns" is assertable only at run time and the harness owns
+  // it — a registered limit, stated rather than dressed as a check.
+  const badSnapshots = assessed.filter(
+    (a) =>
+      a.obs.snapshotBefore === null ||
+      a.obs.snapshotAfter === null ||
+      (a.obs.snapshotBefore.slugsWalked ?? 0) === 0 ||
+      a.obs.snapshotBefore.requestIds.length === 0
+  );
+  push(
+    "voidConditions 14 — snapshot scope",
+    badSnapshots.length > 0,
+    badSnapshots.length > 0
+      ? `${badSnapshots.length} observation(s) carry a missing or zero-count snapshot`
+      : "every observation carries both snapshots with non-zero slug and id counts; the every-slug half is asserted by the harness at run time (registered limit)"
+  );
+
+  // voidConditions 19 — the scoring command, and the ambiguity id set.
+  const pinnedCommand = typeof pinned.scoringCommand === "string" ? pinned.scoringCommand : null;
+  const commandFired =
+    pinnedCommand !== null && ctx.scoringCommandActual !== null && pinnedCommand !== ctx.scoringCommandActual;
+  push(
+    "voidConditions 19 — scoring command and ambiguity set",
+    commandFired,
+    commandFired
+      ? `the scoring invocation (${ctx.scoringCommandActual}) differs from the committed string (${pinnedCommand})`
+      : `${pinnedCommand === null ? "no scoring command is pinned (manifest gap); " : ""}${ctx.scoringCommandActual === null ? "the actual invocation was not supplied (reported, not defaulted); " : ""}the ambiguity check saw the whole archive by construction and its id set is published on the face`
+  );
+
+  // voidConditions 20 — pacing, per observation, and the ceiling's presence.
+  const ceilingPinned = typeof pinned.pacingCacheWriteShareCeiling === "number";
+  const paced = assessed.filter((a) => a.pacing !== null && a.pacing.exceeded !== null);
+  push(
+    "voidConditions 20 — pacing",
+    !ceilingPinned || paced.length > 0,
+    !ceilingPinned
+      ? "no pacing ceiling is pinned — the ceiling must be committed before the first observation"
+      : paced.length > 0
+        ? `${paced.length} observation(s) exceeded a pacing ceiling`
+        : "every observation is inside the gap and cacheWrite-share ceilings"
+  );
+}
+
+/**
+ * `voidConditions` 3's order half, replayed RETROSPECTIVELY over the runlog:
+ * the sequence of FIRST executions must respect the manifest's committed
+ * order. The harness's `committedOrderViolation` answers the PROSPECTIVE form
+ * ("may this run start now") before a session is spent; this is the other
+ * half of the same rule, over the same rows, and the tests hold both.
+ */
+export function committedOrderReplay(archive: RunArchive): string | null {
+  if (archive.runlog.corruptLines > 0) {
+    return `the runlog carries ${archive.runlog.corruptLines} corrupt line(s), so the committed order cannot be fully replayed`;
+  }
+  const order = new Map(archive.manifest.tasks.map((t, i) => [t.id, i]));
+  const seen = new Set<string>();
+  for (const row of archive.runlog.rows) {
+    if (row.arm !== "treatment") continue;
+    if (seen.has(row.taskId)) continue; // re-runs are not order events (admissionRule 12)
+    const index = order.get(row.taskId);
+    if (index === undefined) {
+      return `the runlog names task ${row.taskId}, which the manifest's committed order does not contain`;
+    }
+    for (const [id, i] of order) {
+      if (i < index && !seen.has(id)) {
+        return `task ${row.taskId} first ran before its predecessor ${id} — the committed order was not followed`;
+      }
+    }
+    seen.add(row.taskId);
+  }
+  return null;
+}

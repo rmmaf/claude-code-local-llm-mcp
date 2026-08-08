@@ -80,6 +80,13 @@ export function classifyRun(input: {
 export function manifestDeclarationGaps(manifest: unknown): string[];
 
 /**
+ * The observation directory name for attempt N — `obs-<taskId>-<arm>` for the
+ * first, `obs-<taskId>-<arm>-r<N>` for `admissionRule` 12's re-run. The
+ * scorer's `parseObsDirName` reads the same grammar back.
+ */
+export function obsDirName(taskId: string, arm: string, attempt: number): string;
+
+/**
  * The probe artifact must be committed evidence: repo-relative under
  * `evidence/`, present in HEAD, and byte-identical to HEAD's blob. Closes the
  * reviewed trust boundary where a fabricated working-tree JSON could calibrate
