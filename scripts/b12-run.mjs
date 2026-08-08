@@ -627,7 +627,17 @@ async function observe(args) {
 
   const before = takeSnapshot();
 
-  const mcpArgs = arm === "treatment" ? ["--mcp-config", mcp.path] : ["--strict-mcp-config"];
+  // BOTH arms are strict, and that is a measured correction (2026-08-08), not
+  // a style choice. The first probe run on the Mac found ~30 claude.ai ACCOUNT
+  // connectors on the machine (`claude mcp list` — TELUS/Adobe/Salesforce…),
+  // which `claude mcp remove` cannot remove and a work machine cannot drop.
+  // Without `--strict-mcp-config` on the treatment arm they merge into it and
+  // not into the control, so the arms would differ by the account's connector
+  // roster as well as by this server — two treatments. Strict on both makes
+  // the account state arm-invariant: either strict excludes it (clean) or it
+  // lands identically in both arms and cancels in every paired comparison.
+  const mcpArgs =
+    arm === "treatment" ? ["--strict-mcp-config", "--mcp-config", mcp.path] : ["--strict-mcp-config"];
   // THE PROMPT MUST NOT FOLLOW A VARIADIC OPTION, AND IT DID -- IN THE TREATMENT
   // ARM ONLY.
   //

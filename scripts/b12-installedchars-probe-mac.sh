@@ -16,15 +16,20 @@
 # retract-and-re-register branch. k = 3 and tolerance 0 are CHOSEN constants,
 # recorded as such there.
 #
-# THE ARMS MIRROR `observe()`'s ARM FLAGS AND OPTION ORDER — treatment
-# `--mcp-config <cfg>` (no `--strict-mcp-config`), control
-# `--strict-mcp-config` — because O_o must price the arms the run will use.
-# NOT claimed as byte-for-byte argv equivalence: no manifest exists yet, so
-# there are no `pinned.extraArgs` and no sealed MCP config; both are calibration
-# key components, which is why the value is RE-TAKEN when a manifest seals.
-# The cost of mirroring: a user- or project-scoped MCP server would be MERGED
-# into the treatment arm and land inside the delta, so this script REFUSES
-# unless `claude mcp list` reports none and the clone carries no .mcp.json.
+# BOTH ARMS ARE STRICT — treatment `--strict-mcp-config --mcp-config <cfg>`,
+# control `--strict-mcp-config` — mirroring `observe()`, which was corrected
+# the same day for the same measured reason: the first run of this probe found
+# ~30 claude.ai ACCOUNT connectors on the work Mac (`claude mcp list`), which
+# `claude mcp remove` cannot remove and a work machine cannot drop. Without
+# strict on the treatment they merge into one arm and not the other. Strict on
+# both makes the account state ARM-INVARIANT: either strict excludes it
+# (clean) or it lands identically in both arms and CANCELS in the paired
+# subtraction — in both worlds the delta isolates this server. The connector
+# roster is recorded in the artifact, not refused on.
+# NOT claimed as byte-for-byte argv equivalence with observe(): no manifest
+# exists yet, so there are no `pinned.extraArgs` and no sealed MCP config;
+# both are calibration key components, which is why the value is RE-TAKEN
+# when a manifest seals.
 #
 # WHAT KEEPS THE PAIR A PAIR. Memory and settings enter the system prompt, so
 # a write between a replicate's two arms would not cancel in the subtraction.
@@ -230,30 +235,22 @@ esac
 ok "at the tip of $BRANCH — $(git rev-parse --short HEAD)"
 
 # ---------------------------------------------------------------------------
-next "No competing MCP configuration"
+next "MCP environment, recorded"
 
-# The treatment arm mirrors observe() and therefore does NOT pass
-# --strict-mcp-config: any user- or project-scoped server would be merged into
-# it and priced into the delta as if installing THIS server had caused it.
-[ -e "$REPO/.mcp.json" ] && refuse ".mcp.json exists in the clone; the treatment arm would merge it. Move it aside, then re-run."
-
+# Both arms run strict, so nothing here can move the delta: whatever the
+# account or project carries is either excluded from both arms or lands in
+# both identically and cancels. It is still RECORDED — a reader of the
+# artifact should see what the machine had, not be told it did not matter and
+# have to take that on faith. Best effort: a failing `claude mcp list` is
+# itself recorded rather than fatal, since the measurement no longer rests on
+# its answer.
+MCP_JSON_PRESENT="false"
+[ -e "$REPO/.mcp.json" ] && MCP_JSON_PRESENT="true"
 MCP_LIST=$(claude mcp list 2>&1)
 MCP_LIST_RC=$?
-[ $MCP_LIST_RC -eq 0 ] || refuse "claude mcp list exited $MCP_LIST_RC: $MCP_LIST"
-# Positive match on the empty answer, and a NEGATIVE match on the shape of a
-# server entry — either signal of a configured server refuses, so a warning
-# line containing the magic words cannot slip a server past the check.
-case "$MCP_LIST" in
-  *"No MCP servers"*) : ;;
-  *) printf '%s\n' "$MCP_LIST" | sed 's/^/      /'
-     refuse "claude mcp list did not say \"No MCP servers\". A configured server reaches the treatment arm and lands inside the delta. Remove them (claude mcp remove <name>), then re-run." ;;
-esac
-case "$MCP_LIST" in
-  *connected*|*Connected*)
-     printf '%s\n' "$MCP_LIST" | sed 's/^/      /'
-     refuse "claude mcp list mentions a connected server alongside \"No MCP servers\". Contradictory output must not read as the good answer." ;;
-esac
-ok "no user/project-scoped MCP servers"
+[ $MCP_LIST_RC -eq 0 ] || MCP_LIST="(claude mcp list exited $MCP_LIST_RC) $MCP_LIST"
+MCP_LIST=$(printf '%s' "$MCP_LIST" | head -c 8000)
+ok "recorded (.mcp.json present: $MCP_JSON_PRESENT; connector roster goes into the artifact)"
 
 # ---------------------------------------------------------------------------
 next "Build"
@@ -440,6 +437,7 @@ info "proof session $PROOF_SID"
 PROOF_LOG="$TMP_DIR/claude-proof.log"
 DISABLE_AUTOUPDATER=1 claude --print \
   --session-id "$PROOF_SID" \
+  --strict-mcp-config \
   --mcp-config "$MCP_CFG" \
   --allowed-tools "mcp__local-coder__status" \
   --permission-mode "$PERMISSION_MODE" \
@@ -479,6 +477,7 @@ run_arm() {
   if [ "$ARM" = "treatment" ]; then
     DISABLE_AUTOUPDATER=1 claude --print \
       --session-id "$SID" \
+      --strict-mcp-config \
       --mcp-config "$MCP_CFG" \
       --output-format json \
       -- \
@@ -578,7 +577,7 @@ const row = sustained
       run_id: runId, ts, machine: "mac-01",
       metric: "installed_system_prompt_token_delta_on_pinned_binary",
       value: deltaTokens, unit: "tokens", premise: "B12",
-      method: `scripts/b12-installedchars-probe-mac.sh at ${e.B12_SHA_SHORT} on claude ${e.B12_CLAUDE_VER} (binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}...); proof session showed mcp__local-coder__status callable; 3 replicates x (treatment --mcp-config, control --strict-mcp-config), first billed assistant non-apiError request, input+cacheWrite tokens, treatment minus control; artifact ${e.B12_ART_NAME}`,
+      method: `scripts/b12-installedchars-probe-mac.sh at ${e.B12_SHA_SHORT} on claude ${e.B12_CLAUDE_VER} (binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}...); proof session showed mcp__local-coder__status callable; 3 replicates x (treatment --strict-mcp-config --mcp-config, control --strict-mcp-config), first billed assistant non-apiError request, input+cacheWrite tokens, treatment minus control; artifact ${e.B12_ART_NAME}`,
       note: `DELTAS ${deltas.join(", ")} — IDENTICAL, SUSTAINED. installedChars adapter: ${installedChars} chars (tokens x 3.7, divisor cancels). Calibration key: binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}... x arm x mcp-config ${e.B12_MCP_SHA.slice(0, 12)}... x env ${e.B12_ENV_HASH.slice(0, 12)}... x policy blob NONE (none sealed yet — the value is re-taken when blobs exist, and when a manifest pins extraArgs or its own MCP config). Branch: the F24 harness pass proceeds.`,
     }
   : {
@@ -606,10 +605,11 @@ const artifact = {
     policyBlobNote: "no per-arm policy blobs are sealed yet; they are part of the calibration key, so this value must be re-taken when they exist",
     cwd: e.B12_REPO, prompt: e.B12_PROMPT, proofPrompt: e.B12_PROOF_PROMPT,
     argvShape: {
-      treatment: "claude --print --session-id <id> --mcp-config <cfg> --output-format json -- <prompt>",
+      treatment: "claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg> --output-format json -- <prompt>",
       control: "claude --print --session-id <id> --strict-mcp-config --output-format json -- <prompt>",
-      note: "mirrors observe()'s arm flags and option order in scripts/b12-run.mjs; NOT byte-for-byte — no manifest exists, so no pinned.extraArgs and no sealed MCP config; treatment deliberately lacks --strict-mcp-config, which is why the probe refuses when any user/project-scoped MCP server exists",
+      note: "mirrors observe()'s arm flags and option order in scripts/b12-run.mjs (both arms strict since 2026-08-08 — the first probe run found ~30 claude.ai account connectors on the work Mac, unremovable by claude mcp remove; strict on both makes them arm-invariant: excluded from both, or present in both and cancelled by the paired subtraction). NOT byte-for-byte — no manifest exists, so no pinned.extraArgs and no sealed MCP config.",
     },
+    mcpJsonPresentInClone: e.B12_MCP_JSON_PRESENT === "true",
     mcpList: e.B12_MCP_LIST,
   },
   preDeclaration: "PREMISES.md § B12, registered before this probe ran; k = 3 and tolerance 0 are CHOSEN constants, labelled there",
@@ -637,6 +637,7 @@ VERDICT_OUT=$(B12_SHA="$LOCAL_SHA" B12_SHA_SHORT="$(git rev-parse --short HEAD)"
   B12_BRANCH="$BRANCH" B12_CLAUDE_VER="$CLAUDE_VER" B12_CLAUDE_BIN="$CLAUDE_BIN" \
   B12_CLAUDE_SHA="$CLAUDE_SHA" B12_MCP_SHA="$MCP_SHA" B12_ENV_HASH="$ENV_HASH_0" B12_REPO="$REPO" \
   B12_PROMPT="$PROMPT" B12_PROOF_PROMPT="$PROOF_PROMPT" B12_MCP_LIST="$MCP_LIST" \
+  B12_MCP_JSON_PRESENT="$MCP_JSON_PRESENT" \
   B12_EXPECT_VER="${B12_EXPECT_CLAUDE_VERSION:-}" B12_EXPECT_SHA="${B12_EXPECT_CLAUDE_SHA256:-}" \
   B12_ART_NAME="$(basename "$ART")" \
   node "$VERDICT_JS" "$ART" "$TMP_DIR" 2>&1)
