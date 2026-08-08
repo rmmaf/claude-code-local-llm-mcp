@@ -23,6 +23,7 @@
  * UNCHECKED and the pre-declaration (`PREMISES.md § B12`) bars a final verdict
  * — absence is reported, never read as "clean".
  */
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,7 +32,16 @@ import { readRunArchive } from "./archive.js";
 import { assembleRun } from "./assemble.js";
 import type { GitAudit } from "./types.js";
 
-/** Parse a committed audit artifact into the input `assemble` takes. */
+/**
+ * Parse a committed audit artifact into the input `assemble` takes.
+ *
+ * `inputs` is REQUIRED and non-empty: the pre-declaration says "verdict AND
+ * inputs, published on `result.json`'s face for artifact 11's replay", and a
+ * verdict whose inputs cannot be replayed is exactly the shape the clause 4–6
+ * seam exists to refuse. A malformed audit is NO audit — `{ran: false}` keeps
+ * the clauses in `uncheckedClauses` rather than laundering a broken file into
+ * "clean".
+ */
 export function parseGitAudit(raw: unknown): GitAudit {
   if (
     typeof raw === "object" &&
@@ -46,6 +56,7 @@ export function parseGitAudit(raw: unknown): GitAudit {
     if (typeof o.inputs === "object" && o.inputs !== null) {
       for (const [k, v] of Object.entries(o.inputs)) if (typeof v === "string") inputs[k] = v;
     }
+    if (Object.keys(inputs).length === 0) return { ran: false };
     return {
       ran: true,
       verdict: o.verdict,
@@ -53,9 +64,41 @@ export function parseGitAudit(raw: unknown): GitAudit {
       inputs,
     };
   }
-  // A malformed audit is NO audit — `{ran: false}` keeps clauses 4–6 in
-  // `uncheckedClauses` rather than laundering a broken file into "clean".
   return { ran: false };
+}
+
+/**
+ * The audit must be COMMITTED EVIDENCE at the run's own path — the probe trust
+ * boundary's fix, applied to the audit the moment it existed as an input (the
+ * diff review's first finding: an arbitrary working-tree JSON could otherwise
+ * certify clauses 4–6 as clean). Repo-relative at
+ * `evidence/<runId>.b12.audit.json` (fixed by the pre-declaration,
+ * `PREMISES.md § B12`), present in HEAD, and byte-identical to HEAD's blob.
+ */
+export function committedAuditCheck(
+  repoRoot: string,
+  runId: string,
+  auditPath: string
+): { ok: boolean; bytes: string | null; why: string | null } {
+  const expectedRel = `evidence/${runId}.b12.audit.json`;
+  const givenRel = path.relative(repoRoot, path.resolve(repoRoot, auditPath)).split(path.sep).join("/");
+  if (givenRel !== expectedRel) {
+    return { ok: false, bytes: null, why: `the audit must live at ${expectedRel} (got ${givenRel})` };
+  }
+  let onDisk: string;
+  try {
+    onDisk = readFileSync(path.resolve(repoRoot, auditPath), "utf8");
+  } catch {
+    return { ok: false, bytes: null, why: `${expectedRel} is unreadable` };
+  }
+  const show = spawnSync("git", ["show", `HEAD:${expectedRel}`], { cwd: repoRoot, encoding: "utf8" });
+  if (show.status !== 0) {
+    return { ok: false, bytes: null, why: `HEAD does not carry ${expectedRel} — the audit is not committed evidence` };
+  }
+  if (show.stdout !== onDisk) {
+    return { ok: false, bytes: null, why: `${expectedRel} differs from HEAD's blob — uncommitted edits are not evidence` };
+  }
+  return { ok: true, bytes: onDisk, why: null };
 }
 
 export interface EmitResult {
@@ -74,10 +117,15 @@ export async function emitRun(
 
   let gitAudit: GitAudit = { ran: false };
   if (options.auditPath != null) {
-    try {
-      gitAudit = parseGitAudit(JSON.parse(readFileSync(options.auditPath, "utf8")));
-    } catch {
-      gitAudit = { ran: false };
+    const committed = committedAuditCheck(repoRoot, runId, options.auditPath);
+    if (!committed.ok) {
+      archive.problems.push(`audit refused: ${committed.why ?? "unknown"} — clauses 4–6 stay UNCHECKED`);
+    } else {
+      try {
+        gitAudit = parseGitAudit(JSON.parse(committed.bytes ?? ""));
+      } catch {
+        archive.problems.push("audit refused: the committed audit does not parse — clauses 4–6 stay UNCHECKED");
+      }
     }
   }
 

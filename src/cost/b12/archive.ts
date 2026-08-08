@@ -603,20 +603,33 @@ function readObservationDir(
 
   // THE IDENTITY SOURCE. Rows come from telemetry.jsonl and the key's `source`
   // is that file's repo-relative path — `identify` is called HERE and nowhere
-  // else in scoring.
+  // else in scoring. A corrupt line, a missing file or a drift against the
+  // sealed copy makes the SOURCE suspect, and a suspect source may not price
+  // anything: `telemetryIntact` goes false and `assemble` refuses terms
+  // instead of scoring the surviving subset.
   const telemetryFile = path.join(dir, "telemetry.jsonl");
   const telemetrySource = rel(repoRoot, telemetryFile);
   let telemetryRows: unknown[] = [];
+  let telemetryIntact = true;
   if (existsSync(telemetryFile)) {
     const { rows, corruptLines } = parseJsonl(readFileSync(telemetryFile, "utf8"));
     telemetryRows = rows;
-    if (corruptLines > 0) problems.push(`telemetry.jsonl carries ${corruptLines} corrupt line(s)`);
+    if (corruptLines > 0) {
+      telemetryIntact = false;
+      problems.push(`telemetry.jsonl carries ${corruptLines} corrupt line(s)`);
+    }
   } else {
+    // The harness ALWAYS writes the file, empty included — absence is not a
+    // zero-tool observation, it is missing evidence.
+    telemetryIntact = false;
     problems.push("telemetry.jsonl is missing");
   }
   if (archiveJson !== null) {
     const drift = telemetryDrift(telemetryRows, isObject(archiveJson) ? archiveJson.telemetry : null);
-    if (drift !== null) problems.push(drift);
+    if (drift !== null) {
+      telemetryIntact = false;
+      problems.push(drift);
+    }
   }
 
   const invocationIds =
@@ -629,6 +642,7 @@ function readObservationDir(
     arm: id.arm,
     attempt: id.attempt,
     dir: rel(repoRoot, dir),
+    telemetryIntact,
     record,
     lineageRecords: lineage.records,
     lineageFiles: lineage.files,

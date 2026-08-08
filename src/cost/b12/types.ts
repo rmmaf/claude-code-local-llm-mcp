@@ -797,6 +797,14 @@ export interface ArchivedObservation {
   attempt: number;
   /** Repo-relative directory. */
   dir: string;
+  /**
+   * FALSE the moment the identity source is suspect — a corrupt line, a
+   * missing `telemetry.jsonl`, or drift between it and `archive.json`'s copy.
+   * A row from a tampered source may not price ANY observation, so `assemble`
+   * refuses terms for this observation and fires an integrity check instead of
+   * scoring the surviving subset (the diff review's third finding).
+   */
+  telemetryIntact: boolean;
   record: ObservationRecord | null;
   /** `archive.json`'s lineage records, flat, in file order — for predicates that
    * need raw content (instrument-write detection reads tool_use inputs). */
@@ -960,6 +968,13 @@ export interface B12RunResult extends B12Result {
   uncheckedClauses: string[];
   gitAudit: GitAudit;
   declarationFailures: DeclarationFailure[];
+  /**
+   * Observations whose ARCHIVE is untrustworthy — telemetry corrupt, drifted
+   * or missing. No terms are computed from a suspect identity source; the
+   * matching archive check fires, so the run voids rather than scoring a
+   * surviving subset. Same shape as a declaration failure, different cause.
+   */
+  integrityFailures: DeclarationFailure[];
   /** The registered convention the disposition names were picked under. */
   dispositionPrecedence: string;
   /** `voidConditions` 19: the id set the ambiguity check saw, sorted. */

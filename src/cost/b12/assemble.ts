@@ -203,8 +203,31 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   // `admissionRule` 13: the control arm never enters the primary verdict — its
   // observations (present only once the post-verdict A/B has run) are outside
   // every arithmetic domain here, and their presence is reported.
-  const treatment = archive.observations.filter((o) => o.arm === "treatment");
+  const allTreatment = archive.observations.filter((o) => o.arm === "treatment");
   const control = archive.observations.filter((o) => o.arm === "control");
+
+  // A SUSPECT IDENTITY SOURCE PRICES NOTHING (the diff review's third
+  // finding). An observation whose telemetry is corrupt, drifted or missing is
+  // refused terms and kept out of the universe — its rows cannot be trusted to
+  // price ANY window — and the artifact-6 integrity check below fires, so the
+  // run VOIDS instead of scoring the surviving subset.
+  const treatment = allTreatment.filter((o) => o.telemetryIntact);
+  const integrityFailures: DeclarationFailure[] = allTreatment
+    .filter((o) => !o.telemetryIntact)
+    .map((o) => ({
+      taskId: o.taskId,
+      arm: o.arm,
+      attempt: o.attempt,
+      reasons: o.problems.length > 0 ? [...o.problems] : ["the telemetry identity source is not intact"],
+    }));
+  checks.push({
+    clause: "design.artifacts 6 — telemetry integrity",
+    fired: integrityFailures.length > 0,
+    detail:
+      integrityFailures.length > 0
+        ? `${integrityFailures.length} observation(s) carry a corrupt, drifted or missing telemetry.jsonl — no terms are computed from a suspect identity source, and the ledger's domain is short by their rows`
+        : "every observation's telemetry.jsonl is intact and byte-consistent with archive.json's sealed copy",
+  });
   checks.push({
     clause: "admissionRule 13 — control arms",
     fired: false,
@@ -417,6 +440,7 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     uncheckedClauses,
     gitAudit,
     declarationFailures,
+    integrityFailures,
     dispositionPrecedence: DISPOSITION_CONVENTION,
     ambiguityIdSet,
     scoringCommand: {
@@ -851,44 +875,61 @@ function buildArchiveChecks(ctx: ChecksContext): void {
   // voidConditions 12 — instruction components, intra-arm, from the archived
   // pre/post hashes. Components ONLY; the pair-level comparison is blocked on
   // the VOID-21/VOID-12 adjudications (FINDINGS.md F24, registered).
+  // ABSENT EVIDENCE FIRES TOO (the diff review's fifth finding): a record that
+  // carries no hashes cannot show the clause held, and an uncheckable clause
+  // published as clean is the shape the audit handling refuses one level up.
   const driftedInstruction: string[] = [];
   const missingPolicy: string[] = [];
+  const missingHashes: string[] = [];
   for (const a of assessed) {
     const hashes = a.obs.record?.instructionHashes;
-    if (hashes == null) continue;
-    for (const component of CLAUSE_12_COMPONENTS) {
-      if ((hashes.pre[component] ?? null) !== (hashes.post[component] ?? null)) {
-        driftedInstruction.push(`${a.obs.dir}: ${component}`);
+    if (hashes == null) {
+      missingHashes.push(a.obs.dir);
+    } else {
+      for (const component of CLAUSE_12_COMPONENTS) {
+        if ((hashes.pre[component] ?? null) !== (hashes.post[component] ?? null)) {
+          driftedInstruction.push(`${a.obs.dir}: ${component}`);
+        }
       }
     }
     if (a.obs.record?.policyBlobSha256 == null) missingPolicy.push(a.obs.dir);
   }
   push(
     "voidConditions 12 — instruction set",
-    driftedInstruction.length > 0 || missingPolicy.length > 0,
+    driftedInstruction.length > 0 || missingPolicy.length > 0 || missingHashes.length > 0,
     driftedInstruction.length > 0
       ? `component hash moved between start and end: ${driftedInstruction.join("; ")}`
       : missingPolicy.length > 0
         ? `the per-arm policy blob hash is absent from ${missingPolicy.length} record(s), which the clause voids by name`
-        : "every component hash held from start to end and every record carries its policy blob hash; the pair-level comparison awaits the registered VOID-12/VOID-21 adjudications"
+        : missingHashes.length > 0
+          ? `${missingHashes.length} record(s) carry no instruction hashes at all — the clause cannot be shown to hold`
+          : "every component hash held from start to end and every record carries its policy blob hash; the pair-level comparison awaits the registered VOID-12/VOID-21 adjudications"
   );
 
-  // voidConditions 13 — memory: no writes, restored from the committed snapshot.
+  // voidConditions 13 — memory: no writes, restored from the committed
+  // snapshot. Absent evidence fires here too: a missing pin, a missing per-
+  // record snapshot hash, or missing pre/post memory hashes leave the clause
+  // unshowable, and unshowable is not clean.
   const memoryPin = typeof pinned.memorySnapshotSha256 === "string" ? pinned.memorySnapshotSha256 : null;
   const memoryDrift: string[] = [];
+  if (memoryPin === null) memoryDrift.push("the manifest pins no memory snapshot hash");
   for (const a of assessed) {
     const hashes = a.obs.record?.instructionHashes;
-    if (hashes != null && (hashes.pre["memory"] ?? null) !== (hashes.post["memory"] ?? null)) {
+    if (hashes == null || hashes.pre["memory"] == null || hashes.post["memory"] == null) {
+      memoryDrift.push(`${a.obs.dir}: no pre/post memory hashes — the no-write half cannot be shown`);
+    } else if (hashes.pre["memory"] !== hashes.post["memory"]) {
       memoryDrift.push(`${a.obs.dir}: written during the session`);
     }
-    if (memoryPin !== null && a.obs.record?.memorySnapshotSha256 != null && a.obs.record.memorySnapshotSha256 !== memoryPin) {
+    if (a.obs.record?.memorySnapshotSha256 == null) {
+      memoryDrift.push(`${a.obs.dir}: no restoration hash — the restored-from-snapshot half cannot be shown`);
+    } else if (memoryPin !== null && a.obs.record.memorySnapshotSha256 !== memoryPin) {
       memoryDrift.push(`${a.obs.dir}: not restored from the pinned snapshot`);
     }
   }
   push(
     "voidConditions 13 — memory restoration",
     memoryDrift.length > 0,
-    memoryDrift.length > 0 ? memoryDrift.join("; ") : "every session's memory hash held pre to post and matches the pinned snapshot where pinned"
+    memoryDrift.length > 0 ? memoryDrift.join("; ") : "every session's memory hash held pre to post and matches the pinned snapshot"
   );
 
   // voidConditions 14 — snapshot scope. The counts are mechanical; "every slug
@@ -909,16 +950,41 @@ function buildArchiveChecks(ctx: ChecksContext): void {
       : "every observation carries both snapshots with non-zero slug and id counts; the every-slug half is asserted by the harness at run time (registered limit)"
   );
 
-  // voidConditions 19 — the scoring command, and the ambiguity id set.
+  // voidConditions 19 — the scoring command, and the ambiguity id set. The id
+  // set is NOT taken on faith (the diff review's fourth finding): the archive
+  // carries each observation's `invocationIds` inventory, sealed by the
+  // capture, and the set the ambiguity check derived from the rebuilt
+  // transcripts must EQUAL it — a dropped tool result would silently shrink
+  // the universe the clause exists to pin.
+  const idMismatches: string[] = [];
+  for (const a of ctx.assessed) {
+    if (a.obs.transcript === null) continue;
+    const derived = new Set(
+      a.obs.transcript.toolResults
+        .filter(isLocalToolResult)
+        .map((r) => r.invocationId)
+        .filter((id): id is string => id !== null)
+    );
+    const sealed = new Set(a.obs.invocationIds);
+    const missing = [...sealed].filter((id) => !derived.has(id));
+    const extra = [...derived].filter((id) => !sealed.has(id));
+    if (missing.length > 0 || extra.length > 0) {
+      idMismatches.push(
+        `${a.obs.dir}: ${missing.length} sealed id(s) absent from the rebuilt transcript, ${extra.length} derived id(s) absent from the sealed inventory`
+      );
+    }
+  }
   const pinnedCommand = typeof pinned.scoringCommand === "string" ? pinned.scoringCommand : null;
   const commandFired =
     pinnedCommand !== null && ctx.scoringCommandActual !== null && pinnedCommand !== ctx.scoringCommandActual;
   push(
     "voidConditions 19 — scoring command and ambiguity set",
-    commandFired,
+    commandFired || idMismatches.length > 0,
     commandFired
       ? `the scoring invocation (${ctx.scoringCommandActual}) differs from the committed string (${pinnedCommand})`
-      : `${pinnedCommand === null ? "no scoring command is pinned (manifest gap); " : ""}${ctx.scoringCommandActual === null ? "the actual invocation was not supplied (reported, not defaulted); " : ""}the ambiguity check saw the whole archive by construction and its id set is published on the face`
+      : idMismatches.length > 0
+        ? `the id set the ambiguity check saw is not the archive's sealed inventory: ${idMismatches.join("; ")}`
+        : `${pinnedCommand === null ? "no scoring command is pinned (manifest gap); " : ""}${ctx.scoringCommandActual === null ? "the actual invocation was not supplied (reported, not defaulted); " : ""}the ambiguity set equals every observation's sealed invocation-id inventory and is published on the face`
   );
 
   // voidConditions 20 — pacing, per observation, and the ceiling's presence.
@@ -946,6 +1012,35 @@ export function committedOrderReplay(archive: RunArchive): string | null {
   if (archive.runlog.corruptLines > 0) {
     return `the runlog carries ${archive.runlog.corruptLines} corrupt line(s), so the committed order cannot be fully replayed`;
   }
+
+  // ABSENT EVIDENCE IS NOT COMPLIANCE (the diff review's second finding). The
+  // harness appends one machine-written row per observation (`design.artifacts`
+  // 10), so every archived treatment attempt must have its row and every row
+  // its directory — a runlog short of the archive, or long of it, means the
+  // order CANNOT be shown followed, and an unreplayable clause may not be
+  // published as a clean one.
+  const rowCount = new Map<string, number>();
+  for (const row of archive.runlog.rows) {
+    if (row.arm !== "treatment") continue;
+    rowCount.set(row.taskId, (rowCount.get(row.taskId) ?? 0) + 1);
+  }
+  const attemptCount = new Map<string, number>();
+  for (const obs of archive.observations) {
+    if (obs.arm !== "treatment") continue;
+    attemptCount.set(obs.taskId, (attemptCount.get(obs.taskId) ?? 0) + 1);
+  }
+  for (const [taskId, attempts] of attemptCount) {
+    const rows = rowCount.get(taskId) ?? 0;
+    if (rows !== attempts) {
+      return `task ${taskId} has ${attempts} archived attempt(s) but ${rows} runlog row(s) — the committed order cannot be replayed over missing or extra evidence`;
+    }
+  }
+  for (const [taskId, rows] of rowCount) {
+    if (!attemptCount.has(taskId)) {
+      return `the runlog records ${rows} row(s) for task ${taskId} but no observation directory survives — evidence was destroyed`;
+    }
+  }
+
   const order = new Map(archive.manifest.tasks.map((t, i) => [t.id, i]));
   const seen = new Set<string>();
   for (const row of archive.runlog.rows) {

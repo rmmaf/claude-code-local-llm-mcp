@@ -24,6 +24,7 @@ import {
   pacingFacts,
 } from "../src/cost/b12/assemble.js";
 import { identify } from "../src/cost/b12/coverage.js";
+import { isLocalToolResult } from "../src/cost/report.js";
 import type {
   ArchivedObservation,
   GitAudit,
@@ -165,18 +166,31 @@ function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
     over.record === null
       ? null
       : recordOf(taskId, sessionId, { originatedRequestIds: [rqId], ...(over.record ?? {}) });
+  const transcript = transcriptFromRecords(records, { files, skippedLines: 0, sessionId });
+  // The sealed inventory the capture would have written — derived from the
+  // same records, so the fixture is coherent and clause 19's equality holds
+  // unless a test breaks it on purpose.
+  const sealedIds =
+    over.invocationIds ??
+    [...new Set(
+      transcript.toolResults
+        .filter(isLocalToolResult)
+        .map((r) => r.invocationId)
+        .filter((id): id is string => id !== null)
+    )].sort();
   return {
     taskId,
     arm: "treatment",
     attempt,
     dir: `evidence/${RUN}/${dirName}`,
+    telemetryIntact: true,
     record,
     lineageRecords: records,
     lineageFiles: files,
-    transcript: transcriptFromRecords(records, { files, skippedLines: 0, sessionId }),
+    transcript,
     identified: identify(source, over.telemetry ?? []),
     telemetrySource: source,
-    invocationIds: over.invocationIds ?? [],
+    invocationIds: sealedIds,
     snapshotBefore:
       over.snapshotBefore !== undefined
         ? over.snapshotBefore
@@ -652,7 +666,7 @@ describe("committedOrderReplay — voidConditions 3's order half, retrospective"
   it("a late RE-RUN is not an order event (admissionRule 12 has no temporal clause)", () => {
     const archive = archiveOf({
       tasks,
-      observations: [obsOf("t1"), obsOf("t2")],
+      observations: [obsOf("t1"), obsOf("t2"), obsOf("t1", { attempt: 2 })],
       runlogRows: [row("t1", 0), row("t2", 1), row("t1", 2)],
     });
     expect(committedOrderReplay(archive)).toBeNull();
@@ -660,11 +674,27 @@ describe("committedOrderReplay — voidConditions 3's order half, retrospective"
 
   it("fires on a task the committed order does not contain, and on a corrupt runlog", () => {
     expect(
-      committedOrderReplay(archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [row("tX", 0)] }))
+      committedOrderReplay(
+        archiveOf({ tasks, observations: [obsOf("t1"), obsOf("tX")], runlogRows: [row("t1", 0), row("tX", 1)] })
+      )
     ).toMatch(/does not contain/);
     expect(
       committedOrderReplay(archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [row("t1", 0)], corruptLines: 1 }))
     ).toMatch(/corrupt/);
+  });
+
+  it("ABSENT runlog evidence is not compliance — a run with no rows cannot replay its order", () => {
+    // The diff review's second finding: an empty runlog passed as clean while
+    // the archive held real attempts. Every archived attempt needs its row,
+    // and every row its directory.
+    expect(
+      committedOrderReplay(archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [] }))
+    ).toMatch(/1 archived attempt\(s\) but 0 runlog row\(s\)/);
+    expect(
+      committedOrderReplay(
+        archiveOf({ tasks, observations: [obsOf("t1")], runlogRows: [row("t1", 0), row("t2", 1)] })
+      )
+    ).toMatch(/no observation directory survives/);
   });
 });
 
@@ -773,6 +803,54 @@ describe("the archive-level clauses — each fired and each held", () => {
     expect(check(noVersion.result, "voidConditions 7").fired).toBe(true);
     const noCeiling = assemble(archiveOf({ pinned: { pacingCacheWriteShareCeiling: undefined } }));
     expect(check(noCeiling.result, "voidConditions 20").fired).toBe(true);
+  });
+});
+
+describe("the diff review's trust boundaries — absent evidence is never clean", () => {
+  it("a suspect telemetry source prices NOTHING: integrity failure, fired check, no terms", () => {
+    const out = assemble(
+      archiveOf({
+        tasks: [taskOf("t1"), taskOf("t2")],
+        observations: [obsOf("t1"), { ...obsOf("t2"), telemetryIntact: false, problems: ["telemetry.jsonl carries 1 corrupt line(s)"] }],
+      })
+    );
+    expect(out.result.integrityFailures).toEqual([
+      { taskId: "t2", arm: "treatment", attempt: 1, reasons: ["telemetry.jsonl carries 1 corrupt line(s)"] },
+    ]);
+    expect(check(out.result, "design.artifacts 6").fired).toBe(true);
+    expect(cfOf(out, "t2")).toBeUndefined(); // no terms from a tampered source
+    expect(cfOf(out, "t1")).toBeDefined();
+    // the negative control: an intact archive holds the check quiet
+    expect(check(assemble(archiveOf()).result, "design.artifacts 6").fired).toBe(false);
+  });
+
+  it("a record with NO instruction hashes fires clause 12 — unshowable is not clean", () => {
+    const out = assemble(archiveOf({ observations: [obsOf("t1", { record: { instructionHashes: null } })] }));
+    expect(check(out.result, "voidConditions 12").fired).toBe(true);
+    expect(check(out.result, "voidConditions 12").detail).toMatch(/no instruction hashes at all/);
+  });
+
+  it("missing memory evidence fires clause 13 in each of its three shapes", () => {
+    const noRestoration = assemble(
+      archiveOf({ observations: [obsOf("t1", { record: { memorySnapshotSha256: null } })] })
+    );
+    expect(check(noRestoration.result, "voidConditions 13").fired).toBe(true);
+    expect(check(noRestoration.result, "voidConditions 13").detail).toMatch(/no restoration hash/);
+    const noPin = assemble(archiveOf({ pinned: { memorySnapshotSha256: undefined } }));
+    expect(check(noPin.result, "voidConditions 13").fired).toBe(true);
+    expect(check(noPin.result, "voidConditions 13").detail).toMatch(/pins no memory snapshot/);
+  });
+
+  it("clause 19 compares the derived ambiguity universe against the SEALED invocation inventory", () => {
+    // A sealed id the rebuilt transcript no longer carries means a tool result
+    // was dropped somewhere — the ambiguity universe silently shrank.
+    const out = assemble(
+      archiveOf({
+        observations: [obsOf("t1", { invocationIds: ["aaaaaaaa-9999-8888-7777-666666666666"] })],
+      })
+    );
+    expect(check(out.result, "voidConditions 19").fired).toBe(true);
+    expect(check(out.result, "voidConditions 19").detail).toMatch(/sealed id\(s\) absent/);
   });
 });
 

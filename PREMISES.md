@@ -1873,12 +1873,16 @@ defect, and it pinned four of them in place.
   2. **The analysis session is FORBIDDEN from the manifest** — `voidConditions`
      9 in its own words: "VOID if the session computing the verdict is in the
      manifest."
-  3. **The scoring invocation requires a COMMITTED clause 4–6 audit artifact**
-     (verdict AND inputs, published on `result.json`'s face for artifact 11's
-     replay). `assemble` takes the audit as an input and publishes clauses 4–6
-     as UNCHECKED when none is supplied — never as "clean" — and **a verdict
-     emitted without one is not final**. The audit computer itself is not yet
-     written; it is a named blocker of a lawful run (`STATE.md`), beside F23.
+  3. **The scoring invocation requires a COMMITTED clause 4–6 audit artifact
+     at `evidence/<run_id>.b12.audit.json`** — repo-relative at exactly that
+     path, present in HEAD, byte-identical to HEAD's blob, carrying verdict
+     AND non-empty inputs (published on `result.json`'s face for artifact
+     11's replay). Anything short of that is NO audit: `assemble` publishes
+     clauses 4–6 as UNCHECKED — never as "clean" — and **a verdict emitted
+     without one is not final**. The committedness requirement is the probe
+     trust boundary's fix applied on the day the input existed (the UNIT-5
+     diff review's first finding); the audit computer itself is not yet
+     written and is a named blocker of a lawful run (`STATE.md`), beside F23.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and

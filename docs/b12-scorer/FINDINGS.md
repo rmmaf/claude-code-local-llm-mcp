@@ -465,6 +465,33 @@ in the plan file and summarized here where it changed the shipped shape.
   table is published — the frozen text ranks voids nowhere, so the order is a
   labelled convention like the two above.
 
+**AN ADVERSARIAL ROUND ON THE DIFF RETURNED FIVE HIGH FINDINGS — ALL FIVE
+CONFIRMED, ALL FIVE FIXED IN THE SAME PASS.** One class, five instances:
+evidence accepted uncommitted, or absence of evidence published as clean —
+the probe trust boundary's shape, which F24's second round had already fixed
+once. Each fix ships FIRING:
+
+- **The audit input trusted any readable JSON.** A working-tree
+  `{ran:true, verdict:"clean"}` would have certified clauses 4–6. Now the
+  audit must be COMMITTED EVIDENCE at `evidence/<runId>.b12.audit.json` —
+  in HEAD, byte-identical, non-empty `inputs` (`committedAuditCheck`, the
+  probe boundary's own comparison) — and the pre-declaration names the path.
+- **An absent runlog replayed as a followed order.** Zero rows returned
+  "clean" while the archive held real attempts. Now every archived treatment
+  attempt needs its machine-written row (artifact 10) and every row its
+  surviving directory; either gap fires clause 2's check as unreplayable.
+- **Corrupt/drifted telemetry still priced the surviving subset.** A suspect
+  identity source now prices NOTHING: `telemetryIntact` false → no terms, an
+  `integrityFailures` entry, and a fired artifact-6 integrity check — the run
+  voids instead of scoring around the tampering.
+- **Clause 19's id set was taken on faith.** The ambiguity universe derived
+  from rebuilt transcripts is now compared per observation against the
+  archive's SEALED `invocationIds` inventory; any missing or extra id fires.
+- **Absent memory/instruction evidence read as clean.** Clause 12 fires on a
+  record with no instruction hashes; clause 13 fires on a missing pin, a
+  missing restoration hash, or missing pre/post memory hashes — unshowable
+  is not clean, the same principle the audit seam applies to clauses 4–6.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced

@@ -26,7 +26,7 @@ import {
   telemetryDrift,
 } from "../src/cost/b12/archive.js";
 import { assembleRun } from "../src/cost/b12/assemble.js";
-import { emitRun, invocationString, parseGitAudit } from "../src/cost/b12/emit.js";
+import { committedAuditCheck, emitRun, invocationString, parseGitAudit } from "../src/cost/b12/emit.js";
 import { reduceFile } from "../src/cost/b12/capture.js";
 import { readTranscript } from "../src/cost/transcript.js";
 import { makeScratch, req, at } from "./b12-fixtures.js";
@@ -259,7 +259,7 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
 });
 
 describe("the emitter's small pure pieces", () => {
-  it("parseGitAudit refuses every shape that is not a committed audit", () => {
+  it("parseGitAudit refuses every shape that is not a replayable audit — inputs included", () => {
     expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } })).toEqual({
       ran: true,
       verdict: "clean",
@@ -267,8 +267,34 @@ describe("the emitter's small pure pieces", () => {
       inputs: { head: "abc" },
     });
     expect(parseGitAudit({ ran: true, verdict: "maybe", reasons: [] })).toEqual({ ran: false });
+    // a verdict whose inputs cannot be replayed is not an audit (artifact 11)
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [] })).toEqual({ ran: false });
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: {} })).toEqual({ ran: false });
     expect(parseGitAudit({ verdict: "clean" })).toEqual({ ran: false });
     expect(parseGitAudit(null)).toEqual({ ran: false });
+  });
+
+  it("committedAuditCheck refuses the wrong path and the uncommitted file — a fabricated audit certifies nothing", async () => {
+    const root = await fixtureCopy();
+    const wrongPath = committedAuditCheck(root, "replay-01", path.join(root, "somewhere", "audit.json"));
+    expect(wrongPath.ok).toBe(false);
+    expect(wrongPath.why).toMatch(/must live at evidence\/replay-01\.b12\.audit\.json/);
+
+    // the right path, but a working-tree fabrication — the fixture copy is
+    // outside git, which is exactly what "not committed evidence" looks like
+    const auditPath = path.join(root, "evidence", "replay-01.b12.audit.json");
+    await fs.writeFile(auditPath, JSON.stringify({ ran: true, verdict: "clean", reasons: [], inputs: { head: "x" } }), "utf8");
+    const fabricated = committedAuditCheck(root, "replay-01", auditPath);
+    expect(fabricated.ok).toBe(false);
+    expect(fabricated.why).toMatch(/not committed evidence/);
+
+    // and end to end: emitRun with the fabricated audit still publishes
+    // clauses 4–6 as UNCHECKED, with the refusal on the artifact's face
+    const emitted = await emitRun(root, "replay-01", { auditPath });
+    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
+    expect(result.uncheckedClauses).toHaveLength(3);
+    expect(result.gitAudit).toEqual({ ran: false });
+    expect(result.archiveProblems.join(" ")).toMatch(/audit refused/);
   });
 
   it("invocationString spells the command one way on every platform", () => {
