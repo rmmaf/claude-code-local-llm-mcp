@@ -200,6 +200,20 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   const declarationFailures: DeclarationFailure[] = [];
   const taskById = new Map(manifest.tasks.map((t) => [t.id, t]));
 
+  // ONE ID, ONE DECLARATION (the seventh diff round's second finding).
+  // `taskById` collapses by id, so a manifest declaring the same id twice
+  // would let POSITION silently decide which declaration governs — and the
+  // selection below, which walks manifest ENTRIES, would fetch the same
+  // scored attempt once per entry and price one session twice while every
+  // check stayed clean. The duplication fires here, the selection walks each
+  // id once, and the governing declaration is reported as undecidable.
+  // The check itself lives in `buildArchiveChecks`, in table order beside
+  // artifact 1's other predicates; the set is computed once, here, because the
+  // selection and the declaration reporting both read it.
+  const idCounts = new Map<string, number>();
+  for (const t of manifest.tasks) idCounts.set(t.id, (idCounts.get(t.id) ?? 0) + 1);
+  const duplicatedTaskIds = new Set([...idCounts].filter(([, n]) => n > 1).map(([id]) => id));
+
   // `admissionRule` 13: the control arm never enters the primary verdict — its
   // observations (present only once the post-verdict A/B has run) are outside
   // every arithmetic domain here, and their presence is reported.
@@ -308,6 +322,7 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
         cacheWriteShareCeiling: cacheWriteCeiling,
         pinnedVersion,
         pinnedBinarySha,
+        duplicatedTaskIds,
         declarationFailures,
         problems,
       })
@@ -366,7 +381,12 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   const admitted: ObservationTerms[] = [];
   const dropped: ObservationTerms[] = [];
   const admittedAssessed: Assessed[] = [];
+  const walked = new Set<string>();
   for (const task of manifest.tasks) {
+    // One id, one admission — a duplicated declaration already fired the task
+    // identity check above; walking it again would price the session twice.
+    if (walked.has(task.id)) continue;
+    walked.add(task.id);
     const a = scoredTrack.get(task.id);
     if (a === undefined) continue; // not_started — appended to dispositions below
     const admissible =
@@ -401,6 +421,7 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     admittedAssessed,
     checks,
     scoringCommandActual: input.scoringCommandActual,
+    duplicatedTaskIds,
   });
 
   const uncheckedClauses = gitAudit.ran
@@ -440,9 +461,11 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   // These are manifest entries with NO observation — they never had terms, so
   // they are appended here rather than synthesised as zero-valued observations
   // (a zero A_o is a measurement; absence is not).
-  const notStarted = manifest.tasks
-    .filter((t) => !byTask.has(t.id))
-    .map((t) => ({ taskId: t.id, arm: "treatment" as const, disposition: "not_started" as const }));
+  // One id, one row — a duplicated declaration is the task identity check's
+  // firing above, never a second `not_started`.
+  const notStarted = [
+    ...new Map(manifest.tasks.filter((t) => !byTask.has(t.id)).map((t) => [t.id, t])).values(),
+  ].map((t) => ({ taskId: t.id, arm: "treatment" as const, disposition: "not_started" as const }));
 
   const result: B12RunResult = {
     ...base,
@@ -488,6 +511,7 @@ interface AssessContext {
   cacheWriteShareCeiling: number | null;
   pinnedVersion: string | null;
   pinnedBinarySha: string | null;
+  duplicatedTaskIds: ReadonlySet<string>;
   declarationFailures: DeclarationFailure[];
   problems: string[];
 }
@@ -513,6 +537,11 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
   if (ctx.task !== null && ctx.task.verificationStratum === null) {
     declReasons.push(
       `the manifest declares no verificationStratum for ${obs.taskId} — FINDINGS.md F25: mandated declaration, no disposition for its absence`
+    );
+  }
+  if (ctx.task !== null && ctx.duplicatedTaskIds.has(obs.taskId)) {
+    declReasons.push(
+      `the manifest declares task ${obs.taskId} more than once — which declaration governs this observation cannot be decided (design.artifacts 1; reported, never defaulted)`
     );
   }
 
@@ -818,6 +847,7 @@ interface ChecksContext {
   admittedAssessed: Assessed[];
   checks: ArchiveCheck[];
   scoringCommandActual: string | null;
+  duplicatedTaskIds: ReadonlySet<string>;
 }
 
 /**
@@ -855,12 +885,26 @@ function buildArchiveChecks(ctx: ChecksContext): void {
             : `blob ${gitP.manifestBlobSha256} in HEAD, byte-identical to the scored bytes, untouched since the earliest session start`
   );
 
+  // design.artifacts 1 — task identity (the seventh diff round). One id, one
+  // declaration: the by-id joins collapse duplicates by POSITION and the
+  // selection walks manifest entries, so a duplicated id fires rather than
+  // pricing one session once per declaration.
+  push(
+    "design.artifacts 1 — task identity",
+    ctx.duplicatedTaskIds.size > 0,
+    ctx.duplicatedTaskIds.size > 0
+      ? `the manifest declares ${[...ctx.duplicatedTaskIds].sort().join(", ")} more than once — a selection walking manifest entries would admit the same observation once per declaration, and which declaration governs it cannot be decided`
+      : "every manifest task id is declared exactly once"
+  );
+
   // voidConditions 1 — the register's SHOWABILITY (the third adversarial
   // round). `aggregate`'s decide() voids on an abandoned prior run it can SEE;
   // this fires when the register itself cannot be shown — a manifest with no
-  // row, a row with no manifest, uncommitted or unreadable registration
-  // state — because a register that cannot be listed with confidence is the
-  // omission clause 1 calls "itself a VOID".
+  // row, a run's surviving traces with no manifest, unreadable rows,
+  // uncommitted registration state — because a register that cannot be listed
+  // with confidence is the omission clause 1 calls "itself a VOID". A row
+  // ALONE is undecidable against the log's ordinary measurement rows and is
+  // `collectRegister`'s registered limit, not a silent pass here.
   push(
     "voidConditions 1 — the register",
     archive.register.discrepancies.length > 0,

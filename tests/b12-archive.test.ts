@@ -26,6 +26,8 @@ import {
   parsePorcelain,
   readRunArchive,
   rebuildLineageTranscript,
+  reconcileRegisterTraces,
+  registrationRows,
   telemetryDrift,
 } from "../src/cost/b12/archive.js";
 import { assembleRun } from "../src/cost/b12/assemble.js";
@@ -97,6 +99,78 @@ describe("the pure readers", () => {
     expect(telemetryDrift([{ a: 1 }], [])).toMatch(/1 row\(s\) while archive\.json holds 0/);
     expect(telemetryDrift([{ a: 1 }], [{ a: 2 }])).toMatch(/row 0 differs/);
     expect(telemetryDrift([], null)).toMatch(/no telemetry array/);
+  });
+});
+
+describe("the register's pure core — the seventh adversarial round", () => {
+  const entry = (type: "blob" | "tree", p: string): string =>
+    `${type === "tree" ? "040000" : "100644"} ${type} ${"a".repeat(40)}\t${p}`;
+
+  it("a run's surviving traces without a manifest are discrepancies, one per hidden run", () => {
+    const { manifestIds, discrepancies } = reconcileRegisterTraces(
+      [
+        entry("blob", "evidence/reg-01.b12.tasks.json"),
+        entry("blob", "evidence/reg-01.b12.runlog.jsonl"),
+        entry("tree", "evidence/reg-01"),
+        // a scrubbed manifest whose runlog and result survived the scrub
+        entry("blob", "evidence/ghost-02.b12.runlog.jsonl"),
+        entry("blob", "evidence/ghost-02.b12.result.json"),
+        // a scrubbed manifest whose only survivor is the observation container
+        entry("tree", "evidence/ghost-03"),
+      ].join("\n"),
+      "self-run"
+    );
+    expect([...manifestIds]).toEqual(["reg-01"]);
+    expect(discrepancies).toHaveLength(2);
+    expect(discrepancies[0]).toMatch(/ghost-02/);
+    expect(discrepancies[0]).toMatch(/a committed runlog and a committed result/);
+    expect(discrepancies[1]).toMatch(/ghost-03/);
+    expect(discrepancies[1]).toMatch(/observation directory/);
+    expect(discrepancies.join(" ")).toMatch(/cannot enumerate/);
+  });
+
+  it("another instrument's evidence and the current run's own traces are not ghosts", () => {
+    // NEGATIVE CONTROL over the committed repository's real neighbours: the
+    // preflight reports, scorer records, probes and telemetry that live in
+    // evidence/ are decidedly not run containers, and the CURRENT run's
+    // manifest committedness belongs to design.artifacts 1, not the register.
+    const { manifestIds, discrepancies } = reconcileRegisterTraces(
+      [
+        entry("blob", "evidence/2026-08-06-mac-b12-2eab63d.preflight.json"),
+        entry("blob", "evidence/2026-08-07-mac-b12-c40e9f4.scorer.json"),
+        entry("blob", "evidence/2026-08-05-b12-preregistration.json"),
+        entry("blob", "evidence/2026-08-03-mac-06.telemetry.jsonl"),
+        entry("blob", "evidence/self-run.b12.runlog.jsonl"),
+        entry("tree", "evidence/self-run"),
+      ].join("\n"),
+      "self-run"
+    );
+    expect(manifestIds.size).toBe(0);
+    expect(discrepancies).toEqual([]);
+  });
+
+  it("row multiplicity is the log's lawful shape; only undecidable rows fire", () => {
+    // The committed MEASUREMENTS.jsonl holds one row PER METRIC per measured
+    // run — twenty-three under one id — so a repeated run_id must never fire:
+    // registration is presence, not count.
+    const lawful = registrationRows(
+      [
+        JSON.stringify({ run_id: "2026-08-02-win-01", metric: "a", value: 1 }),
+        JSON.stringify({ run_id: "2026-08-02-win-01", metric: "b", value: 2 }),
+        JSON.stringify({ premise: "a row of another shape, carrying no run_id at all" }),
+      ].join("\n")
+    );
+    expect([...lawful.rowIds]).toEqual(["2026-08-02-win-01"]);
+    expect(lawful.discrepancies).toEqual([]);
+
+    const broken = registrationRows(
+      ['{"run_id": "ok-1"}', '{"run_id": 42}', '"not an object"', '{"truncated'].join("\n")
+    );
+    expect([...broken.rowIds]).toEqual(["ok-1"]);
+    expect(broken.discrepancies).toHaveLength(3);
+    expect(broken.discrepancies.join(" ")).toMatch(/1 corrupt line/);
+    expect(broken.discrepancies.join(" ")).toMatch(/not objects/);
+    expect(broken.discrepancies.join(" ")).toMatch(/run_id is not a string/);
   });
 });
 

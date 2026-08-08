@@ -685,6 +685,43 @@ describe("selection — the committed order, and the metamorphic pair", () => {
     expect(cfOf(out, "t1")!.aPlusSPositive).toBeNull(); // not admitted
     expect(out.result.admitted).toBe(0);
   });
+
+  it("a manifest declaring one id twice prices the session ONCE — the seventh adversarial round", () => {
+    // Codex's scenario: the selection walks manifest ENTRIES, so a duplicated
+    // declaration fetched the same scored attempt twice and counted one
+    // session's terms twice while every check stayed clean.
+    const dup = assemble(archiveOf({ tasks: [taskOf("t1"), taskOf("t1")], observations: [obsOf("t1")] }));
+    const single = assemble(archiveOf({ tasks: [taskOf("t1")], observations: [obsOf("t1")] }));
+
+    const fired = check(dup.result, "design.artifacts 1 — task identity");
+    expect(fired.fired).toBe(true);
+    expect(fired.detail).toMatch(/declares t1 more than once/);
+    expect(dup.result.verdict).toBe("void");
+
+    // The metamorphic half: the duplicate ENTRY may change no figure — one
+    // admission, one bracket, one disposition row.
+    expect(dup.result.admitted).toBe(1);
+    expect(dup.result.admitted).toBe(single.result.admitted);
+    expect(dup.result.rLo).toBe(single.result.rLo);
+    expect(dup.result.rHi).toBe(single.result.rHi);
+    expect(dup.result.dispositions).toEqual(single.result.dispositions);
+
+    // Which declaration governs is REPORTED as undecidable, never defaulted.
+    expect(
+      dup.counterfactual.declarationFailures.some((f) =>
+        f.reasons.some((r) => /declares task t1 more than once/.test(r))
+      )
+    ).toBe(true);
+
+    // Negative control: unique ids leave the check unfired.
+    expect(check(single.result, "design.artifacts 1 — task identity").fired).toBe(false);
+
+    // A duplicated task that never started is ONE not_started row, not two.
+    const dupNotStarted = assemble(
+      archiveOf({ tasks: [taskOf("t1"), taskOf("t2"), taskOf("t2")], observations: [obsOf("t1")] })
+    );
+    expect(dupNotStarted.result.dispositions.filter((d) => d.taskId === "t2")).toHaveLength(1);
+  });
 });
 
 describe("committedOrderReplay — voidConditions 3's order half, retrospective", () => {

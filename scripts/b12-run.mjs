@@ -587,11 +587,22 @@ export function manifestDeclarationGaps(manifest) {
     }
   }
 
+  // ONE ID, ONE DECLARATION — a duplicated task id would hand the scorer's
+  // by-id joins to POSITION (the last declaration silently wins) and its
+  // entry-walking selection the same observation once per entry (the seventh
+  // adversarial round). Refused here, in the pre-registration window, before
+  // anything is spent under an id two declarations claim.
+  const seenTaskIds = new Set();
   for (const t of manifest?.tasks ?? []) {
     const id = t?.id ?? "(unnamed task)";
     const tneed = (cond, msg) => {
       if (!cond) gaps.push(`task ${id} ${msg}`);
     };
+    tneed(
+      !seenTaskIds.has(t?.id),
+      "is declared more than once — one id, one declaration; the scorer's by-id joins cannot decide which declaration governs a duplicated id (design.artifacts 1)"
+    );
+    if (str(t?.id)) seenTaskIds.add(t.id);
     tneed(
       str(t?.id) && SAFE_ID.test(t.id),
       "carries no id, or an id that is not a safe path segment ([A-Za-z0-9][A-Za-z0-9_-]{0,63}) — the id names the worktree directory a recursive delete targets"

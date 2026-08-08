@@ -2873,6 +2873,18 @@ describe("the B12 harness", () => {
       expect(manifestDeclarationGaps(completeManifest())).toHaveLength(0);
     });
 
+    it("a duplicated task id is a declaration gap — one id, one declaration", async () => {
+      // The seventh adversarial round: the scorer's by-id joins collapse
+      // duplicates by POSITION, so the duplication is refused here, in the
+      // pre-registration window, before anything is spent under a contested id.
+      const { manifestDeclarationGaps } = await load();
+      const m = completeManifest();
+      m.tasks.push({ ...m.tasks[0]! });
+      const gaps = manifestDeclarationGaps(m);
+      expect(gaps).toHaveLength(1);
+      expect(gaps[0]).toMatch(/task t1 is declared more than once.*one id, one declaration/);
+    });
+
     it("fires one gap per stripped declaration, each citing the clause that requires it", async () => {
       // FIRST shipped checking three task fields; the adversarial review found
       // the omission decides real outcomes (a task with no acceptance predicate

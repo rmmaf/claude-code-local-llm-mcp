@@ -645,6 +645,53 @@ SELF-CAUGHT DIVERGENCE FIXED INSIDE THE SAME REPAIR ZONE:**
   replays the harness's registered comparison, with the raw-output negative
   control pinned in the suite.
 
+**A SEVENTH ROUND RETURNED TWO HIGH — BOTH CONFIRMED IN THEIR CORE, BOTH
+FIXED; TWO OF THE RECOMMENDED MECHANISMS DECLINED AGAINST THE COMMITTED LOG'S
+OWN SHAPE:**
+
+- **The register reconciled only one direction, and read its rows as if the
+  log could not lie.** `collectRegister` destructured `{ rows }` and DISCARDED
+  `parseJsonl`'s corrupt-line count; a non-object row and a non-string
+  `run_id` were silently skipped; and the reverse direction both the
+  docstring and the clause-1 check comment PROMISED ("a row with no
+  manifest") was never implemented — a scrubbed manifest hid an abandoned
+  run and restored its consumed attempt. Fixed with a pure core: `registrationRows`
+  fires on every row whose MEMBERSHIP cannot be decided (corrupt lines,
+  non-object rows, a `run_id` that is not a string), and
+  `reconcileRegisterTraces` reconciles a run's TRACES — a
+  `.b12.runlog.jsonl`, a `.b12.result.json` or an observation directory in
+  HEAD's `evidence/` whose id has no committed manifest is a run the
+  register cannot enumerate, one discrepancy per hidden run, with the
+  committed repository's real neighbours (preflight reports, probes,
+  telemetry, the preregistration) pinned as negative controls. Two of the
+  recommended mechanisms were DECLINED with the committed history as the
+  citation: the bare row-minus-manifest set difference (every one of the 237
+  committed rows carries `run_id`, naming 59 measured runs, none of them
+  B12 — the difference voids every future run against the repo's own
+  append-only log) and duplicate-`run_id` rejection (multiplicity is the
+  log's lawful shape — one row per metric per run, twenty-three under
+  `2026-08-02-win-01`; registration is presence, not count). The row ALONE,
+  every other trace also scrubbed, is a REGISTERED LIMIT stated in
+  `collectRegister`'s docstring: the frozen clause pins no registration-row
+  schema beyond "its run_id written", so that row is indistinguishable from
+  an ordinary measurement row.
+- **A manifest declaring one id twice priced the session twice while every
+  check stayed clean.** The selection walks manifest ENTRIES and fetches the
+  scored attempt BY ID, so a duplicated declaration admitted the same
+  observation's terms once per entry — distorting the bracket and the
+  per-task denominator share — while `taskById`'s last-wins collapse let
+  POSITION silently decide which declaration governs. Fixed on both sides:
+  the harness refuses a duplicated task id in `manifestDeclarationGaps`
+  (pre-registration, before anything is spent under a contested id), and the
+  scorer fires `design.artifacts 1 — task identity` in table order beside
+  the manifest-blob predicate, walks each id ONCE in selection, reports a
+  duplicated not-started task as ONE disposition row, and reports which
+  declaration governs the observation as UNDECIDABLE through the F25
+  declaration route — never defaulted to position. The metamorphic control
+  is pinned in the suite: the duplicate entry may change no figure — one
+  admission, one bracket, one disposition row, same `R` as the
+  single-declaration archive.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced
@@ -662,6 +709,12 @@ SELF-CAUGHT DIVERGENCE FIXED INSIDE THE SAME REPAIR ZONE:**
   unique worktree path and commit retry are exercised by real sessions only —
   two live processes on one task/arm belong to the real run's protocol, not
   to a fixture that would prove the mock instead of the harness.
+- **A registration-row marker** (operator-side): the seventh round's row-alone
+  blind spot exists because the frozen clause pins no registration-row schema.
+  The registration COMMAND is operator tooling, not frozen instrument — a
+  marker field on future registration rows would make the row-alone direction
+  decidable without touching the design. Until then the limit stands as
+  registered.
 
 **Two readings of mine were REFUTED and are recorded as refuted:**
 

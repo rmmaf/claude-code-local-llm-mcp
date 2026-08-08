@@ -432,22 +432,128 @@ export function committedEvidenceState(repoRoot: string, runId: string): Committ
 }
 
 /**
+ * The trace side of registration's conjunction, pure over `git ls-tree HEAD
+ * evidence/` output. Three shapes are a RUN'S OWN traces — the manifest, the
+ * runlog, the result file, plus any tree entry (the harness's only directory
+ * shape under `evidence/` is a run's observation container) — and a trace
+ * whose id has no committed manifest is positive evidence of a run the
+ * register cannot enumerate: hiding a registered run requires scrubbing its
+ * manifest from HEAD, and whichever trace survived the scrub fires here.
+ * Every other blob — preflight reports, probes, telemetry, the
+ * preregistration itself — is another instrument's evidence, decidedly not a
+ * run container, and never fires. The CURRENT run's traces are excluded: its
+ * manifest's committedness is `design.artifacts` 1's own check.
+ */
+export function reconcileRegisterTraces(
+  lsTreeOut: string,
+  selfRunId: string
+): { manifestIds: Set<string>; discrepancies: string[] } {
+  const manifestIds = new Set<string>();
+  const traces = new Map<string, string[]>();
+  const trace = (id: string, kind: string): void => {
+    traces.set(id, [...(traces.get(id) ?? []), kind]);
+  };
+  for (const raw of lsTreeOut.split("\n")) {
+    const entry = /^\d+ (blob|tree) [0-9a-f]+\t(.+)$/.exec(raw.trim());
+    if (entry === null) continue;
+    const kind = entry[1]!;
+    const name = entry[2]!;
+    if (kind === "tree") {
+      const dir = /^evidence\/(.+)$/.exec(name);
+      if (dir !== null) trace(dir[1]!, "a committed observation directory");
+      continue;
+    }
+    const manifest = /^evidence\/(.+)\.b12\.tasks\.json$/.exec(name);
+    if (manifest !== null) {
+      manifestIds.add(manifest[1]!);
+      continue;
+    }
+    const runlog = /^evidence\/(.+)\.b12\.runlog\.jsonl$/.exec(name);
+    if (runlog !== null) trace(runlog[1]!, "a committed runlog");
+    const result = /^evidence\/(.+)\.b12\.result\.json$/.exec(name);
+    if (result !== null) trace(result[1]!, "a committed result");
+  }
+  const discrepancies: string[] = [];
+  for (const [id, kinds] of [...traces.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (id === selfRunId || manifestIds.has(id)) continue;
+    discrepancies.push(
+      `evidence/ holds ${kinds.join(" and ")} for ${id} but no committed manifest — a run whose traces survive without one is a run the register cannot enumerate`
+    );
+  }
+  return { manifestIds, discrepancies };
+}
+
+/**
+ * The row side of the conjunction, pure over HEAD's `MEASUREMENTS.jsonl`
+ * text. MULTIPLICITY IS THE LOG'S LAWFUL SHAPE — the committed history holds
+ * one row per metric per measured run, twenty-three rows under one id — so a
+ * repeated `run_id` is never a discrepancy: registration is presence, not
+ * count. What fires is a row whose MEMBERSHIP cannot be decided — a corrupt
+ * line (it could have been any row, including a registration), a line that is
+ * not an object (the log's rows carry `run_id` as a field; a fieldless line
+ * cannot be shown to be, or not to be, registration state), and a `run_id`
+ * that is not a string.
+ */
+export function registrationRows(measurementsText: string): { rowIds: Set<string>; discrepancies: string[] } {
+  const { rows, corruptLines } = parseJsonl(measurementsText);
+  const rowIds = new Set<string>();
+  let nonObject = 0;
+  let unreadableRunId = 0;
+  for (const row of rows) {
+    if (!isObject(row)) {
+      nonObject++;
+    } else if ("run_id" in row && typeof row.run_id !== "string") {
+      unreadableRunId++;
+    } else if (typeof row.run_id === "string") {
+      rowIds.add(row.run_id);
+    }
+  }
+  const discrepancies: string[] = [];
+  if (corruptLines > 0) {
+    discrepancies.push(
+      `HEAD's MEASUREMENTS.jsonl carries ${corruptLines} corrupt line(s) — any of them could be a registration row, and a register with unreadable rows cannot be shown complete`
+    );
+  }
+  if (nonObject > 0) {
+    discrepancies.push(
+      `HEAD's MEASUREMENTS.jsonl carries ${nonObject} row(s) that are not objects — a fieldless line cannot be shown to be, or not to be, registration state`
+    );
+  }
+  if (unreadableRunId > 0) {
+    discrepancies.push(
+      `HEAD's MEASUREMENTS.jsonl carries ${unreadableRunId} row(s) whose run_id is not a string — membership in the register cannot be decided for them`
+    );
+  }
+  return { rowIds, discrepancies };
+}
+
+/**
  * The register `voidConditions` 1 reads. Registration is CONJUNCTIVE — the
  * clause's own words: the manifest "committed AND its `run_id` written to
  * `MEASUREMENTS.jsonl` by the same command" — so a committed manifest with no
- * row and a row with no committed manifest are both DISCREPANCIES, and neither
- * alone is a registered run (the plan gate's R10 correction).
+ * row and a run's committed traces with no manifest are both DISCREPANCIES,
+ * and neither alone is a registered run (the plan gate's R10 correction).
+ *
+ * THE ROW-ALONE DIRECTION IS DECIDED DOWN TO TRACES, AND NO FURTHER (the
+ * seventh adversarial round). `MEASUREMENTS.jsonl` is the whole repository's
+ * measurement log — every committed row carries a `run_id`, almost all naming
+ * measured runs that never had a B12 manifest — and the frozen clause pins no
+ * registration-row schema beyond "its run_id written". A row ALONE is
+ * therefore indistinguishable from an ordinary measurement row, and firing on
+ * the bare set difference would void every run against the log's own
+ * committed history. `reconcileRegisterTraces` decides what CAN be decided —
+ * a run's other surviving traces — and a row whose every other trace was also
+ * scrubbed is a registered limit, stated here rather than dressed as a check.
  */
 export function collectRegister(repoRoot: string, selfRunId: string): RunRegister {
   const discrepancies: string[] = [];
 
-  const tree = git(repoRoot, ["ls-tree", "--name-only", "HEAD", "evidence/"]);
-  const manifestIds = new Set<string>();
+  const tree = git(repoRoot, ["ls-tree", "HEAD", "evidence/"]);
+  let manifestIds = new Set<string>();
   if (tree.ok) {
-    for (const name of tree.out.split("\n")) {
-      const match = /^evidence\/(.+)\.b12\.tasks\.json$/.exec(name.trim());
-      if (match !== null) manifestIds.add(match[1]!);
-    }
+    const traces = reconcileRegisterTraces(tree.out, selfRunId);
+    manifestIds = traces.manifestIds;
+    discrepancies.push(...traces.discrepancies);
   } else {
     discrepancies.push("git ls-tree over evidence/ failed — committed manifests could not be enumerated");
   }
@@ -460,10 +566,9 @@ export function collectRegister(repoRoot: string, selfRunId: string): RunRegiste
   const rowIds = new Set<string>();
   const showMeasurements = git(repoRoot, ["show", "HEAD:MEASUREMENTS.jsonl"]);
   if (showMeasurements.ok) {
-    const { rows } = parseJsonl(showMeasurements.out);
-    for (const row of rows) {
-      if (isObject(row) && typeof row.run_id === "string") rowIds.add(row.run_id);
-    }
+    const parsed = registrationRows(showMeasurements.out);
+    for (const id of parsed.rowIds) rowIds.add(id);
+    discrepancies.push(...parsed.discrepancies);
     const measurementsPath = path.join(repoRoot, "MEASUREMENTS.jsonl");
     const onDisk = existsSync(measurementsPath) ? readFileSync(measurementsPath, "utf8") : null;
     if (onDisk === null) {
