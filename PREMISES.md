@@ -787,10 +787,12 @@ defect, and it pinned four of them in place.
   repository and see whether the result arrives complete.
 - **Measured:** **it does not.** `run 2026-08-03-mac-05`: `implement` truncated
   repeatedly on `src/selection.ts` (380 lines) with `qwen3-coder-30b` and the
-  default 8192-token cap. `src/tools/shared.ts:78` requires the model to return
-  *the complete final content of every editable file*, so output is the **sum**
-  of the files in the request, regenerated on every attempt and every `repair`
-  round. `repair.ts` is 699 lines; `report.ts` 554.
+  default 8192-token cap. `IMPLEMENT_SYSTEM_PROMPT` in `src/tools/shared.ts`
+  requires the model to return *the complete final content of every editable
+  file*, so output is the **sum** of the files in the request, regenerated on
+  every attempt and every `repair` round. `repair.ts` was 699 lines at that run;
+  `report.ts` 554. (Both have since grown past 1,000, which sharpens the point
+  rather than dulling it; the figures stand as measured.)
 - **Falls if:** it already has — the ceiling is structural, not a tuning knob.
 - **If it falls:** B6 and B7 are measuring a tool that cannot reach the files
   they claim to be about. Either the output contract stops being whole-file, or
@@ -802,7 +804,9 @@ defect, and it pinned four of them in place.
   editable files and **refuses** before anything is read or generated, mirroring
   what `enforceContextCaps` already does for the input. The output contract is
   unchanged, so `DECISIONS.md § Model output contract` stands as written.
-  - **How much this repo keeps**, measured (estimate `bytes/3.5`, cap 8192):
+  - **How much this repo keeps**, measured **on the tree of 2026-08-04** and not
+    re-counted since (estimate `bytes/3.5`, cap 8192) — the repo has grown, so
+    read these as the census of that day, not of today:
     **43 of 46** `.ts` files fit alone (93%; the three that do not are
     `repair.ts`, `repair.test.ts`, `cost-meter.test.ts`), and **11 of 13**
     source+test pairs fit (85%). At the shipped 0.9 headroom the bar is 7372
@@ -872,12 +876,14 @@ defect, and it pinned four of them in place.
 - **Measured:** **1 task, 11 `repair` calls, and still not a rate.**
   `run 2026-08-03-mac-06` recovered the payloads `run 2026-08-03-mac-05` reported
   it could not find. They were never missing: telemetry writes `rounds_used`
-  under the name `turns_collapsed` — `repair.ts:654` and `repair.ts:680` are the
-  same expression — so a search for `rounds_used` in the log was always going to
+  under the name `turns_collapsed` — the `rounds_used` and `turns_collapsed`
+  writes in `repair.ts` are the same expression, `rounds.length` — so a search
+  for `rounds_used` in the log was always going to
   come back empty. Archived as `evidence/2026-08-03-mac-06.telemetry.jsonl`.
   - **10 calls entered with a red gate; 2 closed.** The 11th ran on an
     already-green tree (0 rounds, no files, the `gate.passed` branch that
-    `repair.ts:691` logs as *nothing to do*) and is excluded — a call with no
+    `repair.ts` logs as *checks were already green; nothing to do*) and is
+    excluded — a call with no
     failure to close cannot count as a closure.
   - **2 of 10 is not B6's rate and must not be read as one.** B6 counts
     mechanical *failures*; those 10 calls are successive passes over roughly the
@@ -886,7 +892,7 @@ defect, and it pinned four of them in place.
     anything in this corpus.
   - **3 of the 4 `max_rounds` calls returned `files: []`** — and that is stronger
     than a low close rate. `files` derives from `best.contents`
-    (`repair.ts:598`), which is replaced only when a round *lowers* the failure
+    (`repair.ts`), which is replaced only when a round *lowers* the failure
     count, so an empty list after exhausting the rounds means no round ever
     improved on the original bytes. Those three burned 4, 3 and 3 rounds: **10
     rounds of local generation that reduced the failure count zero times.**
@@ -900,7 +906,8 @@ defect, and it pinned four of them in place.
     above, where no round after the first improved anything either. **Still not a
     rate**, and now for a second reason — the fixture is synthetic.
   **B0 fell underneath this and the payload cannot separate them:** a truncated
-  response (`finish_reason=length`, `shared.ts:283`) throws after the corrective
+  response (`finish_reason=length`, the `result.finishReason === "length"` branch
+  in `shared.ts`) throws after the corrective
   retry and lands under `stopped_because: "model_failed"` — the same label a
   request killed by the deadline used to get. The deadline half is fixed, and by
   **observing** which ceiling fired rather than inferring it: the request ceiling
@@ -1709,8 +1716,15 @@ defect, and it pinned four of them in place.
   - **A second thing I had backwards, corrected here rather than quietly.**
     "Omission deflates the hold, which is the safe direction" is FALSE:
     magnitudes are signed, so an omitted NEGATIVE credited row raises `R_lo` and
-    `R_hi`, toward a hold. `verdictOf` has no hold branch yet, so the requirement
-    is recorded in `UNIT-3.md` and in `aggregate.ts` for whoever writes one.
+    `R_hi`, toward a hold. When this was written the verdict function had no hold
+    branch, so the requirement was recorded in `UNIT-3.md` and in `aggregate.ts`
+    for whoever wrote one. **The hold branch exists now** — `decide` returns
+    `holding (unvalidated)` on `decideHold`'s conjunction — and the guard this
+    asked for turned out to be SUBSUMED rather than owed: `rHiPlus` refuses on an
+    unowned credited row, so the run returns `open` before `decideHold` is ever
+    reached and a conjunct there could never decide anything. Planting the defect
+    proved it — deleting the conjunct changed no test. The corrected direction
+    claim above stands unchanged.
   - **This is instrument repair, not an amendment**, on the same reading that
     decided F11 and F13: the ratio, the horizons, the four classes and the
     thresholds are untouched. What moved is which multiset the sum runs over, and
@@ -1744,18 +1758,47 @@ defect, and it pinned four of them in place.
     observation carries its full `A_o` against a deflated `S_o`, so it drags
     `R_lo` DOWN — which is why the hold branch ships ahead of the fix rather than
     waiting for it. Recorded before any run so a later hold is read knowing it.
+    - **SUPERSEDED 2026-08-07 — F19 is fixed.** The bullet above stands as the
+      record of what shipped and why, including the safety claim that licensed
+      shipping it; `docs/b12-scorer/FINDINGS.md` files F19 under CLOSED. The
+      scorer now partitions the admitted set on `ambiguousCount(t) === 0` and
+      pools the hold's `rLo` over the eligible subset, publishing the excluded
+      count beside it. **The eligible subset is the ARITHMETIC population, not
+      the whole story:** `strata` and the hold's per-delivery figure take a
+      population PAIR — the frozen floors (stratum evaluability, `unexercised`)
+      still count the FULL admitted set and only the ratio is pooled over the
+      eligible subset, so a cell can be evaluable on five and priced on fewer
+      (`FINDINGS.md` F21) — and `recomputations` reinstates the hold-excluded
+      observations rather than dropping them.
 - **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
   (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
   INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
   `c40e9f4` (`aggregate` red). Attempt 1 void. No exposure has reached the bar.
+  - **Where these three run ids live, since it is not where rule 2 says.**
+    `d746d07`, `f2932ff` and `c40e9f4` have **no row in `MEASUREMENTS.jsonl`**,
+    though `2026-08-06-mac-b12-phase3-efe5806` — the void attempt — does. Their
+    artifacts are committed and carry the run id verbatim:
+    `evidence/2026-08-06-mac-b12-d746d07.scorer.json`,
+    `evidence/2026-08-06-mac-b12-f2932ff.scorer.json`,
+    `evidence/2026-08-07-mac-b12-c40e9f4.scorer.json` (note the file names drop
+    the `phase3` segment the run ids carry). **The rows are not being
+    back-filled.** A row written by hand today, stamped with a time from days
+    ago, is the fabrication an append-only record exists to prevent — and rule 2
+    exists so a reader can tell a measurement from an assumption, which these
+    artifacts already let them do. The gap is recorded here instead. Note that
+    this does **not** make them registered B12 runs under `voidConditions` 1,
+    which requires a committed `evidence/<run_id>.b12.tasks.json` **and** the
+    `MEASUREMENTS.jsonl` row, written by one command before the first billed
+    request; none of the three has a tasks file, so none is in that register and
+    none owes a result artifact.
 - **Status:** open · **both exposures INCONCLUSIVE at 1 of 3** · `R_repair`
   neither reachable nor ruled out. The limits are pinned and verified (F7) and
   the scorer's spec defects are fixed (F1/F2a/F2b/F3, then F9/F12), so nothing
   blocks an exposure C — but it would measure a changed task, and whether to
-  spend one is open. **F17 and F19 remain**, and the scorer is still wired to
-  nothing: `observation.json` has no parser, `verificationStratum` is written by
-  no harness, and the run-level assembler that would call `runCoverage` and
-  `aggregate` does not exist.
+  spend one is open. **F17 remains** (F19 was fixed 2026-08-07), and the scorer is
+  still wired to nothing: `observation.json` has no parser, `verificationStratum`
+  is written by no harness, and the run-level assembler that would call
+  `runCoverage` and `aggregate` does not exist.
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 

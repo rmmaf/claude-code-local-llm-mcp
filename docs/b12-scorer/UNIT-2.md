@@ -19,8 +19,9 @@ only module hint, and generalising from it is wrong for `rateKey`:
 ```ts
 import {
   breakdownOfRequests, buildCounterfactual, buildSessionReport,
-  unitsAddedByInstallation,
+  isLocalToolResult, unitsAddedByInstallation,
 } from "../report.js";
+import type { CreditedRow } from "../report.js";
 import { rateKey } from "../rates.js";
 import { subagentShare } from "./strata.js";
 ```
@@ -50,8 +51,9 @@ A window that did not make the call owns nothing, even when the id is plainly
 present elsewhere in the same transcript.
 
 **`isLocalToolResult` is imported from `../report.js`, not reimplemented.** It is
-the same predicate `byInvocation` is filtered with on the crediting side
-(`report.ts:894`), and two copies of one rule is how two consumers of it drift
+the same predicate `byInvocation` is filtered with on the crediting side (the
+`transcript.toolResults.filter(isLocalToolResult)` in `buildCounterfactual`), and
+two copies of one rule is how two consumers of it drift
 apart. Without it the window join is strictly WIDER than the join it selects
 within: transcript ids are scanned out of arbitrary serialised output, so an owned
 `Read` of `.local-coder/telemetry.jsonl` puts a quoted id into `mine` that
@@ -117,7 +119,15 @@ In order:
     - `unattributedRefusals` — the refused part of `unattributed`, filled in the
       SAME PASS as the list so the two cannot drift.
 
-    **`unattributedRefusals` is a diagnostic and no figure reads it.** It used to
+    **`unattributedRefusals` was a diagnostic no figure read. Since F19 one
+    figure does:** UNIT 3's `ambiguousCount` reads
+    `unattributedRefusals.ambiguous.count`, and it is what partitions the
+    admitted set into hold-eligible and hold-excluded — so it now decides which
+    observations enter the hold ARITHMETIC. Not the whole hold family: the
+    exercise and floor populations stay the FULL admitted set, and
+    `hold.recomputations` reinstates the hold-excluded ones (UNIT-3's
+    two-population rule). It is still not summed
+    into `rHiPlus`, which is what this paragraph was about. It used to
     be what `rHiPlus` summed, and that is the F12 defect: a per-observation total
     of rows no observation owns double-counts every row two slices share, and
     `wouldHaveAdded` is signed, so a duplicated negative magnitude pushes the

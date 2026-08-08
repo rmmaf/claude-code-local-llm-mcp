@@ -247,10 +247,10 @@ none set, a built-in default catalog keeps the zero-config path working.
 
 ## Testing
 
-- `fetch` is injected into the pipeline (`deps.fetch`) and stubbed per test —
+- `fetch` is injected into the pipeline (`deps.fetchImpl`) and stubbed per test —
   no network, ever. The stdio integration test spawns `node dist/server.js`
   and speaks real JSON-RPC over stdin/stdout; it asserts (a) initialize works,
-  (b) `tools/list` returns exactly the five tools, and (c) **every byte** on
+  (b) `tools/list` returns exactly the seven tools, and (c) **every byte** on
   stdout parses as JSON-RPC — the stdout-purity proof.
 - git-apply compatibility is proven by running real `git init`/`git apply`
   against generated diffs in a temp repo.
@@ -705,9 +705,15 @@ positional multiplier. This feeds `savedFraction`, which is B12, which is
 The fix is provenance again, the same lesson as before: `gate` and `repair` now
 mint an `invocation_id`, return it in their payload, and write it into the
 telemetry row. The meter joins on that id, so a row either belongs to this
-transcript or is dropped and counted in `excludedForeign`. Rows predating the id
-still join by timestamp and are reported as `legacyTimeJoined`, because a number
-whose provenance is a guess should say so. The MCP server cannot see Claude Code's
+transcript or is dropped and counted in `excludedForeign`. A row carrying no id at
+all cannot point at the transcript entry it produced, so it is not time-joined:
+it is counted as `unverifiable`, its magnitude is recorded, and it is excluded
+from `unitsTotal` and `savedFraction` — because a number whose provenance is a
+guess should say so rather than be guessed. (**Corrected 2026-08-07.** This
+paragraph said such rows "still join by timestamp and are reported as
+`legacyTimeJoined`". No such field was ever emitted; the `unverifiable` class
+shipped in the same commit as this sentence, and the section below at *counted as
+`unverifiable`* already described the real behaviour.) The MCP server cannot see Claude Code's
 session id — there is no such field in an MCP call — so echo-and-match is the only
 exact join available.
 
@@ -729,7 +735,7 @@ such calls but no ids means the echo is broken, so it falls back to timestamps a
 sets `provenanceUnavailable`, which the CLI prints in bold.
 
 **Experiment, whenever the server is next installed:** call `gate` once, run
-`npm run cost-meter`, and check that `excludedForeign` and `legacyTimeJoined` are
+`npm run cost-meter`, and check that `excludedForeign` and `unverifiable` are
 both 0 and `provenanceUnavailable` is false. One call settles it.
 
 That guard then created a worse bug than the one it fixed, which is worth
@@ -1331,9 +1337,12 @@ the end — which is why the operational rule is a diagnostic gets the machine t
 itself.
 
 **`status` reports the window, including when it does not know it.**
-`context_window.source` is `config`, `lms` or `unknown`, and `unknown` is the
-case worth surfacing loudest: it means the check is switched off, silently. A
-refusal users cannot explain is a refusal they will work around.
+`context_window.source` is `config`, `lms`, `disagreement` or `unknown`, and
+`unknown` is the case worth surfacing loudest: it means the check is switched
+off, silently. A refusal users cannot explain is a refusal they will work
+around. (`disagreement` was added later, with the rule that the smaller of the
+two windows wins — see *The configured window is a belief and it loses to the
+observation* above.)
 
 What this does **not** claim: that ~25 KB is a property of the contract. It is a
 property of a 30B coder loaded at 16,384 tokens. The model supports 262,144, and
@@ -1575,8 +1584,11 @@ summing to the top level — which was true, and true of one file.
 
 ### the freeze forbids measuring, not repairing
 
-**Decided 2026-08-05.** `STATE.md:20` and `PREMISES.md:793-794` both say
-`src/cost/` "is frozen while G1 is reopened". Neither is a rule; both are
+**Decided 2026-08-05.** `PREMISES.md` § B15, under *What unblocks it*, says
+`src/cost/` "stays frozen while G1 is reopened", and that day's `STATE.md` said
+the same of `classify-verification.mjs` (`git log -p STATE.md` at `db4874e^` —
+`STATE.md` is overwritten every session, so no line number in it survives).
+Neither is a rule; both are
 parenthetical gloss inside B15's problem, explaining why
 `classify-verification.mjs` must live elsewhere. The only normative text is G1's
 own reopening condition — **"nothing meter-derived may be measured until it
@@ -2214,8 +2226,8 @@ those units sit in the denominator on both sides of a one-sided model.
 `unitsAddedByInstallation` is therefore **a term in the metric, not a
 paragraph**."
 
-In the implementation it is a paragraph. `src/cost/report.ts:616` defines it and
-`tests/cost-meter.test.ts:1670` calls it. Nothing else does — not
+In the implementation it is a paragraph. `src/cost/report.ts` defines it and
+`tests/cost-meter.test.ts` calls it. Nothing else does — not
 `buildSessionReport`, not `scripts/b12-run.mjs`, not the pre-flight that just
 passed. Its four siblings in the same module have 3, 5, 8 and 28 call sites. An
 observation scored today charges the treatment arm nothing for the context that
@@ -2244,6 +2256,25 @@ which the deferral observation puts in doubt; (c) whether fixing either is a
 repair to the instrument or a change to a design frozen by hash, in which case
 the rule is retract and re-register, not edit. Sealing the manifest before (a)
 is decided would produce observations that are one-sided by construction.
+
+**Postscript, 2026-08-07 — (a) is half answered, and only half.** Commit
+`a6a1a1a` wired the term in, one day after the paragraph above was written.
+`computeTerms` (UNIT 2) calls `unitsAddedByInstallation` and keeps the result as
+the observation's `oO`; `poolRatio` subtracts it in `(S − O) / (A + S)`; and
+`holdsIf` 6 — the last conjunct of `decideHold` — refuses a hold unless every
+admitted observation carries a finite one. So the scorer no longer charges the
+treatment arm nothing by construction, and the sentence above about "an
+observation scored today" no longer describes the code.
+
+**What (a) still owes is the INPUT, not the call.** `installedChars` is measured
+nowhere: every occurrence in this repository is either a parameter name or the
+`3_700` test fixture. Only the harness can take the real figure — at scoring
+time the worktree is gone and the server is not running — and it is
+arm-dependent, since the control runs `--strict-mcp-config` and installs
+nothing. It is carried as an open obligation in `docs/b12-scorer/FINDINGS.md`
+under F24. **(b) and (c) are untouched:** the deferral observation still puts the
+magnitude in doubt, and whether supplying it is a repair to the instrument or a
+change to a frozen design is still the owner's call.
 
 ## Three decisions taken while their answers were still unknowable
 

@@ -524,6 +524,19 @@ continuing to build on a premise that quietly stopped being true.
   is NOT decided by this amendment** — it is a real question, and whoever needs
   the answer should write it here *before* the verdict rather than inside it.
 
+- **ERRATUM 2026-08-07 — the first amendment says `G1 remains open (reopened)`,
+  and that was false when it was written.** Not stale: wrong on the day. G1 was
+  closed again by B20 holding in `f6bf400` at 12:03; the amendment landed in
+  `4dbcffe` at 21:37 the same day, nine hours later. Neither amendment is edited
+  — both stand exactly as written, which is this section's whole discipline — so
+  the correction is recorded here instead. **What it changes for a reader:** the
+  reopening condition's ban, "nothing meter-derived may be measured until it
+  agrees", is **lifted**, and has been since `f6bf400`. B12 and anything reading
+  `savedFraction` are no longer blocked by it. **What it does not change:** the
+  amendment's actual conclusion — that the meter is judged as G1 judges it and
+  its verdict does not gate this criterion — is untouched, because that
+  conclusion never depended on which side of open/closed G1 was sitting on.
+
 ---
 
 ## Not on the roadmap, and why

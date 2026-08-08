@@ -335,12 +335,23 @@ optional one a rule they could forget.
       hold evidence alone, and the published figures are not in scope. A one-word
       slip is a compile error rather than a review question.
 
-      Two conjuncts read the ADMITTED set rather than the hold domain, and each
+      ONE conjunct reads the ADMITTED set rather than the hold domain, and it
       says why: `holdsIf` 6 asks whether `unitsAddedByInstallation` was computed
-      for every observation, which is a question about the instrument; and
-      `holdsIf` 5's ledger comparison is left on the disposition split, which is an
-      implementation convention and not a reading of the frozen text
-      (`FINDINGS.md` F20).
+      for every observation, which is a question about the instrument rather than
+      an arithmetic over a domain — a non-finite `oO` is the omission wearing a
+      number.
+
+      **`holdsIf` 5 is NOT a conjunct here, and that is subsumption rather than
+      omission** (`FINDINGS.md` F22, FIXED). Both halves are already true of any
+      run that reaches the hold: `voidConditions` 16 voids on the exact
+      complement of `excludedWouldHaveAdded <= admittedSumS`, so arriving here
+      proves the `<=`; and `rHiPlus` iterates the admitted AND dropped sets and
+      refuses on any unsized owned refusal, so `excludedUnsized > 0` returns
+      `open` first. **The subsumption is exact for FINITE figures only** — a
+      `NaN` would slip both the void and the conjunct, and nothing defends
+      against one beyond `oO`. The disposition-split note stays where it applies,
+      on `selection.basis` and `voidConditions` 16 above (`FINDINGS.md` F20,
+      still open).
   12. otherwise `"open"`.
 
   **The bare `"holding"` is unreachable from this unit and that is correct**, not

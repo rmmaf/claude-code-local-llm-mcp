@@ -5,23 +5,33 @@ emitter. UNITs 1–4 are pure functions over values; this is where the filesyste
 lives, and it is split in three so that the impure surface stays as small as the
 four units below it were designed to make it.
 
-> **THIS SPEC IS NOT YET IMPLEMENTABLE, AND THE REASON IS NOT IN THIS FILE.**
-> `design.artifacts` 6 defines the per-observation archive this unit reads —
-> reduced lineage records, the telemetry window VERBATIM, the pre/post
-> `requestId` diff, the observation's `invocation_id` set, the acceptance exit
-> code, and sha256 of every source file. `scripts/b12-run.mjs` writes
-> `observation.json`, `snapshot-before.json`, `snapshot-after.json` and
-> `cli-stdout.json`. **An assembler that promises to read a committed archive has
-> no compliant archive to read** (`FINDINGS.md` F24). The harness is the blocker,
-> not this unit.
+> **THE ARCHIVE THIS SPEC READS NOW EXISTS. WHAT BLOCKS THE UNIT IS SMALLER, AND
+> IT IS STILL NOT IN THIS FILE.** `design.artifacts` 6 defines the
+> per-observation archive — reduced lineage records, the telemetry window
+> VERBATIM, the pre/post `requestId` diff, the observation's `invocation_id` set,
+> the acceptance exit code, and sha256 of every source file. When this spec was
+> written `scripts/b12-run.mjs` wrote only `observation.json`,
+> `snapshot-before.json`, `snapshot-after.json` and `cli-stdout.json`, so an
+> assembler promising to read a committed archive had none to read. **It emits
+> six files now** — those four plus `archive.json` and `telemetry.jsonl` — built
+> by `src/cost/b12/capture.ts`, committed at each task's end and verified blob by
+> blob against `HEAD`. **What F24 still owes, this unit still needs.**
+> `installedChars` is a required field of `TermsInput` at step 5 below, and the
+> covariate and memory hashes are what clauses 12-13 and artifact 7 read — and
+> only the harness can take any of them, since at scoring time the worktree is
+> gone and the server is not running. So F24 still blocks this unit, on those
+> three inputs rather than on the archive, alongside the fact that **no manifest
+> has been sealed**, so `observe()` has never run end to end. (F24 also still
+> carries the `dist/**` hole, registered rather than closed.)
 >
-> **AND THE CLAUSE'S OWN FIELD LIST IS SHORT OF ITS OWN CRITERION.** It says "the
-> admitted records reduced to **the fields the meter reads**" and then enumerates
-> eight that cannot rebuild a `Transcript` — no `parentUuid`, no `isSidechain`,
-> no `isCompactSummary`, no `message.content`, no `toolUseResult`. The criterion
-> governs and the enumeration is incomplete; see F24. Until the capture archives
-> the fields the meter *actually* reads, step 5 below has no lineage to hand
-> `computeTerms`.
+> **THE CLAUSE'S OWN FIELD LIST IS STILL SHORT OF ITS OWN CRITERION**, and that
+> is recorded rather than fixed. It says "the admitted records reduced to **the
+> fields the meter reads**" and then enumerates eight that cannot rebuild a
+> `Transcript` — no `parentUuid`, no `isSidechain`, no `isCompactSummary`, no
+> `message.content`, no `toolUseResult`. The criterion governs and the
+> enumeration is incomplete; see F24. The capture resolves it by reducing onto
+> `RawRecord`, the parser's own declared field set, held to it by a type-level
+> assert — so step 5 below has a lineage to hand `computeTerms`.
 
 **NOT PART OF THE PHASE-3 EXPOSURE.** Phase 3 is closed at 1 of 3 and `repair`
 gets no further draw (`PREMISES.md § B12`). UNITs 1–3 were the measured task;
@@ -103,9 +113,18 @@ open instead.
 ### 2. Identify the telemetry log ONCE, over the WHOLE log, before any scoping
 
 ```ts
-const records = await readTelemetry(root);          // ../telemetry.js
-const universe = identify(TELEMETRY_REL_PATH, records);
+// NOT `readTelemetry(root)` — that joins `.local-coder/telemetry.jsonl` onto a
+// root (`../../telemetry.js`, two levels up from `src/cost/b12/`), and every
+// arm's worktree is destroyed before scoring. Read each observation's ARCHIVED
+// copy, which `scripts/b12-run.mjs` writes at `<obs dir>/telemetry.jsonl`.
+const rows = await readArchivedRows(obsDir);           // <obs dir>/telemetry.jsonl
+const identified = identify(obsArchivePath, rows);     // ./coverage.js
+// …one per observation; their union is the universe.
+const universe = observations.flatMap((o) => o.identified);
 ```
+
+**Why it is keyed on the archive path and not on one log — see the correction at
+the end of this step.** The short form: there is no run-level log to key on.
 
 `identify` keys a row `JSON.stringify([source, ordinal])` where `ordinal` is its
 position **in the array it was handed**. `scopeTelemetry(transcript, telemetry)`

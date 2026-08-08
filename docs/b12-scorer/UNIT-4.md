@@ -11,7 +11,8 @@ description per module and not three plus a conversation.
 `R_hi⁺` is a sum over rows. Two independent defects meant the sum ran over the
 wrong multiset:
 
-- **Counted twice.** `scopeTelemetry` (`report.ts:828`) admits a row on an exact
+- **Counted twice.** `scopeTelemetry` (`src/cost/report.ts`, `windowMs = 60_000`)
+  admits a row on an exact
   invocation-id match **or** on a ±60,000 ms window, so one physical row lands in
   two observations' slices whenever two arms ran within a minute. Summing each
   observation's unattributed ledger then counts it twice, and `wouldHaveAdded` is

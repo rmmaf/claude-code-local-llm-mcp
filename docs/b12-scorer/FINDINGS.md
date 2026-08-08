@@ -68,8 +68,11 @@ the task's window **VERBATIM**, credited and refused alike; the pre/post
 `requestId` diff; the observation's `invocation_id` set; the acceptance command's
 exit code; and **sha256 of every source file**.
 
-`scripts/b12-run.mjs` writes four files: `observation.json`,
-`snapshot-before.json`, `snapshot-after.json`, `cli-stdout.json`.
+`scripts/b12-run.mjs` wrote four files when this was written: `observation.json`,
+`snapshot-before.json`, `snapshot-after.json`, `cli-stdout.json`. **It emits six
+now** — those four plus `archive.json` and `telemetry.jsonl` — and the commit
+barrier checks all six blob by blob against `HEAD`. What the clause still owes is
+below, not this.
 
 **The archive is what makes the run correctable rather than only discardable.**
 The frozen text says so in the same clause: `.local-coder/telemetry.jsonl` is
@@ -136,7 +139,11 @@ experiment, never permissive on the result" (`thresholdArgument`).
   the allowlist visible in the system prompt — and that is registered here rather
   than discovered on the day.
 - **Artifact 10 also owes a machine-written run row** "whose `ts` is read from the
-  system clock in the same command that writes it". Nothing appends one.
+  system clock in the same command that writes it". ~~Nothing appends one.~~
+  **SHIPPED:** `observe()` appends exactly that row to
+  `evidence/<runId>.b12.runlog.jsonl` on every observation, its `ts` read from
+  `stamp()` in the same command. What artifact 10 still owes is the memory
+  snapshot restore, not the row.
 
 **TWO DEFECTS FOUND IN PASSING, BOTH REAL, BOTH FIXED IN THIS SAME PASS** — so
 they take no finding number of their own:
@@ -178,8 +185,11 @@ superset. `observe()` calls it after acceptance and before
 `git worktree remove`, then STAGES, refuses on an empty index, COMMITS and
 refuses again if `HEAD` does not carry the path — so "committed at each task's
 END" is a fact rather than an intention. `takeSnapshot` gained artifact 5's
-per-file sha256. The dead `.mcp.json` fallback is a refusal now, and
-`dirtyAtAcceptance` is read at acceptance time and decides nothing.
+per-file sha256. The dead `.mcp.json` fallback is a refusal now. (This paragraph
+named a `dirtyAtAcceptance` field; gate 2 replaced it, below, with two separately
+named facts — `armLeftUncommitted` on the observation, recorded before the
+end-state commit, and `dirtyAtCapture` on the archive, taken at capture time.
+Both are reported and neither decides anything.)
 
 **A SECOND GATE ON THE DIFFS RETURNED REFUTE, AND FOUR OF ITS HOLES ARE FIXED
 HERE.** Both of the frozen quotations it turned on were checked before conceding
@@ -515,12 +525,13 @@ a newly pre-registered premise.
 
 ### F13 — `R_other` has no source data at all
 
-`UNIT-3.md:88` scores `R_other` over `fix`, `implement`, `models`, `scaffold`,
-`status`. **None of those five tools writes a telemetry row.** The only
-`telemetry.record` calls in the repository are `gate.ts:381` and
-`repair.ts:451`/`:915`. Separately, `isLocalToolResult` (`report.ts:545-547`)
-matches only `/(^|__)(gate|repair)$/`, so even a row from one of the five would
-join nothing and land in `excludedForeign`.
+`UNIT-3.md` scores `R_other` over "the five unexercised tools" — naming none of
+them, but the server registers seven and two are `gate` and `repair`, so the five
+are `fix`, `implement`, `models`, `scaffold` and `status`. **None of those five
+writes a telemetry row.** The only `telemetry.record` calls in the repository are
+one in `gate.ts` and two in `repair.ts`. Separately, `isLocalToolResult` in
+`report.ts` matches only `/(^|__)(gate|repair)$/`, so even a row from one of the
+five would join nothing and land in `excludedForeign`.
 
 So `R_other` is `unexercised` by construction on every run that can be produced
 today, and the `Σ_d R_d + R_other = R` identity of **F11** cannot even be formed.
@@ -725,13 +736,15 @@ Without the filter the window claims two ids where it owns one.
 `.local-coder/telemetry.jsonl` would mark "every id in the project's whole
 history" as this session's, and `report.ts` said the same. `readInvocationId`
 runs a single non-global `exec` and returns the FIRST match
-(`transcript.ts:248-252`), so a quotation injects ONE id per result. That is still
+(`readInvocationId` in `transcript.ts`), so a quotation injects ONE id per
+result. That is still
 enough to misattribute a saving; it is not the whole history.
 
 ### F12 — `unattributedRefusals` double-counted, and the fix had to be run-level — FIXED
 
 `scopeTelemetry` admits a row on an exact invocation-id match **or** on a
-±60,000 ms window (`report.ts:828-846`), and `admissionRule` 5 names that window
+±60,000 ms window (`src/cost/report.ts`, `windowMs = 60_000`), and
+`admissionRule` 5 names that window
 by hand, so one physical row sits in two observations' slices whenever two arms
 ran within a minute. `rHiPlus` summed each observation's `unattributedRefusals`,
 so that row was counted twice.
@@ -816,15 +829,17 @@ rule and into `aggregate.ts` beside the function, for whoever writes it.
 `mine`; step 10 built the four-class ledger from those.
 
 - **`unverifiable` is structurally unownable.** The class exists precisely
-  because `entry.invocation_id === undefined` (`report.ts:927`), so `refusedRow`
-  gives it `invocationId: null` (`report.ts:885`) and step 6 dropped every one.
+  because `entry.invocation_id === undefined` — the branch in
+  `buildCounterfactual` that counts `unverifiable` — so `refusedRow` gives it
+  `invocationId: null` and step 6 dropped every one.
 - **`excludedForeign` is empty on every normal input, but not provably so.** The
   class exists because the id is absent from `byInvocation` — and `mine` is built
   from a *wider* set of tool results than `byInvocation` is, so the two are not
   exact complements. **Corrected from "structurally empty"** after the gate-1
   adjudication; the residue is **F10**.
-- **The direction was overstated too.** `wouldHaveAdded` is signed
-  (`report.ts:868`), so omitting a refusal deflates `R_hi+` when its magnitude is
+- **The direction was overstated too.** `wouldHaveAdded` is signed — its `tokens`
+  term is `min(bytes_raw, clientTruncationCap) − bytes_returned`, which goes
+  negative — so omitting a refusal deflates `R_hi+` when its magnitude is
   positive — the ordinary case — and inflates it when negative. "Deflated by
   construction" was too strong; "deflated on any run whose refused magnitudes are
   positive" is what the code supports.
@@ -862,7 +877,8 @@ hold nor a fall — the safe direction, now stated in the type rather than impli
 
 ### F2b — `rLoMinusRow` dropped the row that dominates the OTHER figure — FIXED
 
-`units` is `(capped / charsPerToken) * multiplier` (`report.ts:1046`) — exactly
+`units` is `(capped / charsPerToken) * multiplier` (the `units` field of
+`report.ts`'s credited row) — exactly
 `sHi`'s contribution — and `UNIT-3.md` ranked both jackknives by it. `holdsIf` 2
 asks a hold to survive deleting "**its** best row", per figure.
 
@@ -1148,7 +1164,7 @@ it, which fired on exactly that defect.
 
 `src/cost/b12/capture.ts` and `tests/b12-capture.test.ts`, the first half of F24.
 **All seventeen passed on first execution, which is the state that says nothing.**
-Twelve defects were then planted in five groups, restoring the file between each,
+Sixteen defects were then planted in five groups, restoring the file between each,
 with the grouping chosen so that no ASSERTION is touched by two defects — which
 is what attribution actually needs, and is weaker than one-defect-per-function:
 
@@ -1215,7 +1231,7 @@ the assertion looked unprovable until the defect was replaced with a descending
 comparator.
 
 **WHAT IS NOT COVERED, STATED RATHER THAN LEFT TO BE ASSUMED.** The archive's
-VALUE has eighteen controls; the harness WIRING has none. `observe()` needs a
+VALUE has nineteen controls; the harness WIRING has none. `observe()` needs a
 real `claude` binary, a manifest that does not exist yet, and a live MCP server,
 so nothing exercises the capture call, the `.mcp.json` refusal, the run-log row
 or the commit barrier. **The commit barrier is the one that matters** — it is the
