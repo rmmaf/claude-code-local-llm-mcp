@@ -562,6 +562,7 @@ export function manifestDeclarationGaps(manifest) {
 export function committedOrderViolation(manifest, taskId, runlogText) {
   const tasks = manifest?.tasks ?? [];
   const currentIndex = tasks.findIndex((t) => t?.id === taskId);
+  const ranBefore = new Set();
   for (const line of (runlogText ?? "").split("\n")) {
     if (!line.trim()) continue;
     let row;
@@ -570,10 +571,30 @@ export function committedOrderViolation(manifest, taskId, runlogText) {
     } catch {
       return `the runlog carries a line that is not JSON — the persisted progress is corrupt: ${line.slice(0, 80)}`;
     }
-    if (row.arm !== "treatment") continue;
-    const idx = tasks.findIndex((t) => t?.id === row.taskId);
+    if (row.arm === "treatment") ranBefore.add(row.taskId);
+  }
+  // A RE-RUN IS NOT AN ORDER EVENT. The committed order fixes the sequence of
+  // FIRST executions; `admissionRule` 12 governs re-runs (their count, their
+  // base commit) and carries no temporal clause, so a late re-run of an
+  // earlier task is permitted here and adjudicated at scoring over this same
+  // runlog. The first shape of this guard refused it — an over-strictness
+  // corrected in the same round that fixed the hole below.
+  if (ranBefore.has(taskId)) return null;
+  // A FIRST run needs EVERY predecessor already executed — a fifth adversarial
+  // round found the monotonic half alone let task 2 start on an empty runlog:
+  // nothing had run "after" it, so nothing fired, and the session was spent on
+  // a run already void under `voidConditions` 3.
+  const missing = tasks.filter((t, i) => i < currentIndex && !ranBefore.has(t?.id)).map((t) => t?.id);
+  if (missing.length > 0) {
+    return (
+      `task ${taskId} (index ${currentIndex}) cannot run first: predecessor task(s) ${missing.join(", ")} ` +
+      "have not run — the manifest's committed order was not followed (voidConditions 3)"
+    );
+  }
+  for (const ranId of ranBefore) {
+    const idx = tasks.findIndex((t) => t?.id === ranId);
     if (idx > currentIndex) {
-      return `task ${taskId} (index ${currentIndex}) would run after ${row.taskId} (index ${idx}) already ran — the manifest's committed order was not followed (voidConditions 3)`;
+      return `task ${taskId} (index ${currentIndex}) would first-run after ${ranId} (index ${idx}) already ran — the manifest's committed order was not followed (voidConditions 3)`;
     }
   }
   return null;

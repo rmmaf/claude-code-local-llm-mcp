@@ -5,15 +5,15 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**THE F24 HARNESS PASS SHIPPED, THROUGH FOUR ADVERSARIAL ROUNDS.** Planning
+**THE F24 HARNESS PASS SHIPPED, THROUGH FIVE ADVERSARIAL ROUNDS.** Planning
 gate (3 of 6 readings REFUTED — they shaped the code); diff review (2 fixed, 1
 declined-as-code, registered); branch review (validator RECOMPUTES the probe
-from its replicate records — no trusted summary, no protocol fallback; the
-real artifact passes, re-verified mechanically); fourth round (abPairs schema
-validated — ≥3, unique, real tasks, both arm orders; primary committed order
-enforced from the runlog, VOID 3; drift in EVERY instruction component now
-invalidates — pair-comparison components included, the evaluable-predicate
-argument; the pair-membership wider ask DECLINED against admissionRule 13).
+from its replicate records — no trusted summary, no fallback); fourth round
+(abPairs schema validated; drift in EVERY instruction component invalidates;
+the pair-membership wider ask DECLINED against admissionRule 13); fifth round
+(order guard: a FIRST run needs ALL predecessors executed, not just no-later-
+task-ran — and its old refusal of LATE RE-RUNS was over-strict, corrected:
+rule 12 has no temporal clause; re-runs pass, counted at scoring).
 `observe()` resolves `installedChars` from COMMITTED evidence only (under
 `evidence/`, byte-identical to HEAD's blob, sha REQUIRED), key asserted
 component by component (any move refuses; sealed blobs force a re-probe);

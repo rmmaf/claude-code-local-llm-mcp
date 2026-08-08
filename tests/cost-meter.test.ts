@@ -2896,16 +2896,34 @@ describe("the B12 harness", () => {
       const { committedOrderViolation } = await load();
       const manifest = { tasks: [{ id: "t1" }, { id: "t2" }, { id: "t3" }] };
       const row = (taskId: string, arm: string) => JSON.stringify({ taskId, arm }) + "\n";
-      // In order: t1 ran, t2 next — fine; re-running t2 after t2 — fine (a re-run).
+      // In order: t1 ran, t2 next — fine; re-running t2 right after t2 — fine.
       expect(committedOrderViolation(manifest, "t2", row("t1", "treatment"))).toBeNull();
       expect(committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t2", "treatment"))).toBeNull();
-      // Out of order: t3 already ran, t2 requested — FIRES.
-      expect(committedOrderViolation(manifest, "t2", row("t3", "treatment"))).toMatch(/committed order was not followed/);
-      // A control row for a later task does not gate the primary order.
-      expect(committedOrderViolation(manifest, "t2", row("t3", "control"))).toBeNull();
+      // THE FIFTH ROUND'S COUNTEREXAMPLES — skipping fired nothing, because the
+      // monotonic half alone has no rows to compare against:
+      // a FIRST run of t2 on an EMPTY log skips t1 — FIRES.
+      expect(committedOrderViolation(manifest, "t2", "")).toMatch(/predecessor task\(s\) t1 have not run/);
+      // t3 after only t1 skips t2 — FIRES, naming the missing predecessor.
+      expect(committedOrderViolation(manifest, "t3", row("t1", "treatment"))).toMatch(/predecessor task\(s\) t2 have not run/);
+      // The other half still fires: predecessors complete but a LATER task
+      // already ran and t2 was never run — a first run out of sequence, only
+      // reachable on a log an unguarded harness produced.
+      expect(
+        committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t3", "treatment"))
+      ).toMatch(/would first-run after t3/);
+      // And a LATE RE-RUN of an earlier task is NOT an order event — the first
+      // shape of this guard refused it, an over-strictness corrected in the
+      // same round: admissionRule 12 has no temporal clause, and the count is
+      // adjudicated at scoring over this same runlog.
+      expect(
+        committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t2", "treatment") + row("t3", "treatment"))
+      ).toBeNull();
+      // A control row is not primary progress: t1 ran, t3's control ran (the
+      // post-verdict A/B), t2 first-runs fine.
+      expect(committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t3", "control"))).toBeNull();
       // Corrupt progress is a refusal, never a silent skip.
       expect(committedOrderViolation(manifest, "t2", "not json\n")).toMatch(/not JSON/);
-      // An empty log constrains nothing.
+      // An empty log constrains only the first task's first run.
       expect(committedOrderViolation(manifest, "t1", "")).toBeNull();
     });
 

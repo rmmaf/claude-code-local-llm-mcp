@@ -373,6 +373,19 @@ ADJUDICATED DOWN:**
   component (null-to-hash transitions included) with a per-component citation,
   and each fires in a test.
 
+**A FIFTH ROUND FOUND THE ORDER GUARD ENFORCING HALF ITS INVARIANT —
+CONFIRMED, AND THE FIX ALSO CORRECTED AN OVER-STRICTNESS OF THE GUARD'S FIRST
+SHAPE.** The monotonic half alone ("no already-ran task with a higher index")
+let a FIRST run of task 2 start on an empty runlog: nothing had run "after"
+it, nothing fired, and the session was spent on a run already void under
+`voidConditions` 3. Now a first run requires EVERY predecessor executed (the
+missing ones named in the refusal), plus the monotonic half. And in the same
+edit, the opposite error went: the old shape refused a LATE RE-RUN of an
+earlier task, but a re-run is not an order event — the committed order fixes
+the sequence of FIRST executions, and `admissionRule` 12 governs re-runs with
+no temporal clause; they pass the guard and are counted at scoring over the
+same runlog. Both counterexamples and the re-run permission fire in tests.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **Artifacts 7 and 11**, which belong to UNIT 5 and could not be written until
