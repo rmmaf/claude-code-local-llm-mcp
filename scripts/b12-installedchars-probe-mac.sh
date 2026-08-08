@@ -9,12 +9,16 @@
 # on the pinned binary — estimated by the paired first-request usage delta:
 # k = 3 replicates, each one fresh treatment session and one fresh control
 # session, identical but for the arm; the statistic is the FIRST billed
-# request's input-class token count (input + cacheWrite), treatment minus
-# control. The pre-declaration was registered BEFORE this script existed and
-# may not be adjusted to fit its result: SUSTAINED iff all three deltas are
-# identical, non-negative and finite; anything else takes the
-# retract-and-re-register branch. k = 3 and tolerance 0 are CHOSEN constants,
-# recorded as such there.
+# request's TOTAL prompt token count — input + cacheWrite + cacheRead, a sum
+# every prompt token lands in exactly once, so it is INVARIANT to cache state.
+# (The original input+cacheWrite form demanded cacheRead = 0, and the API
+# refuted it: prompt cache is prefix-keyed ACROSS sessions — cacheRead=22099
+# on a fresh session id, measured here. The amendment is dated in
+# PREMISES.md § B12, made before any delta existed.) The pre-declaration was
+# registered BEFORE this script existed and may not be adjusted to fit its
+# result: SUSTAINED iff all three deltas are identical, non-negative and
+# finite; anything else takes the retract-and-re-register branch. k = 3 and
+# tolerance 0 are CHOSEN constants, recorded as such there.
 #
 # BOTH ARMS ARE STRICT — treatment `--strict-mcp-config --mcp-config <cfg>`,
 # control `--strict-mcp-config` — mirroring `observe()`, which was corrected
@@ -349,13 +353,21 @@ next "Proof session — the treatment installation actually works"
 USAGE_JS="$TMP_DIR/usage.cjs"
 cat > "$USAGE_JS" <<'JS'
 // ONE extractor, ONE admission rule, exits enumerated so the shell refuses by
-// NAME: 2 transcript missing · 3 cacheRead non-zero on the first billed
-// request (the pre-declaration voids the replicate) · 4 no billed request ·
-// 5 malformed usage fields. The rule mirrors the meter's: an ASSISTANT record
-// carrying a requestId and message.usage, with isApiErrorMessage !== true —
-// PREMISES.md records that synthetic API-error records carry real request ids
-// and all-zero usage, and admitting one here would measure an outage, not an
+// NAME: 2 transcript missing · 4 no billed request · 5 malformed usage
+// fields. The rule mirrors the meter's: an ASSISTANT record carrying a
+// requestId and message.usage, with isApiErrorMessage !== true — PREMISES.md
+// records that synthetic API-error records carry real request ids and
+// all-zero usage, and admitting one here would measure an outage, not an
 // installation.
+//
+// THE STATISTIC IS THE TOTAL PROMPT SIZE: input + cacheCreation + cacheRead.
+// Every prompt token is billed in exactly one of those three classes, so the
+// sum is INVARIANT to cache state — and cache state cannot be controlled:
+// prompt cache is prefix-keyed ACROSS sessions, measured on this machine as
+// cacheRead=22099 on a fresh session id run right after the proof session.
+// The earlier input+cacheWrite form with a cacheRead-must-be-zero veto was
+// unsatisfiable back-to-back inside the TTL; the amendment is dated in
+// PREMISES.md § B12, made before any delta existed.
 const { readdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
@@ -414,17 +426,10 @@ if (!intOk(first.input) || !intOk(first.cacheCreation) || !intOk(first.cacheRead
   process.stderr.write(`non-integer usage fields: input=${first.input} cacheCreation=${first.cacheCreation} cacheRead=${first.cacheRead}`);
   process.exit(5);
 }
-const inputClassTokens = first.input + first.cacheCreation;
-const out = { arm, replicate: Number(rep), sessionId, transcript, toolsCalled: tools, first, firstRecordRaw: firstRaw, inputClassTokens };
-// The file is written BEFORE the cacheRead veto: exit 3 still refuses a
-// MEASURED replicate in the shell, but the proof session — which tolerates 3,
-// since it is not a measured pair — must still get its record to assert on.
+const promptTokens = first.input + first.cacheCreation + first.cacheRead;
+const out = { arm, replicate: Number(rep), sessionId, transcript, toolsCalled: tools, first, firstRecordRaw: firstRaw, promptTokens };
 writeFileSync(outPath, JSON.stringify(out, null, 2) + "\n");
-if (first.cacheRead !== 0) {
-  process.stderr.write(`cacheRead=${first.cacheRead}`);
-  process.exit(3);
-}
-process.stdout.write(`tokens=${inputClassTokens} model=${first.model ?? "?"} tools=${tools.length}\n`);
+process.stdout.write(`tokens=${promptTokens} (in=${first.input} cw=${first.cacheCreation} cr=${first.cacheRead}) model=${first.model ?? "?"} tools=${tools.length}\n`);
 JS
 
 PROOF_SID=$(uuidgen | tr 'A-Z' 'a-z')
@@ -451,7 +456,7 @@ if [ $PROOF_RC -ne 0 ]; then
 fi
 node "$USAGE_JS" "$PROOF_SID" "$TMP_DIR/proof.json" proof 0 >/dev/null 2>"$TMP_DIR/proof.err"
 PROOF_X_RC=$?
-[ $PROOF_X_RC -eq 0 ] || [ $PROOF_X_RC -eq 3 ] || refuse "could not read the proof session back (extractor exit $PROOF_X_RC)"
+[ $PROOF_X_RC -eq 0 ] || refuse "could not read the proof session back (extractor exit $PROOF_X_RC)"
 case "$(cat "$TMP_DIR/proof.json" 2>/dev/null)" in
   *'"mcp__local-coder__status"'*) ok "the treatment shape registers this server's tools (status was called)" ;;
   *) refuse "the proof session never called mcp__local-coder__status, so the MCP install cannot be shown to work. If a permission prompt blocked it, re-run with B12_PERMISSION_MODE=bypassPermissions." ;;
@@ -500,7 +505,6 @@ run_arm() {
   case $? in
     0) ok "replicate $REP $ARM — $PROBE_OUT" ;;
     2) refuse "claude wrote no transcript for $SID (replicate $REP $ARM). The statistic lives in the transcript, so there is nothing to measure." ;;
-    3) refuse "the first billed request of replicate $REP $ARM has $(cat "$TMP_DIR/usage.err") — the pre-declaration voids such a replicate. Re-run the probe." ;;
     4) refuse "no billed (assistant, non-apiError) request found in the transcript of replicate $REP $ARM" ;;
     5) refuse "malformed usage on replicate $REP $ARM: $(cat "$TMP_DIR/usage.err")" ;;
     *) refuse "the usage extractor failed unexpectedly on replicate $REP $ARM" ;;
@@ -559,7 +563,7 @@ for (let r = 1; r <= 3; r++) {
     console.error(`replicate ${r}: treatment ran on ${t.first.model}, control on ${c.first.model} — the arms are not paired`);
     process.exit(1);
   }
-  reps.push({ replicate: r, treatment: t, control: c, deltaTokens: t.inputClassTokens - c.inputClassTokens });
+  reps.push({ replicate: r, treatment: t, control: c, deltaTokens: t.promptTokens - c.promptTokens });
 }
 const proof = JSON.parse(readFileSync(`${tmp}/proof.json`, "utf8"));
 const deltas = reps.map((r) => r.deltaTokens);
@@ -577,14 +581,14 @@ const row = sustained
       run_id: runId, ts, machine: "mac-01",
       metric: "installed_system_prompt_token_delta_on_pinned_binary",
       value: deltaTokens, unit: "tokens", premise: "B12",
-      method: `scripts/b12-installedchars-probe-mac.sh at ${e.B12_SHA_SHORT} on claude ${e.B12_CLAUDE_VER} (binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}...); proof session showed mcp__local-coder__status callable; 3 replicates x (treatment --strict-mcp-config --mcp-config, control --strict-mcp-config), first billed assistant non-apiError request, input+cacheWrite tokens, treatment minus control; artifact ${e.B12_ART_NAME}`,
+      method: `scripts/b12-installedchars-probe-mac.sh at ${e.B12_SHA_SHORT} on claude ${e.B12_CLAUDE_VER} (binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}...); proof session showed mcp__local-coder__status callable; 3 replicates x (treatment --strict-mcp-config --mcp-config, control --strict-mcp-config), first billed assistant non-apiError request, TOTAL prompt tokens (input+cacheWrite+cacheRead, cache-invariant), treatment minus control; artifact ${e.B12_ART_NAME}`,
       note: `DELTAS ${deltas.join(", ")} — IDENTICAL, SUSTAINED. installedChars adapter: ${installedChars} chars (tokens x 3.7, divisor cancels). Calibration key: binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}... x arm x mcp-config ${e.B12_MCP_SHA.slice(0, 12)}... x env ${e.B12_ENV_HASH.slice(0, 12)}... x policy blob NONE (none sealed yet — the value is re-taken when blobs exist, and when a manifest pins extraArgs or its own MCP config). Branch: the F24 harness pass proceeds.`,
     }
   : {
       run_id: runId, ts, machine: "mac-01",
       metric: "installedchars_probe_delta_spread",
       value: Math.max(...deltas) - Math.min(...deltas), unit: "tokens", premise: "B12",
-      method: `scripts/b12-installedchars-probe-mac.sh at ${e.B12_SHA_SHORT} on claude ${e.B12_CLAUDE_VER}; 3 replicates x 2 arms, first billed assistant non-apiError request, input+cacheWrite tokens; artifact ${e.B12_ART_NAME}`,
+      method: `scripts/b12-installedchars-probe-mac.sh at ${e.B12_SHA_SHORT} on claude ${e.B12_CLAUDE_VER}; 3 replicates x 2 arms, first billed assistant non-apiError request, TOTAL prompt tokens (input+cacheWrite+cacheRead, cache-invariant); artifact ${e.B12_ART_NAME}`,
       note: `DELTAS ${deltas.join(", ")} — NOT SUSTAINED (pre-declared tolerance is zero${deltas.some((d) => d < 0) ? "; a negative delta is present" : ""}). PREMISES.md § B12 fixes the branch: retract and re-register, with this probe as the recorded cause.`,
     };
 const rowLine = JSON.stringify(row);
