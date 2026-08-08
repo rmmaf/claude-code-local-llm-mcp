@@ -2276,6 +2276,29 @@ under F24. **(b) and (c) are untouched:** the deferral observation still puts th
 magnitude in doubt, and whether supplying it is a repair to the instrument or a
 change to a frozen design is still the owner's call.
 
+**Postscript, 2026-08-08 — (c) is decided, and the boundary it fixes.** The
+owner took item (c) today: supplying `installedChars` is a REPAIR. The license
+is the frozen text's own — `voidConditions` 5 and `runPlan` PHASE 0 name
+`unitsAddedByInstallation` and `scripts/b12-run.mjs` among the ten owed repairs,
+and no observation has been scored (no `*.b12.tasks.json`, no
+`*.b12.result.json`, `observe()` never run end to end). The binding condition:
+**ONE `O_o`, identical in hold, fall and every recomputation**, operationalized
+in `PREMISES.md § B12` BEFORE the probe that measures it. The variant that was
+considered and DECLINED, recorded so it is not re-derived later as a fresh
+idea: an O-bracket (`O_ceiling` on the hold side, `O_measured` in `R_hi⁺`) —
+refuted in adjudication as new decision arithmetic under `voidConditions` 4;
+wanting that uncertainty inside the arithmetic IS the retract-and-re-register
+route, not a repair. On (b), no disposition is taken about what the pinned
+binary makes resident — that is the probe's to measure; what is fixed is where
+each world's cost lands: the resident delta in `O_o`, the fetch round trips in
+`A_o`, both by the frozen definitions of those terms. Two independent
+adjudication passes — a gate on the frozen text and an adversarial review of
+the decision dossier itself — converged on one sentence: measuring the missing
+input is repair; redefining what the input or its term means is design change.
+The dossier's first recommendation was the bracket, and the review killed it.
+Recorded because a decision that survived its own advocate's reversal is worth
+more than one that was never attacked.
+
 ## Three decisions taken while their answers were still unknowable
 
 All three had been sitting open longer than any technical blocker, and all three

@@ -238,6 +238,9 @@ rather than in the scorer.
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **`installedChars`**, above — the harness is the only place it can be taken.
+  **(c) was decided 2026-08-08 — repair, ONE `O_o`**; the operationalization is
+  pre-declared in `PREMISES.md § B12` and the paired probe (Mac, pinned binary)
+  precedes the wiring. Unblocked, not done.
 - **The memory snapshot restore** (`design.artifacts` 10) and the seven
   `design.covariates` instruction hashes, one of which — the tool allowlist
   visible in the system prompt — is not measurable from outside the session.

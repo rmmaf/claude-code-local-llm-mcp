@@ -5,40 +5,40 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**A full doc-truth sweep landed, and PR #13 is open against `main`** — 79
-commits, 61 files. Gate at the baseline 4, tsc green, run four times unchanged.
-`b12-scorer-selftest.sh` ran on the Mac: 50 checks, exit 0. The PR body carries
-what lands, what stays open by finding number, and what it deliberately omits.
+**ITEM (c) IS DECIDED — repair, ONE `O_o`.** The owner took it 2026-08-08 after
+a four-layer verified dossier (direct read; six adversarial refuters; a Codex
+gate on the frozen text — five readings, one refuted; a Codex review of the
+dossier itself). The pre-declaration is REGISTERED in `PREMISES.md § B12`:
+estimator (paired first-request usage delta, treatment − control), unit
+adapter (tokens × 3.7 through the chars interface), calibration key (binary
+sha256 × arm × MCP-config hash × policy-blob hash × protocol), k = 3 and
+tolerance 0 both labelled CHOSEN, and the give-up branch — any spread, any
+negative — is retract-and-re-register, fixed now. `DECISIONS.md § The term the
+design promised` carries the postscript, including the DECLINED O-bracket.
 
-- **The audit of my OWN corrections found 12 false claims, three of them high.**
-  A confidently-worded wrong correction is worse than the vague text it
-  replaced. That pass earned its place; run it again next time.
-- **Cite by symbol, not by line.** The repo's own rule (`FINDINGS.md`, "cited by
-  its text from here on") settled ~15 findings at once — and settled them
-  AGAINST re-pinning numbers that rot again a week later.
+- **The review killed my first recommendation** (O-bracket): two O values with
+  verdict-dependent assignment is design change under `voidConditions` 4.
+- **An unmeasured term reaches NO verdict**: NaN blocks hold AND fall and can
+  fire spurious clause-17/18 VOIDs; a finite sentinel (0) passes `holdsIf` 6.
 
 ## Next action
 
-**DECIDE ITEM (c), AND FIRST.** `DECISIONS.md` § *The term the design promised,
-and the one nobody charged for*: whether supplying `installedChars` is a repair
-to the instrument or a change to a design frozen by hash — in which case the
-rule is retract and re-register, not edit. The OWNER'S call, agreed 2026-08-08
-to be taken next session. It blocks everything: sealing the manifest first
-produces observations one-sided by construction, and UNIT 5 cannot close without
-the input. (a) is half-answered — `computeTerms` charges the term, nothing
-measures it. Hand the choice over as a table.
+**THE PROBE, on the Mac, on the pinned binary** — per the pre-declaration,
+which is already fixed and may not be adjusted to fit the result: 3 fresh
+scratch replicates per arm, first-billed-request input-class tokens, deltas
+must be identical, non-negative, finite. Sustained ⇒ the F24 harness pass
+(measure + commit `installedChars` per observation; instruction/memory hashes;
+`--append-system-prompt` per arm; F25's manifest-refusal preflight). Not
+sustained ⇒ retract and re-register, probe artifacts as the recorded cause.
 
-**`contract-stability`'s ladder is outside its own stated constraint.** It names
-PATHS and the files grew under it: `report.ts` at 59,272 B now exceeds the
-~51,607 B pre-flight ceiling. Re-pick the ladder before any run; do not re-type
-its numbers.
+**Still blocking a run even after (c):** F23 (clause 8 wants two BRACKETS,
+artifact carries two byte sums — a compliant run VOIDs as shipped); Phase-3
+exposure closed 1 of 3 INCONCLUSIVE; the contract-stability ladder (report.ts
+now 60,360 B against the ~51,607 B ceiling — re-pick, never re-type); UNIT 5.
 
 ## Do not redo
 
-- **A RETRACTION CAN ROT.** README's two still asserted in the present tense a
-  defect repaired days earlier, gated on a premise that can never hold. Fix the
-  tense and the pointer; never delete the retraction itself.
-- **Amendments here are append-only.** ROADMAP's "G1 remains `open`" was already
-  false nine hours after it was written. The remedy is a dated erratum.
-- **Never back-fill an append-only record.** Three run ids are missing from
-  `MEASUREMENTS.jsonl`; writing them by hand today would fabricate provenance.
+- **The O-bracket is DECLINED, not forgotten.** Re-deriving it later as a
+  fresh idea repeats a refuted amendment; the refusal is in DECISIONS.md.
+- **Never back-fill an append-only record**; three phase-3 run ids stay
+  row-less in `MEASUREMENTS.jsonl` by design.
