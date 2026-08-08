@@ -345,6 +345,34 @@ RAN — the transcripts do not travel in it; that burden stays with
 committedness plus the archived raw records, which a reader holding the
 transcripts can re-verify.
 
+**A FOURTH ROUND FOUND TWO MORE — BOTH CONFIRMED, ONE WITH ITS SCOPE
+ADJUDICATED DOWN:**
+
+- **The pair list was present-not-validated.** `Array.isArray(abPairs)` let an
+  empty or malformed list through. Now: at least 3 pairs (fewer can never
+  validate — `voidConditions` 21 voids "fewer than 3 complete pairs remain"),
+  unique pair ids, task references that exist, a declared per-pair arm order,
+  and BOTH orders present — the necessary condition of any reading of "ABBA
+  order"; the exact sequence pattern is deliberately NOT decided here, it
+  belongs to the A/B pass and is blocked with the VOID-21 hash adjudication.
+  **The reviewer's wider ask — make every `observe` invocation prove pair
+  membership — was DECLINED against the frozen text:** primary observations
+  are not pairs ("the control arm never enters the primary verdict",
+  `admissionRule` 13; the A/B is post-verdict, `runPlan` PHASE 7). What IS
+  enforced now: the PRIMARY arm's committed order (`voidConditions` 3),
+  checked against the persisted runlog before a session is spent
+  (`committedOrderViolation` — treatment rows only; duplicates left to
+  `admissionRule` 12's scoring-time re-run adjudication).
+- **Instruction drift was recorded but only two components invalidated.**
+  Settings, settings.local, the passed MCP config and the policy blob drifted
+  visibly (pre ≠ post) while `valid` stayed true. Clause 12's intra-arm text
+  names only CLAUDE.md — but those components are what the clause compares
+  ACROSS A PAIR, and an arm carrying two values has no well-defined hash for
+  that comparison: invalidating makes the frozen predicate EVALUABLE, the
+  end-commit fix's own argument. `instructionDriftReasons` now compares every
+  component (null-to-hash transitions included) with a per-component citation,
+  and each fires in a test.
+
 **What F24 still owes, so the entry is not mistaken for closed:**
 
 - **Artifacts 7 and 11**, which belong to UNIT 5 and could not be written until

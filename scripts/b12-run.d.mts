@@ -92,6 +92,24 @@ export function committedEvidenceCheck(declaredPath: string): {
 };
 
 /**
+ * Whether running `taskId`'s treatment arm now would break the manifest's
+ * committed order (`voidConditions` 3), judged against the persisted runlog
+ * text. Returns the refusal reason, or null. Treatment-only by design —
+ * control arms belong to the post-verdict A/B.
+ */
+export function committedOrderViolation(manifest: unknown, taskId: string, runlogText: string): string | null;
+
+/**
+ * Invalidity reasons for pre/post instruction-hash drift — every component
+ * compared (CLAUDE.md, memory, settings, settings.local, passed MCP config,
+ * policy blob), each with its frozen-text citation. Pure.
+ */
+export function instructionDriftReasons(
+  pre: Record<string, string | null> | null | undefined,
+  post: Record<string, string | null> | null | undefined
+): string[];
+
+/**
  * sha256 over sorted (relative path, content sha256) pairs, separators
  * normalised to "/". A missing or empty directory hashes as the empty list
  * with `files: 0`.

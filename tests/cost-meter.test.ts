@@ -2734,7 +2734,11 @@ describe("the B12 harness", () => {
     // A manifest that satisfies the FULL design.artifacts 1 sweep. Kept in one
     // place so stripping a single field is provably the only difference.
     const completeManifest = () => ({
-      abPairs: [],
+      abPairs: [
+        { id: "p1", taskId: "t1", order: "treatment-first" },
+        { id: "p2", taskId: "t1", order: "control-first" },
+        { id: "p3", taskId: "t1", order: "treatment-first" },
+      ],
       pinned: {
         claudeCodeVersion: "9.9.9",
         claudeBinarySha256: "bin-sha",
@@ -2780,8 +2784,15 @@ describe("the B12 harness", () => {
       // guard shown FIRING; the justification classes stay SEPARATE — F25 for
       // verificationStratum, artifact-1 completeness for the rest.
       const { manifestDeclarationGaps } = await load();
+      // Stripping the task id is tested apart: it also orphans the abPairs
+      // task references, so ONE strip fires BOTH gap classes — which is the
+      // guard working, not the test failing.
+      const noId = completeManifest();
+      delete (noId.tasks[0] as Record<string, unknown>).id;
+      const idGaps = manifestDeclarationGaps(noId);
+      expect(idGaps.some((g) => /carries no id/.test(g))).toBe(true);
+      expect(idGaps.some((g) => /not in the manifest/.test(g))).toBe(true);
       const taskCases: Array<[string, RegExp]> = [
-        ["id", /carries no id/],
         ["prompt", /carries no prompt/],
         ["verificationStratum", /verificationStratum.*F25/],
         ["expectedSubagentStratum", /expectedSubagentStratum.*by analogy/],
@@ -2825,6 +2836,111 @@ describe("the B12 harness", () => {
       const noPairs = completeManifest() as Record<string, unknown>;
       delete noPairs.abPairs;
       expect(manifestDeclarationGaps(noPairs)[0]).toMatch(/abPairs.*ABBA/);
+    });
+
+    it("validates the A/B pair schema instead of accepting any array", async () => {
+      // A fourth adversarial round found `Array.isArray` letting an empty or
+      // malformed pair list through — sessions could be spent against a
+      // manifest whose A/B can never validate (voidConditions 21 voids fewer
+      // than 3 complete pairs). Each schema guard shown FIRING:
+      const { manifestDeclarationGaps } = await load();
+      const withPairs = (pairs: unknown) => {
+        const m = completeManifest() as Record<string, unknown>;
+        m.abPairs = pairs;
+        return m;
+      };
+      expect(manifestDeclarationGaps(withPairs([]))[0]).toMatch(/at least 3 pairs/);
+      const dup = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p1", taskId: "t1", order: "control-first" },
+          { id: "p3", taskId: "t1", order: "treatment-first" },
+        ])
+      );
+      expect(dup.some((g) => /duplicates pair id p1/.test(g))).toBe(true);
+      const ghost = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p2", taskId: "t-ghost", order: "control-first" },
+          { id: "p3", taskId: "t1", order: "treatment-first" },
+        ])
+      );
+      expect(ghost.some((g) => /t-ghost.*not in the manifest/.test(g))).toBe(true);
+      const orderless = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p2", taskId: "t1", order: "control-first" },
+          { id: "p3", taskId: "t1" },
+        ])
+      );
+      expect(orderless.some((g) => /declares no arm order/.test(g))).toBe(true);
+      // Both orders must occur — the necessary condition of ANY "ABBA" reading;
+      // the exact sequence pattern stays with the A/B pass's adjudication.
+      const oneSided = manifestDeclarationGaps(
+        withPairs([
+          { id: "p1", taskId: "t1", order: "treatment-first" },
+          { id: "p2", taskId: "t1", order: "treatment-first" },
+          { id: "p3", taskId: "t1", order: "treatment-first" },
+        ])
+      );
+      expect(oneSided.some((g) => /only one arm order/.test(g))).toBe(true);
+    });
+
+    it("refuses a treatment invocation that breaks the committed order, from the persisted runlog", async () => {
+      // voidConditions 3: "the manifest's committed order was not followed" —
+      // checkable BEFORE the session is spent, because the runlog persists
+      // progress. Control rows are ignored (the A/B runs post-verdict, its
+      // sequencing blocked with VOID 21's adjudication), and a duplicate task
+      // is NOT an order violation — admissionRule 12 adjudicates re-runs at
+      // scoring.
+      const { committedOrderViolation } = await load();
+      const manifest = { tasks: [{ id: "t1" }, { id: "t2" }, { id: "t3" }] };
+      const row = (taskId: string, arm: string) => JSON.stringify({ taskId, arm }) + "\n";
+      // In order: t1 ran, t2 next — fine; re-running t2 after t2 — fine (a re-run).
+      expect(committedOrderViolation(manifest, "t2", row("t1", "treatment"))).toBeNull();
+      expect(committedOrderViolation(manifest, "t2", row("t1", "treatment") + row("t2", "treatment"))).toBeNull();
+      // Out of order: t3 already ran, t2 requested — FIRES.
+      expect(committedOrderViolation(manifest, "t2", row("t3", "treatment"))).toMatch(/committed order was not followed/);
+      // A control row for a later task does not gate the primary order.
+      expect(committedOrderViolation(manifest, "t2", row("t3", "control"))).toBeNull();
+      // Corrupt progress is a refusal, never a silent skip.
+      expect(committedOrderViolation(manifest, "t2", "not json\n")).toMatch(/not JSON/);
+      // An empty log constrains nothing.
+      expect(committedOrderViolation(manifest, "t1", "")).toBeNull();
+    });
+
+    it("invalidates on drift in EVERY instruction component, with its citation", async () => {
+      // The fourth round's second finding: settings/settings.local/MCP-config/
+      // policy-blob drift was RECORDED but did not invalidate. An arm carrying
+      // two values has no well-defined hash for voidConditions 12's pair
+      // comparison — invalidating makes the frozen predicate evaluable.
+      const { instructionDriftReasons } = await load();
+      const base = {
+        claudeMd: "a",
+        settings: "b",
+        settingsLocal: null as string | null,
+        mcpConfigPassed: "d",
+        policyBlob: "e",
+        memory: "f",
+      };
+      expect(instructionDriftReasons(base, { ...base })).toHaveLength(0);
+      const cases: Array<[string, RegExp]> = [
+        ["claudeMd", /voidConditions 12: the in-repo CLAUDE\.md/],
+        ["memory", /voidConditions 13/],
+        ["settings", /two settings hashes/],
+        ["settingsLocal", /two settings\.local hashes/],
+        ["mcpConfigPassed", /moved mid-session/],
+        ["policyBlob", /calibration key/],
+      ];
+      for (const [key, cite] of cases) {
+        const post = { ...base, [key]: "moved" } as Record<string, string | null>;
+        const reasons = instructionDriftReasons(base, post);
+        expect.soft(reasons, `${key} drift fired no invalidity`).toHaveLength(1);
+        expect.soft(reasons[0], `${key} drift cites the wrong clause`).toMatch(cite);
+      }
+      // A null-to-hash transition is drift like any other — settingsLocal
+      // starts null in the base exactly to prove it.
+      expect(instructionDriftReasons(base, { ...base, settingsLocal: "appeared" })).toHaveLength(1);
     });
 
     it("accepts only committed evidence as a probe source", async () => {

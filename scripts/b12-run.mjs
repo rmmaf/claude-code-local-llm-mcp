@@ -474,10 +474,44 @@ export function manifestDeclarationGaps(manifest) {
     str(pinned.installedCharsProbeSha256),
     "pinned.installedCharsProbeSha256 is absent — required, not compared-if-present: a self-asserted probe file is not provenance"
   );
-  need(
-    Array.isArray(manifest?.abPairs),
-    'manifest.abPairs is absent (artifact 1: "the named A/B pairs and their exact count with ABBA order"; voidConditions 21 voids an A/B whose pairs were not named in the same tasks.json)'
-  );
+  // The pair list is VALIDATED, not merely present — a fourth adversarial
+  // round found `Array.isArray` letting an empty or malformed list through.
+  // Fewer than 3 pairs can never validate (`voidConditions` 21: "fewer than 3
+  // complete pairs remain" is a VOID), so a shorter declaration is refused at
+  // the manifest. The pair SCHEMA (id, taskId, order) is this harness's; the
+  // required content is artifact 1's "the named A/B pairs and their exact
+  // count with ABBA order". Both arm orders must occur — the necessary
+  // condition of ANY reading of "ABBA" — while the exact sequence pattern is
+  // left to the A/B pass, whose sequencing is blocked with `voidConditions`
+  // 21's instruction-set-hash adjudication (FINDINGS.md F24).
+  const pairs = manifest?.abPairs;
+  if (!Array.isArray(pairs) || pairs.length < 3) {
+    need(
+      false,
+      'manifest.abPairs must name at least 3 pairs (artifact 1: "the named A/B pairs and their exact count with ABBA order"; voidConditions 21 voids an A/B with fewer than 3 complete pairs, so a shorter list can never validate)'
+    );
+  } else {
+    const pairIds = new Set();
+    const orders = new Set();
+    const taskIds = new Set((manifest?.tasks ?? []).map((t) => t?.id));
+    pairs.forEach((p, i) => {
+      if (!str(p?.id)) need(false, `abPairs[${i}] carries no id`);
+      else if (pairIds.has(p.id)) need(false, `abPairs[${i}] duplicates pair id ${p.id}`);
+      else pairIds.add(p.id);
+      if (!taskIds.has(p?.taskId)) need(false, `abPairs[${i}] names task ${String(p?.taskId)}, which is not in the manifest`);
+      if (p?.order !== "treatment-first" && p?.order !== "control-first") {
+        need(false, `abPairs[${i}] declares no arm order (order: treatment-first | control-first is the schema for artifact 1's "ABBA order")`);
+      } else {
+        orders.add(p.order);
+      }
+    });
+    if (orders.size === 1) {
+      need(
+        false,
+        'abPairs declares only one arm order — any reading of "ABBA order" is counterbalanced, so both orders must occur; the exact sequence is the A/B pass\'s adjudication'
+      );
+    }
+  }
 
   for (const t of manifest?.tasks ?? []) {
     const id = t?.id ?? "(unnamed task)";
@@ -510,6 +544,70 @@ export function manifestDeclarationGaps(manifest) {
     );
   }
   return gaps;
+}
+
+/**
+ * Whether running `taskId`'s TREATMENT arm now would break the manifest's
+ * committed order, judged against the persisted runlog. `voidConditions` 3
+ * voids a run whose "committed order was not followed", and `admissionRule` 2
+ * fixes "the first 20 that admit, IN THAT COMMITTED ORDER" — the runlog is the
+ * progress record that makes the condition checkable BEFORE a session is
+ * spent rather than only at scoring. TREATMENT ONLY: the primary instrument
+ * runs in committed order, while control arms belong to the post-verdict A/B
+ * (`admissionRule` 13, `runPlan` PHASE 7), whose pair sequencing is blocked
+ * with `voidConditions` 21's adjudication. A DUPLICATE task is not refused
+ * here — `admissionRule` 12 allows one discretionary re-run plus
+ * version-drift re-runs, adjudicated at scoring over this same runlog.
+ */
+export function committedOrderViolation(manifest, taskId, runlogText) {
+  const tasks = manifest?.tasks ?? [];
+  const currentIndex = tasks.findIndex((t) => t?.id === taskId);
+  for (const line of (runlogText ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      return `the runlog carries a line that is not JSON — the persisted progress is corrupt: ${line.slice(0, 80)}`;
+    }
+    if (row.arm !== "treatment") continue;
+    const idx = tasks.findIndex((t) => t?.id === row.taskId);
+    if (idx > currentIndex) {
+      return `task ${taskId} (index ${currentIndex}) would run after ${row.taskId} (index ${idx}) already ran — the manifest's committed order was not followed (voidConditions 3)`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Every pre/post instruction component compared, not only the two with their
+ * own named VOIDs — a fourth adversarial round found the drift RECORDED but
+ * not invalidating. CLAUDE.md movement is `voidConditions` 12's first clause
+ * and memory is 13. Settings, settings.local and the passed MCP config are
+ * what clause 12 compares ACROSS A PAIR — and an arm that carries two
+ * different values for one of them has no well-defined hash for that
+ * comparison, so invalidating makes the frozen predicate EVALUABLE (the
+ * end-commit fix's own argument, not a new rule). A policy blob that moved
+ * mid-arm breaks clause 12's one-hash-per-record requirement and the
+ * `installedChars` calibration key with it. Null-to-hash transitions compare
+ * like any other difference.
+ */
+export function instructionDriftReasons(pre, post) {
+  const cites = {
+    claudeMd: "voidConditions 12: the in-repo CLAUDE.md blob hash moved between arm start and end",
+    memory: "voidConditions 13: the session wrote to the memory directory",
+    settings: "voidConditions 12's pair comparison is ill-defined over an arm carrying two settings hashes",
+    settingsLocal: "voidConditions 12's pair comparison is ill-defined over an arm carrying two settings.local hashes",
+    mcpConfigPassed: "voidConditions 12's pair comparison is ill-defined over an arm whose passed MCP config moved mid-session",
+    policyBlob: "voidConditions 12 requires ONE per-arm policy blob hash on the record — a blob that moved mid-arm breaks it and the installedChars calibration key",
+  };
+  const reasons = [];
+  for (const key of Object.keys(cites)) {
+    if ((pre?.[key] ?? null) !== (post?.[key] ?? null)) {
+      reasons.push(`instruction drift: ${key} ${String(pre?.[key] ?? null)} -> ${String(post?.[key] ?? null)} — ${cites[key]}`);
+    }
+  }
+  return reasons;
 }
 
 /**
@@ -1194,6 +1292,20 @@ async function observe(args) {
   const arm = args.arm ?? "treatment";
   if (arm !== "treatment" && arm !== "control") refuse(`--arm must be treatment or control, got ${arm}`);
 
+  // The committed order, enforced against the persisted runlog BEFORE the
+  // session is spent — see `committedOrderViolation` for the treatment-only
+  // scoping and the duplicate-task adjudication it deliberately leaves to
+  // scoring.
+  if (arm === "treatment") {
+    const runLogPath = path.join(REPO, "evidence", `${manifest.runId ?? "b12-unnamed"}.b12.runlog.jsonl`);
+    const violation = committedOrderViolation(
+      manifest,
+      args.task,
+      existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : ""
+    );
+    if (violation) refuse(violation);
+  }
+
   const binary = claudeBinary();
   assertPinned(manifest, binary);
   // Every refusal BEFORE the worktree and before the session id, so a manifest
@@ -1455,17 +1567,10 @@ async function observe(args) {
   // Facts the run-level VOIDs are adjudicated on at scoring time, recorded here
   // as invalidity because a driver must stop rather than keep spending on a run
   // that already voided. Same shape as the empty-lineage contradiction below:
-  // the artifact is still written; what is refused is calling it valid.
-  if (instructionPost.claudeMd !== instructionPre.claudeMd) {
-    invalid.push(
-      `the in-repo CLAUDE.md blob hash moved between arm start and end (${instructionPre.claudeMd} -> ${instructionPost.claudeMd}) — voidConditions 12`
-    );
-  }
-  if (instructionPost.memory !== instructionPre.memory) {
-    invalid.push(
-      `the session wrote to the memory directory (${instructionPre.memory} -> ${instructionPost.memory}) — voidConditions 13`
-    );
-  }
+  // the artifact is still written; what is refused is calling it valid. EVERY
+  // component compares, not only the two with named VOIDs — see
+  // `instructionDriftReasons` for the per-component citations.
+  invalid.push(...instructionDriftReasons(instructionPre, instructionPost));
 
   const runId = manifest.runId ?? "b12-unnamed";
   const dir = path.join(REPO, "evidence", runId, `obs-${task.id}-${arm}`);
