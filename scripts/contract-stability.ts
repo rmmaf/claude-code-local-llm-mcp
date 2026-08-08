@@ -70,13 +70,28 @@ import {
 // ---------------------------------------------------------------- the corpus
 
 /**
- * Ten real files of this repo, each roughly double the previous — 665 B to
- * 35.6 KB, a 53× span. Size is what varies; all ten are TypeScript from src/ so
- * one probe spec fits all of them and size stays the only moving part.
+ * Ten real files of this repo, ordered by size WHEN THE LADDER WAS BUILT — 665 B
+ * to 35.6 KB, a 53× span, each roughly double the previous. Size is what varies;
+ * all ten are TypeScript from src/ so one probe spec fits all of them and size
+ * stays the only moving part.
  *
- * The top end is set by the server's own pre-flight, not by taste: at
+ * The top end was set by the server's own pre-flight, not by taste: at
  * LOCAL_CODER_MAX_OUTPUT_TOKENS=16384, `enforceOutputCap` refuses anything over
  * ~51.6 KB, so a larger file would measure a request the server never sends.
+ *
+ * ⚠ **THE LADDER NAMES PATHS, AND THE FILES GREW UNDER IT. RE-CHECK BEFORE THE
+ * NEXT RUN.** Measured at HEAD in canonical LF form the ten are 665 / 1,688 /
+ * 3,381 / 4,822 / 6,578 / 15,229 / 26,583 / 15,891 / 59,272 / 46,650 B. Three
+ * properties this comment asserts are no longer true of the corpus: it is no
+ * longer monotonic (`gate.ts` now sorts below `transcript.ts`, and `repair.ts`
+ * below `report.ts`), the span is ~89× rather than 53×, and — the one that
+ * matters — **`report.ts` at 59,272 B is now OVER the ~51,607 B pre-flight
+ * ceiling** (16,935 estimated tokens against a budget of 14,745), so L9 would
+ * measure a request the server refuses rather than sends. `repair.ts` at
+ * 46,650 B is still under it, at 13,329 tokens. The recorded runs
+ * (`evidence/2026-08-04-mac-1{1,2}`) are unaffected: they measured the files as
+ * they were, and L10 is 35,656 B in those artifacts. A future run needs the
+ * ladder re-picked, not the numbers re-typed.
  *
  * src/parse.ts is in the ladder deliberately: its source contains
  * `...entire final file content...` and line-anchored `<file>` literals, so it
@@ -100,8 +115,14 @@ const LADDER = [
  * The multi-file arm. A single-file request declares one block, so the ladder
  * cannot observe the failure the contract sentence is actually aimed at —
  * returning the first file and forgetting the second. These groups vary block
- * count (2, 3, 2) and total size (2.4 KB, 14.8 KB, 21.7 KB) independently, and
- * each stays under the output cap.
+ * count (2, 3, 2) and total size independently, and each stays under the output
+ * cap.
+ *
+ * Sizes when built: 2.4 KB, 14.8 KB, 21.7 KB. At HEAD: 2,353 / 14,781 / 41,812 B
+ * — group 3 nearly doubled, because `src/cost/transcript.ts` grew from 12,129 to
+ * 26,583 B. It still clears the ~51.6 KB cap, so the arm remains runnable, but
+ * "vary independently" is weaker than it was: group 3 is now 2.8× group 2 on
+ * bytes while carrying fewer blocks. See the ladder's warning above.
  */
 const GROUPS = [
   ["src/logger.ts", "src/diff.ts"],

@@ -34,7 +34,6 @@ export type ClassifiedOutcome =
   | "exited_nonzero"
   | "completed";
 
-/** The closed classification of one arm's outcome. `scripts/b12-run.mjs`. */
 /**
  * One machine's transcript corpus at an instant. `design.artifacts` 5.
  *
@@ -58,6 +57,7 @@ export function takeSnapshot(rootOverride?: string): {
   requestIds: string[];
 };
 
+/** The closed classification of one arm's outcome. `scripts/b12-run.mjs`. */
 export function classifyRun(input: {
   exitCode: number | null;
   signal: string | null;

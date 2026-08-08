@@ -2,9 +2,14 @@
 /**
  * B12's harness. Runs observations; decides nothing.
  *
- *   node scripts/b12-run.mjs preflight --manifest evidence/<run>.b12.tasks.json
+ *   node scripts/b12-run.mjs preflight [--manifest evidence/<run>.b12.tasks.json] [--session <id>]
  *   node scripts/b12-run.mjs observe   --manifest <m> --task <id> [--arm treatment|control]
  *   node scripts/b12-run.mjs snapshot  --out <file>
+ *
+ * `preflight`'s `--manifest` is OPTIONAL — without one it skips every
+ * manifest-dependent check rather than refusing. `--session <id>` is what
+ * decides its exit code in practice: without it the fresh-call assertions FAIL,
+ * because a preflight that only proves files exist cannot say the join works.
  *
  * WHY THIS FILE EXISTS. `B1` did not fall on its merits — it died because its
  * numbers were hand-typed and its comparator was ephemeral, so nobody could
@@ -988,7 +993,7 @@ if (!invokedDirectly) {
   }
   default:
     process.stderr.write(
-      "usage: b12-run.mjs <preflight|observe|snapshot> [--manifest f] [--task id] [--arm treatment|control] [--out f] [--root d] [--keep]\n"
+      "usage: b12-run.mjs <preflight|observe|snapshot> [--manifest f] [--session id] [--task id] [--arm treatment|control] [--out f] [--root d] [--keep]\n"
     );
     process.exit(2);
 }

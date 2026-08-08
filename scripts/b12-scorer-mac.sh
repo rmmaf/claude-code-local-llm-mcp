@@ -26,9 +26,18 @@
 #     body that does not typecheck takes the whole step down.
 #   - appends to .local-coder/telemetry.jsonl and .local-coder/corpus/ (both
 #     gitignored) as a side effect of calling the tools
-#   - writes ONE new file under evidence/ and ONE .tgz under ~/lc-results/
-#   - makes ONE local git commit if anything went green. It never pushes.
-# It creates and removes a temp dir under $TMPDIR and nothing else.
+#   - writes ONE new file under evidence/, and a per-run directory
+#     ~/lc-results/<runId>/ (override the parent with LC_RESULTS) holding the
+#     per-unit claude and vitest logs, the repair telemetry windows, the
+#     telemetry slice, this run's corpus captures, the git bundle and diff, and
+#     a copy of the artifact. THAT DIRECTORY IS NOT REMOVED.
+#   - writes ~/lc-results/<runId>.tgz beside it — an archive of that directory,
+#     and only when tar succeeds; on failure the directory is what you send.
+#   - makes ONE local git commit on every run that reaches step 8: always the
+#     new evidence/ artifact, plus any bodies under src/cost/b12/, INCLUDING a
+#     run where nothing closed. It never pushes. (A run refused earlier — the
+#     npm ci/build step, or the oracle-restore check — commits nothing.)
+# It also creates and removes a temp dir under $TMPDIR.
 #
 # bash 3.2 compatible: no associative arrays, no mapfile, no ${x,,}.
 #
@@ -401,7 +410,7 @@ else
     [ -n "$FROZEN_BLOB" ] ||
       refuse "src/cost/b12/$u.ts does not exist at $STUBS_FROZEN_AT, so this run has no stub to start it from."
     git -C "$REPO" show "$STUBS_FROZEN_AT:src/cost/b12/$u.ts" 2>/dev/null | grep -q 'not implemented' ||
-      refuse "src/cost/b12/$u.ts at $STUBS_FROZEN_AT does not contain \"not implemented\", so it is not a stub. STUBS_FROZEN_AT points at the wrong commit, and every comparison here would pass for the wrong reason."
+      refuse "src/cost/b12/$u.ts at $STUBS_FROZEN_AT does not contain \"not implemented\", so it is not a stub. This check cannot tell WHY, and the two causes take opposite remedies. EITHER STUBS_FROZEN_AT points at the wrong commit, and every comparison here would pass for the wrong reason -- OR $u already has an observation and the pin holds the body that closed it, which is the one-draw rule refusing a second draw. If it is the second, attempt only a unit that has no observation: B12_ONLY=<unit> B12_CARRIED_FROM=<the run id that measured the others> bash scripts/b12-scorer-mac.sh . Do NOT repoint STUBS_FROZEN_AT to make this pass: PREMISES.md registers that as a second draw at the same bar, and the header above this pin states that moving it is a deliberate act."
     NOW_BLOB=$(git -C "$REPO" hash-object "$REPO/src/cost/b12/$u.ts" 2>/dev/null)
     [ -n "$NOW_BLOB" ] || refuse "could not hash src/cost/b12/$u.ts"
     [ "$NOW_BLOB" = "$FROZEN_BLOB" ] || DIRTY="$DIRTY $u"
@@ -769,7 +778,7 @@ for (const r of repairs) {
   for (const rd of rounds) attempts += Array.isArray(rd.attempts) ? rd.attempts.length : 0;
 }
 // The model that SERVED the call, against the one this run declares. The
-// preflight has recorded this since `b12-preflight-mac.sh:682` and never
+// preflight has recorded this as `modelUsedByRepair` and never
 // compared it; a scorer that does not compare it is scoring an unnamed model.
 const models = [...new Set(repairs.map((r) => r.detail && r.detail.model).filter((m) => typeof m === "string"))];
 const modelVerdict = models.length === 0 ? "unknown"
@@ -1238,7 +1247,8 @@ const o = {
     claudeBinarySha256: e.B12_CLAUDE_SHA,
     claudeModel: e.B12_MODEL,
     // REQUESTED AND OBSERVED, split. The preflight has recorded the served
-    // model since `b12-preflight-mac.sh:672-682`; the scorer declared one and
+    // model as `modelRequestedFromLmStudio` and `modelUsedByRepair` in
+    // `b12-preflight-mac.sh`; the scorer declared one and
     // never looked. A run whose rows name a different model is scoring a model
     // it cannot name, which `voids` above now says out loud.
     localModel: {

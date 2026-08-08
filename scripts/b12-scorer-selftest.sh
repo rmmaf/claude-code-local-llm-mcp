@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# b12-scorer-selftest.sh — drive b12-scorer-mac.sh's two new decision points
+# b12-scorer-selftest.sh — drive b12-scorer-mac.sh's three new decision points
 # against fabricated evidence, and check what they actually decide.
 #
 # WHY THIS FILE EXISTS. `bash -n` parses; it does not expand. Four refusals in
@@ -9,13 +9,15 @@
 # the text was read and never run. The scorer's new logic decides whether a
 # premise holds; it does not get to be the part nobody executes.
 #
-# WHAT MAKES IT A TEST OF THE SHIPPED CODE. Nothing here is a copy. Both units
-# under test are EXTRACTED VERBATIM from scripts/b12-scorer-mac.sh at run time:
+# WHAT MAKES IT A TEST OF THE SHIPPED CODE. Nothing here is a copy. All three
+# units under test are EXTRACTED VERBATIM from scripts/b12-scorer-mac.sh at run
+# time:
 #   - the telemetry-window reader, between its `<<'JS'` and `JS` markers
 #   - the state decision, between `# >>> B12-STATE-BLOCK` and `# <<< ...`
+# - the fresh-exposure stub guard, between `# >>> B12-STUB-GUARD` and `# <<< ...`
 # A copy would pass forever while the original rotted.
 #
-# Runs anywhere bash and node run. It calls no model, starts no server, and
+# Runs anywhere bash, node and git run. It calls no model, starts no server, and
 # touches nothing outside its own temp dir.
 #
 # Usage:  bash scripts/b12-scorer-selftest.sh
