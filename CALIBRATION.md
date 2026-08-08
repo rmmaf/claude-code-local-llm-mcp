@@ -109,8 +109,12 @@ bodies with `errors="replace"`, and read `reasoning_content` separately — `con
 the answer. Note the MCP server itself reads **only** `content`: a model that answers only
 in `reasoning_content` fails delegation even though it looks fine in chat.
 
-The server exposes five tools: `implement(spec, files[], context_files[]?, model?, mode?)`,
-`fix(…same + error_output)`, `scaffold(spec, target_path, model?)`, `models`, and `status`.
+The server exposes seven tools: `implement(spec, files[], context_files[]?, model?, mode?)`,
+`fix(…same + error_output)`, `scaffold(spec, target_path, model?)`,
+`gate(checks?, max_failures?)`, `repair(files[], spec, checks?, max_rounds?, budget_seconds?)`,
+`models`, and `status`. This battery calibrates `implement` and `fix` only — no
+recipe below calls `scaffold`, `gate` needs no local model at all, and `repair`
+is scored separately by B12.
 `status.config` echoes the effective configuration — the cheap self-check that your env
 overrides actually landed.
 
@@ -485,9 +489,10 @@ Add `## Available local LLMs` to `~/.claude/CLAUDE.md`:
 - Operational notes: JIT loading and cold-load times, `lms unload --all` between
   sequential jobs, the absolute `lms` path, CSV read once at startup (edits need a
   restart), and that registration pins `LOCAL_CODER_TEMPERATURE=0`.
-- **Ignore the `models` tool's `recommended` / `auto_selection` fields** — they pick the
+- **Ignore `models.recommended` and `status.auto_selection`** — they pick the
   largest model that fits RAM, which is unrelated to task fit. Always pass `model`
-  explicitly.
+  explicitly. (`recommended` is a field of the `models` tool; `auto_selection` is a
+  field of `status`.)
 - The delegation policy: delegate multi-file implementations from a clear spec,
   boilerplate, test generation, mechanical refactors, docstrings; keep architecture, API
   design, subtle debugging, and security-sensitive code in Claude; never paste file
