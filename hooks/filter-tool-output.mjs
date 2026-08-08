@@ -1,26 +1,39 @@
 #!/usr/bin/env node
 /**
- * PostToolUse hook — keeps command noise out of Claude's context.
+ * PostToolUse hook — DEAD, UNREGISTERED, AND NOT TO BE INSTALLED.
  *
- * Why this exists: a token that enters the context is paid for once as a cache
- * write and then re-read on EVERY later request in the session. Measured on a
- * real 69-request session, a token entering at turn 0 cost 8.8x the input
- * rate. Suppressing a line of npm progress is therefore worth ~9 lines of
- * savings, and it is the only lever here that needs no model at all.
+ * ⚠ THIS FILE IS KEPT ON DISK AS A RETEST FIXTURE, NOT AS A FEATURE. It was
+ * intended to keep command noise out of Claude's context, and it does condense
+ * text correctly — 604 lines to 4 on a failing test run. That was never the
+ * question. The question was whether `hookSpecificOutput.updatedToolOutput`
+ * changes what Claude Code STORES AND BILLS, and the measured answer is no:
+ * on a real command the hook fired, filtered 30,136 bytes down to 8,462 and
+ * wrote its spill file, and the transcript recorded 30,000 characters of raw
+ * output anyway. The replacement never arrived. See `PREMISES.md § B2`
+ * (**fallen**, `run 2026-08-02-win-03`) and `ROADMAP.md § G2` (**closed —
+ * dead**). The hook is unregistered from `.claude/settings.json` and is off the
+ * critical path of every Bash call.
  *
- * Why it is reversible: arXiv 2607.12161 measured an arm that removed 38% of
- * tool-output tokens and cost 6.8% MORE, dropping patch application from 27/40
- * to 15/40 — because it destroyed the verbatim anchors edits depend on. Every
- * suppression here writes the full text to .local-coder/spill/ and says so, so
- * nothing is ever unrecoverable.
+ * DO NOT REGISTER IT. No saving from this hook may be reported as measured,
+ * anywhere. The only sanctioned way it comes back is G2's reopening condition,
+ * which is written down with its threshold and its ONE attempt fixed in
+ * advance: return `{stdout, stderr, interrupted, isImage}` — the shape a Bash
+ * result actually has, and the specific reason the bare-string form failed —
+ * and show `cache_creation_input_tokens` dropping measurably on the following
+ * request, under a new `run_id`. Suppression that does work lives in `gate`,
+ * which controls its own returned payload and needs no hook.
  *
- * Contract: JSON on stdin, JSON on stdout. Fails open — any error prints `{}`
- * and exits 0, so a bug here can never break a session.
- *
- * Install (.claude/settings.json):
- *   { "hooks": { "PostToolUse": [ { "matcher": "Bash",
- *       "hooks": [ { "type": "command",
- *                    "command": "node hooks/filter-tool-output.mjs" } ] } ] } }
+ * What the body below still gets right, and why it is worth keeping:
+ * - Why suppression is worth anything at all: a token that enters the context is
+ *   paid for once as a cache write and then re-read on EVERY later request in
+ *   the session. Measured on a real 69-request session, a token entering at
+ *   turn 0 cost 8.8x the input rate.
+ * - Why it is reversible: arXiv 2607.12161 measured an arm that removed 38% of
+ *   tool-output tokens and cost 6.8% MORE, dropping patch application from 27/40
+ *   to 15/40 — because it destroyed the verbatim anchors edits depend on. Every
+ *   suppression here writes the full text to .local-coder/spill/ and says so.
+ * - Contract: JSON on stdin, JSON on stdout. Fails open — any error prints `{}`
+ *   and exits 0, so a bug here can never break a session.
  */
 import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";

@@ -5,8 +5,8 @@ import { log } from "./logger.js";
 
 /**
  * Append-only record of what each tool call actually saved, written next to the
- * project so `scripts/cost-meter.ts` can join it against the Claude Code
- * transcript.
+ * project so the cost meter — `src/cost/cli.ts`, run as `npm run cost-meter` —
+ * can join it against the Claude Code transcript.
  *
  * This exists because the interesting quantity is a counterfactual — "what
  * would this have cost had the tool not run" — and only the tool knows the

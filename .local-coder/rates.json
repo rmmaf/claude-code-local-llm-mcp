@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Token pricing for scripts/cost-meter.ts.",
+    "Token pricing for the cost meter (src/cost/cli.ts, `npm run cost-meter`).",
     "",
     "`multipliers` are structural — they follow from how prompt caching is billed,",
     "not from any one model's price sheet — so they rarely need touching.",

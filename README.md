@@ -28,7 +28,7 @@ Write-delegation is the *weakest* of the three and it is the one this project st
 
 ```
 Claude Code (orchestrator, metered API)
-      │  stdio (MCP): gate / repair / locate ↓ · structured failures + one diff ↑
+      │  stdio (MCP): gate / repair / implement ↓ · structured failures + one diff ↑
 local-coder MCP server  ←→  project files + check commands on disk
       │  HTTP: OpenAI-compatible chat completions (repair loop only)
 LM Studio · http://localhost:1234/v1  (MLX engine, JIT load + TTL unload)
@@ -178,8 +178,10 @@ truncating.
 
 > That range rests on a denominator now known to be **main-thread only** (see the
 > retraction under *Measuring what it saves*). Flagged rather than recomputed:
-> correcting it needs the enumeration `B17` pre-registers, and a number patched by
-> hand would repeat the error that produced it.
+> correcting it needs a full-session enumeration, and a number patched by hand
+> would repeat the error that produced it. **The enumeration now exists** — it
+> shipped under `B20` — but this range has still not been recomputed against it,
+> so it stays flagged.
 
 ## Measuring what it saves
 
@@ -197,7 +199,9 @@ npx -y -p github:rmmaf/claude-code-local-llm-mcp local-coder-cost-meter
 
 Reads Claude Code's own transcripts, so it reports **billed** quantities rather than estimates. Per session it prints the cost split, the context-growth curve, the multiplier a turn-0 token carries, which tools put the most bytes into context, and — once the local tools have run — an estimated saving per tool joined from `.local-coder/telemetry.jsonl`.
 
-> **⚠ RETRACTED, 2026-08-05 — it reads one file, and a session is N files.** Since Claude Code 2.1.219 subagent traffic is written to `<sessionId>/subagents/**/agent-*.jsonl`, and the meter's file discovery is a non-recursive `readdir` that cannot see it. On a multi-agent session it reports roughly **half** the cache tokens; on a single-threaded one it is correct. The error is a function of session shape, not a constant, so no scale factor fixes an old number. The repair and its pre-registered check are `B17` in `PREMISES.md`; the mechanism is in `DECISIONS.md § the session is N files`. **Until `B17` holds, treat every figure this tool prints as a lower bound.**
+> **⚠ RETRACTED, 2026-08-05 — it read one file, and a session is N files.** Since Claude Code 2.1.219 subagent traffic is written under `<sessionId>/`, and the meter's file discovery **was** a non-recursive `readdir` that could not see it. On a multi-agent session it reported roughly **half** the cache tokens; on a single-threaded one it was correct. The error is a function of session shape, not a constant, so no scale factor fixes an old number — **a figure printed before the repair is trustworthy only if its session was single-threaded, and the repair validates no multi-agent figure retroactively.** The mechanism is in `DECISIONS.md § the session is N files, and the meter was reading one`.
+>
+> **Repaired, and measured.** `sessionFiles` now reads the main transcript plus every `*.jsonl` anywhere under `<sessionId>/`, recursively — deliberately *not* the literal `subagents/**` segment, because a hardcoded path segment is the same assumption that caused this. The pre-registered check is `B20` in `PREMISES.md` (`B17` and `B19` are `moot`; neither was ever measured), and it is **holding**: `run 2026-08-05-win-14-b20`, residual exactly 0 on every class of every session — 4 classes × 11 sessions. The repair recovered **390 of 2,703 billed requests** that had been invisible.
 
 ```bash
 npm run cost-meter -- --last 5 --json
@@ -207,7 +211,7 @@ Fill in `models[...].inputPerMTok` in `.local-coder/rates.json` to see dollars; 
 
 > Dollar figures are withheld unless **every** billed request in the session has a configured model price. A session that mixes a priced main model with an unpriced subagent model reports `null` rather than a partial sum wearing the label of a total.
 >
-> **⚠ RETRACTED, 2026-08-05.** The second sentence describes a safety property that has never been able to fire. Subagent requests are not in the file the meter reads, so a mixed-model session cannot be detected and the report shows the main model's total *as* the total — which is precisely the "partial sum wearing the label of a total" this paragraph promised to prevent. The first sentence still holds for whatever the meter does see. See `B17`.
+> **⚠ RETRACTED 2026-08-05 — and repaired the same day.** The second sentence described a safety property that could not fire while the meter read one file per session: subagent requests were not in the file it read, so a mixed-model session could not be detected and the report showed the main model's total *as* the total — precisely the "partial sum wearing the label of a total" this paragraph promised to prevent. Since the `sessionFiles` repair the meter reads every `*.jsonl` under `<sessionId>/`, each request carries its own `model`, and a single unpriced rate key sets `usd` to `null`. **The property is live.** Whatever doubt remains is about the totals, and that is `B20`'s business rather than this paragraph's.
 
 **What to expect:** the first call after idle time is slow (JIT loads ~17 GB into memory — tens of seconds), subsequent calls are much faster; a multi-file generation can take minutes on a 30B model. Everything heavy happens locally; your Anthropic bill sees only specs and diffs.
 
@@ -248,7 +252,7 @@ Run `status` to see which happened: `context_window.source` is `config`, `lms`, 
 
 Measured on a 30B coder at a 16,384-token window, the practical whole-file ceiling is **~25 KB of editable source per call**. Above it, the model does not necessarily fail loudly: `evidence/2026-08-04-mac-12-variance.contract-stability.json` records a 35.6 KB file coming back as a properly closed `<file>` block, with `finish_reason: "stop"`, **missing 90 lines** — a response every automated check accepts. Reload with a larger context (`lms load --context-length`) and set `LOCAL_CODER_CONTEXT_TOKENS` to match, or send fewer files per call.
 
-**The reload is not a workaround, it is the fix, and it is measured.** The same 43.6 KB file that came back short at 16,384 returns **complete** at 32,768 (`evidence/2026-08-04-mac-20-32k.contract-stability.json`): it needs 10,321 output tokens and only ~5,835 were left after its prompt at the smaller window. At 32,768 the estimator's ceiling works out to roughly **~54 KB** of editable source per call, and the whole 13-case corpus returned 26 of 26 complete.
+**The reload is not a workaround, it is the fix, and it is measured.** The same 43.6 KB file that came back short at 16,384 returns **complete** at 32,768 (`run 2026-08-04-mac-20-32k` in `MEASUREMENTS.jsonl`; the two-window table is under `B16` in `PREMISES.md`): it needs 10,321 output tokens and only ~5,835 were left after its prompt at the smaller window. At 32,768 the estimator's ceiling works out to roughly **~54 KB** of editable source per call, and the whole 13-case corpus returned 26 of 26 complete.
 
 **And verifying once is not enough.** The drift above was observed *between* two checks, so the number you confirmed at the start of a long job can be wrong by the end. Give a benchmark the machine to itself: memory pressure from anything else running can take the model down and bring it back smaller.
 
@@ -475,7 +479,7 @@ Everything in CI is mocked and sandbox-verified. The following could **not** be 
 
 1. The fresh-clone install path: `claude mcp add local-coder -- npx -y github:rmmaf/claude-code-local-llm-mcp` (sandbox-verified only via a local `npm pack` install and `npx .`).
 2. ~~Live LM Studio behavior … real Qwen3/Qwen2.5 output quality against the `<file>`-block contract.~~ **The contract is verified — `run 2026-08-03-mac-01`:** `npm run smoke-test` on macOS got a diff back from a real local model and `git apply` accepted it. JIT load latency and TTL unload remain unmeasured.
-3. ~~`memory_pressure` / `vm_stat` and `lms ls --json` parsers on your versions.~~ **Verified — `run 2026-08-03-mac-01`:** `lms_available: true`, both catalog models sized, memory reported (36 GB total, 19.6 GB usable free). One gap found, not a parse failure: LM Studio spells quantisation with `@` (`…-mlx@8bit`) and the matcher only strips hyphen-separated quant tokens, so such a model reads as missing when it is installed.
+3. ~~`memory_pressure` / `vm_stat` and `lms ls --json` parsers on your versions.~~ **Verified — `run 2026-08-03-mac-01`:** `lms_available: true`, both catalog models sized, memory reported (36 GB total, 19.6 GB usable free). ~~One gap found, not a parse failure: LM Studio spells quantisation with `@` (`…-mlx@8bit`) and the matcher only strips hyphen-separated quant tokens, so such a model reads as missing when it is installed.~~ **Closed — `f5aa484`, three hours later:** the gap was real; `QUANT_SUFFIX_RE` now takes `[-@]` as the separator, so `…-mlx@8bit` fuzzy-matches its catalog entry. Pinned by `tests/selection.test.ts`.
 4. ~~`scripts/smoke-test.ts` end-to-end.~~ **Ran and passed — `run 2026-08-03-mac-01`.** Its own claim to "verify all of the above" is too broad: it does **not** exercise item 1, the `npx` fresh-clone path, which stays open.
 
 **Caveat on items 2–4, stated rather than buried:** on that same machine and run, `npm test` was **red**. The four known failures are Windows-only (CRLF, path separators), so this is a real defect, and the failing test names have not been read yet. What that invalidates is therefore *unknown* — not nothing, not everything. The three items above rest on direct observations with objective criteria (`git apply` accepted the diff; `lms` reported sizes), which a unit failure does not undo; whether any failing test covers those paths is precisely what is still unknown.

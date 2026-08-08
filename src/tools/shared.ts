@@ -50,9 +50,11 @@ export async function resolveContextTokens(
   deps: { runner?: CommandRunner; contextTokens?: number | null; fetchImpl?: FetchLike } = {}
 ): Promise<number | null> {
   if (deps.contextTokens !== undefined) return deps.contextTokens;
-  // `typeof`, not `!== null`: a Config literal built without the field (nothing
-  // type-checks those) arrives as undefined, and returning that would hand
-  // `enforceOutputCap` a NaN budget.
+  // `typeof`, not `!== null`: a Config literal built without the field arrives
+  // as undefined, and returning that would hand `enforceOutputCap` a NaN budget.
+  // The literals that did it were in `tests/`, which nothing type-checked until
+  // `tests/**` joined `tsconfig.json` on 2026-08-07; the guard now covers a
+  // hand-built Config rather than a live path.
   const configured = typeof config.contextTokens === "number" ? config.contextTokens : null;
   // Probe only with a runner we were actually handed, or the real one when the
   // caller injected no fetch either. Same rule `selection.ts` applies to its
@@ -130,6 +132,24 @@ export interface ToolDeps {
    */
   onModelResolved?: (model: string) => void;
   /**
+   * The context files that actually went INTO the prompt, reported once the
+   * message is assembled — not the `context_files` argument.
+   *
+   * The two differ: a path passed as both context and editable is dropped here
+   * and treated as editable only, and a caller recording its own argument would
+   * report a file the model never saw as context. That is the same class of
+   * error as `run 2026-08-04-mac-19-32k`'s declared-vs-loaded window, and B12's
+   * PHASE-3 EXPOSURE B registers a VOID condition on this exact fact — which,
+   * until this callback existed, no artifact could evaluate.
+   *
+   * Fired AFTER `loadFiles`, deliberately, unlike `onModelResolved`: a request
+   * refused by the caps never assembled a prompt, and recording paths for it
+   * would record an intent as an observation. A caller that never hears from
+   * this had no round put a prompt together at all, which is different from a
+   * round that assembled one carrying no context files.
+   */
+  onContextResolved?: (paths: string[]) => void;
+  /**
    * Called with each model response the moment it is parsed — before the diff,
    * the compare-and-swap or the write, any of which can throw.
    *
@@ -143,9 +163,19 @@ export interface ToolDeps {
   onAttempt?: (attempt: GenerationAttempt) => void;
   /**
    * Context window to judge the request against, bypassing both the config
-   * setting and the `lms` probe. `repair` passes its own already-resolved value
-   * so the loop does not re-probe once per round, and tests use it to exercise
-   * the pre-flight without a fake runner. `null` explicitly disables the check.
+   * setting and the `lms` probe. Tests use it to exercise the pre-flight without
+   * a fake runner. `null` explicitly disables the check.
+   *
+   * `repair` deliberately does NOT forward its own resolved value into the loop:
+   * each round resolves its own model and therefore its own window, so a value
+   * resolved once up front would be the wrong one from round two. What the
+   * CALLER put in `deps` still wins all the way down — which is how the suite
+   * stays offline. See the comment above `repairLoop`'s call site.
+   *
+   * `LOCAL_CODER_CONTEXT_TOKENS` is NOT this field and does NOT skip the probe:
+   * it lands in `config.contextTokens`, which `resolveContextTokens` reconciles
+   * with a live `lms ps` and returns the SMALLER of. This field is the only
+   * short-circuit there is.
    */
   contextTokens?: number | null;
 }
@@ -452,6 +482,12 @@ export async function runGeneration(
 
   const editable = await loadFiles(config.root, editablePaths, config.maxFileKb);
   const context = await loadFiles(config.root, contextPaths, config.maxFileKb);
+  // Read off what was LOADED, not off `contextPaths`, for the same reason
+  // `editableStats` above is selected by membership rather than by position:
+  // `rel` is spelled as the loader resolved it, and a list rebuilt from the
+  // argument would drift from the prompt the first time the two spellings
+  // differ. This is exactly what `buildUserMessage` is about to send.
+  deps.onContextResolved?.(context.map((f) => f.rel));
 
   const declared = new Map(editable.map((f) => [normalizeRel(f.rel), f]));
   const messages: ChatMessage[] = [

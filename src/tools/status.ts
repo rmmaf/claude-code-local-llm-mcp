@@ -21,8 +21,6 @@ Use it: at the start of a session, or to diagnose why implement/fix/scaffold cal
 
 Do NOT use it as a per-call precondition — implement/fix/scaffold surface their own errors. To choose a model by objective + memory, use the \`models\` tool instead. Takes no arguments.`;
 
-export const statusInputSchema = {};
-
 export interface StatusResult {
   reachable: boolean;
   hint?: string;
@@ -76,7 +74,13 @@ export interface StatusResult {
     timeout_ms: number;
     max_file_kb: number;
     max_context_kb: number;
-    /** Explicit override, or null when the window is probed from `lms`. */
+    /**
+     * The configured `LOCAL_CODER_CONTEXT_TOKENS`, or null when unset or
+     * rejected as invalid. NOT an override: it is cross-checked against the
+     * `lms ps` probe and the SMALLER of the two wins. The effective window is
+     * `context_window.tokens`, and `context_window.source` says which side
+     * supplied it.
+     */
     context_tokens: number | null;
     root: string;
   };

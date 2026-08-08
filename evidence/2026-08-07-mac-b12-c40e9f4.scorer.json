@@ -1,0 +1,106 @@
+{
+  "runId": "2026-08-07-mac-b12-phase3-c40e9f4",
+  "premise": "B12",
+  "phase": 3,
+  "exposure": "B",
+  "contextFiles": "\"src/cost/b12/types.ts\", \"src/cost/rates.ts\", \"src/cost/report.ts\"",
+  "resumedWithinExposure": false,
+  "preRegisteredIn": "PREMISES.md § B12 — PHASE-3 EXPOSURE B",
+  "onlyUnit": "aggregate",
+  "carriedFrom": "2026-08-06-mac-b12-phase3-f2932ff",
+  "unitsAttemptedHere": 1,
+  "unitsClosedHere": 0,
+  "unitsRedHere": 1,
+  "unitsWithNoObservation": [],
+  "unitsInheritedUnverified": 0,
+  "unitsNotAttemptedHere": [
+    "strata",
+    "terms"
+  ],
+  "voids": [],
+  "reading": "partial — 1 unit(s) attempted here (aggregate), 2 carried from 2026-08-06-mac-b12-phase3-f2932ff. NO verdict is rendered: the >= 2 of 3 reading spans both runs and is written by hand into PREMISES.md with both artifacts as evidence.",
+  "units": [
+    {
+      "unit": 1,
+      "name": "strata",
+      "state": "not-attempted-here",
+      "carriedFrom": "2026-08-06-mac-b12-phase3-f2932ff",
+      "note": "this run neither attempted nor scored this unit"
+    },
+    {
+      "unit": 2,
+      "name": "terms",
+      "state": "not-attempted-here",
+      "carriedFrom": "2026-08-06-mac-b12-phase3-f2932ff",
+      "note": "this run neither attempted nor scored this unit"
+    },
+    {
+      "unit": 3,
+      "name": "aggregate",
+      "state": "red",
+      "sessionId": "39892b76-f418-4f9f-87a6-39c498391175",
+      "claudeExit": 0,
+      "vitestExit": 1,
+      "usd": "0.4155176",
+      "model": "claude-sonnet-5",
+      "telemetryWindow": {
+        "repairCalls": 2,
+        "repairPassed": 0,
+        "attemptsSeen": 4,
+        "localModelObserved": [
+          "qwen3-coder-30b-a3b-instruct-dwq-v2"
+        ],
+        "localModelVerdict": "ok",
+        "contextFilesExpected": [
+          "src/cost/b12/types.ts",
+          "src/cost/rates.ts",
+          "src/cost/report.ts"
+        ],
+        "contextFilesObserved": [
+          "src/cost/b12/types.ts",
+          "src/cost/rates.ts",
+          "src/cost/report.ts"
+        ],
+        "contextFilesVerdict": "ok",
+        "rowsWithoutContextKey": 0,
+        "invocationIds": [
+          "f97d2667-9acc-4451-8b98-513e07dfaaff",
+          "996ce591-9ae8-4a54-8989-77029e3c4419"
+        ]
+      }
+    }
+  ],
+  "spendUsd": "0.4155176",
+  "budgetUsd": "40",
+  "contextWindow": {
+    "atStart": "65536",
+    "atEnd": "65536",
+    "floor": "65536"
+  },
+  "corpus": {
+    "fromThisRun": "0",
+    "preExistingWithheld": "3"
+  },
+  "context": {
+    "commit": "c40e9f44caa34fcdcdc35573a81008002e4ef6bb",
+    "branch": "claude/project-next-steps-d2bc29",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "claudeBinarySha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380",
+    "claudeModel": "claude-sonnet-5",
+    "localModel": {
+      "requested": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+      "observed": [
+        "qwen3-coder-30b-a3b-instruct-dwq-v2"
+      ]
+    },
+    "ratesSha256": "6d74cafd7fa5702352d068825be2f75f3ae7dd0ef3df77cc9ff7f04826730c94",
+    "host": "mac",
+    "os": "26.6.1",
+    "osBuild": "25G76",
+    "kernel": "25.6.0",
+    "inferenceRuntime": "mlx-llm-mac-arm64-apple-metal-advsimd@1.11.0 ✓ MLX ",
+    "kernelPanicsBeforeRun": "3",
+    "newestPanicBeforeRun": "panic-full-2026-08-06-171230.0002.panic"
+  },
+  "caveat": "Three units, one repository, one local model. This is EXPOSURE, not a rate. It decides nothing about R_gate, nothing about the bracket, and nothing about whether B12 holds or falls."
+}

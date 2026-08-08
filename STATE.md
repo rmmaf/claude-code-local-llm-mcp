@@ -1,36 +1,44 @@
 # STATE.md
 
 Overwritten every session, never appended — `git log -p STATE.md` is the diary.
-Ceiling: 25 lines below this header.
+Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**The pre-flight passed on the Mac** (`2eab63d`, 11/11, artifact in `evidence/`)
-and **three decisions that had outlived every technical blocker are closed**, all
-while their answers were still unknowable — the only condition that makes closing
-them mean anything. G-stop no longer names the meter as a delivery that must pay:
-**two now, `gate` and `repair`**. G7 gets no threshold on
-`context_would_overflow`, ever. B14 stays at **3.5**. Live warning from the
-pre-flight: `gate` scored **−467.1 units** — it cost more than it suppressed.
+**A full doc-truth sweep landed, and PR #13 is open against `main`** — 79
+commits, 61 files. Gate at the baseline 4, tsc green, run four times unchanged.
+`b12-scorer-selftest.sh` ran on the Mac: 50 checks, exit 0. The PR body carries
+what lands, what stays open by finding number, and what it deliberately omits.
 
-## Next action, in this order
+- **The audit of my OWN corrections found 12 false claims, three of them high.**
+  A confidently-worded wrong correction is worse than the vague text it
+  replaced. That pass earned its place; run it again next time.
+- **Cite by symbol, not by line.** The repo's own rule (`FINDINGS.md`, "cited by
+  its text from here on") settled ~15 findings at once — and settled them
+  AGAINST re-pinning numbers that rot again a week later.
 
-1. **Write the scorer.** `R_ab` exists in the frozen design and in NO `.ts`,
-   `.mjs` or `.md` file. `observe()` writes observations; nothing reads them.
-   45 sessions would finish with no number. It must compute **subagent share per
-   arm** (G-stop requires it; `observe()` records no such field, but it is
-   derivable from `originatedRequestIds` + `isSidechain`, `report.ts:198`).
-2. **Then one paired observation**, smallest real task, both arms, ~2 sessions.
-   Score it with the scorer written in 1. Only then seal and run the rest.
-3. **Author the scorer through `repair`** — its mechanical parts are exactly what
-   it is for, and G-stop's second delivery has one call of exposure in its life.
+## Next action
 
-Not blocking B12: the meter's `savedFraction` credits suppression and never
-charges installation, and `unitsAddedByInstallation` is written, tested, called
-from nothing. Magnitude in doubt too — the scratch session called `ToolSearch`.
+**DECIDE ITEM (c), AND FIRST.** `DECISIONS.md` § *The term the design promised,
+and the one nobody charged for*: whether supplying `installedChars` is a repair
+to the instrument or a change to a design frozen by hash — in which case the
+rule is retract and re-register, not edit. The OWNER'S call, agreed 2026-08-08
+to be taken next session. It blocks everything: sealing the manifest first
+produces observations one-sided by construction, and UNIT 5 cannot close without
+the input. (a) is half-answered — `computeTerms` charges the term, nothing
+measures it. Hand the choice over as a table.
+
+**`contract-stability`'s ladder is outside its own stated constraint.** It names
+PATHS and the files grew under it: `report.ts` at 59,272 B now exceeds the
+~51,607 B pre-flight ceiling. Re-pick the ladder before any run; do not re-type
+its numbers.
 
 ## Do not redo
 
-- **Test the good values, not one bad one.** `[ "$X" = "none" ]` passed when the
-  probe failed and `X` was `""`, and printed `ok` for an empty answer.
-- **A passing test makes an unwired function look finished.** Twice now.
+- **A RETRACTION CAN ROT.** README's two still asserted in the present tense a
+  defect repaired days earlier, gated on a premise that can never hold. Fix the
+  tense and the pointer; never delete the retraction itself.
+- **Amendments here are append-only.** ROADMAP's "G1 remains `open`" was already
+  false nine hours after it was written. The remedy is a dated erratum.
+- **Never back-fill an append-only record.** Three run ids are missing from
+  `MEASUREMENTS.jsonl`; writing them by hand today would fabricate provenance.

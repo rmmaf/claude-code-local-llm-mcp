@@ -20,7 +20,9 @@
 #   - it CHECKS OUT $BRANCH and does NOT switch back — the branch you were on is
 #     printed at the end with the command to return to it;
 #   - it creates and removes one file, src/b12-scratch.ts;
-#   - it writes one artifact into evidence/.
+#   - it writes one artifact into evidence/;
+#   - it runs `npm run build`, which REWRITES dist/ in the clone;
+#   - it copies its report to $HOME/Desktop (OUT_DIR), outside the clone.
 # Everything else it touches lives in a temp directory it made and removes.
 #
 # Bash 3.2 compatible (macOS default). No associative arrays, no `${x,,}`.

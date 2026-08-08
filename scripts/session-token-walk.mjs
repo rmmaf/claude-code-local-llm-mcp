@@ -7,9 +7,14 @@
  * the failure: the meter counted 65% of `/usage`'s cache-read tokens and the
  * scope of the gap "could not be determined from the data available". It is
  * determinable, and it needed no comparator at all. Since Claude Code 2.1.219 a
- * session is not one file, and `listTranscripts` does a non-recursive `readdir`
- * (`src/cost/transcript.ts:319-331`), so every subagent record is invisible to
- * the meter. This file enumerates what the meter should have seen.
+ * session is not one file, and `listTranscripts` did a non-recursive `readdir`
+ * (`src/cost/transcript.ts`), so every subagent record was invisible to the
+ * meter. This file enumerates what the meter should have seen.
+ *
+ * **The meter has since been repaired** — `sessionFiles` returns the main
+ * transcript plus every `*.jsonl` recursively under `<sessionId>/` — and this
+ * oracle is what proved it: B20 holds at residual exactly 0. It stays as the
+ * independent enumerator, not as a description of a live defect.
  *
  * WHY IT IMPORTS NOTHING FROM `src/cost/`, AND MUST NOT. An oracle that shared
  * code with the thing it checks agrees by construction. The independence that
@@ -39,9 +44,11 @@
  *   4. Group by `requestId`; take the group's usage from its LAST record in file
  *      order.
  *
- * Step 4 is the one that found a defect. `src/cost/transcript.ts:239-243` keeps
- * the FIRST record and discards later usage, on the recorded ground that usage
- * repeats verbatim per content block. It does, except for `output_tokens`: over
+ * Step 4 is the one that found a defect. `src/cost/transcript.ts` USED TO keep
+ * the FIRST record and discard later usage, on the recorded ground that usage
+ * repeats verbatim per content block — it now keeps the LAST, which is this
+ * oracle's rule, and the banner over that code says why. It does repeat, except
+ * for `output_tokens`: over
  * this project 327 of 1,647 multi-record groups differ, in 327 of 327 the first
  * record is the smaller, and the rule drops 655,570 output tokens — 19.27% of
  * all output, at the 5.0x multiplier. `stop_reason` looks like the terminal

@@ -1,0 +1,164 @@
+# UNIT 2 — `src/cost/b12/terms.ts`
+
+Implement the two exported functions. Do not change their signatures, do not add
+exports, do not edit any other file. `src/cost/b12/strata.ts` is already
+implemented — call it, do not reimplement it.
+
+## Constants, frozen — use these exact values
+
+- `rates.charsPerToken` (3.7) and `rates.clientTruncationCap` (30000): read them
+  off the `rates` argument, never hardcode them.
+- `positionalMultiplier(t, T, m, ttl)` from `../report.js` returns
+  `write + cacheRead * max(0, T - 1 - t)`, where `write` is `m.cacheWrite1h` for
+  ttl `"1h"` and `m.cacheWrite5m` for `"5m"`.
+
+**EVERY IMPORT THIS UNIT NEEDS, AND THEY ARE NOT ALL FROM THE SAME MODULE.**
+This list is here because the one worked example above used to be the document's
+only module hint, and generalising from it is wrong for `rateKey`:
+
+```ts
+import {
+  breakdownOfRequests, buildCounterfactual, buildSessionReport,
+  isLocalToolResult, unitsAddedByInstallation,
+} from "../report.js";
+import type { CreditedRow } from "../report.js";
+import { rateKey } from "../rates.js";
+import { subagentShare } from "./strata.js";
+```
+
+`positionalMultiplier` is described above so the numbers on the rows make sense;
+this unit does not call it, so it is not in the list.
+
+`rateKey` lives in `../rates.js`. `../report.js` imports it and does **not**
+re-export it, so importing it from `../report.js` is a `TS2459` — which is
+exactly what `run 2026-08-06-mac-b12-phase3-f2932ff` did with `multipliersFor`
+before spending its remaining budget on the error.
+
+## `windowInvocationIds(observation, transcript): Set<string>`
+
+**FIVE hops, all required. This section said four until 2026-08-07**, and the
+missing one is the first test in step 3.
+
+1. `owned = new Set(observation.originatedRequestIds)`.
+2. Collect every `toolUse.id` from each `request of transcript.requests` whose
+   `request.requestId` is in `owned`. Call it `ownedToolUseIds`.
+3. For each `result of transcript.toolResults`: if `isLocalToolResult(result)`
+   AND `result.invocationId` is not null AND `result.toolUseId` is not null AND
+   `ownedToolUseIds.has(result.toolUseId)`, add `result.invocationId`.
+4. Return that set.
+
+A window that did not make the call owns nothing, even when the id is plainly
+present elsewhere in the same transcript.
+
+**`isLocalToolResult` is imported from `../report.js`, not reimplemented.** It is
+the same predicate `byInvocation` is filtered with on the crediting side (the
+`transcript.toolResults.filter(isLocalToolResult)` in `buildCounterfactual`), and
+two copies of one rule is how two consumers of it drift
+apart. Without it the window join is strictly WIDER than the join it selects
+within: transcript ids are scanned out of arbitrary serialised output, so an owned
+`Read` of `.local-coder/telemetry.jsonl` puts a quoted id into `mine` that
+`byInvocation` never held, and the window claims a call that is not this server's
+(`FINDINGS.md` F10). With it, `mine ⊆ byInvocation.keys()` on every input.
+
+## `computeTerms(input): ObservationTerms`
+
+In order:
+
+1. `const owned = new Set(input.observation.originatedRequestIds)`.
+2. `aO` = `breakdownOfRequests(input.transcript.requests, input.rates, owned).units.total`.
+3. `oO` = `unitsAddedByInstallation(input.transcript, input.rates, input.installedChars, owned)`.
+4. `const mine = windowInvocationIds(input.observation, input.transcript)`.
+5. Call `buildCounterfactual(input.transcript, input.telemetry.map(r => r.record),
+   input.rates, buildSessionReport(input.transcript, input.rates),
+   input.ambiguousIds)`.
+   **Pass the WHOLE transcript.** Never a filtered one: `positionalMultiplier`
+   reads `t` and `T` off the full segment, and shortening it changes the answer.
+5b. **Pair the returned rows with the telemetry BY INDEX, and check the lengths
+   first.** `input.telemetry` is `IdentifiedRow[]` — each entry carries the run
+   identity `identify` stamped on it — and `buildCounterfactual` returns exactly
+   one row per entry, in input order. That pairing is the only route from a
+   priced row back to the physical telemetry row it came from, and an
+   `invocationId` cannot serve: it is optional, absent on every legacy row, and
+   shared across a resumed session's descendants. Throw if the two lengths
+   differ. If the invariant ever breaks, every key past the break names the wrong
+   row and the run-level ledger reports itself satisfied while attributing
+   magnitudes to the wrong observations.
+6. Split the returned rows on OWNERSHIP: `invocationId` non-null and in `mine`.
+   - owned → `rows`, as `{ key, row }`;
+   - everything else → `unattributed`, as `{ key, row }`, **credited rows
+     included**. A credited row no window owns is `FINDINGS.md` F9; before this
+     list existed it was dropped from `S_o` and from every refusal class at once,
+     and no void condition saw it.
+7. For each row in `rows` with `disposition === "credited"`:
+   - `sHi += row.units` and `sLo += row.unitsLo`. **Both are already on the row**
+     — `units` is the observed segment, `unitsLo` the write component alone
+     (`T - 1 - t = 0`). Do not recompute either from `capped` and a multiplier:
+     the row is where that arithmetic lives, and a second derivation of one
+     number is how two figures from one rule drift apart.
+   - `CreditedRow` is a **union discriminated on `disposition`**. Narrow it —
+     `if (row.disposition !== "credited") continue;` — and both fields are plain
+     `number` afterwards. Never write `?? 0`: on a refused row that sums an
+     unknown as zero, which is the one thing this scorer forbids everywhere else,
+     and on a credited row it is now unnecessary. If you find yourself reaching
+     for it, the narrowing is in the wrong place.
+   - Add the same two numbers into `perDelivery[row.tool]`, creating the entry on
+     first sight. Key by `row.tool` verbatim — never map a tool name onto another
+     delivery's bucket. The entry is
+     `{sLo, sHi, rowCount, closures, closureUnknown}`: increment `closures` when
+     `row.passed === true` and `closureUnknown` when `row.passed === null`.
+     `false` increments neither — it is a delivery that ran and did not close,
+     which is a third thing. Credited rows only, exactly like the two sums: a row
+     outside the numerator is outside the closure count as well.
+8. **`turnsCollapsed` contributes NOTHING** to `sLo`, `sHi` or `perDelivery`.
+9. **Never clamp.** A negative `row.capped` stays negative through every sum.
+10. **TWO ledgers, split on OWNERSHIP and on nothing else.** Build each the same
+    way: for each of the four classes, count the rows with that `disposition`;
+    sum `row.units` into `units` when it is a number; increment `unsized` for
+    each whose `units` is `null`.
+    - `refusals` — over the OWNED rows, as step 6 defines them. This window's own.
+    - `unattributedRefusals` — the refused part of `unattributed`, filled in the
+      SAME PASS as the list so the two cannot drift.
+
+    **`unattributedRefusals` was a diagnostic no figure read. Since F19 one
+    figure does:** UNIT 3's `ambiguousCount` reads
+    `unattributedRefusals.ambiguous.count`, and it is what partitions the
+    admitted set into hold-eligible and hold-excluded — so it now decides which
+    observations enter the hold ARITHMETIC. Not the whole hold family: the
+    exercise and floor populations stay the FULL admitted set, and
+    `hold.recomputations` reinstates the hold-excluded ones (UNIT-3's
+    two-population rule). It is still not summed
+    into `rHiPlus`, which is what this paragraph was about. It used to
+    be what `rHiPlus` summed, and that is the F12 defect: a per-observation total
+    of rows no observation owns double-counts every row two slices share, and
+    `wouldHaveAdded` is signed, so a duplicated negative magnitude pushes the
+    fall-side figure DOWN. `runCoverage` deduplicates the LIST by key instead.
+
+    Do not special-case any class. **`unverifiable` is the one that can never be
+    owned** — it is refused precisely because it has no `invocation_id`, so it is
+    never in `mine`. `excludedForeign` is unownable on any normal input but not
+    provably: it is refused for being absent from the gate/repair-filtered map,
+    while `mine` is built from EVERY tool result, so the two sets are not exact
+    complements (`FINDINGS.md` F10). Writing the rule as "ownership" rather than
+    as a list of classes is what keeps it correct either way.
+
+    Either way a single ledger over kept rows is missing most of two classes,
+    while `R_hi+` is defined over ALL FOUR — so the fall-side figure came out
+    short.
+
+    Do not try to attribute the second group to a window. Nothing in the data
+    can. **This line used to end "and `aggregate.ts` credits it whole", which is
+    no longer true and was never safe:** `runCoverage` deduplicates the group by
+    key across the whole run, and `rHiPlus` refuses outright when the run cannot
+    say what a row was or what it was worth. Crediting it whole is precisely the
+    double count F12 records.
+11. `subagentShare` = `subagentShare(input.observation, input.transcript)` from
+    `./strata.js`.
+12. `billedRequestCount` = the number of `transcript.requests` in `owned`.
+13. `rateKeys` = sorted unique `rateKey(request.model, request.speed)` over those
+    same requests. `rateKey` is **from `../rates.js`**, not `../report.js`.
+14. `taskId`, `arm`, `verificationStratum` from `input.observation`;
+    `disposition` from `input.disposition`.
+
+## Done when
+
+`npx vitest run tests/b12-terms.test.ts` exits 0. Do not read that file.

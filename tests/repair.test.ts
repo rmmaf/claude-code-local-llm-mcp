@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { contextExhausted } from "../src/contract-probe.js";
 import type { ProcessResult, ProcessRunner } from "../src/exec.js";
-import type { ToolError } from "../src/fs-safety.js";
+import { ToolError } from "../src/fs-safety.js";
 import { readTelemetry } from "../src/telemetry.js";
 import { runRepair } from "../src/tools/repair.js";
 import { chatBody, fileBlock, makeTempRoot, noLmsRunner, queuedFetch, testConfig, writeFileTree } from "./helpers.js";
@@ -35,6 +35,36 @@ function tscErrors(count: number): string {
   ).join("\n");
 }
 
+/**
+ * The VCS inventory, answering what a fresh temp directory really answers.
+ *
+ * **`vcsRunner` IS SEPARATE FROM `processRunner` AND HAS TO BE INJECTED TOO.**
+ * `runRepair` falls back to `defaultProcessRunner` for it (`repair.ts:407`), so a
+ * test that stubs only the check runner still shells out to REAL `git` —
+ * `status --porcelain` and `diff --numstat`, twice each, four subprocesses per
+ * call. Measured on this machine: an already-green call, zero rounds and zero
+ * model calls, cost **179 ms** with the fallback and **12 ms** with this stub.
+ * That was most of the runtime of this file, and it is why one test could blow
+ * vitest's 5 s default under load and fail with a bare runner error naming no
+ * assertion.
+ *
+ * Speed is the smaller half. The fallback made every such test depend on git
+ * being installed and on where the OS puts temp directories: `git status` walks
+ * UPWARD looking for a repository, so if `%TEMP%` ever sat inside one, these
+ * tests would read that repository's working tree. A unit test that consults the
+ * developer's VCS is not isolated, however fast it runs.
+ *
+ * Exit 128 is what real git returns outside a repository, so the behaviour under
+ * test is unchanged: `treeFingerprint` sees a non-zero code and returns null,
+ * exactly as it did before.
+ */
+const NOT_A_REPO: ProcessRunner = async () => ({
+  stdout: "",
+  stderr: "fatal: not a git repository (or any of the parent directories): .git",
+  code: 128,
+  timedOut: false,
+});
+
 /** A ProcessRunner that walks a queue, so each gate run can differ. */
 function sequencedProcess(results: Array<Partial<ProcessResult>>): ProcessRunner {
   const queue = [...results];
@@ -60,6 +90,37 @@ async function setup(root: string): Promise<void> {
 
 const baseArgs = { files: ["src/math.ts"], spec: "add() must return the sum, not the difference" };
 
+/**
+ * The rejection, narrowed to what the assertions below actually read.
+ *
+ * `.catch((e: unknown) => e as ToolError)` types the result as
+ * `RepairResult | ToolError`, so every `error.message` and `error.code` after it
+ * was an unchecked property access — invisible for as long as nothing
+ * type-checked this tree, and silently `undefined` on the day the call stopped
+ * rejecting. `not.toMatch(...)` against `undefined` throws with a message about
+ * the matcher rather than about the call, which is the wrong thing to read at
+ * 2am. This says what went wrong instead.
+ */
+async function rejectionOf(call: Promise<unknown>): Promise<ToolError> {
+  // TAGGED, because collapsing both paths into one value cannot tell them
+  // apart. The first draft was `call.then(v => v, e => e)` followed by an
+  // `instanceof ToolError` — which accepts a call that RESOLVES with a
+  // ToolError, i.e. exactly the "it returned the error instead of throwing it"
+  // regression this helper is here to catch. A control that passes on the
+  // failure it was written for is the defect, not the guard.
+  const settled = await call.then(
+    (value) => ({ rejected: false as const, value }),
+    (reason: unknown) => ({ rejected: true as const, reason })
+  );
+  if (!settled.rejected) {
+    throw new Error(`expected the call to REJECT; it resolved with ${String(settled.value)}`);
+  }
+  if (!(settled.reason instanceof ToolError)) {
+    throw new Error(`expected a ToolError; it rejected with ${String(settled.reason)}`);
+  }
+  return settled.reason;
+}
+
 describe("repair loop", () => {
   it("does nothing when the checks are already green", async () => {
     const root = tempRoot();
@@ -70,6 +131,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -89,6 +151,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(1), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -116,6 +179,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -142,6 +206,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -165,6 +230,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("model_failed");
@@ -189,6 +255,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess(Array.from({ length: 6 }, () => ({ stdout: tscErrors(2), code: 2 }))),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       now: () => (clock += 1000),
     });
 
@@ -215,6 +282,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const entries = await readTelemetry(root);
@@ -245,6 +313,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as {
@@ -287,6 +356,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -334,6 +404,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -374,6 +445,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -414,6 +486,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -451,6 +524,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 32_768,
     });
 
@@ -479,6 +553,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }, { stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -520,6 +595,7 @@ describe("repair loop", () => {
           processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
           fetchImpl,
           runner: noLmsRunner(),
+          vcsRunner: NOT_A_REPO,
           contextTokens: 8_192,
         }
       )
@@ -541,11 +617,22 @@ describe("repair loop", () => {
   });
 
   /**
-   * A round that never got a response contributes nothing. Writing zeroes would
-   * read as a request that cost nothing rather than one that never returned, and
-   * B16 counts requests the pre-flight ADMITTED and that came back.
+   * A round that produced no usable response contributes nothing. Writing zeroes
+   * would read as a request that cost nothing rather than one that yielded
+   * nothing, and B16 counts requests the pre-flight ADMITTED and that came back.
+   *
+   * WHAT THIS FIXTURE ACTUALLY EXERCISES, stated because the title used to
+   * overstate it. `queuedFetch` hardcodes `status: 200` and treats each queued
+   * object as the response BODY, so `{ status: 500, body: "boom" }` arrives as a
+   * 200 carrying that object as JSON — a payload with no `choices`, which fails
+   * to parse. So this pins the UNPARSEABLE-RESPONSE path, not a transport
+   * failure and not a request that never returned. Those two ARE covered
+   * elsewhere in this file, by inline `fetchImpl`s that never resolve and reject
+   * on abort, and by `unreachableFetch` in `tests/helpers.ts`. What no test pins
+   * is whether THOSE rounds also omit `attempts` — `queuedFetch` cannot express
+   * a rejection or a non-2xx, so this assertion cannot be reused for them.
    */
-  it("omits attempts for a round whose request never returned", async () => {
+  it("omits attempts for a round whose response could not be parsed", async () => {
     const root = tempRoot();
     await setup(root);
     const { fetchImpl } = queuedFetch([{ status: 500, body: "boom" }]);
@@ -554,6 +641,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(4), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       contextTokens: 8_192,
     });
 
@@ -576,6 +664,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as { model?: unknown };
@@ -595,7 +684,7 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 300, max_rounds: 1 },
@@ -604,6 +693,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -623,12 +713,201 @@ describe("repair loop", () => {
     const result = await runRepair(baseArgs, testConfig(root), {
       processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("passed");
     expect(result.model).toBeNull();
     const detail = (await readTelemetry(root))[0]?.detail as { model?: unknown };
     expect(detail.model).toBeNull();
+  });
+
+  it("records the resolved limits when the caller named them", async () => {
+    // Both are optional with defaults, so a caller that omits one is measured
+    // under a condition it did not register — and no row could say which
+    // afterwards. B12's Phase-3 prompt asks a session to pass these through;
+    // if the session drops one, this is the only thing that will ever notice.
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1, budget_seconds: 600 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
+    expect(detail.budget_seconds).toBe(600);
+    expect(detail.max_rounds).toBe(1);
+  });
+
+  it("records the DEFAULTS when the caller omitted them, never absent", async () => {
+    // The case that matters, and the one an argument-echo would get wrong: a
+    // caller that passed nothing still ran under a specific budget, and the row
+    // has to name it. Absent would read as "unknown" when the answer is 300.
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair(baseArgs, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
+    expect(detail.budget_seconds).toBe(300);
+    expect(detail.max_rounds).toBe(3);
+  });
+
+  it("writes the context files to telemetry, which `files` cannot hold", async () => {
+    // `detail.files` is the diff's changed list, so it is structurally editable
+    // files only — a read-only reference file can never appear in it. B12's
+    // PHASE-3 EXPOSURE B voids itself if `src/cost/report.ts` did not reach the
+    // model, and it named `detail.files`/`context_files` as the evidence: one
+    // could not answer and the other did not exist.
+    const root = tempRoot();
+    await setup(root);
+    await writeFileTree(root, { "src/reference.ts": "export const K = 1;\n" });
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair(
+      { ...baseArgs, context_files: ["src/reference.ts"], max_rounds: 1 },
+      testConfig(root),
+      {
+        processRunner: sequencedProcess([
+          { stdout: tscErrors(2), code: 2 },
+          { stdout: "", code: 0 },
+        ]),
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
+      }
+    );
+
+    const detail = (await readTelemetry(root))[0]?.detail as { context_files?: unknown };
+    expect(detail.context_files).toEqual(["src/reference.ts"]);
+  });
+
+  it("records the context files SENT, not the ones asked for", async () => {
+    // The control, and the only test that separates this field from a copy of
+    // `args.context_files`: a path passed as both context and editable is
+    // dropped from the context list by runGeneration and goes into the prompt
+    // once, as editable. Recording the argument would name a file as context
+    // that the model never saw as one — the same class of error as a run
+    // reporting its DECLARED window instead of its loaded one.
+    const root = tempRoot();
+    await setup(root);
+    await writeFileTree(root, { "src/reference.ts": "export const K = 1;\n" });
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    const result = await runRepair(
+      // src/math.ts is in BOTH lists.
+      { ...baseArgs, context_files: ["src/math.ts", "src/reference.ts"], max_rounds: 1 },
+      testConfig(root),
+      {
+        processRunner: sequencedProcess([
+          { stdout: tscErrors(2), code: 2 },
+          { stdout: "", code: 0 },
+        ]),
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
+      }
+    );
+
+    expect(result.files_changed).toEqual(["src/math.ts"]);
+    const detail = (await readTelemetry(root))[0]?.detail as {
+      files?: unknown;
+      context_files?: unknown;
+    };
+    expect(detail.files).toEqual(["src/math.ts"]);
+    expect(detail.context_files).toEqual(["src/reference.ts"]);
+  });
+
+  it("records an empty context list rather than omitting the key", async () => {
+    // `[]` and absent have to mean different things: `[]` is a prompt that
+    // carried no context files, absent is a row written before this field
+    // existed. A reader that cannot tell them apart cannot decide a VOID — it
+    // would read "we never recorded this" as "none were sent".
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+
+    await runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+      processRunner: sequencedProcess([
+        { stdout: tscErrors(2), code: 2 },
+        { stdout: "", code: 0 },
+      ]),
+      fetchImpl,
+      runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
+    });
+
+    const detail = (await readTelemetry(root))[0]?.detail as { context_files?: unknown };
+    expect(detail).toHaveProperty("context_files");
+    expect(detail.context_files).toEqual([]);
+  });
+
+  it("leaves every byte figure B12 meters untouched by the new field", async () => {
+    // `repair` is the tool under measurement, so a field added to observe it
+    // must not move its numerator. `bytes_returned` is the size of the RESULT
+    // payload (repair.ts), which is why this field goes in `detail` and nowhere
+    // near `result` — two runs of one fixture, one with context files and one
+    // without, have to agree on all three metered figures.
+    //
+    // THE CLOCK IS INJECTED, AND WITHOUT IT THIS TEST IS NOISE. `bytes_returned`
+    // is `JSON.stringify(result).length`, and `result.rounds` carries
+    // `model_ms`/`gate_ms` off the wall clock — so two runs differ by one byte
+    // the moment a timing crosses a digit boundary, which is a real 656-vs-657
+    // failure this file produced. A control that fires on the clock cannot say
+    // anything about the field it exists to watch.
+    const run = async (context: string[] | undefined) => {
+      const target = tempRoot();
+      await setup(target);
+      await writeFileTree(target, { "src/reference.ts": "export const K = 1;\n" });
+      const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", FIXED))]);
+      let tick = 0;
+      const result = await runRepair(
+        { ...baseArgs, ...(context === undefined ? {} : { context_files: context }), max_rounds: 1 },
+        testConfig(target),
+        {
+          processRunner: sequencedProcess([
+            { stdout: tscErrors(2), code: 2 },
+            { stdout: "", code: 0 },
+          ]),
+          fetchImpl,
+          runner: noLmsRunner(),
+          vcsRunner: NOT_A_REPO,
+          now: () => (tick += 1_000),
+        }
+      );
+      const row = (await readTelemetry(target))[0];
+      return { result, row };
+    };
+
+    const without = await run(undefined);
+    const with_ = await run(["src/reference.ts"]);
+
+    // The field reached telemetry — otherwise this test passes vacuously.
+    expect((with_.row?.detail as { context_files?: unknown }).context_files).toEqual([
+      "src/reference.ts",
+    ]);
+    // And changed nothing that B12 divides by.
+    expect(with_.row?.bytes_raw).toBe(without.row?.bytes_raw);
+    expect(with_.row?.bytes_returned).toBe(without.row?.bytes_returned);
+    expect(with_.row?.turns_collapsed).toBe(without.row?.turns_collapsed);
+    expect(with_.result.bytes_returned).toBe(without.result.bytes_returned);
+    expect(with_.result).not.toHaveProperty("context_files");
   });
 
   it("calls a generation the deadline cut off `budget`, not the model's fault", async () => {
@@ -645,12 +924,13 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair({ ...baseArgs, budget_seconds: 1, max_rounds: 1 }, testConfig(root), {
       processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("budget");
@@ -673,7 +953,7 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 300, max_rounds: 1 },
@@ -682,6 +962,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -707,7 +988,7 @@ describe("repair loop", () => {
           elapsed = 5_000; // the deadline is now long past
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 1, max_rounds: 1 },
@@ -719,6 +1000,7 @@ describe("repair loop", () => {
         },
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
         now: () => 1_000_000 + elapsed,
       }
     );
@@ -742,7 +1024,7 @@ describe("repair loop", () => {
         init?.signal?.addEventListener("abort", () => {
           reject(new Error("The operation was aborted."));
         });
-      })) as unknown as Parameters<typeof runRepair>[2]["fetchImpl"];
+      })) as unknown as NonNullable<Parameters<typeof runRepair>[2]>["fetchImpl"];
 
     const result = await runRepair(
       { ...baseArgs, budget_seconds: 1, max_rounds: 1 },
@@ -754,6 +1036,7 @@ describe("repair loop", () => {
         },
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
         now: () => 1_000_000 + elapsed,
       }
     );
@@ -773,6 +1056,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     const body = calls[0]?.body as { messages: Array<{ role: string; content: string }> };
@@ -801,6 +1085,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -830,6 +1115,7 @@ describe("repair loop", () => {
       ]),
       fetchImpl: racingFetch,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     // Generation is the longest part of a round, so this is the window that
@@ -860,6 +1146,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -889,6 +1176,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(true);
@@ -916,6 +1204,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.passed).toBe(false);
@@ -967,7 +1256,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
       fetchImpl,
       runner: noLmsRunner(),
-      vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
+      vcsRunner: NOT_A_REPO,
     });
 
     // "We could not look" must never render as "nothing changed".
@@ -1069,7 +1358,7 @@ describe("repair loop", () => {
         processRunner,
         fetchImpl,
         runner: noLmsRunner(),
-        vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
+        vcsRunner: NOT_A_REPO,
       })
     ).rejects.toThrow(/UNKNOWN/);
   });
@@ -1080,12 +1369,14 @@ describe("repair loop", () => {
     await fs.writeFile(path.join(root, ".local-coder", "checks.json"), "{ not json", "utf8");
     const { fetchImpl } = queuedFetch([]);
 
-    const error = await runRepair(baseArgs, testConfig(root), {
-      processRunner: sequencedProcess([]),
-      fetchImpl,
-      runner: noLmsRunner(),
-      vcsRunner: async () => ({ stdout: "", stderr: "not a git repository", code: 128, timedOut: false }),
-    }).catch((e: unknown) => e as ToolError);
+    const error = await rejectionOf(
+      runRepair(baseArgs, testConfig(root), {
+        processRunner: sequencedProcess([]),
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
+      })
+    );
 
     // The first gate threw while reading its config, so nothing executed and
     // nothing can have touched the tree. Warning here would be a false alarm,
@@ -1109,11 +1400,14 @@ describe("repair loop", () => {
       throw new Error("command not found: npx");
     };
 
-    const error = await runRepair({ ...baseArgs, max_rounds: 2 }, testConfig(root), {
-      processRunner,
-      fetchImpl,
-      runner: noLmsRunner(),
-    }).catch((e: unknown) => e as ToolError);
+    const error = await rejectionOf(
+      runRepair({ ...baseArgs, max_rounds: 2 }, testConfig(root), {
+        processRunner,
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
+      })
+    );
 
     // Setting the flag on the gate merely RETURNING would have claimed the tree
     // state was unknown after checks that never started.
@@ -1141,12 +1435,14 @@ describe("repair loop", () => {
       return { stdout: "", stderr: "", code: 0, timedOut: false };
     };
 
-    const error = await runRepair(baseArgs, testConfig(root), {
-      processRunner: sequencedProcess([]),
-      fetchImpl,
-      runner: noLmsRunner(),
-      vcsRunner,
-    }).catch((e: unknown) => e as ToolError);
+    const error = await rejectionOf(
+      runRepair(baseArgs, testConfig(root), {
+        processRunner: sequencedProcess([]),
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner,
+      })
+    );
 
     // A real difference, but no check ever executed — so it cannot have been
     // caused by one, and saying "your checks changed this" would be a lie.
@@ -1172,6 +1468,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(1), code: 2 }]),
       fetchImpl: racingFetch,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     expect(result.stopped_because).toBe("concurrent_edit");
@@ -1199,6 +1496,7 @@ describe("repair loop", () => {
       processRunner: sequencedProcess([{ stdout: tscErrors(1), code: 2 }]),
       fetchImpl: slowFetch,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       now: () => clock,
     });
 
@@ -1226,6 +1524,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: tscErrors(2), code: 2 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       });
       throw new Error("expected a ToolError");
     } catch (error) {
@@ -1258,6 +1557,7 @@ describe("repair loop", () => {
         ]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       }
     );
 
@@ -1275,6 +1575,7 @@ describe("repair loop", () => {
         processRunner: sequencedProcess([{ stdout: "", code: 0 }]),
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       })
     ).rejects.toThrow(/per-file limit/);
 
@@ -1307,6 +1608,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
     });
 
     // Round 1's attempt is still reported as an unapplied diff...
@@ -1341,6 +1643,7 @@ describe("repair loop", () => {
         processRunner,
         fetchImpl,
         runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
       })
     ).rejects.toThrow(/not valid JSON/);
 
@@ -1365,6 +1668,7 @@ describe("repair loop", () => {
       processRunner,
       fetchImpl,
       runner: noLmsRunner(),
+      vcsRunner: NOT_A_REPO,
       now: () => clock,
     });
 

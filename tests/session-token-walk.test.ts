@@ -108,8 +108,10 @@ describe("session-token-walk", () => {
   });
 
   it("takes the LAST record of a requestId group, not the first", async () => {
-    // The shape src/cost/transcript.ts:239-243 gets wrong: intermediate records
-    // carry a partial completion count and the terminal one carries the answer.
+    // The shape the meter USED to get wrong, and this oracle is what found it:
+    // intermediate records carry a partial completion count and the terminal one
+    // carries the answer. `src/cost/transcript.ts` now keeps the last record of
+    // a group too — the two agree, and B20 holds at residual 0 because of it.
     const dir = await corpus([
       record(U(1), "req-1", { output_tokens: 5, cache_read_input_tokens: 30_034 }),
       record(U(2), "req-1", { output_tokens: 5, cache_read_input_tokens: 30_034 }),

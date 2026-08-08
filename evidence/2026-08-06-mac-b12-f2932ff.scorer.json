@@ -1,0 +1,74 @@
+{
+  "runId": "2026-08-06-mac-b12-phase3-f2932ff",
+  "premise": "B12",
+  "phase": 3,
+  "exposure": "B",
+  "contextFiles": "\"src/cost/b12/types.ts\", \"src/cost/rates.ts\", \"src/cost/report.ts\"",
+  "resumedWithinExposure": false,
+  "preRegisteredIn": "PREMISES.md § B12 — PHASE-3 EXPOSURE B",
+  "unitsAttempted": 3,
+  "unitsClosed": 1,
+  "unitsClosedThisRun": 1,
+  "unitsInheritedFromEarlierAttempt": 0,
+  "reading": "INCONCLUSIVE (exactly 1 of 3) — the manifest may not be sealed on this",
+  "units": [
+    {
+      "unit": 1,
+      "name": "strata",
+      "sessionId": "a253c69e-d508-47a6-9eae-0a48b54b9f66",
+      "claudeExit": 0,
+      "vitestExit": 0,
+      "state": "closed",
+      "usd": "0.1840121",
+      "model": "claude-sonnet-5"
+    },
+    {
+      "unit": 2,
+      "name": "terms",
+      "sessionId": "61ed3c2f-6a45-47cc-ad54-387e1edb614e",
+      "claudeExit": 0,
+      "vitestExit": 1,
+      "state": "red",
+      "usd": "0.3125247",
+      "model": "claude-sonnet-5"
+    },
+    {
+      "unit": 3,
+      "name": "aggregate",
+      "sessionId": "49254dd9-0f3e-4af4-8c21-8ae7edf34235",
+      "claudeExit": 0,
+      "vitestExit": 1,
+      "state": "red",
+      "usd": "0.32392279999999996",
+      "model": "claude-sonnet-5"
+    }
+  ],
+  "spendUsd": "0.8204596",
+  "budgetUsd": "40",
+  "contextWindow": {
+    "atStart": "65536",
+    "atEnd": "65536",
+    "floor": "65536"
+  },
+  "corpus": {
+    "fromThisRun": "0",
+    "preExistingWithheld": "3"
+  },
+  "context": {
+    "commit": "f2932ffa5eaa2834e0671627d9b44ca94425658e",
+    "branch": "claude/project-next-steps-d2bc29",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "claudeBinarySha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380",
+    "claudeModel": "claude-sonnet-5",
+    "localModel": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+    "ratesSha256": "6d74cafd7fa5702352d068825be2f75f3ae7dd0ef3df77cc9ff7f04826730c94",
+    "host": "mac",
+    "os": "26.6.1",
+    "osBuild": "25G76",
+    "kernel": "25.6.0",
+    "inferenceRuntime": "mlx-llm-mac-arm64-apple-metal-advsimd@1.11.0 ✓ MLX ",
+    "kernelPanicsBeforeRun": "3",
+    "newestPanicBeforeRun": "panic-full-2026-08-06-171230.0002.panic"
+  },
+  "caveat": "Three units, one repository, one local model. This is EXPOSURE, not a rate. It decides nothing about R_gate, nothing about the bracket, and nothing about whether B12 holds or falls."
+}

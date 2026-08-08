@@ -1,0 +1,420 @@
+#!/usr/bin/env bash
+#
+# b12-scorer-selftest.sh — drive b12-scorer-mac.sh's three new decision points
+# against fabricated evidence, and check what they actually decide.
+#
+# WHY THIS FILE EXISTS. `bash -n` parses; it does not expand. Four refusals in
+# this project stated the symptom correctly and destroyed the cure, and one
+# crashed on an unset variable in the message it had just been given, because
+# the text was read and never run. The scorer's new logic decides whether a
+# premise holds; it does not get to be the part nobody executes.
+#
+# WHAT MAKES IT A TEST OF THE SHIPPED CODE. Nothing here is a copy. All three
+# units under test are EXTRACTED VERBATIM from scripts/b12-scorer-mac.sh at run
+# time:
+#   - the telemetry-window reader, between its `<<'JS'` and `JS` markers
+#   - the state decision, between `# >>> B12-STATE-BLOCK` and `# <<< ...`
+# - the fresh-exposure stub guard, between `# >>> B12-STUB-GUARD` and `# <<< ...`
+# A copy would pass forever while the original rotted.
+#
+# Runs anywhere bash, node and git run. It calls no model, starts no server, and
+# touches nothing outside its own temp dir.
+#
+# Usage:  bash scripts/b12-scorer-selftest.sh
+
+set -u
+set -o pipefail
+
+HERE=$(cd "$(dirname "$0")" && pwd -P)
+SCORER="$HERE/b12-scorer-mac.sh"
+[ -f "$SCORER" ] || { printf 'not found: %s\n' "$SCORER" >&2; exit 1; }
+
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/b12selftest.XXXXXX") || exit 1
+trap 'rm -rf "$TMP"' EXIT
+
+PASS=0
+FAIL=0
+check() { # check <label> <expected> <actual>
+  if [ "$2" = "$3" ]; then
+    PASS=$((PASS + 1)); printf '    ok    %s\n' "$1"
+  else
+    FAIL=$((FAIL + 1)); printf '    FAIL  %s\n          expected: %s\n          actual:   %s\n' "$1" "$2" "$3"
+  fi
+}
+check_has() { # check_has <label> <needle> <haystack>
+  case "$3" in
+    *"$2"*) PASS=$((PASS + 1)); printf '    ok    %s\n' "$1" ;;
+    *) FAIL=$((FAIL + 1)); printf '    FAIL  %s\n          wanted to contain: %s\n          actual:           %s\n' "$1" "$2" "$3" ;;
+  esac
+}
+head2() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+# ---------------------------------------------------------------------------
+head2 "Extracting the code under test from $SCORER"
+# ---------------------------------------------------------------------------
+WINDOW_JS="$TMP/unit-window.cjs"
+awk '/^cat > "\$UNIT_WINDOW_JS" <<.JS.$/{f=1;next} f&&/^JS$/{exit} f' "$SCORER" > "$WINDOW_JS"
+[ -s "$WINDOW_JS" ] || { printf 'extraction failed: the telemetry-window reader is empty. Did its heredoc markers change?\n' >&2; exit 1; }
+printf '    ..    telemetry-window reader: %s lines\n' "$(wc -l < "$WINDOW_JS" | tr -d ' ')"
+
+STATE_SH="$TMP/state-block.sh"
+awk '/^  # >>> B12-STATE-BLOCK$/{f=1;next} f&&/^  # <<< B12-STATE-BLOCK$/{exit} f' "$SCORER" > "$STATE_SH"
+[ -s "$STATE_SH" ] || { printf 'extraction failed: the state block is empty. Did its markers change?\n' >&2; exit 1; }
+printf '    ..    state decision: %s lines\n' "$(wc -l < "$STATE_SH" | tr -d ' ')"
+
+GUARD_SH="$TMP/stub-guard.sh"
+awk '/^# >>> B12-STUB-GUARD$/{f=1;next} f&&/^# <<< B12-STUB-GUARD$/{exit} f' "$SCORER" > "$GUARD_SH"
+[ -s "$GUARD_SH" ] || { printf 'extraction failed: the stub guard is empty. Did its markers change?\n' >&2; exit 1; }
+printf '    ..    fresh-exposure stub guard: %s lines\n' "$(wc -l < "$GUARD_SH" | tr -d ' ')"
+
+# ---------------------------------------------------------------------------
+head2 "The telemetry-window reader, against fabricated windows"
+# ---------------------------------------------------------------------------
+# A repair row as the tool actually writes one, reduced to the fields the reader
+# looks at. Any field this fabricates that the tool does not write is a test
+# passing against a shape that never occurs, so keep it to what src/tools/
+# repair.ts records: tool, invocation_id, detail.{passed,model,context_files,rounds}.
+# B12_LIMITS controls the two limit fields a row carries: "ok" writes the
+# expected pair, "-" omits both (a row from before they existed), or give an
+# explicit "budget,rounds" pair to force a mismatch.
+B12_LIMITS="ok"
+row() { # row <passed> <model> <context_files json or -> <attempts per round, space separated>
+  local passed="$1" model="$2" ctx="$3"; shift 3
+  local rounds="" n=1
+  for a in $@; do
+    local atts=""
+    local i=0
+    while [ "$i" -lt "$a" ]; do
+      atts="$atts{\"attempt\":$((i + 1)),\"finish_reason\":\"stop\"},"
+      i=$((i + 1))
+    done
+    atts=${atts%,}
+    rounds="$rounds{\"round\":$n,\"attempts\":[$atts]},"
+    n=$((n + 1))
+  done
+  rounds=${rounds%,}
+  local ctxfield=""
+  [ "$ctx" = "-" ] || ctxfield=",\"context_files\":$ctx"
+  local limfield=""
+  case "$B12_LIMITS" in
+    -) limfield="" ;;
+    ok) limfield=',"budget_seconds":600,"max_rounds":3' ;;
+    *) limfield=",\"budget_seconds\":${B12_LIMITS%,*},\"max_rounds\":${B12_LIMITS#*,}" ;;
+  esac
+  printf '{"tool":"repair","invocation_id":"i%s","detail":{"passed":%s,"model":"%s"%s%s,"rounds":[%s]}}\n' \
+    "$n" "$passed" "$model" "$ctxfield" "$limfield" "$rounds"
+}
+MODEL="qwen3-coder-30b-a3b-instruct-dwq-v2"
+CTXJSON='["src/cost/b12/types.ts","src/cost/rates.ts","src/cost/report.ts"]'
+CTXDECL='"src/cost/b12/types.ts", "src/cost/rates.ts", "src/cost/report.ts"'
+
+read_window_of() { # read_window_of <telemetry file> <byte offset> [model expected]
+  B12_TELE="$1" B12_FROM="$2" B12_MODEL_EXPECT="${3:-$MODEL}" B12_CTX_EXPECT="$CTXDECL" \
+    B12_BUDGET_EXPECT=600 B12_ROUNDS_EXPECT=3 \
+    node "$WINDOW_JS" "$TMP/window.json" 2>&1 | head -1
+}
+
+# A window that carries rows from an EARLIER unit before the offset. If the
+# offset were ignored, the counts below would include them.
+T="$TMP/telemetry.jsonl"
+row true "$MODEL" "$CTXJSON" 1 > "$T"
+OFFSET=$(wc -c < "$T" | tr -d ' ')
+
+{ row false "$MODEL" "$CTXJSON" 3 2; } >> "$T"
+check "rows before the offset are excluded" "1 0 5 ok ok ok" "$(read_window_of "$T" "$OFFSET")"
+
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+check "one call, passed, one attempt" "1 1 1 ok ok ok" "$(read_window_of "$T" 0)"
+
+# EXPOSURE B'S AGGREGATE, which is the regression this whole change exists for:
+# two repair calls, both dead in the backend, zero tokens generated.
+: > "$T"; { row false "$MODEL" "$CTXJSON"; row false "$MODEL" "$CTXJSON"; } > "$T"
+check "two calls, no rounds at all -> 0 attempts" "2 0 0 ok ok ok" "$(read_window_of "$T" 0)"
+
+: > "$T"; row false "$MODEL" "$CTXJSON" 0 0 > "$T"
+check "rounds present but empty -> 0 attempts" "1 0 0 ok ok ok" "$(read_window_of "$T" 0)"
+
+: > "$T"
+check "an empty window reports no rows" "0 0 0 unknown no-rows no-rows" "$(read_window_of "$T" 0)"
+
+# A gate row in the same window is not a repair row.
+: > "$T"; printf '{"tool":"gate","detail":{"passed":true}}\n' > "$T"
+check "a gate row is not counted as a repair row" "0 0 0 unknown no-rows no-rows" "$(read_window_of "$T" 0)"
+
+: > "$T"; printf 'this line is not json\n' > "$T"; row true "$MODEL" "$CTXJSON" 1 >> "$T"
+check "an unparseable line is skipped, not fatal" "1 1 1 ok ok ok" "$(read_window_of "$T" 0)"
+
+# --- the two VOID conditions -------------------------------------------------
+: > "$T"; row true "some-other-model" "$CTXJSON" 1 > "$T"
+check "a foreign local model is a mismatch" "1 1 1 mismatch ok ok" "$(read_window_of "$T" 0)"
+
+: > "$T"; row true "$MODEL" - 1 > "$T"
+check "an ABSENT context_files key is unknown, NOT a pass" "1 1 1 ok unknown ok" "$(read_window_of "$T" 0)"
+
+: > "$T"; row true "$MODEL" 'null' 1 > "$T"
+check "a null context_files is unknown, NOT a pass" "1 1 1 ok unknown ok" "$(read_window_of "$T" 0)"
+
+: > "$T"; row true "$MODEL" '["src/cost/b12/types.ts","src/cost/rates.ts"]' 1 > "$T"
+check "report.ts absent from the prompt is missing" "1 1 1 ok missing ok" "$(read_window_of "$T" 0)"
+
+: > "$T"; row true "$MODEL" '[]' 1 > "$T"
+check "an empty context list is missing, not unknown" "1 1 1 ok missing ok" "$(read_window_of "$T" 0)"
+
+# Two rows, one carrying the key and one not: the run cannot claim the condition
+# held on the strength of the row that happens to answer.
+: > "$T"; { row false "$MODEL" "$CTXJSON" 1; row true "$MODEL" - 1; } > "$T"
+check "one row without the key makes the whole unit unknown" "2 1 2 ok unknown ok" "$(read_window_of "$T" 0)"
+
+# The JSON side file, which is what reaches the artifact.
+: > "$T"; row true "$MODEL" "$CTXJSON" 2 > "$T"
+read_window_of "$T" 0 >/dev/null
+check "the side file records the observed context files" \
+  "src/cost/b12/types.ts,src/cost/rates.ts,src/cost/report.ts" \
+  "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).contextFilesObserved.join(",")' "$TMP/window.json")"
+check "the side file records the observed model" "$MODEL" \
+  "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).localModelObserved.join(",")' "$TMP/window.json")"
+
+# --- the limits, which travel through a PROMPT and can simply not arrive ------
+# `repair` takes both as optional arguments with defaults, so a session that
+# dropped one is measured at 300 s / 3 rounds with nothing saying so. These are
+# the checks that make the difference visible.
+B12_LIMITS="-"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+check "limits ABSENT is unknown, NOT a pass" "1 1 1 ok ok unknown" "$(read_window_of "$T" 0)"
+
+B12_LIMITS="300,3"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+check "the DEFAULT budget where 600 was registered is a mismatch" "1 1 1 ok ok mismatch" \
+  "$(read_window_of "$T" 0)"
+
+B12_LIMITS="600,1"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+check "a wrong max_rounds is a mismatch even with the right budget" "1 1 1 ok ok mismatch" \
+  "$(read_window_of "$T" 0)"
+
+# One row right and one row wrong: the unit cannot pass on the strength of the
+# one that happens to agree.
+B12_LIMITS="ok"; : > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+B12_LIMITS="300,3"; row false "$MODEL" "$CTXJSON" 1 >> "$T"
+check "one row at the default makes the whole unit a mismatch" "2 1 2 ok ok mismatch" \
+  "$(read_window_of "$T" 0)"
+
+B12_LIMITS="ok"
+: > "$T"; row true "$MODEL" "$CTXJSON" 1 > "$T"
+read_window_of "$T" 0 >/dev/null
+check "the side file records expected and observed apart" "600|600|3|3" \
+  "$(node -p 'const w=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); [w.budgetSecondsExpected,w.budgetSecondsObserved.join(","),w.maxRoundsExpected,w.maxRoundsObserved.join(",")].join("|")' "$TMP/window.json")"
+
+# ---------------------------------------------------------------------------
+head2 "The state decision, against every branch"
+# ---------------------------------------------------------------------------
+# Driven with the same variable names the loop uses, under `set -u`, so a name
+# this block reads and the loop does not set would fail here rather than on the
+# Mac at unit 3 of a $40 run.
+state_of() { # state_of <vitest rc> <calls> <passed> <attempts> [model] [ctx] [unit] [limits]
+  (
+    set -u
+    ok()   { :; }
+    info() { :; }
+    warn() { :; }
+    N=1; UNIT="${7:-aggregate}"; CLOSED=0; VOIDS=""
+    MODEL_LOCAL="$MODEL"; CONTEXT_FILES="$CTXDECL"; UNIT_TELE_JSON="/dev/null"
+    BUDGET_SECONDS=600; MAX_ROUNDS=3
+    VITEST_RC="$1"; R_CALLS="$2"; R_PASSED="$3"; R_ATTEMPTS="$4"
+    R_MODEL="${5:-ok}"; R_CTX="${6:-ok}"; R_LIMITS="${8:-ok}"
+    UNIT_STATE=""
+    . "$STATE_SH"
+    printf '%s|%s|%s' "$UNIT_STATE" "$CLOSED" "$VOIDS"
+  )
+}
+
+check "repair passed AND vitest 0 -> closed, counted"        "closed|1|"                  "$(state_of 0 1 1 3)"
+check "vitest 0 with NO passed row -> green but unverified"  "vitest_green_unverified|0|" "$(state_of 0 1 0 3)"
+check "vitest 0 with no repair row at all -> unverified"     "vitest_green_unverified|0|" "$(state_of 0 0 0 0)"
+check "vitest 1 with attempts -> red"                        "red|0|"                     "$(state_of 1 2 0 5)"
+check "vitest 1, calls made, ZERO attempts -> no_response"   "no_response|0|"             "$(state_of 1 2 0 0)"
+check "vitest 1 and no repair row -> no_repair_call"         "no_repair_call|0|"          "$(state_of 1 0 0 0)"
+check "vitest 2 -> could_not_run"                            "could_not_run|0|"           "$(state_of 2 1 0 3)"
+check "vitest 127 -> could_not_run"                          "could_not_run|0|"           "$(state_of 127 1 0 3)"
+
+# Only `closed` may ever increment the count the pre-registered rule reads.
+check "no_response does not increment CLOSED"  "0" "$(state_of 1 2 0 0 | cut -d'|' -f2)"
+check "green-unverified does not increment"    "0" "$(state_of 0 1 0 3 | cut -d'|' -f2)"
+
+# The VOIDs, from the same evidence.
+check "a model mismatch records a VOID" "closed|1| local-model-mismatch:aggregate" \
+  "$(state_of 0 1 1 3 mismatch ok)"
+check "an unverifiable context records a VOID" "closed|1| context-unverifiable:aggregate" \
+  "$(state_of 0 1 1 3 ok unknown)"
+check "a missing context file records a VOID" "closed|1| context-file-missing:aggregate" \
+  "$(state_of 0 1 1 3 ok missing)"
+check "a limits mismatch records a VOID" "closed|1| limits-mismatch:aggregate" \
+  "$(state_of 0 1 1 3 ok ok aggregate mismatch)"
+check "absent limits record a VOID, never a pass" "closed|1| limits-unverifiable:aggregate" \
+  "$(state_of 0 1 1 3 ok ok aggregate unknown)"
+check "no rows records ALL THREE VOIDs" \
+  "no_repair_call|0| local-model-unverified:aggregate context-unverifiable:aggregate limits-unverifiable:aggregate" \
+  "$(state_of 1 0 0 0 unknown no-rows aggregate no-rows)"
+
+# ---------------------------------------------------------------------------
+head2 "The fresh-exposure guard, against throwaway repositories"
+# ---------------------------------------------------------------------------
+# Each case builds a real repository with exactly the property under test. The
+# one that matters most is `committed`: a body the scorer itself committed at
+# the end of an earlier run leaves `git status` clean, which is precisely why
+# the guard may not consult it.
+STUB='export function f(): never { throw new Error("not implemented"); }'$'\n'
+BODY='export function f(): number { return 1; }'$'\n'
+NOTASTUB='export function f(): number { return 0; } // no such marker'$'\n'
+
+mkrepo() { # mkrepo <name> <stub text> <what happens after the stub commit>
+  local dir="$TMP/repo-$1"
+  rm -rf "$dir"; mkdir -p "$dir/src/cost/b12"
+  git -C "$dir" init -q 2>/dev/null
+  git -C "$dir" config user.email t@t; git -C "$dir" config user.name t
+  for u in strata terms aggregate; do printf '%s' "$2" > "$dir/src/cost/b12/$u.ts"; done
+  printf 'export type T = 1;\n' > "$dir/src/cost/b12/types.ts"
+  git -C "$dir" add -A >/dev/null 2>&1
+  git -C "$dir" commit -qm stubs >/dev/null 2>&1
+  printf '%s' "$dir"
+}
+
+run_guard() { # run_guard <repo> <frozen ref> <units> <resume> -> "<exit>|<first refusal line>"
+  local out rc
+  # `refuse` prints to STDOUT here on purpose. Capturing the real one's stderr
+  # through a command substitution is one redirection away from capturing
+  # nothing and comparing an empty string to an empty string — which is how the
+  # first draft of this file reported four passes it had not earned.
+  out=$(
+    set -u
+    ok() { :; }; warn() { :; }; info() { :; }
+    refuse() { printf 'REFUSED %s\n' "$1"; exit 1; }
+    REPO="$1"; STUBS_FROZEN_AT="$2"; UNITS_TO_ATTEMPT="$3"; RESUME="$4"
+    . "$GUARD_SH"
+  )
+  rc=$?
+  printf '%s|%s' "$rc" "$(printf '%s' "$out" | head -1)"
+}
+
+R=$(mkrepo clean "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+check "all three units are stubs -> passes" "0|" "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 0)"
+
+# THE DEFECT THAT CAUSED THIS REWRITE. The body is COMMITTED, so `git status` is
+# clean and the old guard saw nothing to object to.
+R=$(mkrepo committed "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+printf '%s' "$BODY" > "$R/src/cost/b12/aggregate.ts"
+git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm "wip: scorer bodies" >/dev/null 2>&1
+check_has "a clean tree still refuses a COMMITTED body" \
+  "1|REFUSED unit(s) this run will attempt already carry a body: aggregate" \
+  "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 0)"
+check "the same repo passes when that unit is NOT attempted" "0|" \
+  "$(run_guard "$R" "$FROZEN" "strata terms" 0)"
+check "B12_RESUME=1 lets the committed body through" "0|" \
+  "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 1)"
+
+# An uncommitted body refuses too — the case the old guard did catch.
+R=$(mkrepo dirty "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+printf '%s' "$BODY" > "$R/src/cost/b12/terms.ts"
+check_has "an uncommitted body refuses, naming that unit" \
+  "1|REFUSED unit(s) this run will attempt already carry a body: terms" \
+  "$(run_guard "$R" "$FROZEN" "strata terms aggregate" 0)"
+
+# The pin itself. A comment claiming these are stubs is not evidence.
+R=$(mkrepo notastub "$NOTASTUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+check_has "a pin that is not actually a stub refuses" \
+  'does not contain "not implemented", so it is not a stub' \
+  "$(run_guard "$R" "$FROZEN" "strata" 0)"
+
+R=$(mkrepo clean2 "$STUB")
+check_has "an unknown frozen commit refuses" "is not a commit in this clone" \
+  "$(run_guard "$R" "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "strata" 0)"
+
+# The remedy the refusal prints must name the commit. A bare `git checkout --`
+# restores the committed body, which is how the old escape hatch was a no-op.
+R=$(mkrepo remedy "$STUB"); FROZEN=$(git -C "$R" rev-parse HEAD)
+printf '%s' "$BODY" > "$R/src/cost/b12/aggregate.ts"
+git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm wip >/dev/null 2>&1
+REMEDY=$(
+  ok() { :; }; warn() { :; }; info() { :; }
+  refuse() { printf '%s\n' "$1"; exit 1; }
+  REPO="$R"; STUBS_FROZEN_AT="$FROZEN"; UNITS_TO_ATTEMPT="aggregate"; RESUME=0
+  . "$GUARD_SH"
+)
+check "the remedy names the frozen commit, not a bare checkout" "yes" \
+  "$(printf '%s' "$REMEDY" | grep -q "git checkout $FROZEN -- src/cost/b12/aggregate.ts" && echo yes || echo no)"
+check "the remedy names only the dirty unit" "no" \
+  "$(printf '%s' "$REMEDY" | grep -q "src/cost/b12/strata.ts" && echo yes || echo no)"
+
+# ---------------------------------------------------------------------------
+head2 "End to end: exposure B's aggregate, through both units at once"
+# ---------------------------------------------------------------------------
+# THE REGRESSION THIS WORK EXISTS FOR. Two repair calls that died inside the LM
+# Studio backend before generating a token, and a red oracle. The old logic read
+# the vitest exit code alone and published `red` — an observation — for a unit
+# that had produced none. It must now come out `no_response`.
+: > "$T"; { row false "$MODEL" "$CTXJSON"; row false "$MODEL" "$CTXJSON"; } > "$T"
+LINE=$(read_window_of "$T" 0)
+set -- $LINE
+check "exposure B's aggregate reads as no_response, not red" "no_response|0|" \
+  "$(state_of 1 "$1" "$2" "$3" "$4" "$5" aggregate "$6")"
+
+# ---------------------------------------------------------------------------
+head2 "The same thing again, on exposure B's REAL telemetry"
+# ---------------------------------------------------------------------------
+# Everything above this line is fabricated by `row`, which means everything
+# above this line tests the logic against a shape I chose. This section replays
+# the actual bytes `run 2026-08-06-mac-b12-phase3-f2932ff` wrote — five repair
+# rows, shipped in that run's archive and committed here unmodified — and checks
+# what the new logic makes of each unit. It is the only test in this file whose
+# input nobody designed.
+#
+# The rows arrived in call order: strata (1), terms (2), aggregate (2). Splitting
+# by row number is what the per-unit byte offsets do on a live run.
+SLICE="$HERE/fixtures/2026-08-06-mac-b12-phase3-f2932ff.telemetry-slice.jsonl"
+if [ ! -s "$SLICE" ]; then
+  printf '    FAIL  the exposure B fixture is missing: %s\n' "$SLICE"; FAIL=$((FAIL + 1))
+else
+  replay_state() { # replay_state <unit> <first row> <last row> <vitest exit that run recorded>
+    local unit="$1" vitest="$4" line c p a m x l
+    sed -n "$2,$3p" "$SLICE" > "$TMP/real.jsonl"
+    line=$(B12_TELE="$TMP/real.jsonl" B12_FROM=0 B12_MODEL_EXPECT="$MODEL" \
+      B12_CTX_EXPECT="$CTXDECL" B12_BUDGET_EXPECT=600 B12_ROUNDS_EXPECT=3 \
+      node "$WINDOW_JS" "$TMP/real.json" | head -1)
+    # SIX fields, and `read` must name all six. With five names the last one
+    # swallows the rest of the line, and the verdict this section exists to check
+    # would arrive glued to its neighbour and be judged by the wrong branch.
+    read -r c p a m x l <<EOF
+$line
+EOF
+    state_of "$vitest" "$c" "$p" "$a" "$m" "$x" "$unit" "$l"
+  }
+  # strata closed for real: repair returned passed:true and its oracle went green.
+  check "real slice: strata -> closed" "closed|1| context-unverifiable:strata limits-unverifiable:strata" \
+    "$(replay_state strata 1 1 0)"
+  # terms ran and failed: five attempts across two calls.
+  check "real slice: terms -> red" "red|0| context-unverifiable:terms limits-unverifiable:terms" \
+    "$(replay_state terms 2 3 1)"
+  # THE ONE THIS WORK EXISTS FOR. Two calls, zero attempts, published as `red`.
+  # Both VOIDs fire on this slice and that is the honest reading: these rows
+  # predate `context_files` AND the two limits, so neither condition can be
+  # evaluated from them. The STATE is what this check is really about, and it is
+  # unchanged — `no_response`, not `red`.
+  check "real slice: aggregate -> no_response, NOT red" \
+    "no_response|0| context-unverifiable:aggregate limits-unverifiable:aggregate" \
+    "$(replay_state aggregate 4 5 1)"
+  # And every row predates detail.context_files, so exposure B's own central VOID
+  # comes back UNVERIFIABLE from its own evidence — which is the reading
+  # PREMISES.md recorded by hand in 417fb0b, now reproducible from the bytes.
+  replay_state strata 1 1 0 >/dev/null
+  check "real slice: the context condition is unverifiable throughout" "unknown" \
+    "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).contextFilesVerdict' "$TMP/real.json")"
+fi
+
+# ---------------------------------------------------------------------------
+printf '\n'
+if [ "$FAIL" -eq 0 ]; then
+  printf '\033[1mSELFTEST OK\033[0m — %s checks passed.\n\n' "$PASS"
+else
+  printf '\033[1mSELFTEST FAILED\033[0m — %s passed, %s failed.\n\n' "$PASS" "$FAIL"
+  exit 1
+fi

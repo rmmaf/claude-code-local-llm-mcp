@@ -3,7 +3,15 @@ import { promises as fs } from "node:fs";
 import { log } from "./logger.js";
 
 export interface ModelEntry {
-  /** Model name exactly as LM Studio references it — sent verbatim as the chat `model`. */
+  /**
+   * Model name as LM Studio references it — keep it byte-identical to `lms ls`.
+   *
+   * An explicit `model` tool argument is sent verbatim. On AUTO-SELECTION the id
+   * actually sent is `ModelReport.resolvedId` — the `/models` candidate this
+   * entry matched — which differs from this string whenever the match was fuzzy,
+   * and falls back to this string when `/models` was not consulted. See
+   * `src/selection.ts`.
+   */
   model: string;
   /** Free-text English description of what the model is good for. */
   objective: string;

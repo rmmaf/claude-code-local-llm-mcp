@@ -552,7 +552,33 @@ async function repairLoop(
   ctx: RepairContext
 ): Promise<RepairResult> {
   const { now, telemetry, started, snapshots, files, invocationId, vcs, fingerprintBefore } = ctx;
-  const { attempts: roundAttempts, telemetryState } = ctx;
+  const { telemetryState } = ctx;
+  /**
+   * Every model REQUEST, tagged with its round. Deliberately NOT part of
+   * `RoundTrace`, which is returned to Claude and where this project's whole
+   * thesis says bytes are expensive. Telemetry goes to disk and costs no context.
+   * Owned by `runRepair` (see `ctx.attempts`) so an abort cannot discard it.
+   *
+   * PER REQUEST, never summed, at two levels. Per round, because each round
+   * prepends that round's gate failures so the prompt GROWS, and the round most
+   * likely to fill the window is the LAST one — whose output is the one that
+   * gets applied. Per attempt inside the round, because a generation makes up to
+   * two requests and `GenerationResult.usage` is their SUM, while a context
+   * window is a per-request ceiling. Comparing the sum against the window fires
+   * in both directions: a retry carries the whole bad response plus the
+   * corrective message, so its total overshoots what either request cost.
+   *
+   * A round that ENDED IN A THROW still contributes, which is the half that was
+   * missing: `model_output_malformed` is raised after up to two real responses
+   * were received and measured, and that is the case most likely to BE context
+   * exhaustion. Only a round that never got a response contributes nothing —
+   * inventing zeroes there would read as a request that cost nothing rather than
+   * one that never returned.
+   *
+   * The window rides on each attempt rather than on the round, because the model
+   * is resolved per generation and a different model is a different window.
+   */
+  const { attempts: roundAttempts } = ctx;
 
   const maxRounds = args.max_rounds ?? DEFAULT_MAX_ROUNDS;
   const budgetMs = (args.budget_seconds ?? DEFAULT_BUDGET_SECONDS) * 1000;
@@ -597,6 +623,15 @@ async function repairLoop(
    * `model: null` about a request that had a model all along.
    */
   let model: string | null = null;
+  /**
+   * Its sibling, and `null` for the same reason: `null` means no round ever got
+   * as far as assembling a prompt, which is a different fact from `[]` — a
+   * prompt assembled carrying no context files. Read off `onContextResolved`
+   * rather than off `args.context_files`, because a path passed as both context
+   * and editable is dropped by `runGeneration` and never reaches the model;
+   * reporting the argument would report a file it never saw.
+   */
+  let contextFiles: string[] | null = null;
   const generationDeps: RepairDeps = {
     ...deps,
     onFileWritten: (rel, content) => {
@@ -605,6 +640,9 @@ async function repairLoop(
     },
     onModelResolved: (resolved) => {
       model = resolved;
+    },
+    onContextResolved: (paths) => {
+      contextFiles = paths;
     },
   };
 
@@ -642,31 +680,7 @@ async function repairLoop(
   observeGate(gate);
 
   const rounds: RoundTrace[] = [];
-  /**
-   * Every model REQUEST, tagged with its round. Deliberately NOT part of
-   * `RoundTrace`, which is returned to Claude and where this project's whole
-   * thesis says bytes are expensive. Telemetry goes to disk and costs no context.
-   * Owned by `runRepair` (see `ctx.attempts`) so an abort cannot discard it.
-   *
-   * PER REQUEST, never summed, at two levels. Per round, because each round
-   * prepends that round's gate failures so the prompt GROWS, and the round most
-   * likely to fill the window is the LAST one — whose output is the one that
-   * gets applied. Per attempt inside the round, because a generation makes up to
-   * two requests and `GenerationResult.usage` is their SUM, while a context
-   * window is a per-request ceiling. Comparing the sum against the window fires
-   * in both directions: a retry carries the whole bad response plus the
-   * corrective message, so its total overshoots what either request cost.
-   *
-   * A round that ENDED IN A THROW still contributes, which is the half that was
-   * missing: `model_output_malformed` is raised after up to two real responses
-   * were received and measured, and that is the case most likely to BE context
-   * exhaustion. Only a round that never got a response contributes nothing —
-   * inventing zeroes there would read as a request that cost nothing rather than
-   * one that never returned.
-   *
-   * The window rides on each attempt rather than on the round, because the model
-   * is resolved per generation and a different model is a different window.
-   */
+  /** Why the loop stopped: passed, budget, model_failed, concurrent_edit, max_rounds. */
   let stoppedBecause: RepairResult["stopped_because"] = "max_rounds";
 
   // The best state the loop ever produced, kept in memory. Nothing below writes
@@ -921,7 +935,29 @@ async function repairLoop(
       // log had no subject — and B7 is a latency premise. `null` now means the
       // call ended before any generation started, not that the name was lost.
       model,
+      // THE TWO LIMITS THAT DECIDE HOW MANY ATTEMPTS THE MODEL GOT, recorded as
+      // RESOLVED rather than as requested. Both are optional arguments with
+      // defaults, so a caller that omits one is silently measured under a
+      // different condition than the one it registered — and until now no row
+      // could tell the two apart afterwards. B12's Phase-3 prompt asks for
+      // `max_rounds: 3` and got two productive rounds out of a 300 s default
+      // budget; that only became visible by timing the rounds by hand.
+      //
+      // `budget_seconds` is the one that binds: the per-request timeout is
+      // `min(config.timeoutMs, remaining)` (`shared.ts`), so the budget caps
+      // every request as well as the call.
+      budget_seconds: budgetMs / 1000,
+      max_rounds: maxRounds,
       files: changed,
+      // The read-only files the model was actually GIVEN, which `files` above
+      // structurally cannot hold: `changed` comes from the diff, so it lists
+      // editable files only. Recorded unconditionally, so an absent key means
+      // the row predates this field and `[]` means none were sent — a
+      // distinction a reader needs, because "the context file was there" and
+      // "we cannot tell" are different answers. B12's PHASE-3 EXPOSURE B voids
+      // itself on `src/cost/report.ts` not reaching the model, and until this
+      // key existed that VOID was a check that could not fail.
+      context_files: contextFiles,
       stats: diff === "" ? null : diffStats(diff),
       checks: summarizeGate(gate).map((c) => ({ name: c.name, passed: c.passed })),
       // The per-round trace, which until now went only to the caller. B7 asks
@@ -984,5 +1020,3 @@ async function repairLoop(
   return result;
 }
 
-/** Re-exported so the server can surface the same error type as the other tools. */
-export { ToolError };

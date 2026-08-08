@@ -229,13 +229,20 @@ export interface ContextWindowCheck {
  * `<file path=…>` tag lines, and the closing "respond with exactly N blocks"
  * instruction.
  *
- * Fitted, not guessed. Least squares over the 14 measured requests of
+ * Fitted, not guessed. Least squares over the measured requests of
  * `evidence/2026-08-04-mac-11` and `-mac-12-variance` gives
  * `prompt_tokens ≈ 287 + bytes/4.11`, and ~85 of that intercept is the probe
  * spec's own text — which `inputBytes` already counts — leaving ~200 for the
  * fixed scaffolding. Residuals are within ±3% for every request over 9 KB, and
- * the worst under-prediction across all 14 is 2.9%, which `usableFraction`
- * covers.
+ * the worst under-prediction is 2.9%, which `usableFraction` covers.
+ *
+ * This said "the 14 measured requests" and the artifacts do not contain 14 of
+ * anything: mac-11 has 13 rows of which 12 measured (L10 came back
+ * `llm_unreachable`), mac-12-variance repeats the same 13 cases three times for
+ * 38 measured rows, and the two runs share **13 distinct cases** — L01-L10 plus
+ * G1-G3. The count is corrected to what the files show; the fitted coefficients
+ * are left exactly as recorded, since re-deriving them is a measurement and not
+ * a documentation fix.
  */
 const PROMPT_OVERHEAD_TOKENS = 200;
 
@@ -313,10 +320,17 @@ export function enforceOutputCap(
   //
   // The guard tests for a finite positive NUMBER rather than `!== null`, because
   // the failure it prevents is asymmetric and was observed: a Config literal
-  // built without `contextTokens` (nothing type-checks those — `tsconfig`
-  // covers `src/**` only) arrives as `undefined`, makes the budget NaN, and
+  // built without `contextTokens` arrives as `undefined`, makes the budget NaN, and
   // every `<=` against NaN is false, so a check meant to refuse ONE oversized
   // request refuses EVERY request instead. An unknown window must fail open.
+  //
+  // BOTH ROUTES TO IT ARE NOW CLOSED, and the guard stays anyway. The literal
+  // that produced it was in `tests/`, which `tsconfig.json` did not cover until
+  // 2026-08-07 and now does. And `loadConfig` cannot produce it either: the
+  // field comes from `optionalNumberFromEnv`, which returns `null` on anything
+  // not finite and positive. So this is defence against a `Config` some future
+  // caller builds by hand — not against a live path, which is worth saying
+  // rather than leaving a reader to assume there is one.
   if (window === undefined) return;
   const { contextTokens } = window;
   if (typeof contextTokens !== "number" || !Number.isFinite(contextTokens) || contextTokens <= 0) {

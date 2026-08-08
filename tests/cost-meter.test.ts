@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  breakdownOfRequests,
   buildCounterfactual,
   buildSessionReport,
   entryCostOfSegment,
@@ -17,6 +19,8 @@ import {
   scopeTelemetry,
   unitsAddedByInstallation,
 } from "../src/cost/report.js";
+import type { CreditedRow } from "../src/cost/report.js";
+import type { ClassifiedOutcome } from "../scripts/b12-run.d.mts";
 import {
   DEFAULT_MULTIPLIERS,
   DEFAULT_RATES,
@@ -2087,13 +2091,22 @@ describe("the cost-meter CLI", () => {
 describe("the B12 harness", () => {
   const runNode = promisify(execFile);
   const BUDGET = 45 * 60 * 1000;
-  const classify = async (over: Record<string, unknown>): Promise<{ outcome: string; censored: boolean; valid: boolean; reasons: string[] }> => {
-    const mod = await import("../scripts/b12-run.mjs");
-    return (mod as { classifyRun: (o: unknown) => { outcome: string; censored: boolean; valid: boolean; reasons: string[] } }).classifyRun({
+  // Return type INFERRED, so the closed `ClassifiedOutcome` union reaches every
+  // assertion below. Annotating it `outcome: string` — as this did — widens it
+  // back and lets an assertion name a spelling no branch produces.
+  const classify = async (over: Record<string, unknown>) => {
+    // NO CAST. It used to read `mod as { classifyRun: (o: unknown) => ... }`,
+    // which typed the argument as `unknown` and made this call site unchecked —
+    // and it was carrying `wallMs: 1_000`, a field `classifyRun` does not take.
+    // `wallMs` standing in as evidence of who ended the process is a defect the
+    // harness fixed TWICE (see the enumeration in `b12-run.mjs`); the test kept
+    // passing it afterwards, harmlessly at runtime and invisibly to everything
+    // else. The shape now comes from `scripts/b12-run.d.mts`.
+    const { classifyRun } = await import("../scripts/b12-run.mjs");
+    return classifyRun({
       exitCode: 0,
       signal: null,
       errorCode: null,
-      wallMs: 1_000,
       budgetMs: BUDGET,
       originatedCount: 12,
       slugsBefore: 3,
@@ -2253,7 +2266,12 @@ describe("the B12 harness", () => {
     // easily also true of one that is not. The rule is now decided by case, and
     // every branch is named in the artifact rather than left as a fall-through
     // nobody chose.
-    const cases: Array<[Record<string, unknown>, string]> = [
+    // TYPED TO THE CLOSED LIST, and neither side is cast. The expectations are
+    // `ClassifiedOutcome`, so a spelling no branch produces is a compile error
+    // rather than a red assertion — and `classify` returns the same union, so
+    // the day a sixth outcome is added this table stops compiling until it is
+    // listed here. That is the property the test's own title claims.
+    const cases: Array<[Record<string, unknown>, ClassifiedOutcome]> = [
       [{}, "completed"],
       [{ exitCode: 0, errorCode: "ETIMEDOUT" }, "completed"],
       [{ exitCode: null, signal: "SIGTERM", errorCode: "ETIMEDOUT" }, "censored"],
@@ -2262,7 +2280,7 @@ describe("the B12 harness", () => {
       [{ exitCode: null, errorCode: "ENOENT" }, "spawn_failed"],
     ];
     for (const [over, expected] of cases) {
-      const got = (await classify(over)) as unknown as { outcome: string };
+      const got = await classify(over);
       expect(got.outcome).toBe(expected);
     }
     // Exactly one outcome is both valid and not a completion.
@@ -2324,7 +2342,37 @@ describe("the B12 harness", () => {
     await runNode(process.execPath, [script, "snapshot", "--root", root, "--out", out], {
       cwd: process.cwd(),
     });
-    const harness: string[] = JSON.parse(await fs.readFile(out, "utf8")).requestIds;
+    const snapshot = JSON.parse(await fs.readFile(out, "utf8"));
+    const harness: string[] = snapshot.requestIds;
+
+    // `design.artifacts` 5 asks the snapshot for "the directory count, the file
+    // count, the id count AND PER-FILE SHA256". It carried the first three and a
+    // file count with no list, so a transcript rewritten between the pre- and
+    // post-snapshot was invisible — and the frozen text says the vendor rewrites
+    // these files. Both fixture files, hashed, and the count still agrees with
+    // the list it is a count of.
+    //
+    // `expect.soft`, FOUR FACTS, AND THE CHOICE IS THE POINT. Written as four
+    // ordinary assertions the first failure ends the test and the three below it
+    // never execute — so a planted defect proves only the topmost one while the
+    // rest look checked and are not. That is exactly what happened here: the
+    // omitted-subagent-file defect fired the length assertion and the hash and
+    // sort assertions never ran. Soft assertions all evaluate, and each carries
+    // its own message instead of one object diff the JSON reporter truncates.
+    const hashes: Array<{ path: string; sha256: string }> = snapshot.fileHashes;
+    const hashPaths = hashes.map((h) => h.path);
+    // The count and the list are one fact stated twice, and they can drift:
+    // `files` is the length of the WALK and `fileHashes` of what was READ.
+    expect.soft(hashes.length, "fileHashes length disagrees with the file count").toBe(snapshot.files);
+    expect
+      .soft(hashes.map((h) => path.basename(h.path)).sort(), "the wrong files were hashed")
+      .toEqual(["agent-a.jsonl", "sess-1.jsonl"]);
+    expect
+      .soft(hashes.find((h) => h.path.endsWith("sess-1.jsonl"))?.sha256, "the hash is not of the file bytes")
+      .toBe(createHash("sha256").update(`${main}` + String.fromCharCode(10), "utf8").digest("hex"));
+    // Sorted by path, so two snapshots of one machine diff line for line rather
+    // than by whatever order the directory walk happened to return.
+    expect.soft(hashPaths, "fileHashes is not sorted by path").toEqual([...hashPaths].sort());
 
     const meter = new Set<string>();
     for (const id of await listSessionIds(slug)) {
@@ -2722,5 +2770,464 @@ describe("speed is part of the price", () => {
     it("returns null for an empty segment", () => {
       expect(entryCostOfSegment([], rates)).toBeNull();
     });
+  });
+});
+
+describe("the four B12 scoring seams", () => {
+  const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+
+  /**
+   * A transcript shaped so a refusal has something to be priced against: one
+   * request carrying the tool_use, the tool_result that echoes an invocation id,
+   * and a LATER request for `requestAtOrAfter` to land on. The later request
+   * carries a big `cacheRead` on purpose — it is what the deleted turn-collapse
+   * term multiplied, so without it the old and new formulas agree by accident.
+   */
+  async function transcriptWithLaterRequest(echoedId: string): Promise<string> {
+    clock = 0;
+    return writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: echoedId }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100, read: 50_000 }),
+    ]);
+  }
+
+  it("prices a refused row by the SCORED rule, not by three adjustments the numerator does not make", async () => {
+    // `wouldHaveAdded` fed the refusal magnitudes and therefore `R_hi+`, the
+    // number on B12's FALL side -- and it computed a different quantity from the
+    // crediting path in three ways at once: clamped where the numerator is
+    // signed, uncapped where it is capped, and carrying a turn-collapse term the
+    // frozen metric excludes BY NAME. A refused row was worth more than an
+    // identical credited row, and part of the excess was set by a tool-call
+    // argument: `turns_collapsed` is `rounds.length` whether or not `repair`
+    // closed anything.
+    //
+    // DERIVED BY HAND, not read off the implementation. The row is refused as
+    // ambiguous and matches `req-2`, which sits at t=1 of a 2-request 1h segment,
+    // so the multiplier is `2.0 + 0.1 x max(0, 2-1-1) = 2.0`:
+    //   scored : (min(50000, 30000) - 1000) / 3.7 x 2.0 = 29000/3.7 x 2.0
+    const id = "aaaaaaaa-0000-4000-8000-aaaaaaaaaaaa";
+    const file = await transcriptWithLaterRequest(id);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 50_000, bytes_returned: 1_000, turns_collapsed: 3, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([id])
+    );
+
+    expect(result.ambiguous).toBe(1);
+    expect(result.ambiguousUnits.unsized).toBe(0);
+    expect(result.ambiguousUnits.units).toBeCloseTo(15675.675675675675, 6);
+    // THE NEGATIVE CONTROL. The pre-repair formula was
+    //   max(0, 50000-1000)/3.7 x 2.0  +  3 x 50000 x 0.1  =  41486.486...
+    // 2.6x the honest figure, on the side that decides whether the project
+    // stops. If this assertion ever passes, the alignment has been reverted.
+    expect(result.ambiguousUnits.units).not.toBeCloseTo(41486.48648648649, 3);
+  });
+
+  it("gives excludedForeign a magnitude, because R_hi+ is defined over all FOUR classes", async () => {
+    // This class shipped as a bare counter while the other three carried
+    // magnitudes, so `R_hi+` -- which grants every refused row its would-have
+    // magnitude across all four -- was not computable as the frozen design
+    // defines it. The design's own Phase-0 repair list named `unmatched` and
+    // missed this one.
+    //
+    // The transcript echoes id A; the telemetry row carries id B. So the row is
+    // ours to see and not ours to claim, which is exactly `excludedForeign` --
+    // and `provenanceUnavailable` stays false because A did arrive.
+    const echoed = "bbbbbbbb-0000-4000-8000-bbbbbbbbbbbb";
+    const foreign = "cccccccc-0000-4000-8000-cccccccccccc";
+    const file = await transcriptWithLaterRequest(echoed);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: foreign, tool: "gate", bytes_raw: 10_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.provenanceUnavailable).toBe(false);
+    expect(result.excludedForeign).toBe(1);
+    expect(result.excludedForeignUnits.unsized).toBe(0);
+    // (10000 - 1000)/3.7 x 2.0, by the same hand derivation as above.
+    expect(result.excludedForeignUnits.units).toBeCloseTo(4864.864864864865, 6);
+    // A count with no magnitude is the silent exclusion the other three
+    // counters exist to prevent, and a zero here would read as "nothing worth
+    // having was refused".
+    expect(result.excludedForeignUnits.units).not.toBe(0);
+  });
+
+  it("lists every row it saw, and the credited ones sum to the scored total", async () => {
+    // B12's unit is a TASK WINDOW, not a session, and a window cannot be scored
+    // by shortening the transcript -- `positionalMultiplier` reads t and T off
+    // the full segment. So the scorer meters the whole lineage and selects ROWS,
+    // which is only possible if the rows are returned.
+    const echoed = "dddddddd-0000-4000-8000-dddddddddddd";
+    const foreign = "eeeeeeee-0000-4000-8000-eeeeeeeeeeee";
+    const file = await transcriptWithLaterRequest(echoed);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [
+        { ts: at(500), invocation_id: echoed, tool: "gate", bytes_raw: 10_000, bytes_returned: 1_000, turns_collapsed: 2, latency_ms: 1 },
+        { ts: at(500), invocation_id: foreign, tool: "gate", bytes_raw: 8_000, bytes_returned: 500, turns_collapsed: 0, latency_ms: 1 },
+        { ts: at(500), tool: "repair", bytes_raw: 400, bytes_returned: 900, turns_collapsed: 0, latency_ms: 1 },
+      ],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows.map((r) => r.disposition)).toEqual([
+      "credited",
+      "excludedForeign",
+      "unverifiable",
+    ]);
+
+    // THE IDENTITY. Summing the ledger's credited rows must land on the
+    // aggregate, or the artifact and the verdict are describing different runs.
+    const creditedUnits = result.rows
+      .filter((r) => r.disposition === "credited")
+      .reduce((sum, r) => sum + (r.units ?? 0), 0);
+    expect(creditedUnits).toBeCloseTo(result.unitsTotal, 9);
+
+    // The credited row carries its position; a refused row cannot, because it
+    // has no request to be positioned against -- usually the reason it was
+    // refused. Null, never a stand-in zero.
+    const credited = result.rows[0];
+    expect(credited?.index).toBe(1);
+    expect(credited?.segmentSize).toBe(2);
+    expect(credited?.ttl).toBe("1h");
+    expect(credited?.multiplier).toBeCloseTo(2.0, 9);
+    expect(credited?.turnsCollapsed).toBe(2);
+    expect(result.rows[1]?.multiplier).toBeNull();
+    expect(result.rows[1]?.segmentSize).toBeNull();
+
+    // `turns_collapsed: 2` is on the row and in NO scored number.
+    expect(creditedUnits).toBeCloseTo((9_000 / 3.7) * 2.0, 6);
+  });
+
+  /**
+   * The same shape over a LONGER segment: four requests, so the row matches at
+   * `t = 1` of `T = 4` and the positional multiplier is 2.2 while the write
+   * component alone is 2.0.
+   *
+   * `transcriptWithLaterRequest` cannot serve as the `unitsLo` control. It runs
+   * to `T = 2` and matches at `t = 1`, so `T-1-t` is 0 and the two figures
+   * coincide BY CONSTRUCTION — a wrong implementation that reused the positional
+   * multiplier would pass on it.
+   */
+  async function transcriptWithLongSegment(echoedId: string): Promise<string> {
+    clock = 0;
+    return writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: echoedId }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100, read: 50_000 }),
+      assistantRecord("req-3", { write1h: 100 }),
+      assistantRecord("req-4", { write1h: 100 }),
+    ]);
+  }
+
+  it("carries each row at BOTH horizons, because the low side has its own biggest row", async () => {
+    // B12's `R_lo⁻ʳ` drops "its best row" -- the low figure's, not the high
+    // figure's. `units` is the sHi contribution (`capped/3.7 x multiplier`), and
+    // the scorer's `aggregate.ts` receives no `rates`, so without a second field
+    // on the row the low-side jackknife had to be computed from the high side's
+    // ranking. A guard about a different figure than the one it reports reads as
+    // a passed guard.
+    //
+    // DERIVED BY HAND. The row matches `req-2` at t=1 of a 4-request 1h segment:
+    //   multiplier = 2.0 + 0.1 x (4-1-1) = 2.2
+    //   units   = (min(50000,30000) - 1000)/3.7 x 2.2 = 29000/3.7 x 2.2
+    //   unitsLo = the write component alone, x 2.0
+    const id = "cccccccc-0000-4000-8000-cccccccccccc";
+    const file = await transcriptWithLongSegment(id);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 50_000, bytes_returned: 1_000, turns_collapsed: 3, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const row = result.rows[0];
+    expect(row?.disposition).toBe("credited");
+    expect(row?.multiplier).toBeCloseTo(2.2, 9);
+    expect(row?.units).toBeCloseTo(17_243.243243243243, 6);
+    expect(row?.unitsLo).toBeCloseTo(15_675.675675675675, 6);
+    // THE NEGATIVE CONTROL. If these two are ever equal on this fixture, the low
+    // horizon is being computed with the positional multiplier and `R_lo⁻ʳ` is
+    // ranking rows by the wrong figure.
+    expect(row?.unitsLo).not.toBeCloseTo(row?.units ?? 0, 3);
+  });
+
+  it("narrows a credited row's magnitudes by its disposition, so `?? 0` is unwritable", async () => {
+    // THE ENFORCEMENT, AND IT IS THE COMPILER'S. With `CreditedRow` flat and
+    // every field nullable, `disposition === "credited"` narrowed NOTHING: the
+    // sum below would have had to write `row.units ?? 0`, which compiles, passes
+    // every oracle in this repository, and sums an unknown as zero -- the one
+    // collapse this scorer forbids everywhere else. The invariant lived in a doc
+    // comment, and a doc comment cannot stop an implementer.
+    //
+    // The two reads in the loop carry NO coalescing and NO assertion, and since
+    // `tests/**` joined `tsconfig.json` on 2026-08-07 that IS enforced here:
+    // flattening the union stops this file compiling. It did not when the union
+    // landed — nothing in this tree was type-checked then — which is why the
+    // primary control is still the pair of `Assert` aliases beside the union in
+    // `report.ts`, where the type is. This test is the RUNTIME half: it proves
+    // the two horizons come out of a real `buildCounterfactual` at the right
+    // values, which no type can say.
+    const sumCredited = (rows: readonly CreditedRow[]): { hi: number; lo: number } => {
+      let hi = 0;
+      let lo = 0;
+      for (const row of rows) {
+        if (row.disposition !== "credited") continue;
+        hi += row.units;
+        lo += row.unitsLo;
+      }
+      return { hi, lo };
+    };
+
+    const id = "bbbbbbbb-0000-4000-8000-bbbbbbbbbbbb";
+    const file = await transcriptWithLongSegment(id);
+    const transcript = await readTranscript(file);
+    const base = { ts: at(500), tool: "gate", bytes_raw: 50_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 };
+    const result = buildCounterfactual(
+      transcript,
+      [{ ...base, invocation_id: id }, { ...base }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.rows.map((r) => r.disposition)).toEqual(["credited", "unverifiable"]);
+    // Only the credited row is in the sum, at both horizons, by the hand
+    // derivation in the test above: t=1 of T=4, so 2.2 and 2.0.
+    const { hi, lo } = sumCredited(result.rows);
+    expect(hi).toBeCloseTo(17_243.243243243243, 6);
+    expect(lo).toBeCloseTo(15_675.675675675675, 6);
+
+    // And the refused arm KEEPS its nullability -- it is the arm where `null`
+    // means something. Sized here, through the timestamp fallback, but the type
+    // still admits `null` and a consumer still has to say what it does about it.
+    const refused = result.rows[1];
+    if (refused?.disposition === "credited") throw new Error("fixture changed");
+    expect(refused?.units).toBeCloseTo(17_243.243243243243, 6);
+  });
+
+  it("says a row could not report whether it closed, rather than saying it did not", async () => {
+    // `MIN_REPAIR_CLOSURES` needs a per-row `passed`, and `detail` is an
+    // untyped optional bag. Two rows carry no `passed` for entirely different
+    // reasons -- `repair`'s abort path writes a detail without it, and rows
+    // written before the field exist on disk -- and NEITHER of them is a repair
+    // that ran and failed to close. Reading absence as `false` would count both
+    // as evidence against `R_repair` being exercised.
+    const id = "ffffffff-0000-4000-8000-ffffffffffff";
+    const file = await transcriptWithLaterRequest(id);
+    const transcript = await readTranscript(file);
+    const base = { ts: at(500), tool: "repair", bytes_raw: 5_000, bytes_returned: 500, turns_collapsed: 1, latency_ms: 1 };
+    const result = buildCounterfactual(
+      transcript,
+      [
+        { ...base, invocation_id: id, detail: { passed: true } },
+        // The abort path (`repair.ts`) writes exactly this: a detail, no verdict.
+        { ...base, detail: { aborted: true, stopped_because: "aborted" } },
+        { ...base, detail: { passed: false } },
+        // Rows this old predate `detail` entirely.
+        { ...base },
+        // Enumerate the good values and refuse the rest: a string is not a verdict.
+        { ...base, detail: { passed: "true" } },
+      ],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    expect(result.rows.map((r) => r.passed)).toEqual([true, null, false, null, null]);
+    // Stated separately because it is the whole point: `false` and `null` are
+    // different answers, and the ledger that counts closures must not merge them.
+    expect(result.rows[1]?.passed).not.toBe(false);
+    expect(result.rows[2]?.passed).not.toBeNull();
+  });
+
+  it("returns exactly one row per telemetry entry, in the entries' own order", async () => {
+    // THE INVARIANT B12'S RUN-LEVEL LEDGER PAIRS ON, and until now it was half
+    // stated: `report.ts` claimed the ORDER and never the CARDINALITY. A
+    // telemetry row carries no identity that survives a null `invocation_id` --
+    // legacy rows have no id at all -- so the only key the coverage ledger can
+    // use is (artifact, ordinal), stamped at read time and zipped back onto the
+    // priced rows by INDEX. If `buildCounterfactual` ever pushed zero or two rows
+    // for one entry, or reordered them, every key past that point would name the
+    // wrong row and the exactly-once invariant would report itself satisfied
+    // while attributing magnitudes to the wrong observations.
+    //
+    // ALL FIVE DISPOSITIONS, deliberately interleaved so the assertion is about
+    // the pairing and not about a coincidence of a sorted list.
+    clock = 0;
+    const credited = "aaaa1111-0000-4000-8000-aaaa11110000";
+    const unmatchedId = "bbbb2222-0000-4000-8000-bbbb22220000";
+    const foreign = "cccc3333-0000-4000-8000-cccc33330000";
+    const ambiguous = "dddd4444-0000-4000-8000-dddd44440000";
+    const echo = (toolUseId: string, invocationId: string, ms: number): string =>
+      JSON.stringify({
+        type: "user",
+        uuid: `res-${toolUseId}`,
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(ms),
+        message: { content: [{ type: "tool_result", tool_use_id: toolUseId }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: invocationId }) }] },
+      });
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [
+            { type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" },
+            { type: "tool_use", id: "tu-2", name: "mcp__local-coder__gate" },
+          ],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      echo("tu-1", credited, 500),
+      assistantRecord("req-2", { write1h: 100, read: 50_000 }),
+      // AFTER the last billed request, so nothing can be priced against it: this
+      // is what makes the first telemetry row below `unmatched` rather than
+      // credited, and `unmatched` is the one class that never reaches
+      // `wouldHaveAdded` at all.
+      echo("tu-2", unmatchedId, 9_000),
+    ]);
+    const transcript = await readTranscript(file);
+
+    const base = { tool: "gate", bytes_raw: 5_000, bytes_returned: 500, turns_collapsed: 0, latency_ms: 1 };
+    const telemetry = [
+      { ...base, ts: at(10), invocation_id: unmatchedId },
+      { ...base, ts: at(20) },
+      { ...base, ts: at(30), invocation_id: foreign },
+      { ...base, ts: at(40), invocation_id: ambiguous },
+      { ...base, ts: at(50), invocation_id: credited },
+    ];
+    const result = buildCounterfactual(
+      transcript,
+      telemetry,
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES),
+      new Set([ambiguous])
+    );
+
+    expect(result.rows).toHaveLength(telemetry.length);
+    expect(result.rows.map((r) => r.disposition)).toEqual([
+      "unmatched",
+      "unverifiable",
+      "excludedForeign",
+      "ambiguous",
+      "credited",
+    ]);
+    // THE PAIRING ITSELF. Each entry's `ts` is distinct and is copied onto its
+    // row verbatim, so this is the index-for-index correspondence the ledger
+    // relies on, asserted rather than assumed.
+    expect(result.rows.map((r) => r.ts)).toEqual(telemetry.map((e) => e.ts));
+  });
+
+  it("restricts breakdownOfRequests to the requestIds it was handed", async () => {
+    // FOUND BY RUNNING THE CONTROLS, NOT BY READING. Deleting this filter left
+    // the whole 93-test suite green -- and it is the seam `A_o` is computed
+    // from, so a subset silently returning the WHOLE session's cost would put
+    // every observation's denominator wrong with nothing to catch it. The
+    // function has carried the parameter and a paragraph of documentation about
+    // why it matters since it was written; what it had not carried is a test.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }),
+      assistantRecord("req-2", { write1h: 300 }),
+    ]);
+    const transcript = await readTranscript(file);
+
+    // 1h cache writes at 2.0x: (100 + 300) x 2.0 = 800 for the pair.
+    expect(breakdownOfRequests(transcript.requests, DEFAULT_RATES).units.total).toBeCloseTo(800, 9);
+    // The window's own cost is its own requests', and nothing else's.
+    expect(
+      breakdownOfRequests(transcript.requests, DEFAULT_RATES, new Set(["req-1"])).units.total
+    ).toBeCloseTo(200, 9);
+    expect(
+      breakdownOfRequests(transcript.requests, DEFAULT_RATES, new Set(["req-2"])).units.total
+    ).toBeCloseTo(600, 9);
+    // An empty set is zero, not everything. The failure mode this guards is a
+    // filter that no-ops, and a no-op filter returns 800 for all four of these.
+    expect(breakdownOfRequests(transcript.requests, DEFAULT_RATES, new Set()).units.total).toBe(0);
+  });
+
+  it("charges the installation term only to the segments a window actually originated", async () => {
+    // The whole-transcript form prices every `thread#segment` in the file. B12
+    // scores a task window inside a lineage that is usually much longer, so
+    // without a subset seam an observation is charged for segments another task
+    // originated -- while `holdsIf` 6 requires this term for EVERY observation.
+    //
+    // Two threads, one request each, both 1h, so each segment's entry multiplier
+    // is `2.0 + 0.1 x max(0, 1-1-0) = 2.0`. installedChars 3700 is 1000 tokens.
+    clock = 0;
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-main", { write1h: 100 }),
+      JSON.stringify({
+        type: "assistant",
+        requestId: "req-sub",
+        sessionId: "sess-1",
+        uuid: "s1",
+        parentUuid: null,
+        isSidechain: true,
+        timestamp: at(1_000),
+        message: {
+          model: "test-model",
+          content: [],
+          usage: {
+            input_tokens: 0,
+            cache_creation_input_tokens: 100,
+            cache_read_input_tokens: 0,
+            output_tokens: 0,
+            cache_creation: { ephemeral_1h_input_tokens: 100, ephemeral_5m_input_tokens: 0 },
+          },
+        },
+      }),
+    ]);
+    const transcript = await readTranscript(file);
+
+    // Both segments: 1000 tokens x (2.0 + 2.0).
+    expect(unitsAddedByInstallation(transcript, DEFAULT_RATES, 3_700)).toBeCloseTo(4_000, 9);
+    // The main thread's window alone: 1000 x 2.0. Half, because it owns one of
+    // the two segments -- not because the segment got shorter.
+    expect(
+      unitsAddedByInstallation(transcript, DEFAULT_RATES, 3_700, new Set(["req-main"]))
+    ).toBeCloseTo(2_000, 9);
+    // A window that originated nothing is charged nothing, and that is a real
+    // answer rather than a missing one.
+    expect(unitsAddedByInstallation(transcript, DEFAULT_RATES, 3_700, new Set())).toBe(0);
   });
 });

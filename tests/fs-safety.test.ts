@@ -235,11 +235,15 @@ describe("file content safety", () => {
    * `run 2026-08-04-mac-16-preflight` refused it: at 3.5 the pessimism applies
    * twice over a shared window.
    *
-   * The byte counts are FROZEN at that run's values, deliberately. Both files
-   * have since grown and the live pair now sits ~55 tokens over the bar — that
-   * residual is the OUTPUT divisor's deliberate 12% pessimism (3.5 against a
-   * measured ~3.95), which `outputBytesPerToken` documents as bought coverage
-   * and B16 is what re-derives. This test isolates the input-side effect only.
+   * The byte counts are FROZEN at that run's values, deliberately, and the
+   * frozen pair clears the bar by ~160 tokens. **Both files have since grown far
+   * past it:** as of 2026-08-07 they are ~41,800 B against the frozen 26,345 B,
+   * so the LIVE pair sits roughly 8,200 tokens OVER — growth in the files, not a
+   * property of either divisor. (This paragraph said "~55 tokens over" and
+   * attributed that residual to the output divisor's 12% pessimism; the residual
+   * it described has not existed for days, which is precisely why these numbers
+   * are pinned rather than read off disk.) This test isolates the input-side
+   * effect only.
    */
   it("does not refuse a request that measurement says fits", () => {
     const editable = [
@@ -257,16 +261,23 @@ describe("file content safety", () => {
     ).not.toThrow();
   });
 
-  it("counts context files and the spec as input, since they share the window", () => {
+  it("refuses on input bytes the editable files alone do not account for", () => {
     const editable = [{ rel: "a.ts", bytes: 10_000 }];
     const out = Math.round(10_000 / 3.5); // 2,857 output tokens either way
     // Editable file alone: 2,857 in + 200 + 2,857 out = 5,914, well under 14,745.
     expect(() =>
       enforceOutputCap(editable, 16_384, 3.5, 0.9, { contextTokens: 16_384, inputBytes: 10_000 })
     ).not.toThrow();
-    // Same one editable file, now with 35 KB of read-only context alongside it:
-    // 12,857 + 200 + 2,857 = 15,914 over 14,745. The output cap cannot see this
-    // at all, because context files are never echoed back.
+    // The same editable file with `inputBytes` standing in for 35 KB of
+    // read-only context alongside it: 12,857 + 200 + 2,857 = 15,914 over 14,745.
+    // The output cap cannot see this at all, because context files are never
+    // echoed back.
+    //
+    // NOT WIRING. This hands `enforceOutputCap` a bare number; nothing here
+    // builds a context file or a spec. That the caller actually FOLDS them into
+    // `inputBytes` is `promptInputBytes` in `src/tools/shared.ts`, and no test
+    // in this suite covers it — `repair.test.ts` covers only the negative, that
+    // context files are not charged to the OUTPUT budget.
     expect(Math.round(45_000 / 3.5) + 200 + out).toBeGreaterThan(14_745);
     expect(() =>
       enforceOutputCap(editable, 16_384, 3.5, 0.9, { contextTokens: 16_384, inputBytes: 45_000 })
@@ -277,7 +288,12 @@ describe("file content safety", () => {
    * An unknown window must FAIL OPEN. The asymmetry is the point: skipping the
    * check risks one bad response, while a NaN budget makes every `<=` false and
    * refuses every generation in the process. The undefined case is not
-   * hypothetical — Config literals are unchecked, `tsconfig` covering src/ only.
+   * hypothetical: it came from a `Config` literal in this tree, back when
+   * `tsconfig.json` covered `src/**` only and nothing here was type-checked.
+   * That route is closed, and `loadConfig` never produced it — the field goes
+   * through `optionalNumberFromEnv`, which returns `null` on anything not finite
+   * and positive. The guard is now defence against a hand-built `Config`, and
+   * these cases are what it does with one.
    */
   it("skips the check rather than refusing when the window is unknown", () => {
     const editable = [{ rel: "a.ts", bytes: 35_656 }];

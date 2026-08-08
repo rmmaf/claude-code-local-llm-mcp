@@ -104,12 +104,6 @@ function shareOf(units: CostUnits): Omit<CostUnits, "total"> {
 }
 
 /**
- * Aggregate a transcript into an absolute cost report.
- *
- * Requests are already deduplicated by requestId upstream; every figure here
- * is a direct sum of billed quantities, with no estimation anywhere.
- */
-/**
  * The billed cost of a SUBSET of a transcript's requests, named by `requestId`.
  *
  * `SessionReport.breakdown` is whole-session, and B12's unit of observation is a
@@ -154,6 +148,12 @@ export function breakdownOfRequests(
   return { tokens, units, share: shareOf(units), usd, unpricedKeys: [...unpricedKeys].sort() };
 }
 
+/**
+ * Aggregate a transcript into an absolute cost report.
+ *
+ * Requests are already deduplicated by requestId upstream; every figure here
+ * is a direct sum of billed quantities, with no estimation anywhere.
+ */
 export function buildSessionReport(transcript: Transcript, rates: Rates): SessionReport {
   const models = new Set<string>();
   const segments = new Set<string>();
@@ -211,13 +211,27 @@ export function buildSessionReport(transcript: Transcript, rates: Rates): Sessio
  *
  *   multiplier(t) = cacheWrite + cacheRead * (T - 1 - t)
  *
- * This is the whole architecture argument in one line. With T-t = 40 and 1h
- * caching it is 6.0x the input rate, which is why keeping a token OUT of the
- * context is worth far more than shortening the reply that mentions it.
+ * This is the whole architecture argument in one line. With t = 0, T = 41 and 1h
+ * caching it is 6.0x the input rate — 2.0 + 0.1 x 40, the case `cost-meter.test.ts`
+ * pins — which is why keeping a token OUT of the context is worth far more than
+ * shortening the reply that mentions it.
  */
 export function positionalMultiplier(t: number, T: number, m: RateMultipliers, ttl: "1h" | "5m" = "1h"): number {
-  const write = ttl === "1h" ? m.cacheWrite1h : m.cacheWrite5m;
-  return write + m.cacheRead * Math.max(0, T - 1 - t);
+  return writeComponent(m, ttl) + m.cacheRead * Math.max(0, T - 1 - t);
+}
+
+/**
+ * The write half of the multiplier alone — B12's low horizon, `T-1-t = 0`.
+ *
+ * Its own function rather than `positionalMultiplier(0, 1, m, ttl)`, which is
+ * the same number for every rate table this project will load and NOT the same
+ * expression: that spelling reaches the low horizon through `cacheRead * 0`, so
+ * a `cacheRead` of `NaN` or `Infinity` makes the write component `NaN` while
+ * this returns the rate. One spelling, in one place, and no arithmetic between
+ * the caller and the answer.
+ */
+export function writeComponent(m: RateMultipliers, ttl: "1h" | "5m"): number {
+  return ttl === "1h" ? m.cacheWrite1h : m.cacheWrite5m;
 }
 
 export interface EntryCost {
@@ -386,6 +400,141 @@ export interface RefusedMagnitude {
   unsized: number;
 }
 
+/** Why a row is in the ledger. The four refusal names are the ones B12 scores by. */
+export type RowDisposition =
+  | "credited"
+  | "ambiguous"
+  | "unverifiable"
+  | "excludedForeign"
+  | "unmatched";
+
+/**
+ * One telemetry row as the join saw it, credited or refused. **A UNION
+ * DISCRIMINATED ON `disposition`**, and the name is legacy: it holds refused
+ * rows too, as the two arms below say.
+ *
+ * ONE ARRAY RATHER THAN TWO DERIVATIONS. The aggregates above answer "how much,
+ * per tool"; this answers "which rows, and what happened to each". A consumer
+ * that has to re-derive the second from the first is the shape this file has
+ * already been burned by — two numbers from one rule drift apart.
+ *
+ * THE UNION IS AN ENFORCEMENT, NOT A TIDY-UP. Flat, with every field nullable,
+ * the contract below lived in this comment: `disposition === "credited"` narrowed
+ * nothing, so `row.units ?? 0` compiled, passed every oracle in the repository,
+ * and summed an unknown as zero — the one collapse this scorer forbids
+ * everywhere else. Do not flatten it back to make a literal easier to write.
+ *
+ * The positional fields are populated for `credited` rows and are `null` on a
+ * refusal, because a refused row was not credited AGAINST a request — it has no
+ * position of its own. This is not the same as there being no request anywhere:
+ * `wouldHaveAdded` ATTEMPTS to select a counterfactual one for three of the four
+ * classes in order to size them, and when it succeeds those fields are discarded
+ * rather than absent. It can also fail — any of the three can lack a later
+ * same-thread request and come back `null`. Only `unmatched` is unsized BY
+ * CONSTRUCTION, because there the missing request is the definition of the class.
+ *
+ * `units` carries the scored contribution of a credited row and the would-have
+ * magnitude of a refused one, and it is `null` when nothing could size it —
+ * which is not zero and may not be summed as one.
+ *
+ * `units` and `unitsLo` are the same row at B12's two horizons, and they are
+ * `null` TOGETHER. Both live here rather than being recomputed downstream
+ * because the scorer's `aggregate.ts` receives no `rates` and could not derive
+ * the second — and because two derivations of one number is the shape this file
+ * has already been burned by.
+ */
+interface LedgerRowCommon {
+  invocationId: string | null;
+  tool: string;
+  ts: string;
+  bytesRaw: number;
+  bytesReturned: number;
+  /** `raw - returned`, unclamped and uncapped. */
+  signed: number;
+  /** `min(raw, clientTruncationCap) - returned`. THE SCORED FORM. */
+  capped: number;
+  /** Reported here, in no scored total — see `ToolSaving.unitsFromTurnCollapse`. */
+  turnsCollapsed: number;
+  /**
+   * The tool's own verdict, from `detail.passed`, or `null` when the row does
+   * not carry a boolean one. **`null` is not `false`** — see `verdictOf`.
+   * B12's `MIN_REPAIR_CLOSURES` is counted off this, because `turnsCollapsed` is
+   * `rounds.length` whether or not the failure closed.
+   *
+   * On BOTH arms, because a refused row's tool still ran and still reported.
+   */
+  passed: boolean | null;
+}
+
+/**
+ * A row the join credited. Every positional field and both magnitudes are
+ * NON-NULL here, and that is the whole point of the split: `disposition ===
+ * "credited"` narrows them, so a consumer summing `row.units` cannot reach for
+ * `?? 0` and cannot be tempted to.
+ */
+export interface CreditedLedgerRow extends LedgerRowCommon {
+  disposition: "credited";
+  thread: string;
+  /** `t` in `positionalMultiplier(t, T)`. */
+  index: number;
+  /** `T` in `positionalMultiplier(t, T)`. */
+  segmentSize: number;
+  ttl: "1h" | "5m";
+  multiplier: number;
+  rateKey: string;
+  /** The scored contribution at the observed segment. */
+  units: number;
+  /**
+   * The same row at `T-1-t = 0` — the write component alone, B12's `S_lo`.
+   *
+   * Separate from `units` because the two horizons rank rows DIFFERENTLY, and
+   * B12's `R_lo⁻ʳ` drops the low figure's own biggest row rather than the high
+   * figure's. One field for both would have made the low-side concentration
+   * guard a statement about the high side.
+   */
+  unitsLo: number;
+}
+
+/**
+ * A row the join refused, in one of the four classes. The positional fields are
+ * `null` because the row was not credited against a request, and the two
+ * magnitudes are `null` TOGETHER when nothing could size it.
+ */
+export interface RefusedLedgerRow extends LedgerRowCommon {
+  disposition: Exclude<RowDisposition, "credited">;
+  thread: null;
+  index: null;
+  segmentSize: null;
+  ttl: null;
+  multiplier: null;
+  rateKey: null;
+  /** The would-have magnitude, or `null` when nothing could size it. */
+  units: number | null;
+  /** The same, at `T-1-t = 0`. `null` exactly when `units` is. */
+  unitsLo: number | null;
+}
+
+export type CreditedRow = CreditedLedgerRow | RefusedLedgerRow;
+
+/** `Assert<false>` does not satisfy the constraint, so it is a `tsc` error. */
+type Assert<T extends true> = T;
+
+/**
+ * THE CONTROL FOR THE UNION, BESIDE THE UNION.
+ *
+ * Widen either magnitude on the credited arm and these two stop compiling. That
+ * is the whole of the enforcement: the invariant used to live in a doc comment,
+ * where `row.units ?? 0` could ignore it silently.
+ *
+ * It was written here because when the union landed, `tsconfig.json` covered
+ * `src/**` alone and an assertion in `tests/` would have been read by no
+ * compiler — the hole is closed now (`tests/**` is in the config), but the
+ * assertion still belongs next to the type it constrains rather than in a file
+ * that happens to import it.
+ */
+type _CreditedUnitsNonNull = Assert<null extends CreditedLedgerRow["units"] ? false : true>;
+type _CreditedUnitsLoNonNull = Assert<null extends CreditedLedgerRow["unitsLo"] ? false : true>;
+
 export interface CounterfactualReport {
   byTool: ToolSaving[];
   unitsTotal: number;
@@ -402,8 +551,25 @@ export interface CounterfactualReport {
    * project, and this is the one direction of error the meter exists to prevent.
    */
   savedFraction: number | null;
-  /** Telemetry rows whose invocation never appears in this transcript — another session's. */
+  /**
+   * Telemetry rows whose invocation is absent from `byInvocation` — usually
+   * another session's.
+   *
+   * "Absent from this transcript" is the shorthand and it is not exact:
+   * `byInvocation` is built from `toolResults.filter(isLocalToolResult)`, so a
+   * row whose id appears ONLY inside some other tool's serialised output lands
+   * here too. The distinction matters to B12, whose window join reads every
+   * `toolResult` and not just the local ones.
+   */
   excludedForeign: number;
+  /**
+   * What those rows WOULD have added. This class shipped as a bare counter while
+   * the other three carried magnitudes, which made `R_hi+` — the doubt-credited
+   * figure on B12's FALL side, defined over ALL FOUR classes — uncomputable as
+   * written. Sized by the timestamp fallback, exactly as the `provenance`
+   * degraded path is, and `unsized` when no request follows.
+   */
+  excludedForeignUnits: RefusedMagnitude;
   /**
    * Rows whose invocation id appears in MORE THAN ONE session, so no session can
    * claim them. An `invocation_id` is call identity; it was being used as
@@ -429,11 +595,6 @@ export interface CounterfactualReport {
    */
   unmatched: number;
   unmatchedUnits: RefusedMagnitude;
-  /**
-   * Refused rows whose magnitude could not be computed — no request matched, so
-   * the amount withheld is UNKNOWN rather than zero. Reported apart from the
-   * unit totals because a sum cannot say "and some unknown amount besides".
-   */
 
   /**
    * EVERY row the join refused, in one number. It exists because `ambiguous` was
@@ -447,6 +608,18 @@ export interface CounterfactualReport {
    * Consumers ask this, never the parts.
    */
   refusedRows: number;
+  /**
+   * EVERY row the join saw, credited and refused alike, in read order.
+   *
+   * The aggregates above answer "how much, per tool". This answers "which rows,
+   * and what happened to each" — which B12 needs because its unit is a TASK
+   * WINDOW, not a session, and a window cannot be scored by shortening the
+   * transcript: `positionalMultiplier` reads `t` and `T` off the full segment,
+   * so a shortened one deflates the deciding number by about an order of
+   * magnitude in the direction that stops the project. Meter the whole lineage,
+   * then select rows.
+   */
+  rows: CreditedRow[];
   /**
    * Rows carrying no invocation id. They are NOT counted: a tool that cannot
    * point at the transcript entry it produced cannot show its output ever
@@ -471,30 +644,22 @@ export interface CounterfactualReport {
  * The id is recovered by scanning the serialized tool result, so it can be found
  * in payloads that merely *quote* one: `.local-coder/telemetry.jsonl` carries an
  * `invocation_id` on every line, and a single `Read`, `Grep` or `cat` of that file
- * would otherwise mark every id in the project's whole history as belonging to
- * this session. Trusting an id only from a `gate`/`repair` result is what keeps
- * an echo distinguishable from a quotation.
+ * would otherwise mark an id from the project's history as belonging to this
+ * session. Trusting an id only from a `gate`/`repair` result is what keeps an
+ * echo distinguishable from a quotation. (One id, not every id: `readInvocationId`
+ * runs a single non-global `exec` and returns the FIRST match, so a quotation
+ * injects one id per result — which is enough to misattribute a saving.)
+ *
+ * EXPORTED FOR `b12/terms.ts`, which was not applying it and had to. `mine` was
+ * built from every tool result while `byInvocation` was built from these, so the
+ * window join was strictly wider than the crediting join and a window could claim
+ * an id that is not this server's at all (`FINDINGS.md` F10). One predicate in one
+ * place is the only version of this that stays true.
  */
-function isLocalToolResult(record: ToolResultRecord): boolean {
+export function isLocalToolResult(record: ToolResultRecord): boolean {
   return record.name !== null && /(^|__)(gate|repair)$/.test(record.name);
 }
 
-/**
- * Narrow the telemetry log to rows this session could plausibly own.
- *
- * The rule that matters: a row is admitted past the time window ONLY when this
- * transcript actually recorded its `invocation_id`. Admitting every id-bearing
- * row on the assumption that the join would drop the foreign ones is unsafe,
- * because the join can be unavailable (`provenanceUnavailable`) — and then the
- * entire telemetry history, every past session of this project, falls through to
- * the timestamp branch and gets attributed here. That inflates `savedFraction`,
- * which is B12, which is `G-stop`: the exact direction of error this meter
- * exists to prevent.
- *
- * Ids this transcript knows skip the window on purpose: the join is exact for
- * them, and a long-running `repair` can finish well after the last billed
- * request through no fault of its own.
- */
 /**
  * Invocation ids carried by more than one session, which therefore belong to
  * none of them.
@@ -616,11 +781,25 @@ export function invocationOwners(
 export function unitsAddedByInstallation(
   transcript: Transcript,
   rates: Rates,
-  installedChars: number
+  installedChars: number,
+  /**
+   * Restrict to the requests named here — the same subset seam
+   * `breakdownOfRequests` carries, and for the same reason. B12's unit is a task
+   * window inside a lineage that is usually much longer, and the whole-transcript
+   * form charges an observation for every `thread#segment` in the file, including
+   * the ones another task originated. Omit it for the whole transcript.
+   *
+   * The SEGMENT is still sized from the full transcript: only which segments are
+   * charged is narrowed, never how long they are. Narrowing `segmentSize` would
+   * shorten `T` and change the multiplier, which is the error this file spends a
+   * paragraph warning about elsewhere.
+   */
+  requestIds?: ReadonlySet<string>
 ): number {
   const tokens = installedChars / rates.charsPerToken;
   const firstOfSegment = new Map<string, BilledRequest>();
   for (const request of transcript.requests) {
+    if (requestIds !== undefined && !requestIds.has(request.requestId)) continue;
     const key = `${request.thread}#${request.segment}`;
     const seen = firstOfSegment.get(key);
     if (seen === undefined || request.index < seen.index) firstOfSegment.set(key, request);
@@ -634,6 +813,22 @@ export function unitsAddedByInstallation(
   return units;
 }
 
+/**
+ * Narrow the telemetry log to rows this session could plausibly own.
+ *
+ * The rule that matters: a row is admitted past the time window ONLY when this
+ * transcript actually recorded its `invocation_id`. Admitting every id-bearing
+ * row on the assumption that the join would drop the foreign ones is unsafe,
+ * because the join can be unavailable (`provenanceUnavailable`) — and then the
+ * entire telemetry history, every past session of this project, falls through to
+ * the timestamp branch and gets attributed here. That inflates `savedFraction`,
+ * which is B12, which is `G-stop`: the exact direction of error this meter
+ * exists to prevent.
+ *
+ * Ids this transcript knows skip the window on purpose: the join is exact for
+ * them, and a long-running `repair` can finish well after the last billed
+ * request through no fault of its own.
+ */
 export function scopeTelemetry(
   transcript: Transcript,
   telemetry: TelemetryRecord[],
@@ -717,17 +912,48 @@ export function buildCounterfactual(
   const provenanceUnavailable = localResults.length > 0 && byInvocation.size === 0;
 
   let excludedForeign = 0;
+  const excludedForeignUnits: RefusedMagnitude = { units: 0, unsized: 0 };
   let unverifiable = 0;
   const unverifiableUnits: RefusedMagnitude = { units: 0, unsized: 0 };
   let ambiguous = 0;
   let unmatched = 0;
   const unmatchedUnits: RefusedMagnitude = { units: 0, unsized: 0 };
   const ambiguousUnits: RefusedMagnitude = { units: 0, unsized: 0 };
+  /**
+   * Every row the join saw, credited or refused, in the order it was read.
+   *
+   * **EXACTLY ONE ROW PER TELEMETRY ENTRY.** The order was already stated here;
+   * the cardinality was not, and B12's run-level coverage ledger PAIRS THESE BY
+   * INDEX with the `telemetry` argument to recover a row identity that survives a
+   * null `invocation_id`. Every branch of the loop below pushes one row and then
+   * `continue`s, and the credited path reaches no second push, so
+   * `rows.length === telemetry.length` holds on every input. Nothing sorts or
+   * splices this array — `byTool` is sorted on the way out, `rows` is not.
+   * `tests/cost-meter.test.ts` proves it over a fixture carrying all five
+   * dispositions, because an invariant relied on across a module boundary and
+   * checked by nobody is a comment, not a guarantee.
+   *
+   * B12 needs this for two independent reasons and neither is display. Its unit
+   * of observation is a TASK WINDOW, not a session, and a window cannot be scored
+   * by restricting the transcript: `positionalMultiplier` reads `index` and
+   * `segmentSize` off the FULL segment, so a shortened transcript shortens `T`
+   * and deflates the deciding number by roughly an order of magnitude, in the
+   * direction that stops the project. The only correct scoping is to meter the
+   * whole lineage and select which ROWS count, which needs the rows. Separately,
+   * the frozen design requires exactly this vector on the artifact's face, per
+   * row: `(invocation_id, tool, ts, thread, t, T, ttl, multiplier, bytes_raw,
+   * bytes_returned, capped, uncapped, signed)`.
+   */
+  const rows: CreditedRow[] = [];
 
   /**
-   * What a row WOULD have added had it been creditable. Both refusal paths
-   * report their magnitude, and they must report it the same way — computing it
-   * twice is how two numbers derived from one rule drift apart.
+   * What a row WOULD have added had it been creditable. THREE of the four
+   * classes are sized here — `unverifiable`, `ambiguous` and `excludedForeign`,
+   * all through `addRefused` — and they must report it the same way, because
+   * computing it twice is how two numbers derived from one rule drift apart.
+   * `unmatched` never reaches this function: it is entered separately below and
+   * is unsized by construction, since the request a magnitude would be priced
+   * against is exactly the one that is missing.
    *
    * **`null` is not 0.** No matchable request means the magnitude is UNKNOWN, and
    * summing an unknown as zero is the same error as printing a withheld fraction
@@ -740,7 +966,7 @@ export function buildCounterfactual(
    * that reports "nothing was refused" is exactly the silent exclusion the
    * counter exists to make visible. Sessions here run to 78% subagent.
    */
-  const wouldHaveAdded = (entry: TelemetryRecord): number | null => {
+  const wouldHaveAdded = (entry: TelemetryRecord): { hi: number; lo: number } | null => {
     const source =
       entry.invocation_id !== undefined ? byInvocation.get(entry.invocation_id) : undefined;
     const at = source?.timestampMs ?? Date.parse(entry.ts);
@@ -757,15 +983,84 @@ export function buildCounterfactual(
     const wm = multipliersFor(rates, rateKey(would.model, would.speed));
     const wttl = would.usage.cacheWrite5m > would.usage.cacheWrite1h ? "5m" : "1h";
     const wmult = positionalMultiplier(would.index, would.segmentSize, wm, wttl);
-    return (
-      (Math.max(0, entry.bytes_raw - entry.bytes_returned) / rates.charsPerToken) * wmult +
-      entry.turns_collapsed * would.usage.cacheRead * wm.cacheRead
-    );
+    // PRICED BY THE SCORED RULE, BECAUSE IT IS CONSUMED AS A SCORED QUANTITY.
+    // This returned a different quantity from the crediting path below in three
+    // ways at once -- clamped where the scored numerator is signed, uncapped
+    // where it is capped, and carrying a turn-collapse term the scored numerator
+    // excludes BY NAME. Its only consumers are the refusal magnitudes, and those
+    // feed `R_hi+`, which is the number on B12's FALL side. So a refused row was
+    // being granted more per row than an identical credited row would earn, and
+    // the excess included a term set by a tool-call argument: `turns_collapsed`
+    // is `rounds.length` whether or not `repair` closed anything, so padding it
+    // inflated the doubt-credited figure that decides whether the project stops.
+    // One quantity, one rule -- the same principle the comment above states and
+    // this expression was breaking.
+    //
+    // BOTH HORIZONS, so `units` and `unitsLo` are null together or neither. Only
+    // `hi` has a consumer today -- the refusal magnitudes feed `R_hi+`, which is
+    // a high-horizon figure -- but returning `lo` as null on a row that WAS
+    // sizeable would give `null` two meanings on the same field, and the ledger
+    // is built on `null` meaning exactly one thing: nobody could size it.
+    const tokens =
+      (Math.min(entry.bytes_raw, rates.clientTruncationCap) - entry.bytes_returned) /
+      rates.charsPerToken;
+    return { hi: tokens * wmult, lo: tokens * writeComponent(wm, wttl) };
   };
-  const addRefused = (into: RefusedMagnitude, entry: TelemetryRecord): void => {
-    const units = wouldHaveAdded(entry);
-    if (units === null) into.unsized++;
-    else into.units += units;
+  /**
+   * The tool's OWN verdict for this call, off an untyped optional bag.
+   *
+   * `detail` is `Record<string, unknown> | undefined` and nothing validates it,
+   * so this enumerates the good values and refuses the rest: only an actual
+   * boolean is a verdict. **Absent is `null`, never `false`.** Three different
+   * things produce no `passed` key and none of them is a call that ran and
+   * failed — `repair`'s abort path writes a detail without one, rows predating
+   * the field exist on disk, and a tool that never wrote a detail at all. B12's
+   * `MIN_REPAIR_CLOSURES` counts closures, and a floor fed by absences read as
+   * failures would report `unexercised` for a delivery that was exercised.
+   */
+  const verdictOf = (entry: TelemetryRecord): boolean | null =>
+    typeof entry.detail?.passed === "boolean" ? entry.detail.passed : null;
+  /**
+   * A refused row's ledger entry. Positional fields are null by construction: a
+   * refused row has no request to be positioned against, and that is usually why
+   * it was refused. The bytes are recorded anyway, because "we refused something
+   * this big" is the fact the ledger exists to carry.
+   */
+  const refusedRow = (
+    entry: TelemetryRecord,
+    disposition: Exclude<RowDisposition, "credited">,
+    magnitude: { hi: number; lo: number } | null
+  ): RefusedLedgerRow => ({
+    invocationId: entry.invocation_id ?? null,
+    tool: entry.tool,
+    ts: entry.ts,
+    disposition,
+    thread: null,
+    index: null,
+    segmentSize: null,
+    ttl: null,
+    multiplier: null,
+    rateKey: null,
+    bytesRaw: entry.bytes_raw,
+    bytesReturned: entry.bytes_returned,
+    signed: entry.bytes_raw - entry.bytes_returned,
+    capped: Math.min(entry.bytes_raw, rates.clientTruncationCap) - entry.bytes_returned,
+    turnsCollapsed: entry.turns_collapsed,
+    units: magnitude?.hi ?? null,
+    unitsLo: magnitude?.lo ?? null,
+    passed: verdictOf(entry),
+  });
+  const addRefused = (
+    into: RefusedMagnitude,
+    entry: TelemetryRecord,
+    disposition: Exclude<RowDisposition, "credited">
+  ): void => {
+    const magnitude = wouldHaveAdded(entry);
+    if (magnitude === null) into.unsized++;
+    else into.units += magnitude.hi;
+    // The counter and the ledger row are written HERE, together, so a class can
+    // never be counted without being listed or listed without being counted.
+    rows.push(refusedRow(entry, disposition, magnitude));
   };
   /** Tools that matched at least one request whose model has no configured price. */
   const unpriced = new Set<string>();
@@ -782,7 +1077,7 @@ export function buildCounterfactual(
     // Reported, with its magnitude, so the exclusion is visible and not silent.
     if (entry.invocation_id === undefined) {
       unverifiable++;
-      addRefused(unverifiableUnits, entry);
+      addRefused(unverifiableUnits, entry, "unverifiable");
       continue;
     }
 
@@ -794,7 +1089,7 @@ export function buildCounterfactual(
     // it is refused here rather than guessed, and its magnitude is reported.
     if (ambiguousIds.has(entry.invocation_id)) {
       ambiguous++;
-      addRefused(ambiguousUnits, entry);
+      addRefused(ambiguousUnits, entry, "ambiguous");
       continue;
     }
 
@@ -803,7 +1098,16 @@ export function buildCounterfactual(
       if (source === undefined) {
         // Another session on the same project. Counting it here would inflate
         // this session's saving and double-count it across reports.
+        //
+        // ITS MAGNITUDE IS RECORDED, and it was not. This class shipped as a
+        // bare counter while the other three carried magnitudes, so `R_hi+` --
+        // which grants every refused row its would-have magnitude across ALL
+        // FOUR classes -- could not be computed as the frozen design defines it,
+        // and the design's own Phase-0 repair list named `unmatched` and missed
+        // this one. A refusal reported without its size is the silent exclusion
+        // the other three counters exist to prevent.
         excludedForeign++;
+        addRefused(excludedForeignUnits, entry, "excludedForeign");
         continue;
       }
       ts = source.timestampMs;
@@ -840,6 +1144,7 @@ export function buildCounterfactual(
       saving.unmatched++;
       unmatched++;
       unmatchedUnits.unsized++;
+      rows.push(refusedRow(entry, "unmatched", null));
       continue;
     }
 
@@ -869,6 +1174,34 @@ export function buildCounterfactual(
     // scored. See `ToolSaving.unitsFromTurnCollapse`.
     saving.turnsCollapsed += entry.turns_collapsed;
     saving.unitsFromTurnCollapse += entry.turns_collapsed * request.usage.cacheRead * m.cacheRead;
+
+    // The ledger row, carrying the SCORED contribution and nothing else -- the
+    // same `signedCapped x multiplier` that `unitsTotal` sums, so a reader can
+    // add these up and land on the aggregate rather than on a near miss.
+    rows.push({
+      invocationId: entry.invocation_id ?? null,
+      tool: entry.tool,
+      ts: entry.ts,
+      disposition: "credited",
+      thread: request.thread,
+      index: request.index,
+      segmentSize: request.segmentSize,
+      ttl,
+      multiplier,
+      rateKey: requestKey,
+      bytesRaw: entry.bytes_raw,
+      bytesReturned: entry.bytes_returned,
+      signed,
+      capped,
+      turnsCollapsed: entry.turns_collapsed,
+      units: (capped / rates.charsPerToken) * multiplier,
+      // The SAME row at `T-1-t = 0`, which is B12's low horizon. Through the
+      // shared `writeComponent` rather than by branching on `ttl` here, so the
+      // write half is spelled in one place and cannot drift from the one the
+      // high horizon is built on.
+      unitsLo: (capped / rates.charsPerToken) * writeComponent(m, ttl),
+      passed: verdictOf(entry),
+    });
 
     // Priced against the model of the request this saving was matched to, not
     // against whichever model in the session happened to have a price. A
@@ -922,12 +1255,14 @@ export function buildCounterfactual(
     savedFraction:
       provenanceUnavailable || ambiguous > 0 ? null : denominator === 0 ? 0 : unitsTotal / denominator,
     excludedForeign,
+    excludedForeignUnits,
     ambiguous,
     ambiguousUnits,
     unverifiable,
     unverifiableUnits,
     unmatched,
     unmatchedUnits,
+    rows,
     // FOUR CLASSES, ONE CONSUMER, COUNTED IN ONE PLACE. `unmatched` was the
     // fourth and it was missing -- the same defect as one class earlier, which
     // is why the classes are now summed here rather than at each reader.

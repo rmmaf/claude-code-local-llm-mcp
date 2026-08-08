@@ -787,10 +787,12 @@ defect, and it pinned four of them in place.
   repository and see whether the result arrives complete.
 - **Measured:** **it does not.** `run 2026-08-03-mac-05`: `implement` truncated
   repeatedly on `src/selection.ts` (380 lines) with `qwen3-coder-30b` and the
-  default 8192-token cap. `src/tools/shared.ts:78` requires the model to return
-  *the complete final content of every editable file*, so output is the **sum**
-  of the files in the request, regenerated on every attempt and every `repair`
-  round. `repair.ts` is 699 lines; `report.ts` 554.
+  default 8192-token cap. `IMPLEMENT_SYSTEM_PROMPT` in `src/tools/shared.ts`
+  requires the model to return *the complete final content of every editable
+  file*, so output is the **sum** of the files in the request, regenerated on
+  every attempt and every `repair` round. `repair.ts` was 699 lines at that run;
+  `report.ts` 554. (Both have since grown past 1,000, which sharpens the point
+  rather than dulling it; the figures stand as measured.)
 - **Falls if:** it already has — the ceiling is structural, not a tuning knob.
 - **If it falls:** B6 and B7 are measuring a tool that cannot reach the files
   they claim to be about. Either the output contract stops being whole-file, or
@@ -802,7 +804,9 @@ defect, and it pinned four of them in place.
   editable files and **refuses** before anything is read or generated, mirroring
   what `enforceContextCaps` already does for the input. The output contract is
   unchanged, so `DECISIONS.md § Model output contract` stands as written.
-  - **How much this repo keeps**, measured (estimate `bytes/3.5`, cap 8192):
+  - **How much this repo keeps**, measured **on the tree of 2026-08-04** and not
+    re-counted since (estimate `bytes/3.5`, cap 8192) — the repo has grown, so
+    read these as the census of that day, not of today:
     **43 of 46** `.ts` files fit alone (93%; the three that do not are
     `repair.ts`, `repair.test.ts`, `cost-meter.test.ts`), and **11 of 13**
     source+test pairs fit (85%). At the shipped 0.9 headroom the bar is 7372
@@ -872,12 +876,14 @@ defect, and it pinned four of them in place.
 - **Measured:** **1 task, 11 `repair` calls, and still not a rate.**
   `run 2026-08-03-mac-06` recovered the payloads `run 2026-08-03-mac-05` reported
   it could not find. They were never missing: telemetry writes `rounds_used`
-  under the name `turns_collapsed` — `repair.ts:654` and `repair.ts:680` are the
-  same expression — so a search for `rounds_used` in the log was always going to
+  under the name `turns_collapsed` — the `rounds_used` and `turns_collapsed`
+  writes in `repair.ts` are the same expression, `rounds.length` — so a search
+  for `rounds_used` in the log was always going to
   come back empty. Archived as `evidence/2026-08-03-mac-06.telemetry.jsonl`.
   - **10 calls entered with a red gate; 2 closed.** The 11th ran on an
     already-green tree (0 rounds, no files, the `gate.passed` branch that
-    `repair.ts:691` logs as *nothing to do*) and is excluded — a call with no
+    `repair.ts` logs as *checks were already green; nothing to do*) and is
+    excluded — a call with no
     failure to close cannot count as a closure.
   - **2 of 10 is not B6's rate and must not be read as one.** B6 counts
     mechanical *failures*; those 10 calls are successive passes over roughly the
@@ -886,7 +892,7 @@ defect, and it pinned four of them in place.
     anything in this corpus.
   - **3 of the 4 `max_rounds` calls returned `files: []`** — and that is stronger
     than a low close rate. `files` derives from `best.contents`
-    (`repair.ts:598`), which is replaced only when a round *lowers* the failure
+    (`repair.ts`), which is replaced only when a round *lowers* the failure
     count, so an empty list after exhausting the rounds means no round ever
     improved on the original bytes. Those three burned 4, 3 and 3 rounds: **10
     rounds of local generation that reduced the failure count zero times.**
@@ -900,7 +906,8 @@ defect, and it pinned four of them in place.
     above, where no round after the first improved anything either. **Still not a
     rate**, and now for a second reason — the fixture is synthetic.
   **B0 fell underneath this and the payload cannot separate them:** a truncated
-  response (`finish_reason=length`, `shared.ts:283`) throws after the corrective
+  response (`finish_reason=length`, the `result.finishReason === "length"` branch
+  in `shared.ts`) throws after the corrective
   retry and lands under `stopped_because: "model_failed"` — the same label a
   request killed by the deadline used to get. The deadline half is fixed, and by
   **observing** which ceiling fired rather than inferring it: the request ceiling
@@ -1198,8 +1205,600 @@ defect, and it pinned four of them in place.
 - **If it falls:** the project stops. Only the pieces that individually paid for
   themselves survive — and per item 1 above, the cost meter cannot be shown to
   have done so by this instrument.
-- **Measured:** — (no run)
-- **Status:** open · **pre-registered**, run not started
+- **PHASE 3 READING RULE — PRE-REGISTERED 2026-08-06, BEFORE THE MAC RUN AND
+  BEFORE ANY UNIT WAS ATTEMPTED.** The frozen run plan routes this project's own
+  mechanical work through `repair` for exposure, and attaches a consequence with
+  no number to it: *"if `R_repair` proves unreachable in phase 3, B12 is
+  measuring `gate` alone and the premise text should say so before phase 4 rather
+  than after phase 6."* This supplies the number. **The timing is the whole of
+  its legitimacy**, the same claim the two G-stop amendments of this date rest
+  on: no unit has been attempted, and the scorer those units implement does not
+  exist, so the answer is strictly unknowable as this is written.
+  - **The exposure:** the three arithmetic-core units of the B12 scorer
+    (`terms`, `strata`, `aggregate`) — real failing-assertion gates on this
+    repository's own remaining work, not fixtures authored for the experiment.
+    Each is handed to `repair` at its frozen `max_rounds`.
+  - **A unit COUNTS AS CLOSED only if `repair` returns `passed: true` AND the
+    harness's own `vitest` run of that unit's tests exits 0.** The tool's word is
+    not the measurement; this project has already recorded one call reporting
+    success on an already-green tree.
+  - **≥ 2 of 3 closed:** `R_repair` is reachable. B12 keeps both deliveries and
+    its text does not move.
+  - **0 of 3 closed:** `R_repair` is unreachable in this venue. **B12's text is
+    amended BEFORE Phase 4 to say it measures `gate` alone**, and `repair` is
+    recorded `unexercised` rather than fallen — `holdsIf` already forbids
+    `R_repair` from gating B12's status, so this changes what is CLAIMED, not
+    what is required.
+  - **Exactly 1 of 3: INCONCLUSIVE**, named now so it cannot be read either way
+    later. The manifest may not be sealed on it; more exposure comes first.
+  - **What it does NOT decide:** nothing about `R_gate`, nothing about the
+    bracket, nothing about whether B12 holds or falls. Three units, one
+    repository, one local model is **exposure, not a rate** — the caveat B6
+    carries, for the same reason.
+- **ATTEMPT 1 IS VOID, and the cause is named: the criterion was unsatisfiable
+  by construction.** `run 2026-08-06-mac-b12-phase3-efe5806` returned 0 of 3, and
+  that number measures the harness rather than `repair`. Nothing above this line
+  is edited; the rule stands and is re-registered below with the same thresholds.
+  - **The defect.** All three units shared ONE oracle, `tests/b12-scorer.test.ts`,
+    and `repair` closes when the PROJECT's gate goes green — the whole suite. So
+    a unit could only return `passed: true` once every OTHER unit was implemented
+    too, and `repair` rolls back when it does not close, so each unit began from
+    all-stubs. No unit could be first. **The rule's own words say "the harness's
+    own `vitest` run of THAT UNIT'S tests"; the harness handed it everyone's.**
+    The rule was right and the implementation did not match it.
+  - **It is void rather than a fall because the argument is structural and
+    predates the result.** A shared oracle plus rollback makes `passed: true`
+    unreachable for units 1 and 2 whatever the model produced. That was derivable
+    before the run, by me, and was not derived.
+  - **WHAT IT DID MEASURE, and it is not nothing.** `repair` was called six times
+    and every call produced well-formed output.
+    - **`strata.ts` was implemented CORRECTLY in round 1** — 13 failures to 11,
+      exactly the two `subagentShare` tests — then held byte-identical across
+      rounds 2 and 3 (959 completion tokens each). Not a model failing to
+      improve: a model finished with its file, being told the gate is still red
+      for reasons outside it.
+    - **No round after the first ever improved anything**, across four calls.
+      This reproduces B6's earlier finding on different work.
+    - **The model stops emitting `<file>` blocks on the corrective retry** —
+      `envelope: "no_blocks"` in 3 of 6 calls at a 32,768 window, with
+      `finish_reason: "stop"`. Not truncation. Unexplained, and it is the
+      likeliest single cause of a unit not closing.
+    - Cost **US$ 0.88** against a US$ 40 ceiling; net suppression **+599,359
+      bytes** over six calls, 3 positive and 3 negative.
+  - **A second defect, recorded because it cost information:** `repair` returns
+    its best attempt as an unapplied diff and the harness did not keep it, so
+    whether the two `13 -> 1` calls were near misses or nonsense is unknown. The
+    re-run captures it.
+- **PHASE 3 READING RULE, ATTEMPT 2 — RE-REGISTERED 2026-08-06, after attempt 1
+  was voided and BEFORE the corrected harness ran.** Thresholds unchanged and
+  deliberately so: what failed was satisfiability, not the numbers, and moving a
+  number after a run is the move this file exists to forbid.
+  - **One oracle per unit** — `tests/b12-{strata,terms,aggregate}.test.ts` — and
+    the harness holds the other two outside `tests/` for the duration of a unit's
+    `repair` call, so the gate that unit must close contains only its own tests.
+  - **Units run in dependency order: `strata`, then `terms`, then `aggregate`.**
+    `terms` calls `subagentShare` and `aggregate` calls `partitionByStrata`, so a
+    unit is attempted against real dependencies rather than stubs. **A unit whose
+    dependency did not close is `blocked`, not `failed`**, and counts toward
+    neither side.
+  - **≥ 2 of 3 closed** — reachable. **0 of 3** — B12's text says it measures
+    `gate` alone, amended before Phase 4. **Exactly 1 of 3** — inconclusive, and
+    the manifest may not be sealed on it. A unit is CLOSED only when `repair`
+    returns `passed: true` AND the harness's own `vitest` run **of that unit's
+    file** exits 0.
+  - **This is attempt 2 of the Phase-3 exposure, not of B12.** B12's own
+    two-attempt cap is untouched; it has not run.
+- **ATTEMPT 2 RESULT: 1 of 3 — INCONCLUSIVE**, which is the branch the rule named
+  in advance and the one it forbids reading either way.
+  `run 2026-08-06-mac-b12-phase3-d746d07`, US$ 0.74 of a US$ 40 ceiling. The one
+  closed unit is `strata`, **inherited** from the attempt the machine killed and
+  skipped rather than re-attempted; **this run closed nothing**
+  (`unitsClosedThisRun: 0`). Per the rule, the manifest may not be sealed on it.
+  - **`repair` never once produced a state better than the untouched stub**, and
+    that is the finding rather than a missing artifact. Failure counts across the
+    four calls: `terms` 4→9→9 and 4→7→7→7; `aggregate` 10→28→28 and 10→25→23→23.
+    `best` initialises to the ORIGINAL bytes at the starting failure count and
+    only advances on `after < best.failures`, so nothing ever displaced it, the
+    unapplied proposal WAS the stub, and `renderDiff` correctly returned `""`.
+  - **This corrects what attempt 1 recorded as a second defect.** That entry says
+    `repair` returns its best attempt as a diff and the harness did not keep it,
+    and that "the re-run captures it". The re-run did keep it. There was nothing
+    to keep. Attempt 1's own `13 → 1` calls did improve, so the loss was real
+    THERE; here the empty field is the measurement.
+  - **Round 1 made things worse in 4 of 4 calls**, and across the seven rounds
+    after a round 1 exactly one improved anything (25 → 23). Third independent
+    reproduction of B6's finding, now on this project's own remaining work.
+  - **It also replicates `run 2026-08-04-mac-09`** — `repair` net negative on
+    12 of 12 calls against a TypeScript gate — at 4 of 4, on a different corpus.
+    Two independent samples now say the same thing about the same condition.
+  - **The mechanism is visible in the token counts.** Completions held at
+    1895/1898/1898 and 3331/3385/3385 across rounds whose prompts grew by the
+    prepended failures. The model is not correcting; it is re-emitting. And
+    `envelope: "no_blocks"` in **6 of 13 attempts**, every one with
+    `finish_reason: "stop"` — attempt 1 saw 3 of 6, and it remains what it was
+    called before any data existed: the likeliest single cause, unexplained.
+  - **The context window was never the constraint, and this is worth recording
+    because a day was spent on it.** Largest prompt of the run 14,231 tokens
+    against 32,768, every attempt `stop`, window read 32,768 before AND after.
+  - **CHECKED AND REJECTED: the harness did not hand it an impossible task this
+    time.** The model compared against `"void(ambiguous)"` and friends while
+    `RowDisposition` (`src/cost/report.ts`) is `"credited" | "ambiguous" |
+    "unverifiable" | "excludedForeign" | "unmatched"`. Those four names are
+    exactly `RefusalLedger`'s fields in `types.ts`, which it HAD, and `UNIT-2.md`
+    gives `disposition === "credited"` correctly and names every row field used.
+    It took the `void(...)` shape from `Disposition` — the other disposition type
+    in the same file — and merged the two. Model error, not construction. The
+    `../b12.js` it tried to import appears in no spec. **Attempt 2 is a result,
+    not a void.**
+- **PHASE-3 EXPOSURE B — PRE-REGISTERED 2026-08-06, AFTER exposure A returned
+  1 of 3 and BEFORE any unit was attempted under the new condition.** A separate
+  exposure, **not attempt 3 of the same one**, and the distinction is the whole
+  of its legitimacy: attempt 2 was re-registered with conditions unchanged
+  because what had failed was satisfiability; this changes what the tool is given
+  and therefore cannot be presented as a re-draw of the same question.
+  - **THE TIMING, STATED AGAINST MYSELF.** `src/cost/report.ts` was never in
+    `context_files` although both units call five functions from it and consume
+    `CreditedRow`, and the specs compensated by naming its fields in prose —
+    work the type system should have done. The argument stands on its own. **I
+    did not make it before the run and noticed it only by reading the failure**,
+    which is why it may not be applied as a correction to exposure A. Exposure
+    A's numbers stay exactly as recorded above.
+  - **What changes — two things, both forced, and named together because one
+    causes the other.** `context_files` gains `src/cost/report.ts`; and the
+    window moves 32,768 → **65,536**, because that file is 51,747 B ≈ 14,800
+    tokens and adding it puts `aggregate`'s corrective retry at ~29,000 against
+    a ~29,491 usable budget — inside the margin where `context_would_overflow`
+    is reported as `model_failed` and the count cannot tell them apart. That is
+    the hazard the 32,768 floor already exists for, met from the other side.
+  - **What does not change:** local model, quantisation, temperature, the three
+    specs, the three oracles, `max_rounds: 3`, one unit per claude session, one
+    oracle per unit, dependency order, and the two-call retry protocol.
+  - **ALL THREE UNITS RESET TO STUBS.** Not inherited. `strata` closed under the
+    old condition, and carrying it forward would let ONE closure out of two
+    attempts reach the "≥ 2 of 3" bar — silently loosening a threshold the
+    thresholds section refuses to move. Three units, one condition, denominator
+    three. It also buys a free replication of the only unit that has ever
+    closed, and a `strata` that STOPS closing with more context in front of it
+    would be the most informative single result this exposure can produce.
+  - **Thresholds verbatim from exposure A. ≥ 2 of 3** closed — `R_repair` is
+    reachable. **0 of 3** — B12's text says it measures `gate` alone, amended
+    before Phase 4. **Exactly 1 of 3** — inconclusive, manifest not sealed.
+    CLOSED still means `repair` returns `passed: true` AND the harness's own
+    `vitest` run of that unit's file exits 0.
+  - **VOID if `report.ts` was not actually in the context** — checked against
+    the telemetry's own `detail.files`/`context_files`, not against this text.
+    A condition that only the registration believes in is the misdeclared window
+    of `mac-19` wearing a different hat.
+  - **VOID if fewer than three units are attempted under the new condition**
+    (crash, budget ceiling, a dependency left `blocked`). Incomplete is not a
+    reading, and this machine has already ended two runs by kernel panic.
+  - **What a hold does NOT establish, and it is a real weakness: two conditions
+    moved, so a better result cannot attribute.** "The right types helped" and
+    "more context helped" are not separable here, and separating them is B13's
+    job — downstream of B6, not a planned component, and explicitly requiring a
+    same-byte-budget control this exposure does not run. The Phase-3 question is
+    **reachability**, not mechanism: B12 will run under whatever configuration
+    works, so a result that cannot say WHY still answers what was asked. Stated
+    now so nobody reads it as more.
+  - **Free in B12's own currency, which is why it is allowed at all.**
+    `context_files` takes PATHS; the 51,747 B are read by the local model and
+    never enter Claude's context. Adding them costs the metric nothing.
+  - **PREDICTION, registered so it can be wrong: 1 of 3 again.** `strata` closes
+    (it closed in round 1 before); `terms` and `aggregate` more likely than not
+    do not. The literal-guessing was a concrete and identified cause of some of
+    exposure A's new failures, but nothing about adding a file addresses round 1
+    making things worse in 4 of 4 calls, no round after the first improving
+    anything, `no_blocks` at 6 of 13, or mac-09's 12 of 12. **If this is right
+    the exposure resolves nothing and costs about a dollar** — it is run anyway
+    because exposure A carries a known defect in its setup and a clean
+    INCONCLUSIVE is worth more than a flawed one. If it comes back 2 or 3 of 3,
+    that beat a stated expectation.
+- **EXPOSURE B RESULT: INCOMPLETE, and VOID on its own pre-registered condition.
+  NOT the "1 of 3 — INCONCLUSIVE" its own artifact printed.**
+  `run 2026-08-06-mac-b12-phase3-f2932ff`, US$ 0.82 of 40, window 65,536 read
+  before and after, `report.ts` in `context_files`, all three units reset first.
+  - **`aggregate` never generated a token.** Both `repair` calls died in the LM
+    Studio backend — HTTP 400, MLX scheduler exception — before any output.
+    Telemetry, which does not depend on anyone's narration: `files` empty,
+    **zero attempts recorded**, `10 → 10`, `model_ms` 256,479 then **391**. The
+    second call's 391 ms says the backend was already dead and did not recover.
+  - **B15's own rule decides it:** "a round that never got a response carries no
+    attempts at all, which is different from zero." `aggregate` has NO
+    observation, so fewer than three units were attempted, which exposure B
+    pre-registered as VOID with "crash" named among the causes. **The counter-
+    argument, stated so it can be taken:** `repair` WAS invoked twice, so one may
+    read "attempted" as "invoked". This project has already decided that reading
+    for rounds; applying it to units is the consistent move, not a new one.
+  - **THE HARNESS PRINTED A READING IT HAD NO RIGHT TO**, and this is the
+    defect rather than the crash. `UNIT_STATE` comes from `VITEST_RC` alone, so
+    a unit whose model never ran is recorded `red` — indistinguishable from a
+    unit that ran and failed. Three records then existed, so the merge logic
+    emitted INCONCLUSIVE off a denominator of three. **A run that measured two
+    units reported on three.**
+  - **WHAT IT DID MEASURE, and it is the most informative run this premise has
+    had.** Against exposure A on the identical units:
+
+    | | A (no `report.ts`, 32,768) | B (with, 65,536) |
+    |---|---|---|
+    | `strata` | inherited | **closed in round 1**, 5 → 0 |
+    | `terms` call 1 | 4 → **9** | 4 → **1** |
+    | `terms` call 2 | 4 → 7 → 7 → 7 | 4 → 3 → **2** |
+    | `tsc` on the best attempt | failing | **passing** |
+    | `envelope: no_blocks` | 6 of 13 attempts | **0** |
+
+    On its best attempt `repair` wrote **121 lines**, left `tsc` green, and
+    failed **one test of four**. Round 1 stopped making things worse — the
+    behaviour reproduced three times before this and now reversed under one
+    changed condition.
+  - **THE REGISTERED PREDICTION WAS RIGHT ON THE COUNT AND WRONG ON THE
+    MECHANISM.** It said 1 of 3 and said nothing about adding a file would
+    address round 1 worsening, later rounds not improving, or `no_blocks`. The
+    count matched; every mechanism named moved. Recorded because a prediction
+    that is only scored on its headline is not a prediction.
+  - **THE SPEC IS IMPLICATED, TWICE, AND THIS TIME IT IS NOT DERIVABLE-BUT-
+    MISSED.** `UNIT-2.md` names `multipliersFor` (step 7) and `rateKey`
+    (step 13) **without their module**, in a document whose preamble says
+    "`positionalMultiplier(t, T, m, ttl)` **from `../report.js`**". Both live in
+    `src/cost/rates.ts`; `report.ts` imports them (`report.ts:1`) and does not
+    re-export. Call 2 imported `multipliersFor` from `../report.js`, took
+    `TS2459`, and round 3 timed out. Call 1 dodged it — `rates.multipliers`
+    directly, and `rateKey` **reimplemented inline** rather than imported.
+  - **WHICH TEST FAILED IS UNKNOWABLE, and that is a third harness gap.**
+    `repair` returns `remaining_failures`; the prompt asks the session for the
+    `diff` and not for that. The one-failure state lived only inside the loop,
+    and both `terms` vitest captures are byte-identical at 4,354 B because the
+    tree was rolled back. Same information-loss class as attempt 1's diff, at
+    the single most informative moment this premise has produced. The obvious
+    candidate — the inlined `rateKey` — stays a hypothesis: the fixture uses
+    only default multipliers, so the rate-key blindness alone would not fail it.
+- **PHASE-3 EXPOSURE B — COMPLETION, pre-registered before the run.**
+  Registered at commit `ea35254`, after the harness changes below and before a
+  single token of it was generated.
+  - **What runs:** `B12_ONLY=aggregate`, `B12_CARRIED_FROM=` the exposure B run,
+    against `aggregate.ts` reset to its stub at `d0253e1`. Same window (65,536),
+    same `context_files`, same local model, same specs and oracles.
+  - **WHY THIS IS A CONTINUATION AND NOT A NEW DRAW.** `aggregate` has no
+    observation at all — B15 already rules that a round with no response is not
+    one, and exposure B's own VOID clause names "crash" among its causes. The
+    conditions are unchanged, so nothing about the exposure moves.
+  - **`terms` IS NOT RE-ATTEMPTED, AND THIS IS THE POINT OF THE FLAG.** It got a
+    fair draw and came within one failing test; so did `strata`, which closed.
+    Re-running all three to "finish" the exposure would hand those two a SECOND
+    draw at the same bar, and three draws for two units is a higher chance of
+    reaching `>= 2 of 3` with nothing about `repair` having changed. The harness
+    now refuses to let a run inherit them silently and refuses to combine two
+    runs arithmetically: the completion's artifact reads `partial` and renders no
+    verdict. **The reading is written here, by hand, with both artifacts as
+    evidence** — as every reading in this file has been.
+  - **REGISTERED PREDICTION.** `aggregate` closes: **no.** It is the largest unit
+    (four exported functions against `terms`' three and `strata`' two), it was
+    the unit exposure A drove furthest backwards (10 → 28, 10 → 25 → 23), and
+    nothing in the two harness fixes changes what the model is handed. The one
+    thing that has changed in its favour is second-hand: `strata` and `terms`
+    both improved sharply once `report.ts` joined `context_files`, and
+    `aggregate` has never once been attempted under that condition — both of its
+    calls died before generating. **So the honest prediction is that this is the
+    first real observation of `aggregate`, not that it is a bad one.** If it
+    closes, the exposure reads 2 of 3 and `R_repair` is reachable.
+  - **THE CAVEAT THAT HAS TO EXIST BEFORE THE RESULT DOES.** Whatever `repair`
+    writes into `aggregate.ts` closes an oracle that does **not** exercise the
+    two guards finding F2 names: the fixture passes `minClosures: 0`, never
+    imports `recompute`, and never asserts on `recomputations`. **A closure
+    answers reachability and says nothing about the scorer being correct.** That
+    body does not reach `main` as the B12 scorer until F1 and F2 are fixed and
+    tests exist over the seams that currently pass green and empty. Written down
+    now because it is much easier to say before a green run than after one.
+  - **VOID conditions, evaluated by the harness rather than declared.** The
+    completion is VOID if `detail.model` on any repair row is not the declared
+    local model; if `detail.context_files` does not contain all three declared
+    paths, **or is absent**, which is unverifiable and therefore not a pass; or
+    if `aggregate` again produces no observation, which is `no_response` and
+    counts toward neither side. Exposure B registered the middle one and had no
+    way to check it: `detail.context_files` did not exist. It does now
+    (`ee7defb`), and the check is `f6926b4`.
+- **EXPOSURE B COMPLETION RESULT: `aggregate` is RED. Exposure B therefore reads
+  1 of 3 — INCONCLUSIVE**, which is the pre-registered branch for exactly one:
+  the manifest may not be sealed on it. `run 2026-08-07-mac-b12-phase3-c40e9f4`,
+  US$ 0.42 of 40, one unit attempted, artifact reads `partial` and renders no
+  verdict. This reading is written by hand from both artifacts, as registered.
+  - **It is a REAL observation, and the first `aggregate` has ever had.** Two
+    `repair` calls, **4 generation attempts**, every envelope `complete`, no
+    backend failure. `voids: []` — `detail.model` matched on every row, and
+    `contextFilesObserved` carried all three declared paths. **Exposure B's
+    central condition was observed rather than declared, for the first time.**
+  - **It never beat the stub.** Round 1 went 10 → **20** and 10 → **18**; round 2
+    changed nothing in either call. `files: []` and the diff is empty **because
+    `best` starts at the ORIGINAL bytes and nothing displaced it** — the same
+    correction attempt 1 needed. The session's own narration got this wrong
+    ("discarded along with the rollback"); the empty diff IS the measurement.
+  - **THE RE-EMISSION SIGNATURE, now four for four.** Round 2's completion is
+    the SAME LENGTH as round 1's in both calls — 3306/3306 and 3419/3419 — with
+    the same failure count, against a prompt **2,300 tokens larger** carrying the
+    failures. Exposure A showed 1899→1907→1907, 1895→1898→1898, 3385→3385. After
+    round 1 this model re-emits; it does not correct.
+  - **`report.ts` HELPED `aggregate` TOO, and it was not enough.** Damage roughly
+    halved against exposure A on the identical unit: 10 → 28 and 10 → 25 became
+    10 → 20 and 10 → 18. Same direction as `strata` (closed) and `terms` (4 → 1).
+  - **A LIMITATION IN THE REGISTERED CONDITION, found by the new per-round
+    telemetry.** The prompt says `max_rounds: 3`; **both calls stopped on
+    `budget` with round 3 timing out**, so `aggregate` got TWO productive rounds.
+    Cause, measured rather than guessed: its rounds cost **106–132 s** because it
+    writes ~3,400 completion tokens, **twice `terms`' ~1,700** — and `repair`'s
+    default `budget_seconds` is 300. **NOT the window.** `aggregate`'s prompt
+    (20–23 k) is within 4% of `terms`' (19–20 k), and its rounds cost 128–132 s
+    at 32,768 as well. The file's size is the cause, at any window.
+  - **WHETHER THE THIRD ROUND WOULD HAVE MATTERED IS A HYPOTHESIS, LABELLED.**
+    Two independent pieces of evidence say no — round 2 re-emitted round 1 here,
+    and exposure A's call 2 DID reach round 3 and produced 23 → 23 — but neither
+    is the measurement, and the condition as registered was not delivered.
+    **`budget_seconds` is an unregistered free parameter** that silently truncates
+    the registered `max_rounds` on any unit whose output is large enough. It must
+    be fixed and recorded before the next exposure, not defaulted.
+  - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
+    hedge that this would be its first real observation and not necessarily a bad
+    one. Both halves resolved: real, and bad.
+- **FOUR CONDITION CHANGES REGISTERED AFTER EXPOSURE B AND BEFORE ANY LATER
+  RUN.** All are instrument repairs — they fix specs that were wrong and a limit
+  that was never registered — but all change what the model is handed, so **no
+  run under them is comparable with exposure A or B** and any later exposure is a
+  new one with its own registration.
+  - **The two limits are now set as a pair and VERIFIED.** `budget_seconds: 600`
+    and `LOCAL_CODER_TIMEOUT_MS: 180000`, where before the budget was never
+    passed and defaulted to 300 s. Raising the budget alone would have traded a
+    truncation for a starvation: the per-request timeout is
+    `min(config.timeoutMs, remaining)`, and at 600/600 one slow round can be
+    issued with the whole budget. 180 s clears the longest LEGITIMATE round ever
+    observed (132 s, exposure A) by 36% while no single request can take more
+    than 30% of the budget. The 149 s and 256 s rounds on record were **not**
+    generations — one was a request handed the remaining budget as its timeout,
+    the other the backend returning HTTP 400.
+    **They travel through a prompt and both have defaults, so they are now
+    recorded in `detail.budget_seconds` / `detail.max_rounds` and checked per
+    repair row; absent is `unknown` and a VOID, never a pass.** Without that, a
+    session dropping one argument would be measured at 300 s with nothing saying
+    so — the same defect as exposure B's unverifiable context condition.
+  - **`UNIT-2.md` now names every import.** It named six cross-module functions
+    and gave the module for exactly one, and that one said `../report.js` — right
+    for three of the six and wrong for `multipliersFor` and `rateKey`, which live
+    in `../rates.js` and are imported-not-re-exported by `report.ts`. Exposure B
+    produced both failure modes from this in one run: a `TS2459` in one call and
+    an inline reimplementation in the other. **This is a spec that was wrong, not
+    a spec that was hard**, which is why it is repaired rather than left frozen.
+  - **THE SCORER-CORRECTNESS PASS (F1, F2a, F2b, F3, F8), and it changes the
+    TASK, not only the conditions.** Four defects that every oracle passed green
+    on, all fixed together with their specs and their oracles; the mechanisms are
+    in `docs/b12-scorer/FINDINGS.md`. Two are worth naming here because they
+    decide how a later exposure may be read.
+    - **UNIT-3 is materially harder now** — a second refusal ledger to sum, a
+      per-horizon row jackknife, an observation-level closure floor, a fifth
+      partition bucket, and a verdict that refuses to fall on an unevaluable
+      stratum. **UNIT-2 changed shape rather than difficulty**: two arithmetic
+      steps became field reads and one cross-module import went away, while a
+      second ledger and two closure counters arrived. **UNIT-1 gained one
+      bucket.** So an exposure C would measure a DIFFERENT TASK from A and B, on
+      top of already being incomparable on conditions — and `aggregate`, the unit
+      that has never closed, is the one that grew.
+    - **A closure under these specs answers reachability and still says nothing
+      about the scorer being correct.** F9–F14 are open, and two of them are
+      structural: `R_other` has no source data at all (five of the seven tools
+      write no telemetry), and `Σ_d R_d + R_other = R` — asserted by the frozen
+      design and computed by the artifact — is **false** by `O/(A+S)` on every
+      run with a non-zero installation term. Neither is fixable by an
+      implementer; both need the design to say something it does not say.
+    - **`tests/**` joined `tsconfig.json` in the same pass.** No test file in
+      this repository had ever been type-checked — vitest transpiles without
+      checking — so every fixture, oracle and helper was unchecked TypeScript,
+      and four comments in `src/` recorded the hole as a reason to put things
+      elsewhere rather than as something to close. Cost, measured before the
+      change: 14 errors in 3 files, none a real mismatch and none in the b12
+      oracles. **This is a change to `gate`,** the instrument every reading in
+      this section is taken with: from here on a green gate means more than it
+      did, and no earlier run's gate reading may be compared with a later one on
+      the strength of the number alone. `scripts/**` is still unchecked.
+    - **Nine of the new assertions were not controls when this was written, and
+      all nine have since been proved** (2026-08-07, the day the bodies landed;
+      the defect table is in `FINDINGS.md`). They tested stubs, so they failed on
+      `not implemented` whether they were right or wrong. Registered because
+      "the oracle agreed" is
+      exactly the claim a green run would invite, and these oracles have not been
+      watched fail — **three of the first seven were defective when written**,
+      each passing on the very defect it was aimed at, and were caught only by
+      re-deriving the fixtures against the specs and by an adversarial review of
+      the diff.
+    - **`STUBS_FROZEN_AT` moved to `3d27f08`**, which is where the repaired stubs
+      live. A consequence rather than a choice: `strata` has a body at that
+      commit, so the harness now refuses any run that attempts it — enforcing the
+      rule this section already carries, that a unit with an observation may not
+      be drawn again.
+  - **THE HOLD ARITHMETIC NOW RUNS OVER A DIFFERENT SET FROM THE PUBLISHED
+    BRACKET (F19), and this is the change most likely to be misread later.**
+    `admissionRule` 6 admits an `ambiguous > 0` observation "to the FALL
+    arithmetic only, at both bounds" and excludes it from the hold; the scorer put
+    it in both. `B12Result` now carries a second family of figures under `hold`,
+    and **a run's `rLo` and its hold's `rLo` are two numbers, not one.** Anyone
+    quoting "R_lo" off a future artifact has to say which.
+    - **THE SAFETY CLAIM THAT LICENSED SHIPPING THE HOLD BRANCH FIRST WAS FALSE.**
+      `FINDINGS.md` recorded that including such an observation "drags `R_lo` DOWN,
+      making a hold harder", so fixing it later was safe. Removing an observation
+      from a ratio of sums raises the pool **iff** its own `(s−o)/(a+s)` is below
+      the pool, which a refused magnitude says nothing about. The hold branch
+      therefore shipped on 2026-08-07 under a direction that had never been
+      established. It is registered here rather than quietly corrected in the
+      findings file, because the same reasoning error — *deflated relative to
+      itself* read as *below the pool* — is what F1 and F9 were each corrected for.
+    - **What does bound the direction is the dilution guard.** `hold.rAll`
+      reinstates every clause-6 exclusion at `saved_o = 0` with its billing, so for
+      a **strictly positive** excluded saving it is strictly below the published
+      `R_lo`, and a hold now requires the full admitted set to clear 30% under
+      dilution as well. At exactly zero the two are equal; this said "non-negative"
+      and was wrong at that one point, which is the same overstatement-by-one-word
+      the safety claim above died of.
+    - **Two of my three readings were refuted by adjudication** — that a short
+      hold set makes a hold impossible, and that "admitted" in `voidConditions` 16
+      covers a clause-6 observation (I had quoted the clause with "to the FALL
+      arithmetic only" dropped). And **one conservative guard I proposed was
+      refused as post-freeze threshold-minting**: requiring 5 hold-eligible
+      observations per stratum cell. It would only ever turn a hold into `open`,
+      and it is still a number the frozen design does not contain. Recorded as
+      F21 instead.
+    - **UNIT-3 is harder again**: a second family of figures, two functions taking
+      a population PAIR where neither member may default to the other, and a
+      verdict step that must not see the published domain. Any exposure C was
+      already measuring a different task; it is now measuring a different task
+      again.
+- **PHASE 3 IS CLOSED AT 1 OF 3, DELIBERATELY, WITHOUT A THIRD EXPOSURE.**
+  Decided 2026-08-07 with an adversarial second opinion that was asked to attack
+  the decision and agreed with it.
+  - **Why not exposure C.** It would not be the third comparable draw: the specs
+    changed under the scorer-correctness pass and UNIT-3 — `aggregate`, the unit
+    that never closed — grew materially. Publishing "1 of 3" three times would
+    look like accumulating evidence while being three different experiments. And
+    the likely outcome is another 1 of 3: `strata` showed small-unit closure,
+    `terms` came within one failing test, `aggregate` regressed even before it
+    grew. Even ≥ 2 of 3 would license only "reachable", and `R_repair` never
+    gates B12's own status.
+  - **THE COST, STATED RATHER THAN GLOSSED.** The registered reading rule says
+    exactly 1 of 3 requires more exposure. Stopping leaves that formal question
+    **unresolved**, and it is recorded as unresolved — not as answered.
+  - **What Phase 3 did produce, which is the thing worth keeping:** `repair`
+    closes small, prescriptively-specified units in one round; comes close on
+    medium ones; and drives large ones BACKWARDS, re-emitting its previous answer
+    at the same length against a larger prompt. Four re-emissions out of four.
+  - **Consequence:** `terms.ts` and `aggregate.ts` stop being measured work and
+    are implemented by the orchestrator. `repair` gets no further draw at them.
+- **F11 AND F13 ARE IMPLEMENTED TO THE INSTRUCTION, NOT AMENDED AWAY, AND THE
+  READINGS ARE DECLARED HERE BEFORE THE RUN.**
+  - `R_other` will read **`unexercised`** on every run this venue can produce.
+    Not a measurement: the five tools it is defined over — `fix`, `implement`,
+    `models`, `scaffold`, `status` — write no telemetry row at all, so the bucket
+    has no source data. `unexercised` is the design's own state for this and is
+    neither a hold nor a fall.
+  - `identityHolds` will read **`false`** on any run whose installation term is
+    non-zero, which `holdsIf` 6 requires for every observation. `Σ_d R_d` is
+    `S/(A+S)` and `R` is `(S−O)/(A+S)`; they differ by `O/(A+S)`.
+  - **The design is NOT amended, and the distinction is the whole point.** B20's
+    rule lets the INSTRUMENT's implementation be repaired until the first scored
+    observation. Reallocating `O` or minting an `R_installation` would change the
+    ESTIMAND, which is not repair however early it happens. `B12Result` carries
+    `identityHolds` as a boolean precisely because the design's author allowed it
+    to be false; forcing it true would delete the evidence. **If a coherent
+    per-delivery decomposition is wanted, it needs a newly pre-registered
+    premise, not a repair to this one.**
+  - Declared in advance so neither field is later mistaken for a measurement.
+    This is disclosure, not a threshold change: nothing about what would count as
+    a hold or a fall moves.
+- **F12 AND F9 ARE FIXED, AND `R_hi⁺` NOW HAS FIVE WAYS TO REFUSE THAT THE FROZEN
+  PREFLIGHT DOES NOT SCREEN FOR.** Registered 2026-08-07, after two rounds of
+  adversarial adjudication, before any later run.
+  - **What was wrong.** `scopeTelemetry` admits a telemetry row on a ±60,000 ms
+    window as well as on an exact id match, so one physical row sat in two
+    observations' slices and `R_hi⁺` summed it twice — and `wouldHaveAdded` is
+    signed, so a duplicated NEGATIVE magnitude pushed the fall-side figure DOWN,
+    toward a fall the data does not support (F12). Separately, a CREDITED row no
+    window owns was in no `S_o` and in none of the four refusal classes, so it was
+    summed zero times and no void condition saw it (F9).
+  - **What changed.** A fourth unit, `src/cost/b12/coverage.ts`, keyed on
+    (artifact, ordinal) because nothing on a telemetry row survives a null
+    `invocation_id`. It takes the run's WHOLE row set — not the union of the
+    slices, since a row outside every window is invisible to the observations —
+    and resolves each row once. `rHiPlus` reads it. **The old step 1b is retired
+    with the sum it guarded**, having been declared incomplete on the day it
+    landed.
+  - **THE COST, and it is the one I tried to argue away and could not.** The
+    frozen `preflight` artifact asserts `provenanceUnavailable === false`,
+    `ambiguous === 0`, `unmatched === 0`, `excludedForeign === 0` and
+    `savedFraction !== null`. It asserts NOTHING about `unverifiable`, about
+    unique window ownership, about credited rows no window owns, about slices
+    disagreeing, or about full slice coverage. **So a run can pass its preflight
+    and still return `open` at scoring time on a condition the preflight never
+    looked at.** That is the safe direction — `open`, never a wrong fall — but it
+    is a cost, and the preflight is frozen and is not amended. `FINDINGS.md` F17.
+  - **A second thing I had backwards, corrected here rather than quietly.**
+    "Omission deflates the hold, which is the safe direction" is FALSE:
+    magnitudes are signed, so an omitted NEGATIVE credited row raises `R_lo` and
+    `R_hi`, toward a hold. When this was written the verdict function had no hold
+    branch, so the requirement was recorded in `UNIT-3.md` and in `aggregate.ts`
+    for whoever wrote one. **The hold branch exists now** — `decide` returns
+    `holding (unvalidated)` on `decideHold`'s conjunction — and the guard this
+    asked for turned out to be SUBSUMED rather than owed: `rHiPlus` refuses on an
+    unowned credited row, so the run returns `open` before `decideHold` is ever
+    reached and a conjunct there could never decide anything. Planting the defect
+    proved it — deleting the conjunct changed no test. The corrected direction
+    claim above stands unchanged.
+  - **This is instrument repair, not an amendment**, on the same reading that
+    decided F11 and F13: the ratio, the horizons, the four classes and the
+    thresholds are untouched. What moved is which multiset the sum runs over, and
+    it moved toward the one `design.metric` already describes.
+  - **UNIT-3 grew again** — a run-level argument and five refusal conditions —
+    and there is now a UNIT 4 that never existed during any exposure. An exposure
+    C would measure a task further still from A's and B's.
+- **THE VERDICT NOW HAS SIX STATES AND IT HAD TWO (F14), AND TWO CLAUSES OF THE
+  FROZEN TEXT CONTRADICT THEMSELVES.** Registered 2026-08-07 after two rounds of
+  adjudication, before any later run.
+  - **The scorer could return `fallen` or `open` and nothing else.** It checked no
+    observation count, no rate basis, no selection guard, no recomputation and no
+    prior-run register — six VOID clauses it had the data for. A three-observation
+    run could have returned `fallen`. It also collapsed `holding (unvalidated)`
+    into `open`, and `holdsIf` 7 names that state for exactly the never-run A/B
+    this project has.
+  - **`voidConditions` 15 says both "VOID" and "the run returns `open`" in one
+    sentence**, while `fallsIf` says `open — provisional`. Three formulations of
+    one fact. `design.metric` settles it in words — "the run returns `open`" — and
+    that reading is registered here. **`voidConditions` 3 does the same to an
+    undersized stratum**, and `admissionRule` 8 settles it outright: "never a
+    hold, a fall, or a void." Both readings are pre-declared so neither is later
+    mistaken for a judgement made after seeing a number.
+  - **`holding (unvalidated)` is now reachable and the bare `holding` is not.**
+    The design says the unvalidated state "may not be cited as an input to opening
+    or closing any gate", so nothing downstream may move on it. Publishing it is
+    disclosure, not a threshold change.
+  - **F19 is open and NOT fixed**, found in the same adjudication:
+    `admissionRule` 6 excludes an observation with `ambiguous > 0` from the HOLD
+    arithmetic and the scorer includes it. The direction is conservative — such an
+    observation carries its full `A_o` against a deflated `S_o`, so it drags
+    `R_lo` DOWN — which is why the hold branch ships ahead of the fix rather than
+    waiting for it. Recorded before any run so a later hold is read knowing it.
+    - **SUPERSEDED 2026-08-07 — F19 is fixed.** The bullet above stands as the
+      record of what shipped and why, including the safety claim that licensed
+      shipping it; `docs/b12-scorer/FINDINGS.md` files F19 under CLOSED. The
+      scorer now partitions the admitted set on `ambiguousCount(t) === 0` and
+      pools the hold's `rLo` over the eligible subset, publishing the excluded
+      count beside it. **The eligible subset is the ARITHMETIC population, not
+      the whole story:** `strata` and the hold's per-delivery figure take a
+      population PAIR — the frozen floors (stratum evaluability, `unexercised`)
+      still count the FULL admitted set and only the ratio is pooled over the
+      eligible subset, so a cell can be evaluable on five and priced on fewer
+      (`FINDINGS.md` F21) — and `recomputations` reinstates the hold-excluded
+      observations rather than dropping them.
+- **Measured:** Phase-3 exposure A — **1 of 3, INCONCLUSIVE**
+  (`run 2026-08-06-mac-b12-phase3-d746d07`). Exposure B — **1 of 3,
+  INCONCLUSIVE**, assembled from `f2932ff` (`strata` closed, `terms` red) and
+  `c40e9f4` (`aggregate` red). Attempt 1 void. No exposure has reached the bar.
+  - **Where these three run ids live, since it is not where rule 2 says.**
+    `d746d07`, `f2932ff` and `c40e9f4` have **no row in `MEASUREMENTS.jsonl`**,
+    though `2026-08-06-mac-b12-phase3-efe5806` — the void attempt — does. Their
+    artifacts are committed and carry the run id verbatim:
+    `evidence/2026-08-06-mac-b12-d746d07.scorer.json`,
+    `evidence/2026-08-06-mac-b12-f2932ff.scorer.json`,
+    `evidence/2026-08-07-mac-b12-c40e9f4.scorer.json` (note the file names drop
+    the `phase3` segment the run ids carry). **The rows are not being
+    back-filled.** A row written by hand today, stamped with a time from days
+    ago, is the fabrication an append-only record exists to prevent — and rule 2
+    exists so a reader can tell a measurement from an assumption, which these
+    artifacts already let them do. The gap is recorded here instead. Note that
+    this does **not** make them registered B12 runs under `voidConditions` 1,
+    which requires a committed `evidence/<run_id>.b12.tasks.json` **and** the
+    `MEASUREMENTS.jsonl` row, written by one command before the first billed
+    request; none of the three has a tasks file, so none is in that register and
+    none owes a result artifact.
+- **Status:** open · **both exposures INCONCLUSIVE at 1 of 3** · `R_repair`
+  neither reachable nor ruled out. The limits are pinned and verified (F7) and
+  the scorer's spec defects are fixed (F1/F2a/F2b/F3, then F9/F12), so nothing
+  blocks an exposure C — but it would measure a changed task, and whether to
+  spend one is open. **F17 remains** (F19 was fixed 2026-08-07), and the scorer is
+  still wired to nothing: `observation.json` has no parser, `verificationStratum`
+  is written by no harness, and the run-level assembler that would call
+  `runCoverage` and `aggregate` does not exist.
 
 ## B13 — injecting the installed `.d.ts` of a library named in a gate failure raises `repair`'s close rate on version-drift failures by ≥ 15 pp
 
