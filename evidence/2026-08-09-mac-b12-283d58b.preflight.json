@@ -1,0 +1,186 @@
+{
+  "ts": "2026-08-09T03:36:45Z",
+  "checks": [
+    {
+      "name": "claude on PATH",
+      "ok": true,
+      "detail": "2.1.221 (Claude Code) 7a181f36ed0f"
+    },
+    {
+      "name": "DISABLE_AUTOUPDATER=1",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "snapshot covers every project slug",
+      "ok": true,
+      "detail": "17 slugs, 80 files, 1827 ids"
+    },
+    {
+      "name": "cost meter is built",
+      "ok": true,
+      "detail": "/Users/rodrigomonteiro/local-coder-283d58b/dist/cost/cli.js"
+    },
+    {
+      "name": "provenanceUnavailable === false",
+      "ok": true,
+      "detail": "false"
+    },
+    {
+      "name": "ambiguous === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "unmatched === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "excludedForeign === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "savedFraction !== null",
+      "ok": true,
+      "detail": "0.27771867732571587"
+    },
+    {
+      "name": "gate produced a row that did work",
+      "ok": true,
+      "detail": "1 call(s)"
+    },
+    {
+      "name": "repair produced a row that did work",
+      "ok": true,
+      "detail": "1 call(s)"
+    }
+  ],
+  "binary": {
+    "path": "/Users/rodrigomonteiro/.local/bin/claude",
+    "version": "2.1.221 (Claude Code)",
+    "sha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380"
+  },
+  "snapshot": {
+    "slugsWalked": 17,
+    "files": 80,
+    "ids": 1827
+  },
+  "scratch": {
+    "sessionId": "b4951018-5895-481e-8869-716a7d36810f",
+    "counterfactual": {
+      "byTool": [
+        {
+          "tool": "repair",
+          "calls": 1,
+          "bytes": {
+            "clampedUncapped": 287730,
+            "signedUncapped": 287730,
+            "signedCapped": 28561
+          },
+          "unitsFromSuppression": {
+            "clampedUncapped": 155529.72972972973,
+            "signedUncapped": 155529.72972972973,
+            "signedCapped": 15438.378378378378
+          },
+          "turnsCollapsed": 3,
+          "unitsFromTurnCollapse": 7251.900000000001,
+          "unitsTotal": 15438.378378378378,
+          "usd": 0.07719189189189189,
+          "unmatched": 0,
+          "rowsNetNegative": 0
+        },
+        {
+          "tool": "gate",
+          "calls": 1,
+          "bytes": {
+            "clampedUncapped": 0,
+            "signedUncapped": -753,
+            "signedCapped": -753
+          },
+          "unitsFromSuppression": {
+            "clampedUncapped": 0,
+            "signedUncapped": -427.3783783783784,
+            "signedCapped": -427.3783783783784
+          },
+          "turnsCollapsed": 1,
+          "unitsFromTurnCollapse": 2349.2000000000003,
+          "unitsTotal": -427.3783783783784,
+          "usd": -0.002136891891891892,
+          "unmatched": 0,
+          "rowsNetNegative": 1
+        }
+      ],
+      "unitsTotal": 15011,
+      "usdTotal": 0.075055,
+      "sessionUnits": 39040.1,
+      "savedFraction": 0.27771867732571587,
+      "excludedForeign": 0,
+      "excludedForeignUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "ambiguous": 0,
+      "ambiguousUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "unverifiable": 0,
+      "unverifiableUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "unmatched": 0,
+      "unmatchedUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "rows": [
+        {
+          "invocationId": "39211304-3e9a-4bc6-8768-1a176dd2fb66",
+          "tool": "gate",
+          "ts": "2026-08-09T03:35:53.967Z",
+          "disposition": "credited",
+          "thread": "main",
+          "index": 2,
+          "segmentSize": 4,
+          "ttl": "1h",
+          "multiplier": 2.1,
+          "rateKey": "claude-opus-5",
+          "bytesRaw": 257,
+          "bytesReturned": 1010,
+          "signed": -753,
+          "capped": -753,
+          "turnsCollapsed": 1,
+          "units": -427.3783783783784,
+          "unitsLo": -407.02702702702703,
+          "passed": false
+        },
+        {
+          "invocationId": "869d6426-d2d9-4068-9647-3ae0cdda2819",
+          "tool": "repair",
+          "ts": "2026-08-09T03:36:22.961Z",
+          "disposition": "credited",
+          "thread": "main",
+          "index": 3,
+          "segmentSize": 4,
+          "ttl": "1h",
+          "multiplier": 2,
+          "rateKey": "claude-opus-5",
+          "bytesRaw": 289169,
+          "bytesReturned": 1439,
+          "signed": 287730,
+          "capped": 28561,
+          "turnsCollapsed": 3,
+          "units": 15438.378378378378,
+          "unitsLo": 15438.378378378378,
+          "passed": false
+        }
+      ],
+      "refusedRows": 0,
+      "provenanceUnavailable": false
+    }
+  },
+  "passed": true
+}
