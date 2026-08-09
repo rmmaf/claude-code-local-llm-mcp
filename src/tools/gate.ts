@@ -7,11 +7,12 @@ import { z } from "zod";
 import { loadChecks, type CheckCategory, type CheckSpec } from "../checks/config.js";
 import { dedupe, parseFailures, type Failure } from "../checks/parsers.js";
 import type { Config } from "../config.js";
-import { createCorpusWriter, type CorpusWriter } from "../corpus.js";
+import type { CorpusWriter } from "../corpus.js";
+import { selectCorpusWriter, selectTelemetryWriter, startEmission } from "../cost/emission.js";
 import { defaultProcessRunner, runGit, type ProcessRunner } from "../exec.js";
 import { ToolError } from "../fs-safety.js";
 import { log } from "../logger.js";
-import { createTelemetryWriter, type TelemetryWriter } from "../telemetry.js";
+import type { TelemetryWriter } from "../telemetry.js";
 
 export const gateToolName = "gate";
 
@@ -301,8 +302,10 @@ export async function runGate(
 ): Promise<GateResult> {
   const runner = deps.processRunner ?? defaultProcessRunner;
   const now = deps.now ?? (() => Date.now());
-  const telemetry = deps.telemetry ?? createTelemetryWriter(config.root);
-  const corpus = deps.corpus ?? createCorpusWriter(config.root, { runner });
+  // Selection through the pinned emission wrapper — same fallback, same order;
+  // the module is what B12's clause-5 audit pins, so the lifecycle has ONE home.
+  const telemetry = selectTelemetryWriter(config.root, deps.telemetry);
+  const corpus = selectCorpusWriter(config.root, { runner }, deps.corpus);
   const started = now();
 
   const category = args.checks ?? "all";
@@ -322,6 +325,11 @@ export async function runGate(
       { requested: category, available: specs.map((s) => ({ name: s.name, category: s.category })) }
     );
   }
+
+  // The preflight ACCEPTED — `active` begins HERE, before the check/budget
+  // loop, because an exhausted budget below still emits a row with zero checks
+  // executed. Everything above this line is `not-started` and emits nothing.
+  const emission = startEmission(telemetry);
 
   // Sequential on purpose: checks share the CPU and, more importantly, the
   // build cache. Running tsc and vitest concurrently makes both slower.
@@ -392,7 +400,7 @@ export async function runGate(
   };
   result.bytes_returned = JSON.stringify(result).length;
 
-  await telemetry.record({
+  await emission.emit({
     tool: "gate",
     invocation_id: invocationId,
     bytes_raw: rawBytes,

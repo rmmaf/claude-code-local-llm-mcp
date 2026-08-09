@@ -16,7 +16,13 @@ import {
 } from "../fs-safety.js";
 import { log } from "../logger.js";
 import { resolveModel } from "../selection.js";
-import { createTelemetryWriter, type TelemetryWriter } from "../telemetry.js";
+import {
+  innerGateWriters,
+  selectTelemetryWriter,
+  startEmission,
+  type EmissionHandle,
+} from "../cost/emission.js";
+import type { TelemetryWriter } from "../telemetry.js";
 import { runGate, type CheckReport, type GateResult } from "./gate.js";
 import {
   normalizeRel,
@@ -353,7 +359,8 @@ export async function runRepair(
   deps: RepairDeps = {}
 ): Promise<RepairResult> {
   const now = deps.now ?? (() => Date.now());
-  const telemetry = deps.telemetry ?? createTelemetryWriter(config.root);
+  // Through the pinned emission wrapper — same fallback; see `src/cost/emission.ts`.
+  const telemetry = selectTelemetryWriter(config.root, deps.telemetry);
   const started = now();
 
   const files = [...new Set(args.files.map(normalizeRel))];
@@ -421,7 +428,10 @@ export async function runRepair(
    * from the responses the instrumentation exists to expose.
    */
   const attempts: RecordedAttempt[] = [];
-  const telemetryState = { written: false };
+  // The preflight ACCEPTED — everything above (caps, model resolution, the
+  // snapshot) is `not-started` and a refusal there emits nothing, not even an
+  // abort row. `active` begins here and owns exactly one emission.
+  const emission = startEmission(telemetry);
 
   try {
     // `contextTokens` is NOT forwarded: each round resolves its own model and
@@ -430,7 +440,6 @@ export async function runRepair(
     // the probe entirely.
     return await repairLoop(args, config, deps, {
       now,
-      telemetry,
       started,
       snapshots,
       files,
@@ -439,29 +448,27 @@ export async function runRepair(
       fingerprintBefore,
       progress,
       attempts,
-      telemetryState,
+      emission,
     });
   } catch (error) {
     // The responses this abort would otherwise erase. Written before the
     // rollback, because the rollback can throw too, and a row that says only
     // "aborted" is still a row: B16 needs to know the request happened.
-    if (!telemetryState.written) {
-      telemetryState.written = true;
-      await telemetry.record({
-        tool: "repair",
-        invocation_id: invocationId,
-        // No verdict was produced, so there are no suppression figures to claim.
-        bytes_raw: 0,
-        bytes_returned: 0,
-        turns_collapsed: 0,
-        latency_ms: now() - started,
-        detail: {
-          aborted: true,
-          stopped_because: "aborted",
-          attempts: attempts.map(({ round, ...a }) => ({ round, ...a })),
-        },
-      });
-    }
+    // `abort` is a no-op when the normal row was already claimed.
+    await emission.abort({
+      tool: "repair",
+      invocation_id: invocationId,
+      // No verdict was produced, so there are no suppression figures to claim.
+      bytes_raw: 0,
+      bytes_returned: 0,
+      turns_collapsed: 0,
+      latency_ms: now() - started,
+      detail: {
+        aborted: true,
+        stopped_because: "aborted",
+        attempts: attempts.map(({ round, ...a }) => ({ round, ...a })),
+      },
+    });
     // The tool's contract is that a failed loop leaves the tree as it found it.
     // Without this, anything thrown after the model has already written — a
     // locked file, a check config the repair itself invalidated — would hand the
@@ -521,7 +528,6 @@ export async function runRepair(
 
 interface RepairContext {
   now: () => number;
-  telemetry: TelemetryWriter;
   started: number;
   snapshots: Snapshot[];
   files: string[];
@@ -538,8 +544,11 @@ interface RepairContext {
   progress: { checksRan: boolean };
   /** Owned by `runRepair` so an abort cannot discard it — see the declaration. */
   attempts: RecordedAttempt[];
-  /** Flipped by whichever path writes the row, so an abort cannot double-write. */
-  telemetryState: { written: boolean };
+  /**
+   * The one `active` handle — write-once, so an abort cannot double-write.
+   * Owned by `runRepair`; the wrapper (`src/cost/emission.ts`) is its home.
+   */
+  emission: EmissionHandle;
 }
 
 /** One model request, tagged with the round it belongs to. */
@@ -551,8 +560,8 @@ async function repairLoop(
   deps: RepairDeps,
   ctx: RepairContext
 ): Promise<RepairResult> {
-  const { now, telemetry, started, snapshots, files, invocationId, vcs, fingerprintBefore } = ctx;
-  const { telemetryState } = ctx;
+  const { now, started, snapshots, files, invocationId, vcs, fingerprintBefore } = ctx;
+  const { emission } = ctx;
   /**
    * Every model REQUEST, tagged with its round. Deliberately NOT part of
    * `RoundTrace`, which is returned to Claude and where this project's whole
@@ -593,15 +602,14 @@ async function repairLoop(
 
   const gateDeps = {
     ...(deps.processRunner ? { processRunner: deps.processRunner } : {}),
-    // The inner gate runs must not each write a telemetry row; the repair call
-    // is the unit of work, and double-counting would inflate the saving.
-    telemetry: { record: async () => {} },
-    // Nor may they each archive a corpus entry. This loop runs the gate once per
-    // round over what is substantially ONE failure, so capturing every pass
-    // would fill the corpus with near-duplicates of a single task and quietly
-    // weight it toward whatever `repair` was slowest to fix. The capture point
-    // is the caller's own gate run, which is where a distinct failure appears.
-    corpus: { capture: async () => null },
+    // The EXACT no-op pair from the pinned wrapper: the inner gate runs must
+    // not each write a telemetry row (the repair call is the unit of work, and
+    // double-counting would inflate the saving) nor each archive a corpus
+    // entry (near-duplicates of ONE failure would weight the corpus toward
+    // whatever `repair` was slowest to fix; the capture point is the caller's
+    // own gate run). NEVER `null`/`undefined` — `runGate` would fall back to
+    // the REAL writers. See `innerGateWriters` in `src/cost/emission.ts`.
+    ...innerGateWriters(),
     // And they must not each shell out to git for `coverage.changed_files`. The
     // loop edits the tree it would be probing, once per round, out of the
     // caller's time budget — to answer a question this call's own caller
@@ -910,10 +918,9 @@ async function repairLoop(
   };
   result.bytes_returned = JSON.stringify(result).length;
 
-  // Claimed before the write, so `runRepair`'s abort path cannot add a second
-  // row if anything below this line throws.
-  telemetryState.written = true;
-  await telemetry.record({
+  // `emit` claims before the write, so `runRepair`'s abort path cannot add a
+  // second row if anything below this line throws.
+  await emission.emit({
     tool: "repair",
     invocation_id: invocationId,
     bytes_raw: rawBytes,
