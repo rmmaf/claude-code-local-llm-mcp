@@ -2558,6 +2558,171 @@ describe("the B12 harness", () => {
     expect(registrationGuard(root, "run-g", manifestBytes).join(" ")).toMatch(/does not preserve HEAD's content as a byte prefix/);
   }, 30_000);
 
+  describe("policy blob provenance — the seal is {repo, commit, path, sha256} and delivery reads the object store", () => {
+    // CHANNEL 5 says "committed out-of-repo blob"; the previous schema sealed
+    // a live file plus a separate hash, which is committed NOWHERE — editing
+    // file and hash together satisfied it. The resolver now reads
+    // `git cat-file blob <commit>:<path>` from the policy repo, so every
+    // refusal below is a leg of that provenance: shape, containment,
+    // transport, encoding, and the sealed hash itself.
+    const sh = promisify(execFile);
+    const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+    const sha = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
+
+    const TREATMENT = "You are the treatment arm. Delegate mechanical work.\n";
+    const CONTROL = "You are the control arm. Work alone.\n";
+    // 0xff is valid in no UTF-8 sequence, so the utf8 round-trip cannot be exact.
+    const BINARY = Buffer.from([0x59, 0x6f, 0xff, 0x0a]);
+
+    const policyRepo = async () => {
+      const dir = tempRoot();
+      await git(dir, "init", "-q");
+      await git(dir, "config", "user.name", "policy-oracle");
+      await git(dir, "config", "user.email", "policy@example.invalid");
+      await git(dir, "config", "core.autocrlf", "false");
+      await git(dir, "config", "commit.gpgsign", "false");
+      await fs.writeFile(path.join(dir, "treatment.md"), TREATMENT, "utf8");
+      await fs.writeFile(path.join(dir, "control.md"), CONTROL, "utf8");
+      await fs.writeFile(path.join(dir, "binary.md"), BINARY);
+      await git(dir, "add", "-A");
+      await git(dir, "commit", "-q", "-m", "the policy pair");
+      const commit = await git(dir, "rev-parse", "HEAD");
+      return { dir, commit };
+    };
+
+    const manifestFor = (repo: string, commit: string, treatmentOver: Record<string, unknown> = {}) => ({
+      pinned: {
+        policyBlobs: {
+          treatment: { repo, commit, path: "treatment.md", sha256: sha(TREATMENT), ...treatmentOver },
+          control: { repo, commit, path: "control.md", sha256: sha(CONTROL) },
+        },
+      },
+    });
+
+    it("resolves a clean seal to the exact committed bytes, provenance on the blob", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit), "treatment");
+      expect(why).toBeNull();
+      expect(blob).not.toBeNull();
+      expect(blob!.content).toBe(TREATMENT);
+      expect(blob!.sha256).toBe(sha(TREATMENT));
+      expect(blob!.commit).toBe(commit);
+      expect(blob!.path).toBe("treatment.md");
+      expect(blob!.declaredPath).toBe(`${dir}@${commit}:treatment.md`);
+      expect(path.isAbsolute(blob!.repoDir)).toBe(true);
+    }, 30_000);
+
+    it("refuses a sealed sha the delivered bytes do not hash to", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit, { sha256: "f".repeat(64) }), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/moved under the seal/);
+    }, 30_000);
+
+    it("refuses a commit the transported clone does not carry", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, "deadbeef".repeat(5)), "treatment");
+      expect(commit).not.toBe("deadbeef".repeat(5));
+      expect(blob).toBeNull();
+      expect(why).toMatch(/not reachable in the treatment policy repo/);
+    }, 30_000);
+
+    it("refuses a path absent from the sealed commit", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit, { path: "nope.md" }), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/nope\.md is not readable/);
+    }, 30_000);
+
+    it("refuses an abbreviated commit — provenance pins the full id", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit.slice(0, 12)), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/FULL 40-hex commit/);
+    }, 30_000);
+
+    it("refuses a traversing path — git object paths have one spelling", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit, { path: "../escape.md" }), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/one spelling/);
+    }, 30_000);
+
+    it("refuses a policy repo inside the repository under test — CHANNEL 5's wall", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(".", commit), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/inside the repository under test/);
+    }, 30_000);
+
+    it("names the transport step when the locator resolves to nothing", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { commit } = await policyRepo();
+      const missing = path.join(tempRoot(), "never-cloned");
+      const { blob, why } = findPolicyBlob(manifestFor(missing, commit), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/transport the hashed policy bundle/);
+    }, 30_000);
+
+    it("refuses a shallow clone — an object store that cannot prove its history", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const dest = path.join(tempRoot(), "shallow-clone");
+      // A plain local-path clone ignores --depth; the file:// form makes git
+      // honour it, which is exactly the clone a careless transport produces.
+      const url = "file://" + (path.sep === "/" ? dir : "/" + dir.replace(/\\/g, "/"));
+      await sh("git", ["clone", "-q", "--depth", "1", url, dest]);
+      const { blob, why } = findPolicyBlob(manifestFor(dest, commit), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/SHALLOW clone/);
+    }, 30_000);
+
+    it("refuses bytes that are not UTF-8 text — argv delivery cannot carry them exactly", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(
+        manifestFor(dir, commit, { path: "binary.md", sha256: sha(BINARY) }),
+        "treatment"
+      );
+      expect(blob).toBeNull();
+      expect(why).toMatch(/not valid UTF-8 text/);
+    }, 30_000);
+
+    it("resolving one arm still requires the OTHER arm's declaration — a pair or nothing", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const m = manifestFor(dir, commit) as { pinned: { policyBlobs: Record<string, unknown> } };
+      delete m.pinned.policyBlobs.control;
+      const { blob, why } = findPolicyBlob(m, "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/policyBlobs\.control/);
+      const none = findPolicyBlob({ pinned: {} }, "treatment");
+      expect(none.blob).toBeNull();
+      expect(none.why).toMatch(/BOTH arms/);
+    }, 30_000);
+
+    it("the manifest gap sweep holds the seal's shape without touching git", async () => {
+      const { manifestDeclarationGaps } = await import("../scripts/b12-run.mjs");
+      const gaps = manifestDeclarationGaps({
+        pinned: {
+          policyBlobs: {
+            treatment: { repo: "../b12-policy", commit: "abc", path: "t.md", sha256: "d" },
+            control: null,
+          },
+        },
+      });
+      expect(gaps.some((g) => /policyBlobs\.treatment must pin a FULL 40-hex commit/.test(g))).toBe(true);
+      expect(gaps.some((g) => /policyBlobs\.control must be a .*provenance tuple/.test(g))).toBe(true);
+    });
+  });
+
   it("the two admissionRule-7 implementations agree, case for case", async () => {
     // The harness re-implements the scope grammar because it must run before
     // dist/ exists. Two copies that are never compared is this project's
@@ -3237,6 +3402,10 @@ describe("the B12 harness", () => {
         settingsSha256s: { settings: null, settingsLocal: null },
         installedCharsProbe: "evidence/probe.json",
         installedCharsProbeSha256: "probe-sha",
+        policyBlobs: {
+          treatment: { repo: "../b12-policy", commit: "a".repeat(40), path: "treatment.md", sha256: "b".repeat(64) },
+          control: { repo: "../b12-policy", commit: "a".repeat(40), path: "control.md", sha256: "c".repeat(64) },
+        },
       },
       tasks: [
         {
@@ -3322,6 +3491,7 @@ describe("the B12 harness", () => {
         ["settingsSha256s", /settings and settingsLocal/],
         ["installedCharsProbe", /no provenance/],
         ["installedCharsProbeSha256", /not provenance/],
+        ["policyBlobs", /policyBlobs.*per-arm policy blobs/],
       ];
       for (const [field, expected] of pinnedCases) {
         const m = completeManifest();

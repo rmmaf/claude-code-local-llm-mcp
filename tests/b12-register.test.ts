@@ -104,6 +104,10 @@ function manifestOf(runId: string, prefix: string): Record<string, unknown> {
       settingsSha256s: { settings: null, settingsLocal: null },
       installedCharsProbe: "evidence/probe.json",
       installedCharsProbeSha256: "e".repeat(64),
+      policyBlobs: {
+        treatment: { repo: "../b12-policy", commit: "f".repeat(40), path: "treatment.md", sha256: "1".repeat(64) },
+        control: { repo: "../b12-policy", commit: "f".repeat(40), path: "control.md", sha256: "2".repeat(64) },
+      },
       perArmTimeoutMs: 2_700_000,
       extraArgs: [],
     },

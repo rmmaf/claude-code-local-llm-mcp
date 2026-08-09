@@ -183,6 +183,34 @@ export function claimObsDir(
 ): { dir: string; attempt: number };
 
 /**
+ * The per-arm policy blob resolved from GIT PROVENANCE: the manifest seals
+ * `{repo, commit, path, sha256}` per arm and delivery reads the object store
+ * (`git -C <repo> cat-file blob <commit>:<path>`) — no live file exists to
+ * move mid-arm. Refusals name the failing leg: tuple shape, containment
+ * (a repo inside the repository under test), transport (missing repo, shallow
+ * clone, unreachable commit or path), non-UTF-8 bytes, or the sealed hash.
+ */
+export function findPolicyBlob(
+  manifest: unknown,
+  arm: "treatment" | "control"
+): {
+  blob: {
+    /** The locator as sealed — relative locators resolve against the repo under test's root. */
+    repo: string;
+    /** The locator resolved to an absolute directory. */
+    repoDir: string;
+    commit: string;
+    path: string;
+    sha256: string;
+    /** The delivered bytes, decoded — refused earlier unless the round-trip is exact. */
+    content: string;
+    /** `<repo>@<commit>:<path>` — the display form for records and refusals. */
+    declaredPath: string;
+  } | null;
+  why: string | null;
+};
+
+/**
  * The probe artifact must be committed evidence: repo-relative under
  * `evidence/`, present in HEAD, and byte-identical to HEAD's blob. Closes the
  * reviewed trust boundary where a fabricated working-tree JSON could calibrate

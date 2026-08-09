@@ -643,6 +643,22 @@ export function manifestDeclarationGaps(manifest) {
     str(pinned.installedCharsProbeSha256),
     "pinned.installedCharsProbeSha256 is absent — required, not compared-if-present: a self-asserted probe file is not provenance"
   );
+  // Artifact 1: "the sha256 of ... the out-of-repo per-arm policy blobs" —
+  // sealed as git provenance, `{repo, commit, path, sha256}` per arm (the
+  // tuple schema is this harness's; the required content is the frozen
+  // text's). SHAPE only here — this sweep is pure, so reachability of the
+  // sealed object belongs to `findPolicyBlob`, which may run git.
+  if (pinned.policyBlobs === null || typeof pinned.policyBlobs !== "object") {
+    need(
+      false,
+      'pinned.policyBlobs is absent — artifact 1: "the sha256 of ... the out-of-repo per-arm policy blobs"; voidConditions 12 voids any record without its arm\'s blob hash'
+    );
+  } else {
+    for (const armName of ["treatment", "control"]) {
+      const parsed = parsePolicyBlobSpec(pinned.policyBlobs[armName], armName);
+      if (!parsed.ok) need(false, parsed.why);
+    }
+  }
   // The pair list is VALIDATED, not merely present — a fourth adversarial
   // round found `Array.isArray` letting an empty or malformed list through.
   // Fewer than 3 pairs can never validate (`voidConditions` 21: "fewer than 3
@@ -943,6 +959,42 @@ export function committedEvidenceCheck(declaredPath) {
 }
 
 /**
+ * One arm's policy-blob declaration parsed against the seal grammar, PURE — no
+ * git, no disk — so `manifestDeclarationGaps` can hold the shape in the
+ * pre-registration window while `findPolicyBlob` holds the object store.
+ */
+function parsePolicyBlobSpec(raw, arm) {
+  const bad = (why) => ({ ok: false, why: `pinned.policyBlobs.${arm} ${why}` });
+  if (raw === null || typeof raw !== "object") {
+    return bad(
+      'must be a {repo, commit, path, sha256} provenance tuple — artifact 1: "the sha256 of ... the out-of-repo per-arm policy blobs", and a bare path seals no history for that hash to live in'
+    );
+  }
+  const { repo, commit, path: blobPath, sha256 } = raw;
+  if (typeof repo !== "string" || repo.length === 0) return bad("declares no repo — the policy repository's locator");
+  if (typeof commit !== "string" || !/^[0-9a-f]{40}$/.test(commit)) {
+    return bad(
+      `must pin a FULL 40-hex commit (got ${JSON.stringify(commit ?? null)}) — an abbreviation can become ambiguous as the policy repo grows`
+    );
+  }
+  if (typeof blobPath !== "string" || blobPath.length === 0) return bad("declares no path inside the policy repo");
+  if (
+    blobPath.includes("\\") ||
+    blobPath.startsWith("/") ||
+    /^[A-Za-z]:/.test(blobPath) ||
+    blobPath.split("/").some((s) => s === "" || s === "." || s === "..")
+  ) {
+    return bad(
+      `path ${JSON.stringify(blobPath)} is not a plain forward-slash path relative to the policy repo root — git object paths have one spelling`
+    );
+  }
+  if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) {
+    return bad("must carry the blob's 64-hex sha256 — required, not compared-if-present (design.artifacts 1)");
+  }
+  return { ok: true, spec: { repo, commit, path: blobPath, sha256 } };
+}
+
+/**
  * The per-arm policy blob, or why not. `operatorConfound` CHANNEL 5's resolution:
  * "the policy is delivered per arm through `--append-system-prompt` from a
  * committed out-of-repo blob whose sha256 is recorded per arm" — and
@@ -951,15 +1003,27 @@ export function committedEvidenceCheck(declaredPath) {
  * is refused before anything is spent. BOTH arms must be declared even though
  * one is resolved: a pair whose other arm cannot run was never a pair.
  *
- * The property names (`policyBlobs`, `policyBlobSha256s`) are THIS HARNESS'S
- * schema, not frozen text. What the frozen text fixes is the content: the
- * manifest carries "the sha256 of ... the out-of-repo per-arm policy blobs"
- * (`design.artifacts` 1), so the hashes are REQUIRED, not compared-if-present —
- * the `mcpConfigSha256` shape.
+ * "COMMITTED out-of-repo blob" is taken at its word: the policy lives in its
+ * OWN git repository and the manifest seals `{repo, commit, path, sha256}` per
+ * arm — the provenance model `committedEvidenceCheck` applies to the probe,
+ * pointed at a foreign object store. The previous schema (a live file path
+ * plus a separate hash) was committed NOWHERE: the seal could be satisfied by
+ * editing file and hash together, and nothing tied the bytes an arm received
+ * to bytes anyone reviewed. Delivery now reads the object store directly
+ * (`git -C <repo> cat-file blob <commit>:<path>`), so no working-tree file
+ * exists to move mid-arm at all; the sha256 stays REQUIRED and is re-verified
+ * against the delivered bytes (`design.artifacts` 1).
+ *
+ * Transport is part of the check: pushing the repository under test does NOT
+ * carry `../b12-policy`, so the run machine receives the policy repo as a
+ * hashed git bundle (or its own remote) BEFORE the probes and clones it to
+ * the manifest's locator. A missing repo names that step; a SHALLOW clone is
+ * refused because an object store that cannot prove its history cannot prove
+ * the sealed commit either.
  */
-function findPolicyBlob(manifest, arm) {
+export function findPolicyBlob(manifest, arm) {
   const blobs = manifest.pinned?.policyBlobs;
-  if (!blobs || typeof blobs.treatment !== "string" || typeof blobs.control !== "string") {
+  if (!blobs || typeof blobs !== "object") {
     return {
       blob: null,
       why:
@@ -968,30 +1032,108 @@ function findPolicyBlob(manifest, arm) {
         "so a manifest without blobs cannot produce a compliant observation",
     };
   }
-  const shas = manifest.pinned?.policyBlobSha256s;
-  if (!shas || typeof shas.treatment !== "string" || typeof shas.control !== "string") {
+  // BOTH arms parse before EITHER resolves: a pair whose other arm cannot run
+  // was never a pair.
+  const specs = {};
+  for (const armName of ["treatment", "control"]) {
+    const parsed = parsePolicyBlobSpec(blobs[armName], armName);
+    if (!parsed.ok) return { blob: null, why: parsed.why };
+    specs[armName] = parsed.spec;
+  }
+  const spec = specs[arm];
+  const repoDir = path.resolve(REPO, spec.repo);
+  // "The delegation policy leaves the repository under test entirely" (CHANNEL
+  // 5). A policy repo resolving INSIDE this repository — which contains every
+  // `.b12/` arm worktree — is in-repo policy wearing an out-of-repo name.
+  const relToRepo = path.relative(REPO, repoDir);
+  if (!relToRepo.startsWith("..") && !path.isAbsolute(relToRepo)) {
+    return {
+      blob: null,
+      why: `the ${arm} policy repo resolves to ${repoDir}, inside the repository under test — the policy must leave it entirely (CHANNEL 5)`,
+    };
+  }
+  if (!existsSync(repoDir)) {
     return {
       blob: null,
       why:
-        "manifest.pinned.policyBlobSha256s must carry BOTH arms' hashes — " +
-        'design.artifacts 1: "the sha256 of ... the out-of-repo per-arm policy blobs"; required, not compared-if-present',
+        `the ${arm} policy repo ${spec.repo} resolves to ${repoDir}, which does not exist — ` +
+        "transport the hashed policy bundle and clone it there BEFORE the probes; pushing the repository under test does not carry it",
     };
   }
-  const declared = blobs[arm];
-  const file = path.isAbsolute(declared) ? declared : path.join(REPO, declared);
-  if (!existsSync(file)) return { blob: null, why: `policy blob for ${arm} points at ${file}, which does not exist` };
-  const content = readFileSync(file, "utf8");
-  const got = sha256File(file);
-  if (got !== shas[arm]) {
-    return { blob: null, why: `policy blob (${arm}) sha256 ${got} != pinned ${shas[arm]} — the policy moved under the run` };
+  const shallow = run("git", ["-C", repoDir, "rev-parse", "--is-shallow-repository"]);
+  if (shallow.code !== 0) {
+    return {
+      blob: null,
+      why: `the ${arm} policy repo at ${repoDir} is not a git repository (${(shallow.err.trim() || shallow.out.trim()).slice(0, 200)}) — the seal is git provenance, so delivery must read a git object store`,
+    };
   }
-  return { blob: { path: file, declaredPath: declared, sha256: got, content }, why: null };
+  if (shallow.out.trim() === "true") {
+    return {
+      blob: null,
+      why: `the ${arm} policy repo at ${repoDir} is a SHALLOW clone — an object store that cannot prove its history cannot prove the sealed commit; clone the full bundle`,
+    };
+  }
+  const commitExists = run("git", ["-C", repoDir, "cat-file", "-e", `${spec.commit}^{commit}`]);
+  if (commitExists.code !== 0) {
+    return {
+      blob: null,
+      why: `sealed commit ${spec.commit} is not reachable in the ${arm} policy repo at ${repoDir} — the transported clone does not carry the sealed history`,
+    };
+  }
+  // RAW BYTES, not the utf8-decoding `run` helper: the sealed sha256 is over
+  // the blob's bytes, and hashing a re-encoding would let a byte the decoder
+  // repaired slip between the seal and the hash.
+  const shown = spawnSync("git", ["-C", repoDir, "cat-file", "blob", `${spec.commit}:${spec.path}`], { maxBuffer: 1 << 28 });
+  if (shown.status !== 0) {
+    const detail = (shown.stderr ? shown.stderr.toString("utf8").trim() : "") || String(shown.error?.code ?? "unknown error");
+    return {
+      blob: null,
+      why: `${spec.commit.slice(0, 12)}:${spec.path} is not readable in the ${arm} policy repo (${detail.slice(0, 200)})`,
+    };
+  }
+  const bytes = shown.stdout ?? Buffer.alloc(0);
+  const content = bytes.toString("utf8");
+  if (!Buffer.from(content, "utf8").equals(bytes)) {
+    return {
+      blob: null,
+      why: `the ${arm} policy blob at ${spec.commit.slice(0, 12)}:${spec.path} is not valid UTF-8 text — delivery is an argv string (--append-system-prompt), which cannot carry these bytes exactly`,
+    };
+  }
+  const got = createHash("sha256").update(bytes).digest("hex");
+  if (got !== spec.sha256) {
+    return { blob: null, why: `policy blob (${arm}) sha256 ${got} != sealed ${spec.sha256} — the policy moved under the seal` };
+  }
+  return {
+    blob: {
+      repo: spec.repo,
+      repoDir,
+      commit: spec.commit,
+      path: spec.path,
+      sha256: got,
+      content,
+      declaredPath: `${spec.repo}@${spec.commit}:${spec.path}`,
+    },
+    why: null,
+  };
 }
 
 function resolvePolicyBlob(manifest, arm) {
   const { blob, why } = findPolicyBlob(manifest, arm);
   if (blob === null) refuse(why);
   return blob;
+}
+
+/**
+ * The live re-read for the pre/post instruction-hash pair: the same object,
+ * fetched again, hashed again. Git objects are immutable, so a drift here does
+ * not mean a FILE moved — none exists — it means the OBJECT STORE did (repo
+ * deleted, replaced, or pruned mid-arm), which breaks `voidConditions` 12's
+ * one-hash-per-record requirement exactly the way a moved file did.
+ */
+function policyBlobLiveSha256(blob) {
+  const shown = spawnSync("git", ["-C", blob.repoDir, "cat-file", "blob", `${blob.commit}:${blob.path}`], { maxBuffer: 1 << 28 });
+  if (shown.status !== 0 || shown.stdout == null) return null;
+  return createHash("sha256").update(shown.stdout).digest("hex");
 }
 
 /**
@@ -1692,7 +1834,11 @@ function preflight(args) {
     for (const arm of ["treatment", "control"]) {
       const { blob, why } = findPolicyBlob(manifest, arm);
       blobs[arm] = blob;
-      check(`policy blob resolves against its pin (${arm})`, blob !== null, blob !== null ? blob.sha256.slice(0, 12) : why);
+      check(
+        `policy blob resolves against its seal (${arm})`,
+        blob !== null,
+        blob !== null ? `${blob.sha256.slice(0, 12)} @ ${blob.declaredPath}` : why
+      );
     }
 
     const { snapshot: memSnap, why: memWhy } = findMemorySnapshot(manifest);
@@ -1956,17 +2102,17 @@ async function observe(args, pilotMode = false) {
   const sessionId = mintSessionId(manifestSha, runId, task.id, arm);
 
   // "The delegation policy leaves the repository under test entirely" (CHANNEL
-  // 5). The repository under test is THIS worktree at the task's base commit —
-  // a blob physically inside it, or committed at the same relative path in the
-  // base tree, is in-repo policy wearing an out-of-repo name.
+  // 5). `findPolicyBlob` already refused a policy repo resolving inside the
+  // repository under test — which contains every `.b12/` arm worktree — so
+  // this re-asserts the same wall against THIS arm's just-created tree, the
+  // first moment the tree exists to compare against. The previous schema also
+  // checked the base tree for a file at the blob's relative path; with
+  // delivery reading a foreign object store there is no path in the worktree
+  // for the base commit to shadow, so that check has nothing left to guard.
   {
-    const rel = path.relative(treeDir, policyBlob.path);
+    const rel = path.relative(treeDir, policyBlob.repoDir);
     if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
-      refuse(`the ${arm} policy blob resolves INSIDE the arm's worktree (${policyBlob.path}) — the policy must leave the repository under test entirely`);
-    }
-    const inBaseTree = path.join(treeDir, policyBlob.declaredPath);
-    if (!path.isAbsolute(policyBlob.declaredPath) && existsSync(inBaseTree)) {
-      refuse(`the base commit carries ${policyBlob.declaredPath} inside the worktree — the policy must not exist in the tree the arms run in`);
+      refuse(`the ${arm} policy repo resolves INSIDE the arm's worktree (${policyBlob.repoDir}) — the policy must leave the repository under test entirely`);
     }
   }
 
@@ -1998,7 +2144,7 @@ async function observe(args, pilotMode = false) {
     settings: shaOrNull(path.join(treeDir, ".claude", "settings.json")),
     settingsLocal: shaOrNull(path.join(treeDir, ".claude", "settings.local.json")),
     mcpConfigPassed: mcp ? shaOrNull(mcp.path) : null,
-    policyBlob: shaOrNull(policyBlob.path),
+    policyBlob: policyBlobLiveSha256(policyBlob),
     memory: memorySha,
     // The seventh is not measurable from outside the session — a registered
     // limit (FINDINGS.md F24), recorded as a named fact instead of a hash that
@@ -2268,7 +2414,7 @@ async function observe(args, pilotMode = false) {
      * compares a pair's "MCP-config hashes" and the frozen text does not say
      * which of the two facts it means; see the note at `instructionHashesAt`. */
     mcpConfigPinned: manifest.pinned?.mcpConfigSha256 ?? null,
-    policyBlob: { path: policyBlob.declaredPath, sha256: policyBlob.sha256 },
+    policyBlob: { repo: policyBlob.repo, commit: policyBlob.commit, path: policyBlob.path, sha256: policyBlob.sha256 },
     /** ONE `O_o` with provenance on the treatment arm; a NAMED absence on the
      * control arm. Never a defaulted number — see PREMISES.md § B12. */
     installedChars,
