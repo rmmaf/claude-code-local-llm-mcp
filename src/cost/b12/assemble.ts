@@ -40,6 +40,7 @@ import { rateKey } from "../rates.js";
 import type { Transcript } from "../transcript.js";
 import { aggregate } from "./aggregate.js";
 import { runCoverage } from "./coverage.js";
+import { fileScopeViolations } from "./filescope.js";
 import { computeTerms } from "./terms.js";
 import type {
   ArchiveCheck,
@@ -975,6 +976,21 @@ function buildArchiveChecks(ctx: ChecksContext): void {
       : versionDrifted.length > 0
         ? `${versionDrifted.length} observation(s) drifted from the pin (a version boundary splits the run into blocks — reported, not pooled)`
         : "every observation matches the pinned version and binary sha; DISABLE_AUTOUPDATER is asserted by the harness before each observation"
+  );
+
+  // admissionRule 7 — every declared scope clear of the instrument set, over
+  // EVERY manifest task: "no manifest task's file scope" is the whole
+  // pre-registered list, not the admitted twenty. The harness carries the
+  // registration-time twin; this is the scorer-side replay of the same rule.
+  const scopeViolations = fileScopeViolations(
+    archive.manifest.tasks.map((t) => ({ id: t.id, fileScope: t.fileScope }))
+  );
+  push(
+    "admissionRule 7 — file scopes clear of the instrument",
+    scopeViolations.length > 0,
+    scopeViolations.length > 0
+      ? scopeViolations.slice(0, 5).join("; ") + (scopeViolations.length > 5 ? "; …" : "")
+      : "every declared scope parses under the grammar and none intersects src/cost/**, the walk script, evidence/**, or the governance documents"
   );
 
   // voidConditions 8 — the measured cap, and BOTH BRACKETS. LIVE since F23's

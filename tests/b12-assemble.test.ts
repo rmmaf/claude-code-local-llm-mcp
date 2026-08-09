@@ -696,6 +696,27 @@ describe("the archive-level clauses — each fired and each held", () => {
     expect(check(noCeiling.result, "voidConditions 20").fired).toBe(true);
   });
 
+  it("admissionRule 7 sweeps EVERY manifest task's scope — coverage, grammar, and the not_started too", () => {
+    // NOT firing: the fixture default (src/tools/) is disjoint from the
+    // instrument set — that is why the default narrowed.
+    expect(check(assemble(archiveOf()).result, "admissionRule 7").fired).toBe(false);
+    // Firing on a task with NO observation: "no manifest task's file scope"
+    // is the whole pre-registered list, never only the admitted ones.
+    const notStarted = assemble(
+      archiveOf({ tasks: [taskOf("t1"), taskOf("t9", { fileScope: ["src/"] })], observations: [obsOf("t1")] })
+    );
+    const c = check(notStarted.result, "admissionRule 7");
+    expect(c.fired).toBe(true);
+    expect(c.detail).toMatch(/t9: file scope src\/ intersects the instrument set at src\/cost\/\*\*/);
+    // The grammar rejects what it cannot place, and coverage catches the
+    // rest: ancestry tricks, absolutes, Windows backslashes into a protected
+    // directory, and globs outside a trailing /**.
+    for (const scope of ["src/../src/cost/**", "/etc/passwd", "src\\cost\\", "src/*.ts", "evidence/"]) {
+      const out = assemble(archiveOf({ tasks: [taskOf("t1", { fileScope: [scope] })] }));
+      expect(check(out.result, "admissionRule 7").fired).toBe(true);
+    }
+  });
+
   it("voidConditions 8 fires on an absent, zero, negative or infinite cap — the firing half of the live predicate", () => {
     // Literally `!(Number.isFinite(cap) && cap > 0)`, plus a non-finite
     // bracket bound. The NOT-firing half is the default-archive oracle at the

@@ -726,7 +726,94 @@ export function manifestDeclarationGaps(manifest) {
       'declares no fileScope (artifact 1: "the file scope"; admissionRule 7\'s intersection check is vacuous over an undeclared scope)'
     );
   }
+  // admissionRule 7's OWN predicate, over EVERY declared scope — "no manifest
+  // task's file scope may intersect" the instrument set, and "no manifest
+  // task's" is the whole pre-registered list, not the admitted twenty. The
+  // scorer carries the TypeScript twin (`src/cost/b12/filescope.ts`); the
+  // conformance suite compares the two case-for-case.
+  for (const violation of fileScopeViolations(
+    (Array.isArray(manifest?.tasks) ? manifest.tasks : []).map((t) => ({
+      id: str(t?.id) ? t.id : "(unnamed)",
+      fileScope: Array.isArray(t?.fileScope) ? t.fileScope : null,
+    }))
+  )) {
+    gaps.push(violation);
+  }
   return gaps;
+}
+
+/** The instrument set admissionRule 7 protects, spelled once. */
+export const PROTECTED_SCOPES = [
+  "src/cost/**",
+  "scripts/session-token-walk.mjs",
+  "evidence/**",
+  "PREMISES.md",
+  "ROADMAP.md",
+  "DECISIONS.md",
+  "STATE.md",
+];
+
+/**
+ * admissionRule 7's grammar and intersection, the harness's copy. Exactly
+ * three accepted forms — literal file, directory prefix ending `/`, recursive
+ * suffix `/**` — with the prohibited shapes (drive, UNC, absolute) rejected
+ * BEFORE `\` normalizes to `/` and the terminal marker detached BEFORE the
+ * core segments are judged, so the lawful trailing `/` never reads as the
+ * empty segment the grammar forbids. `dir/` and `dir/**` cover alike ON
+ * PURPOSE. The scorer's TypeScript twin lives in `src/cost/b12/filescope.ts`;
+ * two copies exist because this file must run before `dist/` does, and the
+ * conformance suite is what keeps them from drifting.
+ */
+export function parseScopeEntry(raw) {
+  if (typeof raw !== "string" || raw.length === 0) return { ok: false, error: "not a non-empty string" };
+  if (/^[A-Za-z]:/.test(raw)) return { ok: false, error: `drive-qualified path: ${raw}` };
+  if (raw.startsWith("\\\\") || raw.startsWith("//")) return { ok: false, error: `UNC path: ${raw}` };
+  if (raw.startsWith("/") || raw.startsWith("\\")) return { ok: false, error: `absolute path: ${raw}` };
+  let s = raw.split("\\").join("/");
+  let kind = "file";
+  if (s.endsWith("/**")) {
+    kind = "recursive";
+    s = s.slice(0, -3);
+  } else if (s.endsWith("/")) {
+    kind = "dir";
+    s = s.slice(0, -1);
+  }
+  if (s === "") return { ok: false, error: `no core segments: ${raw}` };
+  const segments = s.split("/");
+  for (const seg of segments) {
+    if (seg === "") return { ok: false, error: `empty segment: ${raw}` };
+    if (seg === "." || seg === "..") return { ok: false, error: `dot segment: ${raw}` };
+    if (/[*?[\]{}]/.test(seg)) return { ok: false, error: `glob outside a trailing /**: ${raw}` };
+  }
+  return { ok: true, kind, segments };
+}
+
+export function scopesIntersect(a, b) {
+  const isPrefix = (x, y) => x.length <= y.length && x.every((seg, i) => seg === y[i]);
+  const covers = (x, y) => x.kind !== "file" && isPrefix(x.segments, y.segments);
+  if (covers(a, b) || covers(b, a)) return true;
+  return a.kind === "file" && b.kind === "file" && a.segments.length === b.segments.length && isPrefix(a.segments, b.segments);
+}
+
+export function fileScopeViolations(tasks) {
+  const out = [];
+  const protectedParsed = PROTECTED_SCOPES.map((p) => ({ raw: p, parsed: parseScopeEntry(p) }));
+  for (const task of tasks) {
+    if (task.fileScope === null || task.fileScope === undefined) continue;
+    for (const raw of task.fileScope) {
+      const parsed = parseScopeEntry(raw);
+      if (!parsed.ok) {
+        out.push(`task ${task.id}: file scope entry rejected by the grammar — ${parsed.error} (admissionRule 7)`);
+        continue;
+      }
+      for (const p of protectedParsed) {
+        if (p.parsed.ok && scopesIntersect(parsed, p.parsed)) {
+          out.push(`task ${task.id}: file scope ${String(raw)} intersects the instrument set at ${p.raw} (admissionRule 7)`);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**

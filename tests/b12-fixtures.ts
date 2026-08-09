@@ -608,7 +608,9 @@ export function taskOf(id: string, over: Partial<ManifestTask> = {}): ManifestTa
     verificationCommands: ["npx tsc --noEmit"],
     gateCategory: "types",
     repairMaxRounds: 3,
-    fileScope: ["src/"],
+    // NARROW on purpose (R2#3): `src/` covers `src/cost/**`, so the old
+    // default fired admissionRule 7 on every fixture archive.
+    fileScope: ["src/tools/"],
     ...over,
   };
 }

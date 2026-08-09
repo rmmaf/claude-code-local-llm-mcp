@@ -70,6 +70,22 @@ export function takeSnapshot(
 };
 
 /**
+ * admissionRule 7's grammar, the harness's copy — the scorer's twin is
+ * `src/cost/b12/filescope.ts` and the conformance suite compares the two.
+ */
+export const PROTECTED_SCOPES: string[];
+export function parseScopeEntry(
+  raw: unknown
+): { ok: true; kind: "file" | "dir" | "recursive"; segments: string[] } | { ok: false; error: string };
+export function scopesIntersect(
+  a: { kind: string; segments: string[] },
+  b: { kind: string; segments: string[] }
+): boolean;
+export function fileScopeViolations(
+  tasks: Array<{ id: string; fileScope: readonly unknown[] | null }>
+): string[];
+
+/**
  * The session id, unique per attempt by construction (nonce beside the
  * one-second stamp), and the cross-process claim that makes a same-task race
  * a refusal. The audit's clause-5 anchor requires the runlog join bijective.

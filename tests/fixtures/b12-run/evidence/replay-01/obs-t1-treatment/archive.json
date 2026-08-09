@@ -41,6 +41,6 @@
   "telemetryFound": false,
   "invocationIds": [],
   "sourceFiles": [{ "path": "src/example.ts", "sha256": "6666666666666666666666666666666666666666666666666666666666666666" }],
-  "declaredFileScope": ["src/"],
+  "declaredFileScope": ["src/example.ts"],
   "dirtyAtCapture": false
 }

@@ -2452,6 +2452,38 @@ describe("the B12 harness", () => {
     expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
   });
 
+  it("the two admissionRule-7 implementations agree, case for case", async () => {
+    // The harness re-implements the scope grammar because it must run before
+    // dist/ exists. Two copies that are never compared is this project's
+    // signature defect; this is the comparison.
+    const harness = await import("../scripts/b12-run.mjs");
+    const scorer = await import("../src/cost/b12/filescope.js");
+    const cases = [
+      "src/tools/",
+      "src/example.ts",
+      "src/cost/**",
+      "src/cost/",
+      "evidence/**",
+      "PREMISES.md",
+      "scripts/session-token-walk.mjs",
+      "src/../src/cost/**",
+      "src\\cost\\",
+      "C:\\repo\\src",
+      "\\\\server\\share",
+      "/absolute",
+      "a//b",
+      "src/*.ts",
+      "src/?",
+      "src",
+    ];
+    for (const raw of cases) {
+      expect({ raw, parsed: harness.parseScopeEntry(raw) }).toEqual({ raw, parsed: scorer.parseScopeEntry(raw) });
+    }
+    expect(harness.PROTECTED_SCOPES).toEqual([...scorer.PROTECTED_SCOPES]);
+    const tasks = cases.map((scope, i) => ({ id: `t${i}`, fileScope: [scope] }));
+    expect(harness.fileScopeViolations(tasks)).toEqual(scorer.fileScopeViolations(tasks));
+  });
+
   it("mints a UNIQUE session id per attempt and refuses a concurrent same-task acquire — in and across processes", async () => {
     // R7's finding, closed: `stamp()` has one-second resolution, so the old
     // hash input minted the SAME id for two attempts inside a second. The

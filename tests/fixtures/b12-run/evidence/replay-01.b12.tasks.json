@@ -27,7 +27,7 @@
       "verificationCommands": ["npx tsc --noEmit"],
       "gateCategory": "types",
       "repairMaxRounds": 3,
-      "fileScope": ["src/"]
+      "fileScope": ["src/example.ts"]
     }
   ]
 }
