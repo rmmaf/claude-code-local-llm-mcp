@@ -94,8 +94,24 @@ const ambiguousCount = (t: ObservationTerms): number =>
 const sumOf = <T>(xs: readonly T[], f: (x: T) => number): number =>
   xs.reduce((total, x) => total + f(x), 0);
 
-const savedAt = (t: ObservationTerms, horizon: "lo" | "hi"): number =>
-  horizon === "lo" ? t.sLo : t.sHi;
+/**
+ * The four priced forms a saving sum can be read at. The jackknife, the strata
+ * and the delivery figures take the narrow `"lo" | "hi"` union ON PURPOSE: the
+ * frozen design has no uncapped variant of any recomputation, stratum, hold or
+ * delivery figure — voidConditions 8 asks for ONE uncapped bracket beside the
+ * capped one — so a caller reaching for `"loUncapped"` there is refused at
+ * compile time rather than answered.
+ */
+export type PricedForm = "lo" | "hi" | "loUncapped" | "hiUncapped";
+
+const savedAt = (t: ObservationTerms, form: PricedForm): number =>
+  form === "lo"
+    ? t.sLo
+    : form === "hi"
+      ? t.sHi
+      : form === "loUncapped"
+        ? t.sLoUncapped
+        : t.sHiUncapped;
 
 /** Every credited row on these observations, paired with the index that owns it. */
 function creditedRows(
@@ -121,13 +137,15 @@ function creditedRows(
  * arithmetic written six times, and this repository has already watched two
  * numbers derived from one rule drift apart.
  *
- * `horizon: "lo"` sums `sLo` (every row at the write component alone);
- * `"hi"` sums `sHi` (the observed segment). Nothing is clamped and the result
- * may be negative — on the only live reading this project has, `gate` came back
+ * `form: "lo"` sums `sLo` (every row at the write component alone);
+ * `"hi"` sums `sHi` (the observed segment); the two uncapped forms sum the
+ * same rows priced without `clientTruncationCap`, and only the published
+ * `uncappedBracket` reads them. Nothing is clamped and the result may be
+ * negative — on the only live reading this project has, `gate` came back
  * at -467.1 units.
  */
-export function poolRatio(terms: readonly ObservationTerms[], horizon: "lo" | "hi"): number {
-  const S = sumOf(terms, (t) => savedAt(t, horizon));
+export function poolRatio(terms: readonly ObservationTerms[], form: PricedForm): number {
+  const S = sumOf(terms, (t) => savedAt(t, form));
   const A = sumOf(terms, (t) => t.aO);
   const O = sumOf(terms, (t) => t.oO);
   // An empty set has no ratio, and NaN propagates into every figure downstream.
@@ -288,12 +306,19 @@ function withoutLargestRow(
   });
   const chosen = rows[best];
   if (chosen === undefined) return [...terms];
+  // The row's contribution leaves EVERY sum it entered, so the jackknifed
+  // observation stays coherent across all four priced forms — the RANKING is
+  // capped (`units`/`unitsLo`), per the frozen bracket, and only the ranking.
   return terms.map((t, i) =>
     i !== chosen.owner
       ? t
-      : horizon === "lo"
-        ? { ...t, sLo: t.sLo - chosen.row.unitsLo }
-        : { ...t, sHi: t.sHi - chosen.row.units }
+      : {
+          ...t,
+          sLo: t.sLo - chosen.row.unitsLo,
+          sHi: t.sHi - chosen.row.units,
+          sLoUncapped: t.sLoUncapped - chosen.row.unitsLoUncapped,
+          sHiUncapped: t.sHiUncapped - chosen.row.unitsUncapped,
+        }
   );
 }
 
@@ -302,7 +327,12 @@ function reinstate(
   kept: readonly ObservationTerms[],
   excluded: readonly ObservationTerms[]
 ): ObservationTerms[] {
-  return [...kept, ...excluded.map((t) => ({ ...t, sLo: 0, sHi: 0 }))];
+  // All four priced forms go to zero together — "at no saving" is a statement
+  // about the observation, not about whichever form the caller reads next.
+  return [
+    ...kept,
+    ...excluded.map((t) => ({ ...t, sLo: 0, sHi: 0, sLoUncapped: 0, sHiUncapped: 0 })),
+  ];
 }
 
 /**
@@ -556,6 +586,14 @@ export function aggregate(input: AggregateInput): B12Result {
   const holdExcluded = admitted.filter((t) => ambiguousCount(t) > 0);
   const rLo = poolRatio(admitted, "lo");
   const rHi = poolRatio(admitted, "hi");
+  // voidConditions 8's second half: the SAME bracket over the SAME admitted
+  // set, priced without the truncation cap. Reported, deciding nothing — its
+  // presence in the artifact is the requirement, and `assemble`'s clause-8
+  // check fires on its absence or on a non-finite member.
+  const uncappedBracket = {
+    rLo: poolRatio(admitted, "loUncapped"),
+    rHi: poolRatio(admitted, "hiUncapped"),
+  };
   // Computed ONCE and read twice below. It used to be called twice, which is the
   // shape that lets a figure and the verdict built on it disagree.
   const fallSide = rHiPlus([...admitted, ...dropped], coverage);
@@ -630,6 +668,7 @@ export function aggregate(input: AggregateInput): B12Result {
     rLo,
     rHi,
     rHiPlus: fallSide,
+    uncappedBracket,
     coverage,
     recomputations,
     strata,

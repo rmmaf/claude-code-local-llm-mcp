@@ -6,8 +6,10 @@
  *
  * Every guard is shown FIRING and shown NOT firing — a check that cannot fail
  * is worse than no check (`DECISIONS.md`), and the F24 pass's oracle style is
- * kept: build ONE coherent default in which only the known-always-fired check
- * (clause 8 — `FINDINGS.md` F23) fires, then break exactly one thing per test.
+ * kept: build ONE coherent default on which NO archive-level check fires —
+ * clause 8 went LIVE with F23's repair and the default archive satisfies it —
+ * then break exactly one thing per test. The default's void is the
+ * ARITHMETIC's own (clause 3: one admitted observation against the frozen 20).
  */
 
 import { describe, expect, it } from "vitest";
@@ -314,15 +316,22 @@ const cfOf = (out: ReturnType<typeof assembleRun>, taskId: string, attempt = 1) 
 // ---------------------------------------------------------------------------
 
 describe("the default archive — one coherent value, and what fires on it", () => {
-  it("only clause 8 fires, and it names F23 — the artifact cannot yet carry two brackets", () => {
+  it("NO archive check fires — clause 8 is live and satisfied — and the void is the arithmetic's clause 3", () => {
     const out = assemble(archiveOf());
     const fired = out.result.archiveChecks.filter((c) => c.fired);
-    expect(fired.map((c) => c.clause)).toEqual(["voidConditions 8 — measured cap and both brackets"]);
-    expect(fired[0]!.detail).toMatch(/F23/);
-    // The archive-level void OVERRIDES the arithmetic's (clause 3 would have
-    // named the 1-of-20 count): a void the arithmetic cannot see is still a void.
+    expect(fired).toEqual([]);
+    // F23 repaired: clause 8 is a LIVE predicate now — present on the face,
+    // NOT fired, because the cap is pinned finite-positive and the artifact
+    // carries both brackets with four finite bounds.
+    const c8 = check(out.result, "voidConditions 8");
+    expect(c8.fired).toBe(false);
+    expect(c8.detail).toMatch(/both brackets/);
+    expect(Number.isFinite(out.result.uncappedBracket.rLo)).toBe(true);
+    expect(Number.isFinite(out.result.uncappedBracket.rHi)).toBe(true);
+    // With no archive-level void left standing, the verdict falls through to
+    // the ARITHMETIC: clause 3 names the 1-of-20 count.
     expect(out.result.verdict).toBe("void");
-    expect(out.result.voidClause).toMatch(/^voidConditions 8/);
+    expect(out.result.voidClause).toMatch(/^voidConditions 3/);
   });
 
   it("the single observation is scored, admitted, and its report fields are the hand-derived ones", () => {
@@ -927,6 +936,21 @@ describe("the archive-level clauses — each fired and each held", () => {
     expect(check(noVersion.result, "voidConditions 7").fired).toBe(true);
     const noCeiling = assemble(archiveOf({ pinned: { pacingCacheWriteShareCeiling: undefined } }));
     expect(check(noCeiling.result, "voidConditions 20").fired).toBe(true);
+  });
+
+  it("voidConditions 8 fires on an absent, zero, negative or infinite cap — the firing half of the live predicate", () => {
+    // Literally `!(Number.isFinite(cap) && cap > 0)`, plus a non-finite
+    // bracket bound. The NOT-firing half is the default-archive oracle at the
+    // top of this file; here the cap goes bad four ways and each one fires.
+    const absent = assemble(archiveOf({ pinned: { clientTruncationCap: undefined } }));
+    expect(check(absent.result, "voidConditions 8").fired).toBe(true);
+    expect(check(absent.result, "voidConditions 8").detail).toMatch(/NO measured clientTruncationCap/);
+    const zero = assemble(archiveOf({ pinned: { clientTruncationCap: 0 } }));
+    expect(check(zero.result, "voidConditions 8").fired).toBe(true);
+    const negative = assemble(archiveOf({ pinned: { clientTruncationCap: -1 } }));
+    expect(check(negative.result, "voidConditions 8").fired).toBe(true);
+    const infinite = assemble(archiveOf({ pinned: { clientTruncationCap: Number.POSITIVE_INFINITY } }));
+    expect(check(infinite.result, "voidConditions 8").fired).toBe(true);
   });
 });
 

@@ -426,6 +426,10 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     expect(cf.oO).toBeCloseTo(168, 9);
     expect(result.rLo).toBeCloseTo(-0.084, 12);
     expect(result.rHi).toBeCloseTo(-0.084, 12);
+    // The uncapped bracket, by the same hand: no telemetry → S = 0 at every
+    // priced form, so capped and uncapped coincide at (0−168)/2,000 exactly.
+    expect(result.uncappedBracket.rLo).toBeCloseTo(-0.084, 12);
+    expect(result.uncappedBracket.rHi).toBeCloseTo(-0.084, 12);
     expect(result.rHiPlus.evaluable).toBe(true);
     if (result.rHiPlus.evaluable) expect(result.rHiPlus.value).toBeCloseTo(-0.084, 12);
     expect(result.recomputations.rLoMinusTask).toBe(0); // the only task dropped → empty pool
@@ -433,11 +437,12 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     expect(result.strata.testRed.evaluable).toBe(false); // 1 admitted < the floor of 5
 
     // The verdict machinery, on the face: the fixture is outside git, so
-    // artifact 1's blob check fires FIRST and names the void; clause 8 fires
-    // behind it until F23 lands; clauses 4–6 are UNCHECKED without an audit.
+    // artifact 1's blob check fires FIRST and names the void; clause 8 is LIVE
+    // since F23's repair and does NOT fire — the cap is pinned and both
+    // brackets carry finite bounds; clauses 4–6 are UNCHECKED without an audit.
     expect(result.verdict).toBe("void");
     expect(result.voidClause).toMatch(/^design\.artifacts 1/);
-    expect(result.archiveChecks.find((c) => c.clause.startsWith("voidConditions 8"))!.fired).toBe(true);
+    expect(result.archiveChecks.find((c) => c.clause.startsWith("voidConditions 8"))!.fired).toBe(false);
     // outside a repository committedness is UNSHOWABLE — fired, never clean —
     // while the terms above still published (the partial bracket is owed)
     const committed = result.archiveChecks.find((c) => c.clause.includes("committed evidence"))!;
@@ -463,6 +468,21 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     expect(counterfactual.schema).toBe("b12-counterfactual/1");
     // the Map serialises as an object, not as {}
     expect(typeof result.coverage.ownedBy).toBe("object");
+    // Clause 8's truth table over the REAL serializer's bytes, not the
+    // constructed object: both brackets survive the round trip as four proper
+    // finite numbers. A NaN here would have serialised as `null`, and the
+    // value check on the parsed artifact is what catches it.
+    for (const v of [
+      result.rLo,
+      result.rHi,
+      result.uncappedBracket.rLo,
+      result.uncappedBracket.rHi,
+    ]) {
+      expect(typeof v).toBe("number");
+      expect(Number.isFinite(v)).toBe(true);
+    }
+    expect(result.uncappedBracket.rLo).toBeCloseTo(-0.084, 12);
+    expect(result.uncappedBracket.rHi).toBeCloseTo(-0.084, 12);
   });
 });
 

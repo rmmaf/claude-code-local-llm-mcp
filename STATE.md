@@ -5,34 +5,38 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**THE UNIT 5 PASS SHIPPED — THE ASSEMBLER EXISTS, THROUGH A PLAN GATE.** Codex
-gated the PLAN (14 verdicts; the 3 REFUTEs adjudicated: precedence and the
-re-run's scored attempt became REGISTERED CONVENTIONS labelled on the artifact;
-F25's scoring-time route is REGISTERED in FINDINGS; the clause 4–6 audit is a
-required INPUT — `{ran:false}` publishes `uncheckedClauses`, never "clean").
-`archive.ts` (impure: paths/git/register → `RunArchive`; telemetry identity
-stamped ONCE, keyed on the archive path) / `assemble.ts` (pure: dispositions,
-committed-order replay, clauses 2/7/8/9/11/12/13/14/19/20, run-level
-`ambiguousIds`, terms per ATTEMPT — re-runs suffix `-r<N>` now, both fractions
-published) / `emit.ts` (writes BOTH artifacts even on VOID). `transcript.ts`
-gained its pure half; the archive feeds the parser's own rule. Artifact 7 is
-wide (seven components, NO minted aggregate hash; `A_o + S_o > 0` per admitted
-observation). Artifact 11's replay runs the REAL path over the committed
-fixture `tests/fixtures/b12-run/`. Clause 8 FIRES on every run until F23 — by
-design, not by accident. Gate at the 4-failure Windows baseline.
+**F23 SHIPPED — THE ARTIFACT CARRIES BOTH BRACKETS, through a seven-round
+adversarial plan gate (R1–R4 unsound; R5 sound-with-changes; R6/R7 unsound on
+the consolidation, ~66 findings adjudicated).** `uncappedBracket { rLo, rHi }`
+is summed from rows priced WHOLE: `unitsUncapped`/`unitsLoUncapped` on the
+credited ledger row → `sLoUncapped`/`sHiUncapped` in the same credited branch
+→ the four-form `PricedForm` selector; jackknife/strata/hold/deliveries keep
+`"lo" | "hi"` (compile-time refusal); `reinstate` zeroes all four sums,
+`withoutLargestRow` subtracts all four ranking capped. Clause 8 is a LIVE
+predicate — fires iff `!(Number.isFinite(cap) && cap > 0)` or any of the four
+bounds non-finite, on the constructed result AND on the real serializer's
+bytes (tests). Default assemble oracle: ZERO fired checks; the default void is
+the arithmetic's clause 3. `rates.json` restored byte-identical to `3541625`.
+Gate baseline AMENDED: 4 stable Windows failures + 3 KNOWN-FLAKY
+`b12-archive` hostile-disk tests (full-suite-only, pass solo, pre-existing on
+main) — identity by `{file, fullName}` set, never count.
 
 ## Next action
 
-**The clause 4–6 AUDIT COMPUTER** (input seam and pre-declaration exist —
-PREMISES § B12; nobody wrote the tool), or **F23** (two BRACKETS — its own
-pass, changes `B12Result`). Both block a lawful run; either is a full pass.
+**The clause 4–6 AUDIT COMPUTER** (this session's next pass): the two missing
+clause-6 negative controls FIRST (two-worktree inheritance; covered-vs-written
+slugs — the shrink test does not count), then the pinned emission wrapper
+(state machine: not-started emits nothing, active from preflight-acceptance,
+exactly one row; no-op writers, never null; byte conformity matrix, NO
+fallback), then `audit.ts` + `--attest-suite`.
 
-**Still blocking a run:** F23; the audit computer; Phase-3 exposure 1 of 3
-INCONCLUSIVE; the contract-stability ladder (report.ts 60,360 B vs ~51,607 B
-ceiling — re-pick, never re-type); the sealed-blob re-probe of
-`installedChars`; manifests unsealed (Phase 4); **VOID 21's instruction-set
-hash and VOID 12's basis stay UNADJUDICATED — NO A/B before both are
-registered.**
+**Still blocking a run:** the audit computer; Phase-3 1/3 INCONCLUSIVE
+(gate-only is CUT — the registered rule names it for 0/3 only; only a NEW
+pre-data amendment can seal); the contract-stability ladder (and F23 GREW
+report.ts — re-run before Phase 4); the sealed-blob re-probe of
+`installedChars`; the platform amendment (runPlan froze "one Windows box";
+the run is the Mac's); manifests unsealed (Phase 4); **VOID 21 and VOID 12
+stay UNADJUDICATED — NO A/B before both are registered.**
 
 ## Do not redo
 

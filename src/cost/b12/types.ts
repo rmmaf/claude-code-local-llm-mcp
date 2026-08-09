@@ -322,6 +322,15 @@ export interface ObservationTerms {
   sLo: number;
   /** `S_o` at the observed segment. */
   sHi: number;
+  /**
+   * The same two sums with NO `clientTruncationCap` — accumulated from the
+   * ledger's `unitsLoUncapped`/`unitsUncapped` in the same credited branch, so
+   * the uncapped bracket is summed from rows priced whole rather than
+   * reconstructed from byte totals. Feeds `B12Result.uncappedBracket` and
+   * nothing else.
+   */
+  sLoUncapped: number;
+  sHiUncapped: number;
   /** `unitsAddedByInstallation` restricted to the segments this window originated. */
   oO: number;
   /**
@@ -547,6 +556,19 @@ export interface B12Result {
    * the project permanently and that is the worse of the two errors.
    */
   rHiPlus: Evaluable<number>;
+  /**
+   * The bracket priced with NO `clientTruncationCap` — the second half of
+   * `voidConditions` 8, which is VOID "if the artifact does not carry both the
+   * capped and uncapped brackets".
+   *
+   * REPORTED, DECIDING NOTHING: its PRESENCE is the requirement. The frozen
+   * bracket is `[R_lo, R_hi]` and detector 2 asks for that one bracket
+   * published capped AND uncapped — not for an uncapped variant of `rHiPlus`,
+   * the strata, the recomputations, the hold or the deliveries, and none
+   * exists. `cappedVsUncapped` below stays what it was: a byte-sum pair on the
+   * artifact's face, deciding nothing.
+   */
+  uncappedBracket: { rLo: number; rHi: number };
   /**
    * What the run could and could not account for, on the artifact's face.
    *

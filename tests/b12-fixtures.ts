@@ -196,15 +196,20 @@ export function observation(over: Partial<B12Observation> = {}): B12Observation 
  * tell a per-horizon ranking from a shared one, which is the whole of `R_lo⁻ʳ`.
  */
 export function creditedRow(over: Partial<CreditedLedgerRow> = {}): CreditedLedgerRow {
-  return {
+  // MATERIALIZE `{...base, ...over}` FIRST, then derive the uncapped pair from
+  // the MATERIALIZED capped values — deriving from the base would hand a caller
+  // who overrode `units` an uncapped pair describing the row it just replaced.
+  // The base row is under the cap (`signed === capped`), where the two pairs
+  // coincide by construction; an over-cap fixture passes its own pair.
+  const materialized = {
     invocationId: null,
     tool: "gate",
     ts: at(0),
-    disposition: "credited",
+    disposition: "credited" as const,
     thread: "main",
     index: 0,
     segmentSize: 2,
-    ttl: "1h",
+    ttl: "1h" as const,
     multiplier: 2.1,
     rateKey: "test-model",
     bytesRaw: 10_000,
@@ -216,6 +221,11 @@ export function creditedRow(over: Partial<CreditedLedgerRow> = {}): CreditedLedg
     unitsLo: 60,
     passed: null,
     ...over,
+  };
+  return {
+    ...materialized,
+    unitsUncapped: over.unitsUncapped ?? materialized.units,
+    unitsLoUncapped: over.unitsLoUncapped ?? materialized.unitsLo,
   };
 }
 
@@ -353,10 +363,14 @@ export function twenty(
 }
 
 export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
-  return {
+  // Same materialize-first rule as `creditedRow`: the uncapped sums default to
+  // the MATERIALIZED capped sums (an all-under-cap observation), so a caller
+  // overriding `sLo`/`sHi` gets a coherent observation, and only a test ABOUT
+  // the cap has to pass the uncapped pair itself.
+  const materialized = {
     taskId: "t-1",
-    arm: "treatment",
-    disposition: "scored",
+    arm: "treatment" as const,
+    disposition: "scored" as const,
     aO: 0,
     sLo: 0,
     sHi: 0,
@@ -367,11 +381,19 @@ export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
     // arithmetic. A test about the unattributed rows has to say so.
     unattributed: [] as KeyedRow[],
     unattributedRefusals: ledger(),
-    subagentShare: { evaluable: true, value: { own: 1, sidechain: 0, share: 0, stratum: "solo" } },
+    subagentShare: {
+      evaluable: true as const,
+      value: { own: 1, sidechain: 0, share: 0, stratum: "solo" as const },
+    },
     perDelivery: {},
     billedRequestCount: 1,
     rateKeys: ["test-model"],
-    verificationStratum: "test-red",
+    verificationStratum: "test-red" as const,
     ...over,
+  };
+  return {
+    ...materialized,
+    sLoUncapped: over.sLoUncapped ?? materialized.sLo,
+    sHiUncapped: over.sHiUncapped ?? materialized.sHi,
   };
 }

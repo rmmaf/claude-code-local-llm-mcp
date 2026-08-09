@@ -3613,6 +3613,37 @@ describe("the four B12 scoring seams", () => {
     // horizon is being computed with the positional multiplier and `R_lo⁻ʳ` is
     // ranking rows by the wrong figure.
     expect(row?.unitsLo).not.toBeCloseTo(row?.units ?? 0, 3);
+
+    // F23: the uncapped pair prices `signed` WHOLE on the same row —
+    //   unitsUncapped   = 49000/3.7 x 2.2 = 29135.135135135135
+    //   unitsLoUncapped = 49000/3.7 x 2.0 = 26486.486486486486
+    // — and above the cap the two pairs SPLIT; equality here would mean the
+    // cap was applied to both.
+    const credited = row?.disposition === "credited" ? row : undefined;
+    expect(credited?.unitsUncapped).toBeCloseTo(29_135.135135135135, 6);
+    expect(credited?.unitsLoUncapped).toBeCloseTo(26_486.486486486486, 6);
+    expect(credited?.unitsUncapped).not.toBeCloseTo(credited?.units ?? 0, 3);
+  });
+
+  it("prices the uncapped pair equal to the scored one under the cap — the metamorphic half of F23", async () => {
+    // UNDER the cap `Math.min(bytes_raw, cap)` returns `bytes_raw`, so the two
+    // pairs are the SAME floats through the SAME operations — asserted with
+    // exact equality, not `closeTo`, because any drift means the uncapped path
+    // grew its own arithmetic.
+    const id = "dddddddd-0000-4000-8000-dddddddddddd";
+    const file = await transcriptWithLongSegment(id);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 10_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+    const row = result.rows[0];
+    expect(row?.disposition).toBe("credited");
+    const credited = row?.disposition === "credited" ? row : undefined;
+    expect(credited?.unitsUncapped).toBe(credited?.units);
+    expect(credited?.unitsLoUncapped).toBe(credited?.unitsLo);
   });
 
   it("narrows a credited row's magnitudes by its disposition, so `?? 0` is unwritable", async () => {

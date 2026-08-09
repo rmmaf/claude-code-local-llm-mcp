@@ -41,7 +41,9 @@ four units below it were designed to make it.
 > parser's own rule. The Codex gate on the PLAN corrected four things this
 > spec's reader should know: the disposition-name precedence and the re-run's
 > scored attempt are REGISTERED CONVENTIONS labelled on the artifact, not
-> derivations; clause 8 fires on every run until F23's pass, by design; the
+> derivations; clause 8 fired on every run until F23's pass (repaired
+> 2026-08-09 — it is a LIVE predicate now, and the default oracle expects zero
+> fired checks); the
 > clause 4–6 audit is a required INPUT whose absence is published as
 > `uncheckedClauses` (and the audit computer is a named blocker, unwritten);
 > and artifact 11's replay runs the real path over a committed FIXTURE archive
@@ -219,9 +221,12 @@ and cannot hold it, while `Rates` requires the field.
 `clientTruncationCap` was measured for the version that ran, **or if the artifact
 does not carry both the capped and uncapped brackets**." A *bracket* in this
 design is `[R_lo, R_hi]` — "THE SCORED QUANTITY IS A BRACKET, NOT A POINT".
-`B12Result.cappedVsUncapped` is two summed row-BYTE magnitudes. **The current
-result type cannot satisfy clause 8** and the fix is a second pass of the whole
-arithmetic, not a field on this unit. `FINDINGS.md` F23.
+`B12Result.cappedVsUncapped` is two summed row-BYTE magnitudes. **The result
+type could not satisfy clause 8 until F23's own pass (repaired 2026-08-09):**
+`B12Result.uncappedBracket` now carries the one uncapped `[R_lo, R_hi]` beside
+the capped pair, summed from rows priced whole, and the clause-8 check fires
+iff the cap is not finite-positive or any of the four bounds is not a proper
+finite number. `FINDINGS.md` F23 holds the registered reading.
 
 ### 5. One `computeTerms` per observation
 
@@ -263,7 +268,7 @@ cannot encode a run-level VOID at all.
 |---|---|
 | 2 | partial set, every disposition reported, committed order followed |
 | 7 | version, binary sha256, `DISABLE_AUTOUPDATER` |
-| 8 | measured cap **and both brackets** (F23) |
+| 8 | measured cap **and both brackets** (F23 — live predicate since 2026-08-09) |
 | 9 | instrument contamination; the scorer's own session absent from the manifest |
 | 11 | base commit, clean tree at start, pair tree hashes |
 | 12 | instruction / settings / MCP / policy hashes |

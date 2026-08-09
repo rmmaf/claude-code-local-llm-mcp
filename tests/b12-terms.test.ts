@@ -137,6 +137,12 @@ describe("computeTerms — every constant derived by hand", () => {
     expect(result.sLo).toBeCloseTo(15_675.675675675675, 6);
     // Uncapped would be (50000-1000)/3.7 x 2.2 = 29135.13..., 1.7x too much.
     expect(result.sHi).not.toBeCloseTo(29_135.135135135137, 3);
+    // F23: the SAME row priced whole — signed 49,000, no `Math.min` — lands in
+    // the uncapped pair. By hand:
+    //   sHiUncapped: 49000/3.7 x 2.2 = 29135.135135135135
+    //   sLoUncapped: 49000/3.7 x 2.0 = 26486.486486486486
+    expect(result.sHiUncapped).toBeCloseTo(29_135.135135135135, 6);
+    expect(result.sLoUncapped).toBeCloseTo(26_486.486486486486, 6);
 
     // O_o: 3700/3.7 = 1000 tokens, charged at entry position 0 of the ONE
     // segment this window originated: 2.0 + 0.1x(4-1-0) = 2.3.

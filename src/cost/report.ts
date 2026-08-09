@@ -493,6 +493,17 @@ export interface CreditedLedgerRow extends LedgerRowCommon {
    * guard a statement about the high side.
    */
   unitsLo: number;
+  /**
+   * `units` with NO `clientTruncationCap` — the signed magnitude priced whole.
+   *
+   * B12's voidConditions 8 requires the artifact to carry an uncapped bracket
+   * BESIDE the capped one, and the bracket has to be summed from rows priced
+   * without the cap — not reconstructed from byte totals after the fact. Same
+   * `signed`, same multiplier; only the `Math.min(bytes_raw, cap)` is absent.
+   */
+  unitsUncapped: number;
+  /** `unitsLo` without the cap — the uncapped row at `T-1-t = 0`. */
+  unitsLoUncapped: number;
 }
 
 /**
@@ -1200,6 +1211,11 @@ export function buildCounterfactual(
       // write half is spelled in one place and cannot drift from the one the
       // high horizon is built on.
       unitsLo: (capped / rates.charsPerToken) * writeComponent(m, ttl),
+      // The uncapped pair prices `signed` whole — the only difference from the
+      // scored pair is the absent `Math.min(bytes_raw, cap)`, so a capped row
+      // under the cap carries identical figures in both pairs.
+      unitsUncapped: (signed / rates.charsPerToken) * multiplier,
+      unitsLoUncapped: (signed / rates.charsPerToken) * writeComponent(m, ttl),
       passed: verdictOf(entry),
     });
 

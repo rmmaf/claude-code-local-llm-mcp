@@ -9,12 +9,12 @@ exports, do not edit any other file. `MIN_DELIVERY_OBSERVATIONS` (5) and
 `poolRatio` returns `0` when `A + S` is zero — an empty set has no ratio, and
 `NaN` propagates into every figure downstream of it.
 
-## `poolRatio(terms, horizon): number`
+## `poolRatio(terms, form): number`
 
 **RATIO OF SUMS. Never an average of per-observation ratios.**
 
 ```
-S = sum over terms of (horizon === "lo" ? t.sLo : t.sHi)
+S = sum over terms at the form: sLo | sHi | sLoUncapped | sHiUncapped
 A = sum over terms of t.aO
 O = sum over terms of t.oO
 return (S - O) / (A + S)
@@ -23,6 +23,13 @@ return (S - O) / (A + S)
 `O` is subtracted from the NUMERATOR and never added to the denominator. Nothing
 is clamped; the result may be negative and that is a real measurement. Return `0`
 when `A + S === 0`.
+
+`form` is the four-member `PricedForm` since F23's repair (2026-08-09). ONLY the
+published `uncappedBracket` reads the two uncapped forms: the jackknife, strata,
+hold and delivery figures keep the narrow `"lo" | "hi"` union, so an uncapped
+recomputation is a compile error rather than a choice. `reinstate` zeroes all
+four sums together and `withoutLargestRow` subtracts the chosen row from all
+four while ranking on the capped pair.
 
 ## `rHiPlus(all, coverage): Evaluable<number>`
 
@@ -213,6 +220,10 @@ optional one a rule they could forget.
 
 - `rLo` / `rHi` = `poolRatio(input.admitted, "lo" | "hi")` — FULL admitted.
   `fallsIf` reads `rLo` by name; the hold's lower bound is `hold.rLo`.
+- `uncappedBracket` = `{ rLo, rHi }` at the two uncapped forms over the SAME
+  full admitted set (F23, repaired 2026-08-09). Reported, deciding nothing —
+  its PRESENCE as four finite bounds is what the assembler's live clause-8
+  check reads, and no other figure has an uncapped variant.
 - `gate` = `deliveryScore({ exercise: admitted, arithmetic: admitted }, ["gate"], "lo")`;
   `repair` = the same pair with `["repair"]` and `MIN_REPAIR_CLOSURES`;
   `other` = the same pair over the five unexercised tools.

@@ -422,6 +422,7 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     checks,
     scoringCommandActual: input.scoringCommandActual,
     duplicatedTaskIds,
+    brackets: { rLo: base.rLo, rHi: base.rHi, uncappedBracket: base.uncappedBracket },
   });
 
   const uncheckedClauses = gitAudit.ran
@@ -848,6 +849,12 @@ interface ChecksContext {
   checks: ArchiveCheck[];
   scoringCommandActual: string | null;
   duplicatedTaskIds: ReadonlySet<string>;
+  /**
+   * The four bracket bounds off the aggregate result, for clause 8's live
+   * predicate — checked as VALUES on the constructed result, because NaN
+   * survives every sum and serializes as `null`.
+   */
+  brackets: { rLo: number; rHi: number; uncappedBracket: { rLo: number; rHi: number } };
 }
 
 /**
@@ -970,13 +977,30 @@ function buildArchiveChecks(ctx: ChecksContext): void {
         : "every observation matches the pinned version and binary sha; DISABLE_AUTOUPDATER is asserted by the harness before each observation"
   );
 
-  // voidConditions 8 — the measured cap, and BOTH BRACKETS (F23: fires until
-  // the second arithmetic pass makes the artifact carry two brackets).
-  const capPinned = typeof pinned.clientTruncationCap === "number" && Number.isFinite(pinned.clientTruncationCap);
+  // voidConditions 8 — the measured cap, and BOTH BRACKETS. LIVE since F23's
+  // repair: fires iff `!(Number.isFinite(cap) && cap > 0)` OR any of the four
+  // bracket bounds is not a proper finite number ON THE CONSTRUCTED RESULT —
+  // a VALUE check, because NaN survives every sum and serializes as `null`,
+  // and a check on the fields' spelled presence is the theatre
+  // FINDINGS.md:546-553 refused. The same truth table is asserted over the
+  // real serializer's bytes by the test wave.
+  const cap = pinned.clientTruncationCap;
+  const capValid = typeof cap === "number" && Number.isFinite(cap) && cap > 0;
+  const bounds = [
+    ctx.brackets.rLo,
+    ctx.brackets.rHi,
+    ctx.brackets.uncappedBracket.rLo,
+    ctx.brackets.uncappedBracket.rHi,
+  ];
+  const badBound = bounds.some((v) => typeof v !== "number" || !Number.isFinite(v));
   push(
     "voidConditions 8 — measured cap and both brackets",
-    true,
-    `${capPinned ? "the cap is pinned" : "NO measured clientTruncationCap is pinned"}; the artifact carries capped and uncapped BYTE SUMS, not the two BRACKETS the clause demands — FINDINGS.md F23, its own pass; this check fires until that pass lands`
+    !capValid || badBound,
+    !capValid
+      ? "NO measured clientTruncationCap is pinned as a finite positive number — the capped bracket is priced against nothing"
+      : badBound
+        ? "a bracket bound is not a finite number — the artifact cannot carry a bracket it cannot state"
+        : "the cap is pinned and the artifact carries both brackets, capped and uncapped, four finite bounds"
   );
 
   // voidConditions 9 — instrument contamination, run-level.

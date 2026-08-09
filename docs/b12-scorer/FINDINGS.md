@@ -30,8 +30,9 @@ defect is not evidence the defect is absent.
 never did** — the numbering skipped it, and that is recorded here rather than
 back-filled, because renumbering would break every citation in `git log`.
 
-The count says less than the split does. **Seventeen are closed. Of the eight
-open, two are code owed, one is a decision, and five will never close** — each of
+The count says less than the split does. **Eighteen are closed — F23 repaired
+2026-08-09, in its own pass as its entry demanded. Of the seven open, one is
+code owed, one is a decision, and five will never close** — each of
 those five is a place the frozen design underdetermines what an implementer needs,
 every closing route was adjudicated and REFUSED, and what shipped is the literal
 reading plus enough published detail that a reader of a committed artifact can see
@@ -54,7 +55,8 @@ ready, rather than one decaying.
 
 ## OPEN — code owed
 
-Two, both with a known fix and a known owner.
+One — F24. The second, F23, was repaired 2026-08-09; its record stays below,
+where every citation to it points, with the repair on the entry itself.
 
 ### F24 — the archive the assembler must read is not the archive the harness writes
 
@@ -747,7 +749,7 @@ file, paths differ, so `JSON.stringify([source, ordinal])` is unique without
 making concatenation order load-bearing. What step 2 actually forbids — restarting
 ordinals inside a SCOPED SLICE of one source — is untouched.
 
-### F23 — `voidConditions` 8 wants two BRACKETS and the artifact carries two byte sums
+### F23 — `voidConditions` 8 wants two BRACKETS and the artifact carries two byte sums — REPAIRED 2026-08-09
 
 Found by the same gate. Unlike F24 and F25 this one is a defect in UNIT 3, not in
 the assembler, and it was invisible until a spec had to promise clause 8 could be
@@ -771,6 +773,32 @@ permissive on the result" (`thresholdArgument`).
 Satisfying it is a second full pass of the arithmetic with the cap applied and
 without — `poolRatio` over rows priced both ways at both horizons — which changes
 `B12Result` and belongs in its own pass with its own controls. Not fixed here.
+
+**REPAIRED 2026-08-09, in that pass.** The reading registered first, then the
+arithmetic:
+
+- **The registered reading.** A bracket is `[R_lo, R_hi]`, and detector 2 asks
+  for THAT bracket "published both capped and uncapped" — ONE
+  `uncappedBracket { rLo, rHi }` beside the capped pair, nothing else. No
+  uncapped variant of `rHiPlus`, the strata, the recomputations, the hold or
+  the deliveries exists, and `cappedVsUncapped` stays what `design.metric`
+  says it is: a byte-sum pair on the face, reported, deciding nothing.
+- **Summed from rows priced whole, never reconstructed from byte totals.**
+  `CreditedLedgerRow` carries `unitsUncapped`/`unitsLoUncapped` — `signed`
+  through the same multiplier and write component, with the `Math.min` absent —
+  and `ObservationTerms` accumulates `sLoUncapped`/`sHiUncapped` in the same
+  credited branch under the same narrow. `aggregate` publishes the bracket
+  through the four-form `PricedForm` selector; the jackknife, strata and
+  delivery figures keep the narrow `"lo" | "hi"` union, so a caller reaching
+  for an uncapped recomputation is refused at compile time. `reinstate` zeroes
+  all four sums together; `withoutLargestRow` removes the chosen row from all
+  four while RANKING on the capped pair.
+- **Clause 8 went LIVE.** Fires iff `!(Number.isFinite(cap) && cap > 0)` OR
+  any of the four bracket bounds is not a proper finite number, evaluated on
+  the CONSTRUCTED result — a VALUE check, because NaN survives every sum and
+  serializes as `null` — and the replay tests assert the same truth table over
+  the real serializer's bytes. The default assemble oracle now expects ZERO
+  fired checks, with the default void owned by the arithmetic's clause 3.
 
 ---
 
