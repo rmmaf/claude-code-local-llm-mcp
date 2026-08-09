@@ -2452,6 +2452,53 @@ describe("the B12 harness", () => {
     expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
   });
 
+  it("the pilot table covers the frozen covariates and its shape guard refuses every aggregate", async () => {
+    // Artifact 4: "No units, no bracket" — read as NO AGGREGATE and NO
+    // bracket, never as a ban on the per-observation unit-valued covariates
+    // the frozen list itself demands. The table's not-applicable rows are the
+    // A/B-only ones, and nothing else.
+    const { PILOT_COVARIATE_TABLE, assertPilotShape, buildPilotRecord, appendPilotRecord } = await import(
+      "../scripts/b12-run.mjs"
+    );
+    expect(PILOT_COVARIATE_TABLE).toHaveLength(17);
+    expect(
+      PILOT_COVARIATE_TABLE.filter((r: { applicability: string }) => r.applicability !== "recorded").map(
+        (r: { covariate: string }) => r.covariate
+      )
+    ).toEqual([
+      "the A/B acceptance 2x2 (concordant/discordant)",
+      "per A/B arm: turns, wall-clock, files read, tool bytes, billed count, ABBA position",
+    ]);
+    // Unit-VALUED per-observation covariates pass…
+    expect(() => assertPilotShape({ observation: { aO: 123 }, telemetry: [{ bytes_raw: 5 }] })).not.toThrow();
+    // …and every aggregate/bracket spelling refuses, at ANY depth.
+    for (const key of ["rLo", "rHi", "rHiPlus", "uncappedBracket", "bracket", "verdict", "strata", "hold"]) {
+      expect(() => assertPilotShape({ nested: { deep: { [key]: 1 } } })).toThrow(/forbidden key/);
+    }
+    // The appender accumulates into the ONE pilot file, table included.
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const record = buildPilotRecord(
+      {
+        taskId: "t1",
+        arm: "treatment",
+        sessionId: "s1",
+        outcome: "completed",
+        valid: true,
+        censored: false,
+        accepted: true,
+        invalidReasons: [],
+      },
+      { telemetry: [], lineage: [] }
+    );
+    appendPilotRecord(root, "run-p", record);
+    appendPilotRecord(root, "run-p", { ...record, taskId: "t2" });
+    const file = JSON.parse(await fs.readFile(path.join(root, "evidence", "run-p.b12.pilot.json"), "utf8"));
+    expect(file.schema).toBe("b12-pilot/1");
+    expect(file.observations).toHaveLength(2);
+    expect(file.covariateTable).toEqual(PILOT_COVARIATE_TABLE);
+  });
+
   it("the registration guard: one act, byte-identical bytes, and a prefix-preserved register", async () => {
     // voidConditions 1 registers a run as the manifest committed AND its row
     // written "by the same command" — so the guard proves the SAME introducing

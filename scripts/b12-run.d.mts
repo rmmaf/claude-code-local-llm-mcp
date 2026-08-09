@@ -86,6 +86,29 @@ export function fileScopeViolations(
 ): string[];
 
 /**
+ * Artifact 4's pilot pieces: the field→source→applicability table over the
+ * frozen covariate list, the "No units, no bracket" shape guard (aggregates
+ * and brackets refused at any depth; per-observation unit-valued covariates
+ * pass — the registered reading, FINDINGS.md), and the one-file appender.
+ */
+export const PILOT_COVARIATE_TABLE: Array<{
+  covariate: string;
+  source: string;
+  applicability: string;
+}>;
+export const PILOT_FORBIDDEN_KEYS: string[];
+export function assertPilotShape(value: unknown): void;
+export function buildPilotRecord(
+  observation: Record<string, unknown>,
+  archiveData: { telemetry: unknown[]; lineage: unknown[] }
+): Record<string, unknown>;
+export function appendPilotRecord(
+  repoRoot: string,
+  runId: string,
+  record: Record<string, unknown>
+): string;
+
+/**
  * The registration guard: every reason `observe` may not spend a session —
  * the canonical manifest byte-identical across disk/HEAD/registration commit,
  * the same-act proof (one introducing commit for manifest AND row), and

@@ -1078,6 +1078,24 @@ expression in two days is the whole argument: a citation that has to be re-check
 every time the file moves is a citation nobody re-checks. The pre-registration is
 frozen and stays as written.
 
+### THE PILOT'S "No units" READING — registered 2026-08-09, BEFORE any pilot ran
+
+`design.artifacts` 4 demands the covariate vector AND says "No units, no
+bracket" — and the frozen covariate list itself contains unit-VALUED
+quantities (per-row byte deltas, an excluded observation's `A_o`,
+`unitsAddedByInstallation`). The two cannot both be read literally, and the
+gap had to be adjudicated before the first pilot rather than inside it.
+
+**The registered reading: "No units" forbids AGGREGATES — any A/S/R sum, any
+bracket, any verdict — never the per-observation unit-valued covariates the
+list demands.** The rationale is artifact 4's own: the pilot is "mechanically
+incapable of optional stopping" because "the verdict command cannot produce
+[a bracket] on fewer than the manifest's N" — what must not exist is anything
+a stopping decision could read, and a per-row byte count decides nothing while
+an aggregate is precisely what would. Encoded with teeth: `assertPilotShape`
+(`scripts/b12-run.mjs`) refuses every aggregate/bracket spelling at any depth
+on every pilot write, and the negative controls hold it there.
+
 ---
 
 ## CLOSED

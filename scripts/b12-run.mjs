@@ -1516,6 +1516,107 @@ export function registrationGuard(repoRoot, runId, manifestBytesOnDisk) {
 }
 
 /**
+ * ARTIFACT 4 — the pilot's field→source→applicability table, covering the
+ * FULL frozen covariate list (`design.metric.covariates`, preregistration
+ * lines 44–59; line 57's two halves split here because one is per-arm and the
+ * other is A/B-only). `not-applicable` appears ONLY on the 2×2/ABBA/partner
+ * -arm entries — the pilot has no pair, and everything else is either carried
+ * on the record or re-derivable from the RAW meter inputs it embeds.
+ *
+ * THE REGISTERED READING OF "No units, no bracket" (the pre-pilot
+ * adjudication, FINDINGS.md): artifact 4 forbids AGGREGATES — A/S/R sums,
+ * any bracket, any verdict — not per-observation unit-VALUED covariates,
+ * which the frozen covariate list itself demands (per-row bytes, an excluded
+ * observation's A_o). `assertPilotShape` enforces exactly that boundary.
+ */
+export const PILOT_COVARIATE_TABLE = [
+  { covariate: "subagent share, continuous and solo/multi", source: "derived at reading from record.lineage (sidechain flags), published raw", applicability: "recorded" },
+  { covariate: "per credited row: id, tool, ts, thread, t, T, ttl, multiplier, bytes, capped/uncapped, signed", source: "record.telemetry verbatim + record.lineage — the meter's own inputs, re-derivable", applicability: "recorded" },
+  { covariate: "turns_collapsed per call, gate category, repair max_rounds and passed", source: "record.telemetry rows (turns_collapsed, detail)", applicability: "recorded" },
+  { covariate: "refusal ledger; per-excluded A_o, billed count, gate/repair calls", source: "derived at reading from record.telemetry + record.lineage", applicability: "recorded" },
+  { covariate: "unitsAddedByInstallation and the per-arm system-prompt delta", source: "record.observation.installedChars (provenance-carrying)", applicability: "recorded" },
+  { covariate: "requests-per-segment and segment count", source: "derived at reading from record.lineage", applicability: "recorded" },
+  { covariate: "max inter-request gap and cacheWrite share", source: "derived at reading from record.lineage", applicability: "recorded" },
+  { covariate: "Claude Code version, binary sha256, DISABLE_AUTOUPDATER", source: "record.observation.binary", applicability: "recorded" },
+  { covariate: "rate keys, model id, speed, /model and /fast toggles", source: "derived at reading from record.lineage usage", applicability: "recorded" },
+  { covariate: "base commit, worktree, tree hash, porcelain at start, end commit", source: "record.observation.{baseCommit,treeHashAtStart,endCommit,armLeftUncommitted}", applicability: "recorded" },
+  { covariate: "instruction-component hashes, pre and post", source: "record.observation.instructionHashes", applicability: "recorded" },
+  { covariate: "slug list walked, directory count, id count", source: "record.observation.snapshotBefore/After (stamped)", applicability: "recorded" },
+  { covariate: "governance_bytes_read", source: "derived at reading from record.lineage tool results", applicability: "recorded" },
+  { covariate: "acceptance predicate exit code per arm", source: "record.observation.acceptance", applicability: "recorded" },
+  { covariate: "the A/B acceptance 2x2 (concordant/discordant)", source: "no pair exists in the pilot", applicability: "not-applicable (A/B)" },
+  { covariate: "per A/B arm: turns, wall-clock, files read, tool bytes, billed count, ABBA position", source: "no pair exists in the pilot", applicability: "not-applicable (A/B)" },
+  { covariate: "wall-clock per task/arm and local-model token counts", source: "record.observation.wallClockMs + record.telemetry details", applicability: "recorded" },
+];
+
+/** The aggregate/bracket spellings artifact 4 forbids, at ANY depth. */
+export const PILOT_FORBIDDEN_KEYS = [
+  "rLo",
+  "rHi",
+  "rHiPlus",
+  "uncappedBracket",
+  "bracket",
+  "verdict",
+  "admitted",
+  "recomputations",
+  "strata",
+  "hold",
+];
+
+/** Refuse any pilot value carrying a forbidden key — the write-time teeth. */
+export function assertPilotShape(value) {
+  const walk = (v, trail) => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x, trail);
+      return;
+    }
+    if (v === null || typeof v !== "object") return;
+    for (const [k, val] of Object.entries(v)) {
+      if (PILOT_FORBIDDEN_KEYS.includes(k)) {
+        throw new Error(
+          `the pilot artifact may carry NO aggregate and NO bracket — forbidden key "${k}" under ${trail.join(".")} (design.artifacts 4)`
+        );
+      }
+      walk(val, [...trail, k]);
+    }
+  };
+  walk(value, ["pilot"]);
+}
+
+/** One pilot observation: the disposition, the covariates, the raw inputs. */
+export function buildPilotRecord(observation, archiveData) {
+  const record = {
+    taskId: observation.taskId,
+    arm: observation.arm,
+    sessionId: observation.sessionId,
+    disposition: {
+      outcome: observation.outcome,
+      valid: observation.valid,
+      censored: observation.censored,
+      accepted: observation.accepted,
+      invalidReasons: observation.invalidReasons,
+    },
+    observation,
+    telemetry: archiveData.telemetry,
+    lineage: archiveData.lineage,
+  };
+  assertPilotShape(record);
+  return record;
+}
+
+/** Read-modify-write of the ONE pilot file, shape-checked before every write. */
+export function appendPilotRecord(repoRoot, runId, record) {
+  const file = path.join(repoRoot, "evidence", `${runId}.b12.pilot.json`);
+  const current = existsSync(file)
+    ? JSON.parse(readFileSync(file, "utf8"))
+    : { schema: "b12-pilot/1", runId, covariateTable: PILOT_COVARIATE_TABLE, observations: [] };
+  current.observations.push(record);
+  assertPilotShape(current);
+  writeFileSync(file, JSON.stringify(current, null, 2) + "\n", "utf8");
+  return file;
+}
+
+/**
  * PHASE 1. Ten minutes against forty-five sessions and one of two attempts.
  *
  * The specific error it catches: four worktrees exist, so four slugs exist, and
@@ -1711,7 +1812,7 @@ function preflight(args) {
  * than merges any other MCP configuration, so "server off" is a fact rather than
  * an intention.
  */
-async function observe(args) {
+async function observe(args, pilotMode = false) {
   const { manifest, sha256: manifestSha, text: manifestText } = loadManifest(args.manifest);
   // FIRST, before anything spends: the declaration gaps. See
   // `manifestDeclarationGaps` for the three classes and the timing constraint —
@@ -1832,14 +1933,20 @@ async function observe(args) {
   // whose registration is still coherent — the canonical path, the same-act
   // proof, the append-only register's byte prefix. Before the lock, before
   // the session id, before any worktree: a refusal here costs nothing.
-  const canonicalManifest = path.join(REPO, "evidence", `${runId}.b12.tasks.json`);
-  if (path.resolve(args.manifest) !== path.resolve(canonicalManifest)) {
-    refuse(
-      `observe runs the CANONICAL manifest evidence/${runId}.b12.tasks.json, not ${args.manifest} — a session may not be spent on an unregistered copy`
-    );
+  // The PILOT is the one lawful exception — it runs BEFORE registration by
+  // design (artifact 4: declared not to consume the attempt cap, its tasks
+  // excluded from both sealed manifests), and writes none of the registered
+  // artifacts the guard protects.
+  if (!pilotMode) {
+    const canonicalManifest = path.join(REPO, "evidence", `${runId}.b12.tasks.json`);
+    if (path.resolve(args.manifest) !== path.resolve(canonicalManifest)) {
+      refuse(
+        `observe runs the CANONICAL manifest evidence/${runId}.b12.tasks.json, not ${args.manifest} — a session may not be spent on an unregistered copy`
+      );
+    }
+    const guardReasons = registrationGuard(REPO, runId, manifestText);
+    if (guardReasons.length > 0) refuse(`registration guard: ${guardReasons.join("; ")}`);
   }
-  const guardReasons = registrationGuard(REPO, runId, manifestText);
-  if (guardReasons.length > 0) refuse(`registration guard: ${guardReasons.join("; ")}`);
   const sessionLock = acquireSessionLock(path.join(REPO, "evidence"), runId, task.id, arm);
   if (!sessionLock.ok) {
     refuse(
@@ -2092,7 +2199,10 @@ async function observe(args) {
   // the same grammar back — the round trip is pinned in `cost-meter.test.ts`.
   // Which attempt SCORES is the scorer's registered convention, not decided
   // here. The claim is ATOMIC — see `claimObsDir`.
-  const { dir } = claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
+  // The pilot claims NO evidence directory — artifact 4's only output is the
+  // pilot file, and an empty claimed dir in append-only evidence/ would be a
+  // permanent void at scoring time.
+  const { dir } = pilotMode ? { dir: null } : claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
 
   // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the
   // only window in which the tree and its `.local-coder/telemetry.jsonl` are
@@ -2210,6 +2320,27 @@ async function observe(args) {
         `refusing to WRITE a treatment observation whose installedChars is ${String(v)} — absent, non-finite or negative (PREMISES.md § B12 domain validation)`
       );
     }
+  }
+
+  // ARTIFACT 4 — THE PILOT PATH. The pilot's ONLY output is its one file: the
+  // disposition and the covariate vector with the RAW meter inputs embedded
+  // (telemetry verbatim, reduced lineage), so every scoring-time covariate is
+  // re-derivable — and NO aggregate, NO bracket, enforced by shape at every
+  // write. No obs-dir, no runlog row, no MEASUREMENTS line, no commit:
+  // committing is the session's act, and registration has not happened.
+  if (pilotMode) {
+    const pilotFile = appendPilotRecord(REPO, runId, buildPilotRecord(observation, archive));
+    sessionLock.release();
+    process.stdout.write(
+      `  pilot  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  outcome ${verdict.outcome}  ` +
+        `accepted ${observation.accepted}  → ${path.relative(REPO, pilotFile).split(path.sep).join("/")}\n`
+    );
+    if (!args.keep) git(["worktree", "remove", "--force", treeDir]);
+    if (!observation.valid) {
+      for (const reason of invalid) process.stderr.write(`  INVALID: ${reason}\n`);
+      process.exit(1);
+    }
+    return;
   }
 
   // NAMED AS THEY ARE WRITTEN, because the commit barrier below verifies THIS
@@ -2366,6 +2497,12 @@ if (!invokedDirectly) {
     // while the archive was still being written — a run that looks clean and
     // committed nothing.
     await observe(args);
+    break;
+  case "pilot":
+    // The same session machinery as `observe`, with artifact 4's outputs and
+    // exemptions — see the pilot branch inside `observe` and the covariate
+    // table beside `appendPilotRecord`.
+    await observe(args, true);
     break;
   case "snapshot": {
     const snap = takeSnapshot(args.root);
