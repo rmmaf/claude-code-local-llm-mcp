@@ -47,7 +47,8 @@ import type {
   SnapshotFacts,
 } from "./types.js";
 
-const sha256 = (bytes: string | Buffer): string =>
+/** Exported since the audit computer landed — one hash, one spelling. */
+export const sha256 = (bytes: string | Buffer): string =>
   createHash("sha256").update(bytes).digest("hex");
 
 /**

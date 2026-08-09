@@ -24,15 +24,16 @@ all of them — `coverage.ts` joined the three when the run-level ledger landed 
 which is exactly why they need writing down: an oracle that cannot fail on a
 defect is not evidence the defect is absent.
 
-## Twenty-five findings, and only two of them are work
+## Twenty-six findings, and only two of them are work
 
-**F1–F25, one number per finding except F2, which split. F18 does not exist and
+**F1–F26, one number per finding except F2, which split. F18 does not exist and
 never did** — the numbering skipped it, and that is recorded here rather than
 back-filled, because renumbering would break every citation in `git log`.
 
-The count says less than the split does. **Eighteen are closed — F23 repaired
-2026-08-09, in its own pass as its entry demanded. Of the seven open, one is
-code owed, one is a decision, and five will never close** — each of
+The count says less than the split does. **Nineteen are closed — F23 repaired
+2026-08-09, in its own pass as its entry demanded, and F26 found and closed
+the same day the audit computer pinned the control registry. Of the seven
+open, one is code owed, one is a decision, and five will never close** — each of
 those five is a place the frozen design underdetermines what an implementer needs,
 every closing route was adjudicated and REFUSED, and what shipped is the literal
 reading plus enough published detail that a reader of a committed artifact can see
@@ -1080,6 +1081,31 @@ frozen and stays as written.
 ---
 
 ## CLOSED
+
+### F26 — clause 6's FIRST control had no test anywhere, and only the registry noticed — FIXED 2026-08-09
+
+`voidConditions` 6 names six negative controls that must be "shown FIRING" in
+the conformance suite. The audit computer's `CONTROL_TESTS` registry
+(`src/cost/b12/audit.ts`) pins each one to an exact vitest fullName — copied
+AFTER the tests exist, per the plan's own rule — and the copying is what found
+this: **"a failed repair row crediting zero units" had NO satisfying test** in
+either named file. Seven adversarial plan rounds had counted the missing
+controls at two (the two-worktree fixture and the slug-coverage predicate);
+the third absence survived them all because every near-miss LOOKED like
+coverage — the turn-collapse control credits a repair row at exactly zero for
+a DIFFERENT reason, and the scoring-seam test carries the abort row's shape
+but asserts no units. A content-level sweep of both files against each frozen
+control description, not the titles, is what separated them.
+
+Closed the same day: `tests/cost-meter.test.ts` now carries "credits a failed
+repair row at zero units — clause 6's failed-repair control" — the abort row's
+exact shape (`bytes_raw: 0, bytes_returned: 0`, `detail.aborted`), CREDITED at
+exactly zero units, never a refusal, never a closure. The registry's other
+adjudications, recorded so the mapping is citable: control 2 = "keeps a call
+that ADDED bytes as the negative it is"; control 3 = "counts a refusal it
+cannot size instead of summing the unknown as zero" (the null observable
+through the `unsized` channel, never summed as zero); control 5 = "refuses a
+call whose invocation id two sessions both carry, on both sides".
 
 ### F19 — the hold arithmetic was scored over observations the rule bars from it — FIXED
 

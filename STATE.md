@@ -23,20 +23,28 @@ main) — identity by `{file, fullName}` set, never count.
 
 ## Next action
 
-**The clause 4–6 AUDIT COMPUTER** (this session's next pass): the two missing
-clause-6 negative controls FIRST (two-worktree inheritance; covered-vs-written
-slugs — the shrink test does not count), then the pinned emission wrapper
-(state machine: not-started emits nothing, active from preflight-acceptance,
-exactly one row; no-op writers, never null; byte conformity matrix, NO
-fallback), then `audit.ts` + `--attest-suite`.
+**Passe C — the operator tooling**: `pilot` subcommand (the "No units"
+adjudication registered); `b12-register.mjs` check/register/open-b/
+seal-harness (CAS with new blobs by object id, cardinalities 30/5/6);
+admissionRule 7 over ALL tasks with the terminal-marker-first grammar;
+b12-author.mjs + its own test wave; the hardened Mac probes; policy blobs as
+a git repo + bundle transport; the observe registration guard (MEASUREMENTS
+prefix-preservation, same introducing commit); sessionId uniqueness + snapshot
+identity stamps END-TO-END (mandatory, no out-of-scope escape).
 
-**Still blocking a run:** the audit computer; Phase-3 1/3 INCONCLUSIVE
-(gate-only is CUT — the registered rule names it for 0/3 only; only a NEW
-pre-data amendment can seal); the contract-stability ladder (and F23 GREW
-report.ts — re-run before Phase 4); the sealed-blob re-probe of
-`installedChars`; the platform amendment (runPlan froze "one Windows box";
-the run is the Mac's); manifests unsealed (Phase 4); **VOID 21 and VOID 12
-stay UNADJUDICATED — NO A/B before both are registered.**
+**The audit computer SHIPPED** (audit.ts: pure decider + collector +
+`--attest-suite`; AUDIT_INPUT_KEYS literal, producer round-trip asserted; the
+emission wrapper extracted to src/cost/emission.ts under an 8-cell conformity
+matrix; all SIX clause-6 controls now exist — F26: the failed-repair control
+was missing entirely and no round of seven caught it).
+
+**Still blocking a run:** Phase-3 1/3 INCONCLUSIVE (gate-only is CUT — the
+registered rule names it for 0/3 only; only a NEW pre-data amendment can
+seal); the contract-stability ladder (and F23 GREW report.ts — re-run before
+Phase 4); the sealed-blob re-probe of `installedChars`; the platform
+amendment (runPlan froze "one Windows box"; the run is the Mac's); manifests
+unsealed (Phase 4); **VOID 21 and VOID 12 stay UNADJUDICATED — NO A/B before
+both are registered.**
 
 ## Do not redo
 

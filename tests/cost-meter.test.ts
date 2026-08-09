@@ -1731,6 +1731,65 @@ describe("telemetry and the counterfactual", () => {
     expect(gate?.unitsFromSuppression.clampedUncapped).toBe(0);
   });
 
+  it("credits a failed repair row at zero units — clause 6's failed-repair control", async () => {
+    // `voidConditions` 6's FIRST named control, and it had no test until the
+    // audit computer needed to pin its title: a repair that ABORTED writes the
+    // row B16 needs (the request happened) with `bytes_raw: 0,
+    // bytes_returned: 0` — and the meter must CREDIT that row at exactly zero
+    // units, never refuse it, never let it claim a saving, never count it
+    // toward a closure.
+    clock = 0;
+    const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__repair" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      // The abort row's exact shape, from `runRepair`'s catch path.
+      [{
+        ts: at(500),
+        invocation_id: id,
+        tool: "repair",
+        bytes_raw: 0,
+        bytes_returned: 0,
+        turns_collapsed: 0,
+        latency_ms: 1,
+        detail: { aborted: true, stopped_because: "aborted" },
+      }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const row = result.rows[0];
+    expect(row?.disposition).toBe("credited"); // a row, never a refusal
+    expect(row?.units).toBe(0);
+    expect(row?.unitsLo).toBe(0);
+    expect(row?.signed).toBe(0);
+    // A failed repair did not close anything, and its row may not say it did.
+    expect(row?.passed).not.toBe(true);
+    const repair = result.byTool[0];
+    expect(repair?.tool).toBe("repair");
+    expect(repair?.unitsTotal).toBe(0);
+  });
+
   it("refuses to credit bytes that could never have reached a context", async () => {
     // The counterfactual world is "the agent ran this through Bash", and Claude
     // Code truncates a tool result at `clientTruncationCap` characters before it
