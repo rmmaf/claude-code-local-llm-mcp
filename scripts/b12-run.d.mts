@@ -86,6 +86,18 @@ export function fileScopeViolations(
 ): string[];
 
 /**
+ * The registration guard: every reason `observe` may not spend a session —
+ * the canonical manifest byte-identical across disk/HEAD/registration commit,
+ * the same-act proof (one introducing commit for manifest AND row), and
+ * MEASUREMENTS.jsonl held by BYTE PREFIX, never whole-file identity.
+ */
+export function registrationGuard(
+  repoRoot: string,
+  runId: string,
+  manifestBytesOnDisk: string
+): string[];
+
+/**
  * The session id, unique per attempt by construction (nonce beside the
  * one-second stamp), and the cross-process claim that makes a same-task race
  * a refusal. The audit's clause-5 anchor requires the runlog join bijective.

@@ -2452,6 +2452,65 @@ describe("the B12 harness", () => {
     expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
   });
 
+  it("the registration guard: one act, byte-identical bytes, and a prefix-preserved register", async () => {
+    // voidConditions 1 registers a run as the manifest committed AND its row
+    // written "by the same command" — so the guard proves the SAME introducing
+    // commit, holds the manifest byte-identical across disk/HEAD/registration,
+    // and reads MEASUREMENTS.jsonl by PREFIX, because appends after
+    // registration are lawful and whole-file identity would refuse them.
+    const { registrationGuard } = await import("../scripts/b12-run.mjs");
+    const { execFile: ef } = await import("node:child_process");
+    const { promisify: p } = await import("node:util");
+    const sh = p(ef);
+    const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+
+    const root = tempRoot();
+    await git(root, "init", "-q");
+    await git(root, "config", "user.name", "guard-oracle");
+    await git(root, "config", "user.email", "guard@example.invalid");
+    await git(root, "config", "core.autocrlf", "false");
+    await git(root, "config", "commit.gpgsign", "false");
+
+    const manifestRel = "evidence/run-g.b12.tasks.json";
+    const manifestBytes = `{"runId":"run-g","tasks":[{"id":"t1"}]}\n`;
+    const regRow = `{"ts":"2026-08-09T00:00:00Z","b12_registration":true,"run_id":"run-g"}\n`;
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    await fs.writeFile(path.join(root, manifestRel), manifestBytes, "utf8");
+    await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), regRow, "utf8");
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "the registration act");
+
+    // POSITIVE: one act, coherent everywhere.
+    expect(registrationGuard(root, "run-g", manifestBytes)).toEqual([]);
+
+    // POSITIVE with a lawful post-registration append on disk.
+    await fs.appendFile(path.join(root, "MEASUREMENTS.jsonl"), `{"metric":"later","run_id":"other"}\n`, "utf8");
+    expect(registrationGuard(root, "run-g", manifestBytes)).toEqual([]);
+
+    // NEGATIVE: an unregistered run.
+    expect(registrationGuard(root, "run-h", manifestBytes).join(" ")).toMatch(/0 registration row/);
+
+    // NEGATIVE: a manifest and a row born in SEPARATE commits — two acts.
+    const manifest2 = "evidence/run-i.b12.tasks.json";
+    await fs.writeFile(path.join(root, manifest2), `{"runId":"run-i","tasks":[{"id":"t1"}]}\n`, "utf8");
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "manifest alone");
+    await fs.appendFile(
+      path.join(root, "MEASUREMENTS.jsonl"),
+      `{"ts":"2026-08-09T00:01:00Z","b12_registration":true,"run_id":"run-i"}\n`,
+      "utf8"
+    );
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "row alone");
+    expect(registrationGuard(root, "run-i", `{"runId":"run-i","tasks":[{"id":"t1"}]}\n`).join(" ")).toMatch(
+      /two commits are two acts/
+    );
+
+    // NEGATIVE: the working tree rewrites the register instead of appending.
+    await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), `{"rewritten":true}\n`, "utf8");
+    expect(registrationGuard(root, "run-g", manifestBytes).join(" ")).toMatch(/does not preserve HEAD's content as a byte prefix/);
+  }, 30_000);
+
   it("the two admissionRule-7 implementations agree, case for case", async () => {
     // The harness re-implements the scope grammar because it must run before
     // dist/ exists. Two copies that are never compared is this project's

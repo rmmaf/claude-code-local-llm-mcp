@@ -1385,7 +1385,134 @@ function loadManifest(file) {
   const text = readFileSync(file, "utf8");
   const manifest = JSON.parse(text);
   if (!Array.isArray(manifest.tasks) || manifest.tasks.length === 0) refuse("manifest carries no tasks");
-  return { manifest, sha256: sha256Text(text), path: file };
+  return { manifest, sha256: sha256Text(text), path: file, text };
+}
+
+/**
+ * THE REGISTRATION GUARD — every reason `observe` may not spend a session,
+ * enumerated rather than the first one found. `voidConditions` 1 registers a
+ * run as "evidence/<run_id>.b12.tasks.json committed AND its run_id written to
+ * MEASUREMENTS.jsonl BY THE SAME COMMAND", so the guard demands:
+ *
+ * (a) the manifest at its canonical path, byte-identical on disk, in HEAD, and
+ *     in the REGISTRATION commit's blob — the bytes about to drive a session
+ *     are the registered bytes, not a working-copy cousin;
+ * (b) "the same command", PROVEN: the commit that introduced the manifest IS
+ *     the commit that introduced the exact registration row — two separate
+ *     commits are two separate acts, whatever their author intended;
+ * (c) MEASUREMENTS.jsonl by PREFIX PRESERVATION, never whole-file identity —
+ *     appends after registration are lawful (`.gitattributes` pins the file
+ *     LF for exactly this reason): the registration commit's content must be
+ *     a BYTE prefix of HEAD's, HEAD's a byte prefix of the disk's, and the
+ *     disk's suffix beyond HEAD must be newline-terminated JSONL. Raw bytes,
+ *     no textual normalization — LF is already fixed by attribute.
+ *
+ * Returns every violated condition; empty means registered and coherent.
+ */
+export function registrationGuard(repoRoot, runId, manifestBytesOnDisk) {
+  const reasons = [];
+  const probe = (args) => run("git", ["-C", repoRoot, ...args]);
+  const manifestRel = `evidence/${runId}.b12.tasks.json`;
+
+  const headMeasurements = probe(["show", "HEAD:MEASUREMENTS.jsonl"]);
+  if (headMeasurements.code !== 0) {
+    reasons.push("HEAD carries no MEASUREMENTS.jsonl — nothing is registered");
+    return reasons;
+  }
+  const regLines = headMeasurements.out
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .filter((l) => {
+      try {
+        const r = JSON.parse(l);
+        return r.b12_registration === true && r.run_id === runId;
+      } catch {
+        return false;
+      }
+    });
+  if (regLines.length !== 1) {
+    reasons.push(
+      `${regLines.length} registration row(s) for ${runId} in HEAD's MEASUREMENTS.jsonl — exactly one row with b12_registration:true registers a run`
+    );
+    return reasons;
+  }
+  const regRow = regLines[0];
+
+  // Introducing commits: `--diff-filter=A` newest-first, so the LAST line is
+  // the birth. `-S` over the exact row text finds the commit that added it.
+  const introducing = (logArgs) => {
+    const r = probe(["log", "--diff-filter=A", "--format=%H", ...logArgs]);
+    if (r.code !== 0) return null;
+    const lines = r.out.trim().split("\n").filter(Boolean);
+    return lines.length === 0 ? null : lines[lines.length - 1];
+  };
+  const manifestIntro = introducing(["--", manifestRel]);
+  if (manifestIntro === null) {
+    reasons.push(`${manifestRel} has no introducing commit — the manifest was never committed`);
+  }
+  const rowLog = probe(["log", "-S", regRow, "--format=%H", "--", "MEASUREMENTS.jsonl"]);
+  const rowCommits = rowLog.code === 0 ? rowLog.out.trim().split("\n").filter(Boolean) : [];
+  const rowIntro = rowCommits.length === 0 ? null : rowCommits[rowCommits.length - 1];
+  if (rowIntro === null) {
+    reasons.push("the registration row's introducing commit cannot be found — a row HEAD carries must have been added somewhere");
+  }
+  if (manifestIntro !== null && rowIntro !== null && manifestIntro !== rowIntro) {
+    reasons.push(
+      `the manifest was introduced by ${manifestIntro} and the registration row by ${rowIntro} — two commits are two acts, not "the same command" (voidConditions 1)`
+    );
+  }
+
+  // (a) byte identity across the three copies of the manifest.
+  const headManifest = probe(["show", `HEAD:${manifestRel}`]);
+  if (headManifest.code !== 0) {
+    reasons.push(`HEAD does not carry ${manifestRel}`);
+  } else {
+    if (headManifest.out !== manifestBytesOnDisk) {
+      reasons.push(`the on-disk manifest differs from HEAD's blob — the bytes about to run are not the registered bytes`);
+    }
+    if (manifestIntro !== null) {
+      const regManifest = probe(["show", `${manifestIntro}:${manifestRel}`]);
+      if (regManifest.code !== 0 || regManifest.out !== headManifest.out) {
+        reasons.push(`HEAD's manifest differs from the registration commit's blob — the manifest moved after the act`);
+      }
+    }
+  }
+
+  // (c) prefix preservation, in raw bytes.
+  if (rowIntro !== null) {
+    const regMeasurements = probe(["show", `${rowIntro}:MEASUREMENTS.jsonl`]);
+    if (regMeasurements.code !== 0) {
+      reasons.push(`the registration commit does not carry MEASUREMENTS.jsonl — the act cannot be replayed`);
+    } else if (!headMeasurements.out.startsWith(regMeasurements.out)) {
+      reasons.push(
+        "HEAD's MEASUREMENTS.jsonl does not preserve the registration commit's content as a byte prefix — the append-only register was rewritten"
+      );
+    }
+  }
+  const diskPath = path.join(repoRoot, "MEASUREMENTS.jsonl");
+  const disk = existsSync(diskPath) ? readFileSync(diskPath, "utf8") : null;
+  if (disk === null) {
+    reasons.push("MEASUREMENTS.jsonl is missing from the working tree");
+  } else if (!disk.startsWith(headMeasurements.out)) {
+    reasons.push("the working tree's MEASUREMENTS.jsonl does not preserve HEAD's content as a byte prefix");
+  } else {
+    const suffix = disk.slice(headMeasurements.out.length);
+    if (suffix !== "") {
+      if (!suffix.endsWith("\n")) {
+        reasons.push("the uncommitted MEASUREMENTS.jsonl suffix is not newline-terminated");
+      }
+      for (const line of suffix.split("\n")) {
+        if (line.trim() === "") continue;
+        try {
+          JSON.parse(line);
+        } catch {
+          reasons.push(`the uncommitted MEASUREMENTS.jsonl suffix carries a non-JSON line: ${line.slice(0, 60)}`);
+          break;
+        }
+      }
+    }
+  }
+  return reasons;
 }
 
 /**
@@ -1585,7 +1712,7 @@ function preflight(args) {
  * an intention.
  */
 async function observe(args) {
-  const { manifest, sha256: manifestSha } = loadManifest(args.manifest);
+  const { manifest, sha256: manifestSha, text: manifestText } = loadManifest(args.manifest);
   // FIRST, before anything spends: the declaration gaps. See
   // `manifestDeclarationGaps` for the three classes and the timing constraint —
   // this refusal is designed for the pre-registration window, and hitting it on
@@ -1701,6 +1828,18 @@ async function observe(args) {
   // A refusal PAST this point leaves the lock deliberately: something died
   // mid-observation and the operator should look before anything re-runs.
   const runId = manifest.runId ?? "b12-unnamed";
+  // THE REGISTRATION GUARD: a session may only be spent on a REGISTERED run
+  // whose registration is still coherent — the canonical path, the same-act
+  // proof, the append-only register's byte prefix. Before the lock, before
+  // the session id, before any worktree: a refusal here costs nothing.
+  const canonicalManifest = path.join(REPO, "evidence", `${runId}.b12.tasks.json`);
+  if (path.resolve(args.manifest) !== path.resolve(canonicalManifest)) {
+    refuse(
+      `observe runs the CANONICAL manifest evidence/${runId}.b12.tasks.json, not ${args.manifest} — a session may not be spent on an unregistered copy`
+    );
+  }
+  const guardReasons = registrationGuard(REPO, runId, manifestText);
+  if (guardReasons.length > 0) refuse(`registration guard: ${guardReasons.join("; ")}`);
   const sessionLock = acquireSessionLock(path.join(REPO, "evidence"), runId, task.id, arm);
   if (!sessionLock.ok) {
     refuse(
