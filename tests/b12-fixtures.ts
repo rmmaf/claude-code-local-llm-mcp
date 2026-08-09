@@ -18,17 +18,27 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
+import { isLocalToolResult } from "../src/cost/report.js";
 import type { CreditedLedgerRow, RefusedLedgerRow, RowDisposition } from "../src/cost/report.js";
 import type {
+  ArchivedObservation,
   Arm,
   B12Observation,
   IdentifiedRow,
   KeyedRow,
+  ManifestTask,
+  ObservationRecord,
   ObservationTerms,
+  RunArchive,
+  RunlogRow,
   RunTelemetryCoverage,
 } from "../src/cost/b12/types.js";
 import type { AggregateInput } from "../src/cost/b12/aggregate.js";
 import { identify, runCoverage } from "../src/cost/b12/coverage.js";
+import { DEFAULT_RATES } from "../src/cost/rates.js";
+import { transcriptFromRecords } from "../src/cost/transcript.js";
+import type { RawRecord } from "../src/cost/transcript.js";
+import type { TelemetryRecord } from "../src/telemetry.js";
 import { makeTempRoot } from "./helpers.js";
 
 /** Epoch base shared by every fixture, so timestamps are comparable across files. */
@@ -395,5 +405,267 @@ export function terms(over: Partial<ObservationTerms> = {}): ObservationTerms {
     ...materialized,
     sLoUncapped: over.sLoUncapped ?? materialized.sLo,
     sHiUncapped: over.sHiUncapped ?? materialized.sHi,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The UNIT 5 archive builders — one coherent default, broken one field at a
+// time. Moved here from `b12-assemble.test.ts` unchanged, because clause 6's
+// two-worktree control lives in `tests/cost-meter.test.ts` (the file the
+// frozen text NAMES) and a second copy of this machinery is how two fixtures
+// drift into testing different archives.
+// ---------------------------------------------------------------------------
+
+export const RUN = "run-01";
+export const H64 = (c: string): string => c.repeat(64);
+export const SHA40 = (c: string): string => c.repeat(40);
+
+export function billed(
+  requestId: string,
+  sessionId: string,
+  ms: number,
+  over: {
+    write1h?: number;
+    write5m?: number;
+    model?: string;
+    sidechain?: boolean;
+    content?: unknown[];
+  } = {}
+): RawRecord {
+  const write1h = over.write1h ?? 0;
+  const write5m = over.write5m ?? 0;
+  return {
+    type: "assistant",
+    requestId,
+    sessionId,
+    uuid: `u-${sessionId}-${requestId}`,
+    parentUuid: null,
+    isSidechain: over.sidechain ?? false,
+    timestamp: at(ms),
+    message: {
+      model: over.model ?? "test-model",
+      content: over.content ?? [],
+      usage: {
+        input_tokens: 0,
+        cache_creation_input_tokens: write1h + write5m,
+        cache_read_input_tokens: 0,
+        output_tokens: 0,
+        cache_creation: { ephemeral_1h_input_tokens: write1h, ephemeral_5m_input_tokens: write5m },
+      },
+    },
+  } as RawRecord;
+}
+
+/** A tool-result record whose payload is taken VERBATIM — no invocation id unless given. */
+export function toolResultRec(sessionId: string, toolUseId: string, ms: number, payload: unknown): RawRecord {
+  return {
+    type: "user",
+    uuid: `res-${sessionId}-${toolUseId}`,
+    parentUuid: null,
+    sessionId,
+    timestamp: at(ms),
+    message: { content: [{ type: "tool_result", tool_use_id: toolUseId }] },
+    toolUseResult: payload,
+  } as RawRecord;
+}
+
+export function telemetryRow(ms: number, over: Partial<TelemetryRecord> = {}): TelemetryRecord {
+  return {
+    ts: at(ms),
+    tool: "gate",
+    bytes_raw: 5_000,
+    bytes_returned: 1_000,
+    turns_collapsed: 0,
+    latency_ms: 10,
+    ...over,
+  };
+}
+
+export function recordOf(taskId: string, sessionId: string, over: Partial<ObservationRecord> = {}): ObservationRecord {
+  const components = {
+    claudeMd: "h-claude",
+    memory: "h-mem",
+    settings: "h-set",
+    settingsLocal: "h-setl",
+    mcpConfigPassed: "h-mcp",
+    policyBlob: "h-pol",
+    allowlist: null,
+  };
+  return {
+    taskId,
+    arm: "treatment",
+    sessionId,
+    runId: RUN,
+    started: at(-500),
+    outcome: "completed",
+    valid: true,
+    invalidReasons: [],
+    censored: false,
+    originatedRequestIds: [`rq-${taskId}`],
+    accepted: true,
+    acceptanceExpectedExit: 0,
+    baseCommit: SHA40("0"),
+    endCommit: SHA40("1"),
+    treeHashAtStart: SHA40("2"),
+    binaryVersion: "2.1.221",
+    binarySha256: H64("b"),
+    mcpConfigPassedSha256: H64("c"),
+    mcpConfigPinned: H64("c"),
+    policyBlobSha256: H64("d"),
+    installedChars: { value: 310.8, adapter: "310.8", probeRunId: "probe-1" },
+    memorySnapshotSha256: H64("e"),
+    instructionHashes: { pre: { ...components }, post: { ...components } },
+    ...over,
+  };
+}
+
+export interface ObsOver {
+  attempt?: number;
+  records?: RawRecord[];
+  telemetry?: TelemetryRecord[];
+  record?: Partial<ObservationRecord> | null;
+  snapshotBefore?: ArchivedObservation["snapshotBefore"];
+  snapshotAfter?: ArchivedObservation["snapshotAfter"];
+  invocationIds?: string[];
+  identityIntact?: boolean;
+}
+
+export function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
+  const attempt = over.attempt ?? 1;
+  const sessionId = `sess-${taskId}-${attempt}`;
+  // A re-run is a FRESH session with fresh request ids — reusing the first
+  // attempt's would be the sibling inheritance `admissionRule` 4 refuses, and
+  // the disposition table's own oracle proves it does.
+  const rqId = attempt === 1 ? `rq-${taskId}` : `rq-${taskId}-r${attempt}`;
+  const records = over.records ?? [billed(rqId, sessionId, 0, { write1h: 1_000 })];
+  const dirName = `obs-${taskId}-treatment${attempt === 1 ? "" : `-r${attempt}`}`;
+  const source = `evidence/${RUN}/${dirName}/telemetry.jsonl`;
+  const files = [`/fake/${sessionId}.jsonl`];
+  const record =
+    over.record === null
+      ? null
+      : recordOf(taskId, sessionId, { originatedRequestIds: [rqId], ...(over.record ?? {}) });
+  const transcript = transcriptFromRecords(records, { files, skippedLines: 0, sessionId });
+  // The sealed inventory the capture would have written — derived from the
+  // same records, so the fixture is coherent and clause 19's equality holds
+  // unless a test breaks it on purpose.
+  const sealedIds =
+    over.invocationIds ??
+    [...new Set(
+      transcript.toolResults
+        .filter(isLocalToolResult)
+        .map((r) => r.invocationId)
+        .filter((id): id is string => id !== null)
+    )].sort();
+  return {
+    taskId,
+    arm: "treatment",
+    attempt,
+    dir: `evidence/${RUN}/${dirName}`,
+    telemetryIntact: true,
+    identityIntact: over.identityIntact ?? true,
+    evidenceCommitted: true,
+    record,
+    lineageRecords: records,
+    lineageFiles: files,
+    transcript,
+    identified: identify(source, over.telemetry ?? []),
+    telemetrySource: source,
+    invocationIds: sealedIds,
+    snapshotBefore:
+      over.snapshotBefore !== undefined
+        ? over.snapshotBefore
+        : { ts: at(-1_000), slugsWalked: 4, files: 2, requestIds: ["rq-prior"] },
+    snapshotAfter:
+      over.snapshotAfter !== undefined
+        ? over.snapshotAfter
+        : {
+            ts: at(60_000),
+            slugsWalked: 4,
+            files: 3,
+            requestIds: ["rq-prior", ...(record?.originatedRequestIds ?? [])],
+          },
+    problems: [],
+  };
+}
+
+export function taskOf(id: string, over: Partial<ManifestTask> = {}): ManifestTask {
+  return {
+    id,
+    promptSha256: H64("f"),
+    baseCommit: SHA40("0"),
+    verificationStratum: "types-only",
+    expectedSubagentStratum: "solo",
+    acceptance: ["node -e ok"],
+    acceptanceExpectedExit: 0,
+    verificationCommands: ["npx tsc --noEmit"],
+    gateCategory: "types",
+    repairMaxRounds: 3,
+    fileScope: ["src/"],
+    ...over,
+  };
+}
+
+export const PINNED = {
+  claudeCodeVersion: "2.1.221",
+  claudeBinarySha256: H64("b"),
+  ratesSha256: H64("a"),
+  clientTruncationCap: 30_000,
+  pacingCacheWriteShareCeiling: 1,
+  perTaskDenominatorShareCap: 0.5,
+  scoringCommand: `node dist/cost/b12/emit.js ${RUN}`,
+  memorySnapshotSha256: H64("e"),
+  mcpConfigSha256: H64("c"),
+};
+
+export function runlogOf(observations: readonly ArchivedObservation[]): RunlogRow[] {
+  return observations.map((o, i) => ({
+    ts: at(i * 100_000),
+    runId: RUN,
+    taskId: o.taskId,
+    arm: o.arm,
+    sessionId: o.record?.sessionId ?? "",
+    outcome: o.record?.outcome ?? "completed",
+    valid: o.record?.valid === true,
+    accepted: o.record?.accepted ?? null,
+    originated: o.record?.originatedRequestIds.length ?? 0,
+  }));
+}
+
+export interface ArchiveOver {
+  tasks?: ManifestTask[];
+  observations?: ArchivedObservation[];
+  runlogRows?: RunlogRow[];
+  corruptLines?: number;
+  pinned?: Record<string, unknown>;
+  git?: Partial<RunArchive["git"]>;
+  register?: RunArchive["register"];
+  evidenceCommitted?: RunArchive["evidenceCommitted"];
+  ratesSha256?: string;
+  problems?: string[];
+}
+
+export function archiveOf(over: ArchiveOver = {}): RunArchive {
+  const tasks = over.tasks ?? [taskOf("t1")];
+  const observations = over.observations ?? tasks.map((t) => obsOf(t.id));
+  return {
+    runId: RUN,
+    manifest: { runId: RUN, tasks, pinned: { ...PINNED, ...(over.pinned ?? {}) }, abPairs: [], raw: {} },
+    manifestSha256: H64("9"),
+    observations,
+    runlog: { rows: over.runlogRows ?? runlogOf(observations), corruptLines: over.corruptLines ?? 0 },
+    rates: DEFAULT_RATES,
+    ratesSha256: over.ratesSha256 ?? H64("a"),
+    git: {
+      manifestBlobSha256: "blob-in-head",
+      manifestMatchesHead: true,
+      manifestCommitsAfterStart: [],
+      ratesSha256AtFrozenCommit: H64("a"),
+      problems: [],
+      ...(over.git ?? {}),
+    },
+    register: over.register ?? { priorRuns: [], discrepancies: [] },
+    evidenceCommitted: over.evidenceCommitted ?? { state: "clean", dirty: [] },
+    problems: over.problems ?? [],
   };
 }

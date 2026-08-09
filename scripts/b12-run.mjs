@@ -176,6 +176,12 @@ function admittedRequestIds(files) {
   // already in hand, and two loops over one corpus is how a file count and a
   // hash list come to disagree about which files there were.
   const fileHashes = [];
+  // Per-file id PRESENCE, for the slug-coverage predicate. Collected in the
+  // same loop, BEFORE the uuid dedup: a resumed session's copy in a second
+  // file carries the same uuid and the same requestId, and the dedup exists to
+  // count billable records once — the id is still PRESENT in that file, and
+  // presence in a slug is exactly what "the run wrote to it" means.
+  const perFileIds = new Map();
   let records = 0;
   for (const file of files) {
     let text;
@@ -186,6 +192,8 @@ function admittedRequestIds(files) {
       throw error;
     }
     fileHashes.push({ path: file, sha256: sha256Text(text) });
+    const fileIds = new Set();
+    perFileIds.set(file, fileIds);
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       let r;
@@ -197,6 +205,7 @@ function admittedRequestIds(files) {
       if (r.type !== "assistant") continue;
       if (r.message?.usage === undefined) continue;
       if (r.isApiErrorMessage === true || r.message?.model === "<synthetic>") continue;
+      if (typeof r.requestId === "string") fileIds.add(r.requestId);
       if (typeof r.uuid === "string") {
         if (seenUuid.has(r.uuid)) continue;
         seenUuid.add(r.uuid);
@@ -205,20 +214,34 @@ function admittedRequestIds(files) {
       if (typeof r.requestId === "string") ids.add(r.requestId);
     }
   }
-  return { ids, records, fileHashes };
+  return { ids, records, fileHashes, perFileIds };
 }
 
 export function takeSnapshot(rootOverride) {
   const dirs = projectSlugDirs(rootOverride);
-  const files = dirs.flatMap((d) => jsonlUnder(d));
-  const { ids, records, fileHashes } = admittedRequestIds(files);
+  // ONE walk per directory, reused for the flat file list AND the slug
+  // attribution below — two walks over one corpus is how two quantities come
+  // to describe different sets of files.
+  const dirFiles = dirs.map((d) => ({ slug: path.basename(d), files: jsonlUnder(d) }));
+  const files = dirFiles.flatMap((s) => s.files);
+  const { ids, records, fileHashes, perFileIds } = admittedRequestIds(files);
   if (dirs.length === 0 || ids.size === 0) {
     refuse(`snapshot covered ${dirs.length} slug(s) and collected ${ids.size} ids — a zero here is a scoping error, not an empty machine`);
+  }
+  // WHICH slugs carry WHICH ids — the populations of `voidConditions` 6/14's
+  // "covered fewer slugs than it wrote to". A count cannot express it: a write
+  // into a NEW slug while another slug vanished leaves the count level.
+  const slugRequestIds = {};
+  for (const { slug, files: slugFiles } of dirFiles) {
+    const set = new Set();
+    for (const f of slugFiles) for (const id of perFileIds.get(f) ?? []) set.add(id);
+    slugRequestIds[slug] = [...set].sort();
   }
   return {
     ts: stamp(),
     slugsWalked: dirs.length,
-    slugs: dirs.map((d) => path.basename(d)),
+    slugs: dirFiles.map((s) => s.slug),
+    slugRequestIds,
     files: files.length,
     billableRecords: records,
     // Sorted by path so two snapshots of one machine are diffable line for line.
@@ -255,6 +278,8 @@ export function classifyRun({
   originatedCount,
   slugsBefore,
   slugsAfter,
+  coveredSlugs,
+  writtenSlugs,
 }) {
   // AN ENUMERATION, NOT A CHAIN OF CONDITIONS.
   //
@@ -312,6 +337,25 @@ export function classifyRun({
   }
   if (slugsAfter < slugsBefore) {
     reasons.push(`snapshot scope shrank mid-observation, ${slugsBefore} slugs to ${slugsAfter}`);
+  }
+  // `voidConditions` 6/14's OWN predicate: "a run whose snapshot covered fewer
+  // slugs than it wrote to". The populations are SETS, not counts — a write
+  // into a new slug while another vanished leaves the count level, and the
+  // shrink check above is a different fact. Handed, never inferred; a rule not
+  // handed its populations REFUSES rather than assumes them disjoint — fields
+  // this rule was never handed are the first defect family named at the top.
+  if (!Array.isArray(coveredSlugs) || !Array.isArray(writtenSlugs)) {
+    reasons.push(
+      "the covered/written slug populations were not handed to the rule — refused rather than assumed covered"
+    );
+  } else {
+    const covered = new Set(coveredSlugs);
+    const outside = writtenSlugs.filter((s) => !covered.has(s));
+    if (outside.length > 0) {
+      reasons.push(
+        `snapshot covered fewer slugs than the run wrote to: ${outside.join(", ")} carr${outside.length === 1 ? "ies" : "y"} originated ids outside the pre-snapshot's coverage`
+      );
+    }
   }
   // A fact the harness holds, never inferred from the clock.
   if (budgetEnforced === false) {
@@ -1710,6 +1754,13 @@ async function observe(args) {
   // The artifact is still written. Refusing to write would hide the failure from
   // the very record that is supposed to make a run re-adjudicable; what is
   // refused is calling it valid, and the exit code stops a driver.
+  // The slugs the arm WROTE to: those whose transcripts carry an originated
+  // id. Derived from the post-snapshot's own attribution, so the rule below
+  // compares the pre-snapshot's coverage against writes the same walk saw.
+  const originatedSet = new Set(originated);
+  const writtenSlugs = Object.entries(after.slugRequestIds)
+    .filter(([, slugIds]) => slugIds.some((id) => originatedSet.has(id)))
+    .map(([slug]) => slug);
   const verdict = classifyRun({
     // A fact, not an inference: this is the same `budgetMs` handed to spawnSync.
     budgetEnforced: Number.isFinite(budgetMs) && budgetMs > 0,
@@ -1720,6 +1771,8 @@ async function observe(args) {
     originatedCount: originated.length,
     slugsBefore: before.slugsWalked,
     slugsAfter: after.slugsWalked,
+    coveredSlugs: before.slugs,
+    writtenSlugs,
   });
   const censored = verdict.censored;
   const invalid = verdict.reasons;

@@ -30,7 +30,9 @@ import {
 } from "../src/cost/rates.js";
 import type { BilledRequest } from "../src/cost/transcript.js";
 import { listSessionIds, listTranscripts, projectTranscriptDir, readTranscript, sessionFiles } from "../src/cost/transcript.js";
+import { assembleRun } from "../src/cost/b12/assemble.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
+import { archiveOf, billed, obsOf, PINNED, taskOf } from "./b12-fixtures.js";
 import { makeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
@@ -2111,6 +2113,11 @@ describe("the B12 harness", () => {
       originatedCount: 12,
       slugsBefore: 3,
       slugsAfter: 3,
+      // The covered-vs-written populations, satisfied by default (written is a
+      // subset) so every outcome test above stays about ITS outcome. The rule
+      // fails closed without them; the slug-coverage control fires them.
+      coveredSlugs: ["slug-a", "slug-b", "slug-c"],
+      writtenSlugs: ["slug-a"],
       ...over,
     });
   };
@@ -2384,6 +2391,153 @@ describe("the B12 harness", () => {
     expect([...harness].sort()).toEqual(["req-1", "req-3", "req-7"]);
     expect([...meter].filter((r) => !r.startsWith("__norid__")).sort()).toEqual(["req-1", "req-3", "req-7"]);
     expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
+  });
+
+  it("rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control", async () => {
+    // TWO WORKTREES, TWO SLUGS, both covered by the pre-snapshot — the frozen
+    // control's own topology. Worktree A's session already carries `rq-inh-x`;
+    // the arm in worktree B RESUMES that session, so B's transcript holds
+    // `rq-inh-x` beside its own new `rq-inh-y`. A snapshot of ONE slug returns
+    // inherited = 0 for an arm that wrote to another — the check that cannot
+    // fail — which is why the fixture must have two.
+    const billable = (requestId: string, sessionId: string, ms: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        uuid: `u-${sessionId}-${requestId}`,
+        requestId,
+        sessionId,
+        timestamp: new Date(1_700_000_000_000 + ms).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 1 } },
+      });
+    const root = tempRoot();
+    const slugA = path.join(root, "worktree-a");
+    const slugB = path.join(root, "worktree-b");
+    await fs.mkdir(slugA, { recursive: true });
+    await fs.mkdir(slugB, { recursive: true });
+    await fs.writeFile(path.join(slugA, "sess-a.jsonl"), `${billable("rq-inh-x", "sess-a", 0)}\n`, "utf8");
+    await fs.writeFile(path.join(slugB, "sess-b.jsonl"), `${billable("rq-b-base", "sess-b", 1)}\n`, "utf8");
+
+    const { takeSnapshot } = await import("../scripts/b12-run.mjs");
+    const before = takeSnapshot(root);
+    expect(before.slugs).toEqual(["worktree-a", "worktree-b"]);
+    expect(before.requestIds).toContain("rq-inh-x");
+
+    // The resume: worktree B gains the inherited lineage plus one new id.
+    await fs.writeFile(
+      path.join(slugB, "sess-resumed.jsonl"),
+      `${billable("rq-inh-x", "sess-resumed", 2)}\n${billable("rq-inh-y", "sess-resumed", 3)}\n`,
+      "utf8"
+    );
+    const after = takeSnapshot(root);
+
+    // The REAL derivation (`observe`'s own line): the inherited id is NOT
+    // originated, BY CONSTRUCTION — the pre-snapshot covered the sibling slug.
+    const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
+    expect(originated).toEqual(["rq-inh-y"]);
+
+    // THE CONTROL: a record that CLAIMS the inherited id anyway reaches the
+    // scorer with these very snapshots archived, and the cumulative union
+    // REJECTS it — `inherited > 0` is void(sibling_inheritance), never scored.
+    const narrowed = (s: { ts: string; slugsWalked: number; files: number; requestIds: string[] }) => ({
+      ts: s.ts,
+      slugsWalked: s.slugsWalked,
+      files: s.files,
+      requestIds: s.requestIds,
+    });
+    const out = assembleRun({
+      archive: archiveOf({
+        tasks: [taskOf("t1"), taskOf("t2")],
+        observations: [
+          // The honest observation: its snapshots are the REAL pair above and
+          // its record claims exactly what the derivation returned.
+          obsOf("t1", {
+            records: [billed("rq-inh-y", "sess-t1-1", 0, { write1h: 100 })],
+            record: { originatedRequestIds: ["rq-inh-y"] },
+            snapshotBefore: narrowed(before),
+            snapshotAfter: narrowed(after),
+          }),
+          // The hostile one: it claims the id the sibling worktree already held.
+          obsOf("t2", {
+            records: [billed("rq-inh-x", "sess-t2-1", 10, { write1h: 100 })],
+            record: { originatedRequestIds: ["rq-inh-x"] },
+          }),
+        ],
+      }),
+      gitAudit: { ran: false },
+      scoringCommandActual: PINNED.scoringCommand,
+    });
+    const cf = (taskId: string) => out.counterfactual.observations.find((o) => o.taskId === taskId);
+    expect(cf("t1")?.disposition).toBe("scored");
+    expect(cf("t2")?.disposition).toBe("void(sibling_inheritance)");
+  });
+
+  it("rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control", async () => {
+    // The frozen predicate compares POPULATIONS: the pre-snapshot's covered
+    // slugs against the slugs the originated ids landed in. The slug COUNT
+    // grows here (1 → 2), so the shrink check reads nothing — which is exactly
+    // why counts cannot carry this clause.
+    const billable = (requestId: string, sessionId: string, ms: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        uuid: `u-${sessionId}-${requestId}`,
+        requestId,
+        sessionId,
+        timestamp: new Date(1_700_000_000_000 + ms).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 1 } },
+      });
+    const root = tempRoot();
+    const slugA = path.join(root, "worktree-a");
+    await fs.mkdir(slugA, { recursive: true });
+    await fs.writeFile(path.join(slugA, "sess-a.jsonl"), `${billable("rq-cov-a", "sess-a", 0)}\n`, "utf8");
+
+    const { takeSnapshot, classifyRun } = await import("../scripts/b12-run.mjs");
+    const before = takeSnapshot(root);
+    expect(before.slugs).toEqual(["worktree-a"]);
+
+    // The arm writes into a slug the pre-snapshot never walked.
+    const slugB = path.join(root, "worktree-b");
+    await fs.mkdir(slugB, { recursive: true });
+    await fs.writeFile(path.join(slugB, "sess-b.jsonl"), `${billable("rq-cov-b", "sess-b", 1)}\n`, "utf8");
+    const after = takeSnapshot(root);
+
+    // The attribution `observe` performs, over the snapshot's own populations.
+    const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
+    const originatedSet = new Set(originated);
+    const writtenSlugs = Object.entries(after.slugRequestIds)
+      .filter(([, ids]) => ids.some((id) => originatedSet.has(id)))
+      .map(([slug]) => slug);
+    expect(writtenSlugs).toEqual(["worktree-b"]);
+
+    const base = {
+      exitCode: 0,
+      signal: null,
+      errorCode: null,
+      budgetMs: 1_000,
+      budgetEnforced: true,
+      originatedCount: originated.length,
+      slugsBefore: before.slugsWalked,
+      slugsAfter: after.slugsWalked,
+    };
+    // FIRING: a written slug outside the covered set voids the run — and the
+    // shrink reason stays silent, because 1 → 2 is not a shrink.
+    const fired = classifyRun({ ...base, coveredSlugs: before.slugs, writtenSlugs });
+    expect(fired.valid).toBe(false);
+    expect(fired.reasons.join(" ")).toMatch(/covered fewer slugs than the run wrote to/);
+    expect(fired.reasons.join(" ")).not.toMatch(/scope shrank/);
+    // NOT firing: written ⊆ covered is a clean run.
+    const clean = classifyRun({ ...base, coveredSlugs: after.slugs, writtenSlugs });
+    expect(clean.valid).toBe(true);
+    expect(clean.reasons).toEqual([]);
+    // And the rule fails CLOSED when the populations are not handed to it —
+    // a coverage predicate that silently skips is the vacuous check the
+    // snapshot exists to kill.
+    const unhanded = classifyRun({
+      ...base,
+      coveredSlugs: undefined as unknown as string[],
+      writtenSlugs: undefined as unknown as string[],
+    });
+    expect(unhanded.valid).toBe(false);
+    expect(unhanded.reasons.join(" ")).toMatch(/not handed to the rule/);
   });
 
   it("cannot report a passing pre-flight without a fresh call to check", async () => {

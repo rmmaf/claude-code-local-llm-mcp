@@ -51,13 +51,27 @@ export function takeSnapshot(rootOverride?: string): {
   ts: string;
   slugsWalked: number;
   slugs: string[];
+  /**
+   * WHICH slugs carry WHICH admitted ids — the populations of the
+   * covered-vs-written predicate (`voidConditions` 6/14). By PRESENCE, before
+   * the uuid dedup: a resumed session's copy in a second slug carries the same
+   * id, and that presence is exactly what "the run wrote to it" means.
+   */
+  slugRequestIds: Record<string, string[]>;
   files: number;
   billableRecords: number;
   fileHashes: Array<{ path: string; sha256: string }>;
   requestIds: string[];
 };
 
-/** The closed classification of one arm's outcome. `scripts/b12-run.mjs`. */
+/**
+ * The closed classification of one arm's outcome. `scripts/b12-run.mjs`.
+ *
+ * `coveredSlugs`/`writtenSlugs` are the SETS of `voidConditions` 6/14's "a run
+ * whose snapshot covered fewer slugs than it wrote to" — counts cannot express
+ * it, and the shrink check is a different fact. REQUIRED: the rule fails
+ * CLOSED with a named reason when either population is not handed to it.
+ */
 export function classifyRun(input: {
   exitCode: number | null;
   signal: string | null;
@@ -67,6 +81,8 @@ export function classifyRun(input: {
   originatedCount: number;
   slugsBefore: number;
   slugsAfter: number;
+  coveredSlugs: string[];
+  writtenSlugs: string[];
 }): { outcome: ClassifiedOutcome; censored: boolean; valid: boolean; reasons: string[] };
 
 /**
