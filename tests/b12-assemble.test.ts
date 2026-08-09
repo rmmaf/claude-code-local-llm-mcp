@@ -652,7 +652,9 @@ describe("the archive-level clauses — each fired and each held", () => {
     const zero = assemble(
       archiveOf({
         observations: [
-          obsOf("t1", { snapshotBefore: { ts: at(0), slugsWalked: 0, files: 0, requestIds: [] } }),
+          obsOf("t1", {
+            snapshotBefore: { ts: at(0), identity: null, slugsWalked: 0, files: 0, requestIds: [] },
+          }),
         ],
       })
     );

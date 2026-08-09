@@ -47,8 +47,13 @@ export type ClassifiedOutcome =
  * it must run before `dist/` exists, and two implementations that are never
  * compared is how the meter and the oracle drifted apart four times.
  */
-export function takeSnapshot(rootOverride?: string): {
+export function takeSnapshot(
+  rootOverride?: string,
+  identity?: { runId: string; taskId: string; arm: string; sessionId: string; phase: string } | null
+): {
   ts: string;
+  /** Present exactly when the caller stamped one — see the scorer's checks. */
+  identity?: { runId: string; taskId: string; arm: string; sessionId: string; phase: string };
   slugsWalked: number;
   slugs: string[];
   /**
@@ -63,6 +68,19 @@ export function takeSnapshot(rootOverride?: string): {
   fileHashes: Array<{ path: string; sha256: string }>;
   requestIds: string[];
 };
+
+/**
+ * The session id, unique per attempt by construction (nonce beside the
+ * one-second stamp), and the cross-process claim that makes a same-task race
+ * a refusal. The audit's clause-5 anchor requires the runlog join bijective.
+ */
+export function mintSessionId(manifestSha: string, runId: string, taskId: string, arm: string): string;
+export function acquireSessionLock(
+  evidenceDir: string,
+  runId: string,
+  taskId: string,
+  arm: string
+): { ok: boolean; lockDir: string; release: () => void };
 
 /**
  * The closed classification of one arm's outcome. `scripts/b12-run.mjs`.

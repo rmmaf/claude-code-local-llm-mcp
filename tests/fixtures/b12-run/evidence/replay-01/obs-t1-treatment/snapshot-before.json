@@ -1,1 +1,1 @@
-{ "ts": "2023-11-14T22:13:19.000Z", "slugsWalked": 4, "files": 2, "requestIds": ["rq-prior"] }
+{ "ts": "2023-11-14T22:13:19.000Z", "identity": { "runId": "replay-01", "taskId": "t1", "arm": "treatment", "sessionId": "sess-t1", "phase": "before" }, "slugsWalked": 4, "files": 2, "requestIds": ["rq-prior"] }

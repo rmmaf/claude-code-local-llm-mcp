@@ -758,6 +758,20 @@ export interface RunManifest {
 /** A pre/post-observation snapshot, as archived. `requestIds` is the full list. */
 export interface SnapshotFacts {
   ts: string | null;
+  /**
+   * WHOSE snapshot this is — stamped by the harness since the R7 debt closed,
+   * and CHECKED by the archive reader against the directory, the record and
+   * the run: a stamp that disagrees is cross-wired evidence (`identityIntact`
+   * false, terms refused); a stamp that is absent is a reported problem,
+   * because stripping the stamp is a swapper's cheapest move.
+   */
+  identity: {
+    runId: string | null;
+    taskId: string | null;
+    arm: string | null;
+    sessionId: string | null;
+    phase: string | null;
+  } | null;
   slugsWalked: number | null;
   files: number | null;
   requestIds: string[];

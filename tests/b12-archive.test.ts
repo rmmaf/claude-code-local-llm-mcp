@@ -325,6 +325,42 @@ describe("readRunArchive — the hostile disk", () => {
     // committed-fixture test above via `problems: []`
   });
 
+  it("a swapped or stripped snapshot stamp is caught — the R7 identity controls", async () => {
+    // SWAPPED: a snapshot stamped for another session under this directory's
+    // name is cross-wired evidence — `identityIntact` false, terms refused,
+    // exactly like the record and archive halves of the binding.
+    const swapped = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "snapshot-before.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        parsed.identity.sessionId = "sess-evil";
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(swapped.observations[0]!.identityIntact).toBe(false);
+    expect(swapped.observations[0]!.problems.join(" ")).toMatch(
+      /snapshot-before\.json is stamped for session sess-evil/
+    );
+
+    // STRIPPED: removing the stamp is a swapper's cheapest move, and silence
+    // would reward it — a REPORTED problem, on the artifact's face, while the
+    // binding itself stays undecided rather than falsely refused.
+    const stripped = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "snapshot-after.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        delete parsed.identity;
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(stripped.observations[0]!.identityIntact).toBe(true);
+    expect(stripped.observations[0]!.problems.join(" ")).toMatch(
+      /snapshot-after\.json carries no identity stamps/
+    );
+  });
+
   it("an extra directory is reported and a missing runlog is reported", async () => {
     const extra = await readRunArchive(
       await fixtureCopy((root) => fs.mkdir(path.join(root, "evidence", "replay-01", "scratch-notes"))),

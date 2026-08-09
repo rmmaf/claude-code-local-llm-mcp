@@ -575,12 +575,19 @@ export function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
     snapshotBefore:
       over.snapshotBefore !== undefined
         ? over.snapshotBefore
-        : { ts: at(-1_000), slugsWalked: 4, files: 2, requestIds: ["rq-prior"] },
+        : {
+            ts: at(-1_000),
+            identity: { runId: RUN, taskId, arm: "treatment", sessionId, phase: "before" },
+            slugsWalked: 4,
+            files: 2,
+            requestIds: ["rq-prior"],
+          },
     snapshotAfter:
       over.snapshotAfter !== undefined
         ? over.snapshotAfter
         : {
             ts: at(60_000),
+            identity: { runId: RUN, taskId, arm: "treatment", sessionId, phase: "after" },
             slugsWalked: 4,
             files: 3,
             requestIds: ["rq-prior", ...(record?.originatedRequestIds ?? [])],

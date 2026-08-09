@@ -2452,6 +2452,39 @@ describe("the B12 harness", () => {
     expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
   });
 
+  it("mints a UNIQUE session id per attempt and refuses a concurrent same-task acquire — in and across processes", async () => {
+    // R7's finding, closed: `stamp()` has one-second resolution, so the old
+    // hash input minted the SAME id for two attempts inside a second. The
+    // nonce ends it; the lock makes the race a refusal. Both halves here,
+    // including a REAL second process against a held lock — `mkdir` is the
+    // OS's atomicity, and only another process can prove it cross-process.
+    const { mintSessionId, acquireSessionLock } = await import("../scripts/b12-run.mjs");
+    const a = mintSessionId("m".repeat(64), "run-x", "t1", "treatment");
+    const b = mintSessionId("m".repeat(64), "run-x", "t1", "treatment");
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+    const root = tempRoot();
+    const held = acquireSessionLock(root, "run-x", "t1", "treatment");
+    expect(held.ok).toBe(true);
+    // Same process, second acquire: refused.
+    expect(acquireSessionLock(root, "run-x", "t1", "treatment").ok).toBe(false);
+    // A DIFFERENT task/arm is not contested.
+    const other = acquireSessionLock(root, "run-x", "t2", "treatment");
+    expect(other.ok).toBe(true);
+    other.release();
+    // A real second process against the held lock: refused there too.
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const probe = await runNode(process.execPath, [
+      "-e",
+      `import(${JSON.stringify(String(new URL(`file:///${script.split("\\\\").join("/")}`)))}).then(m => process.stdout.write(String(m.acquireSessionLock(${JSON.stringify(root)}, "run-x", "t1", "treatment").ok)))`,
+    ]);
+    expect(probe.stdout.trim()).toBe("false");
+    // Released, the claim is takeable again — by anyone.
+    held.release();
+    expect(acquireSessionLock(root, "run-x", "t1", "treatment").ok).toBe(true);
+  }, 30_000);
+
   it("rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control", async () => {
     // TWO WORKTREES, TWO SLUGS, both covered by the pre-snapshot — the frozen
     // control's own topology. Worktree A's session already carries `rq-inh-x`;
@@ -2499,6 +2532,10 @@ describe("the B12 harness", () => {
     // REJECTS it — `inherited > 0` is void(sibling_inheritance), never scored.
     const narrowed = (s: { ts: string; slugsWalked: number; files: number; requestIds: string[] }) => ({
       ts: s.ts,
+      // These machine snapshots were not taken FOR the archived observation,
+      // and a wrong stamp would be the cross-wiring the archive reader fires
+      // on — a typed absence is the honest value here.
+      identity: null,
       slugsWalked: s.slugsWalked,
       files: s.files,
       requestIds: s.requestIds,

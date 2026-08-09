@@ -28,8 +28,8 @@
  * `PREMISES.md` B12 and `evidence/2026-08-05-b12-preregistration.json`.
  */
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -104,6 +104,53 @@ function sha256Text(text) {
 /** ISO seconds, read from the clock in the same command that writes the row. */
 function stamp() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
+ * The session id, UNIQUE PER ATTEMPT BY CONSTRUCTION. `stamp()` has ONE-SECOND
+ * resolution, so the old `manifestSha:task:arm:stamp` input minted the SAME id
+ * for two attempts of one task/arm inside a second — and for two processes
+ * racing the same task. The nonce ends the collision; `acquireSessionLock`
+ * below makes the race itself a refusal instead of an interleaving. The audit
+ * computer's clause-5 anchor joins runlog rows by sessionId + (runId, taskId,
+ * arm) and REQUIRES that join bijective, so uniqueness here is load-bearing,
+ * not hygiene.
+ */
+export function mintSessionId(manifestSha, runId, taskId, arm) {
+  return createHash("sha256")
+    .update(`${manifestSha}:${runId}:${taskId}:${arm}:${stamp()}:${randomUUID()}`)
+    .digest("hex")
+    .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, "$1-$2-$3-$4-$5");
+}
+
+/**
+ * One (runId, taskId, arm) in flight at a time, CROSS-PROCESS: `mkdir` is the
+ * OS's own atomic claim, the same primitive `claimObsDir` stands on. A crash
+ * or a mid-observation refusal leaves the lock behind ON PURPOSE — the next
+ * invocation refuses with the path in hand, and the operator removes it only
+ * after confirming no live process. Stealing a lock silently is how two
+ * observations end up interleaved in one runlog.
+ */
+export function acquireSessionLock(evidenceDir, runId, taskId, arm) {
+  const lockDir = path.join(evidenceDir, `.session-lock-${runId}-${taskId}-${arm}`);
+  try {
+    mkdirSync(lockDir);
+  } catch (error) {
+    if (error?.code === "EEXIST") return { ok: false, lockDir, release: () => {} };
+    throw error;
+  }
+  return {
+    ok: true,
+    lockDir,
+    release: () => {
+      try {
+        rmdirSync(lockDir);
+      } catch {
+        // Released is released; a second release or an already-removed lock
+        // must not fail the observation that finished its work.
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +264,7 @@ function admittedRequestIds(files) {
   return { ids, records, fileHashes, perFileIds };
 }
 
-export function takeSnapshot(rootOverride) {
+export function takeSnapshot(rootOverride, identity = null) {
   const dirs = projectSlugDirs(rootOverride);
   // ONE walk per directory, reused for the flat file list AND the slug
   // attribution below — two walks over one corpus is how two quantities come
@@ -239,6 +286,10 @@ export function takeSnapshot(rootOverride) {
   }
   return {
     ts: stamp(),
+    // WHOSE snapshot this is (R7: written stamps that nothing parses detect
+    // nothing — the scorer CHECKS these against directory, runlog and record,
+    // so a snapshot swapped between attempts is a firing, not a guess).
+    ...(identity === null ? {} : { identity }),
     slugsWalked: dirs.length,
     slugs: dirFiles.map((s) => s.slug),
     slugRequestIds,
@@ -1557,10 +1608,19 @@ async function observe(args) {
     refuse(`task ${task.id} prompt sha256 ${promptSha} != manifest ${task.promptSha256} — the text moved after sealing`);
   }
 
-  const sessionId = createHash("sha256")
-    .update(`${manifestSha}:${task.id}:${arm}:${stamp()}`)
-    .digest("hex")
-    .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, "$1-$2-$3-$4-$5");
+  // The lock is taken HERE — after every cheap refusal above, so a manifest
+  // that cannot run still costs nothing, and immediately before the session
+  // id exists, so no two processes can hold the same (runId, taskId, arm).
+  // A refusal PAST this point leaves the lock deliberately: something died
+  // mid-observation and the operator should look before anything re-runs.
+  const runId = manifest.runId ?? "b12-unnamed";
+  const sessionLock = acquireSessionLock(path.join(REPO, "evidence"), runId, task.id, arm);
+  if (!sessionLock.ok) {
+    refuse(
+      `another observe holds ${task.id}/${arm} (lock ${sessionLock.lockDir}) — one (runId, taskId, arm) may be in flight at a time; remove the lock only after confirming no live process`
+    );
+  }
+  const sessionId = mintSessionId(manifestSha, runId, task.id, arm);
 
   // "The delegation policy leaves the repository under test entirely" (CHANNEL
   // 5). The repository under test is THIS worktree at the task's base commit —
@@ -1614,7 +1674,13 @@ async function observe(args) {
   });
   const instructionPre = instructionHashesAt(memoryRestored.sha256);
 
-  const before = takeSnapshot();
+  const before = takeSnapshot(undefined, {
+    runId,
+    taskId: task.id,
+    arm,
+    sessionId,
+    phase: "before",
+  });
 
   // BOTH arms are strict, and that is a measured correction (2026-08-08), not
   // a style choice. The first probe run on the Mac found ~30 claude.ai ACCOUNT
@@ -1688,7 +1754,13 @@ async function observe(args) {
   // wrote afterwards.
   const instructionPost = instructionHashesAt(hashMemoryDir(memoryDir).sha256);
 
-  const after = takeSnapshot();
+  const after = takeSnapshot(undefined, {
+    runId,
+    taskId: task.id,
+    arm,
+    sessionId,
+    phase: "after",
+  });
   const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
 
   // THE END COMMIT IS MADE HERE, BEFORE ACCEPTANCE, AND THAT IS THE FROZEN RULE
@@ -1785,7 +1857,6 @@ async function observe(args) {
   // `instructionDriftReasons` for the per-component citations.
   invalid.push(...instructionDriftReasons(instructionPre, instructionPost));
 
-  const runId = manifest.runId ?? "b12-unnamed";
   // A RE-RUN GETS ITS OWN DIRECTORY, `obs-<taskId>-<arm>-r<N>`. `admissionRule`
   // 12 says "Both attempts are archived and both fractions published", and one
   // directory per task/arm cannot hold two attempts — the second write would
@@ -1946,6 +2017,22 @@ async function observe(args) {
   // row is what the scorer's replay now refuses the whole order over. A
   // single-line O_APPEND write is the atomic unit the log was designed around.
   const runLog = path.join(REPO, "evidence", `${runId}.b12.runlog.jsonl`);
+  // THE BIJECTION HALF: a sessionId may appear in the runlog ONCE. The nonce
+  // makes a collision astronomically unlikely; asserting it makes a collision
+  // — or a copied row — a refusal instead of a silently ambiguous join in the
+  // audit's clause-5 anchor.
+  if (existsSync(runLog)) {
+    for (const line of readFileSync(runLog, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        if (JSON.parse(line).sessionId === sessionId) {
+          refuse(`sessionId ${sessionId} already appears in the runlog — the (runId, taskId, arm, attempt) ↔ sessionId bijection would break`);
+        }
+      } catch {
+        // A corrupt line is the scorer's finding, not this guard's.
+      }
+    }
+  }
   appendFileSync(
     runLog,
     JSON.stringify({
@@ -1961,6 +2048,9 @@ async function observe(args) {
     }) + "\n",
     "utf8"
   );
+  // The contested resource is the runlog; with the row appended the in-flight
+  // claim has done its work.
+  sessionLock.release();
 
   // THE COMMIT BARRIER. `design.artifacts` 6 says "committed at each task's END,
   // BEFORE THE NEXT TASK STARTS", and the same inventory keys a VOID to a commit

@@ -173,8 +173,18 @@ export function narrowObservationRecord(raw: unknown): ObservationRecord | null 
 /** Narrow a snapshot file. `requestIds` is the FULL list — origination replays over it. */
 export function narrowSnapshot(raw: unknown): SnapshotFacts | null {
   if (!isObject(raw)) return null;
+  const identity = isObject(raw.identity)
+    ? {
+        runId: str(raw.identity.runId),
+        taskId: str(raw.identity.taskId),
+        arm: str(raw.identity.arm),
+        sessionId: str(raw.identity.sessionId),
+        phase: str(raw.identity.phase),
+      }
+    : null;
   return {
     ts: str(raw.ts),
+    identity,
     slugsWalked: int(raw.slugsWalked),
     files: int(raw.files),
     requestIds: strings(raw.requestIds),
@@ -891,6 +901,36 @@ function readObservationDir(
       );
     }
   }
+  // The snapshots joined the binding when the harness started stamping them
+  // (the R7 debt): a PRESENT stamp is held to the directory's identity — a
+  // disagreement is a swapped or copied snapshot and refuses terms with the
+  // rest of the cross-wired family — while an ABSENT stamp is a reported
+  // problem, because stripping the stamp is a swapper's cheapest move and
+  // silence would reward it.
+  const snapshotBefore = narrowSnapshot(readJson("snapshot-before.json"));
+  const snapshotAfter = narrowSnapshot(readJson("snapshot-after.json"));
+  for (const [name, snap] of [
+    ["snapshot-before.json", snapshotBefore],
+    ["snapshot-after.json", snapshotAfter],
+  ] as const) {
+    if (snap === null) continue; // the missing FILE is its own problem below
+    if (snap.identity === null) {
+      problems.push(`${name} carries no identity stamps — a swapped snapshot cannot be shown bound`);
+      continue;
+    }
+    const wrong: string[] = [];
+    if (snap.identity.taskId !== id.taskId || snap.identity.arm !== id.arm) {
+      wrong.push(`names ${snap.identity.taskId ?? "(absent)"}/${snap.identity.arm ?? "(absent)"} while the directory names ${id.taskId}/${id.arm}`);
+    }
+    if (snap.identity.runId !== runId) {
+      wrong.push(`names run ${snap.identity.runId ?? "(absent)"} while the archive is ${runId}'s`);
+    }
+    if (record !== null && snap.identity.sessionId !== record.sessionId) {
+      wrong.push(`is stamped for session ${snap.identity.sessionId ?? "(absent)"} while observation.json names ${record.sessionId}`);
+    }
+    if (wrong.length > 0) identityProblems.push(`${name} ${wrong.join("; ")}`);
+  }
+
   const identityIntact = identityProblems.length === 0;
   problems.push(...identityProblems);
 
@@ -950,8 +990,8 @@ function readObservationDir(
     identified: identify(telemetrySource, telemetryRows as TelemetryRecord[]),
     telemetrySource,
     invocationIds,
-    snapshotBefore: narrowSnapshot(readJson("snapshot-before.json")),
-    snapshotAfter: narrowSnapshot(readJson("snapshot-after.json")),
+    snapshotBefore,
+    snapshotAfter,
     problems,
   };
 }
