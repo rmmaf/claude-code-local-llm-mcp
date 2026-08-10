@@ -66,6 +66,19 @@
 #   B12_PERMISSION_MODE        proof session only (default acceptEdits; use
 #                              bypassPermissions if the tool is never called)
 #
+# THE CALIBRATION KEY IS DUAL. Both arms of the real run deliver their own
+# policy blob via `--append-system-prompt`, so both blobs sit INSIDE the delta
+# this probe measures — (treatment blob − control blob) rides alongside the
+# MCP installation. To calibrate a manifest that seals blobs, this probe must
+# run UNDER those blobs. Provide all four, or none:
+#   B12_POLICY_REPO            path to the policy repo clone (full, not shallow)
+#   B12_POLICY_COMMIT          the sealed commit, full 40-hex
+#   B12_POLICY_TREATMENT_PATH  path inside the repo, e.g. treatment.md
+#   B12_POLICY_CONTROL_PATH    path inside the repo, e.g. control.md
+# With none set the probe is EXPLORATORY: the dual key records nulls, no
+# policy is delivered, and the validator will refuse it against any manifest
+# that seals blobs — which every registrable manifest now does.
+#
 # THIS SCRIPT REFUSES RATHER THAN IMPROVISES. Bash 3.2 compatible.
 
 set -u
@@ -334,6 +347,58 @@ ENV_HASH_0=$(env_hash)
 printf '%s' "$ENV_HASH_0" | grep -qE '^[0-9a-f]{64}$' || refuse "could not hash the environment (settings + CLAUDE.md + memory)"
 ok "environment hash $(printf '%s' "$ENV_HASH_0" | cut -c1-12)…"
 
+# ---------------------------------------------------------------------------
+next "Per-arm policy blobs — the DUAL calibration-key component"
+
+# See the header: both arms deliver their own blob in the real run, so a probe
+# that wants to calibrate a sealing manifest must deliver the SAME blobs, from
+# the SAME object store the manifest seals — `git cat-file blob <commit>:<path>`,
+# never a working-tree file.
+POLICY_REPO="${B12_POLICY_REPO:-}"
+POLICY_COMMIT="${B12_POLICY_COMMIT:-}"
+POLICY_T_PATH="${B12_POLICY_TREATMENT_PATH:-}"
+POLICY_C_PATH="${B12_POLICY_CONTROL_PATH:-}"
+POLICY_SET=0
+if [ -n "$POLICY_REPO" ] || [ -n "$POLICY_COMMIT" ] || [ -n "$POLICY_T_PATH" ] || [ -n "$POLICY_C_PATH" ]; then
+  [ -n "$POLICY_REPO" ] && [ -n "$POLICY_COMMIT" ] && [ -n "$POLICY_T_PATH" ] && [ -n "$POLICY_C_PATH" ] \
+    || refuse "partial policy declaration — set all of B12_POLICY_REPO, B12_POLICY_COMMIT, B12_POLICY_TREATMENT_PATH, B12_POLICY_CONTROL_PATH, or none"
+  POLICY_SET=1
+fi
+POLICY_T_SHA=""
+POLICY_C_SHA=""
+TREATMENT_POLICY=""
+CONTROL_POLICY=""
+policy_blob_sha() {
+  # $1 path inside the policy repo. Bytes from the object store, hashed as bytes.
+  git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$1" 2>/dev/null | shasum -a 256 | cut -d' ' -f1
+}
+if [ $POLICY_SET -eq 1 ]; then
+  case "$POLICY_COMMIT" in
+    ????????????????????????????????????????) : ;;
+    *) refuse "B12_POLICY_COMMIT must be the full 40-hex sealed commit (got \"$POLICY_COMMIT\")" ;;
+  esac
+  [ -d "$POLICY_REPO" ] || refuse "B12_POLICY_REPO $POLICY_REPO does not exist — transport the hashed policy bundle and clone it first"
+  POLICY_SHALLOW=$(git -C "$POLICY_REPO" rev-parse --is-shallow-repository 2>/dev/null)
+  [ "$POLICY_SHALLOW" = "false" ] || refuse "the policy repo at $POLICY_REPO is shallow or not a git repository — an object store that cannot prove its history cannot prove the sealed commit"
+  git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT^{commit}" 2>/dev/null || refuse "sealed commit $POLICY_COMMIT is not reachable in $POLICY_REPO"
+  git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null || refuse "$POLICY_COMMIT:$POLICY_T_PATH is not readable in $POLICY_REPO"
+  git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null || refuse "$POLICY_COMMIT:$POLICY_C_PATH is not readable in $POLICY_REPO"
+  # Content EXACT, trailing newlines preserved: bare $(cat) strips them, and
+  # the run harness (b12-run.mjs) delivers the blob byte-exactly — a probe
+  # that delivered different bytes would calibrate a different system prompt.
+  TREATMENT_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null; printf x)
+  TREATMENT_POLICY=${TREATMENT_POLICY%x}
+  CONTROL_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null; printf x)
+  CONTROL_POLICY=${CONTROL_POLICY%x}
+  POLICY_T_SHA=$(policy_blob_sha "$POLICY_T_PATH")
+  POLICY_C_SHA=$(policy_blob_sha "$POLICY_C_PATH")
+  printf '%s' "$POLICY_T_SHA" | grep -qE '^[0-9a-f]{64}$' || refuse "could not hash the treatment policy blob"
+  printf '%s' "$POLICY_C_SHA" | grep -qE '^[0-9a-f]{64}$' || refuse "could not hash the control policy blob"
+  ok "policy blobs resolved — treatment $(printf '%s' "$POLICY_T_SHA" | cut -c1-12)…, control $(printf '%s' "$POLICY_C_SHA" | cut -c1-12)…"
+else
+  info "no policy blobs declared — EXPLORATORY probe; the dual key records nulls and cannot calibrate a registrable manifest"
+fi
+
 assert_env_still() {
   # $1 names the boundary, for the refusal.
   local now
@@ -479,23 +544,50 @@ run_arm() {
   assert_env_still "before replicate $REP $ARM"
   LOG="$TMP_DIR/claude-r${REP}-${ARM}.log"
   info "replicate $REP, $ARM — session $SID"
+  # Four explicit blocks, not a spliced array: the argv IS the measurement's
+  # shape, and each block mirrors observe()'s order — the per-arm policy (a
+  # single-argument option) sits before `--output-format`, which stays the
+  # NON-VARIADIC guard immediately ahead of `--` and the prompt.
   if [ "$ARM" = "treatment" ]; then
-    DISABLE_AUTOUPDATER=1 claude --print \
-      --session-id "$SID" \
-      --strict-mcp-config \
-      --mcp-config "$MCP_CFG" \
-      --output-format json \
-      -- \
-      "$PROMPT" >"$LOG" 2>&1
-    RC=$?
+    if [ $POLICY_SET -eq 1 ]; then
+      DISABLE_AUTOUPDATER=1 claude --print \
+        --session-id "$SID" \
+        --strict-mcp-config \
+        --mcp-config "$MCP_CFG" \
+        --append-system-prompt "$TREATMENT_POLICY" \
+        --output-format json \
+        -- \
+        "$PROMPT" >"$LOG" 2>&1
+      RC=$?
+    else
+      DISABLE_AUTOUPDATER=1 claude --print \
+        --session-id "$SID" \
+        --strict-mcp-config \
+        --mcp-config "$MCP_CFG" \
+        --output-format json \
+        -- \
+        "$PROMPT" >"$LOG" 2>&1
+      RC=$?
+    fi
   else
-    DISABLE_AUTOUPDATER=1 claude --print \
-      --session-id "$SID" \
-      --strict-mcp-config \
-      --output-format json \
-      -- \
-      "$PROMPT" >"$LOG" 2>&1
-    RC=$?
+    if [ $POLICY_SET -eq 1 ]; then
+      DISABLE_AUTOUPDATER=1 claude --print \
+        --session-id "$SID" \
+        --strict-mcp-config \
+        --append-system-prompt "$CONTROL_POLICY" \
+        --output-format json \
+        -- \
+        "$PROMPT" >"$LOG" 2>&1
+      RC=$?
+    else
+      DISABLE_AUTOUPDATER=1 claude --print \
+        --session-id "$SID" \
+        --strict-mcp-config \
+        --output-format json \
+        -- \
+        "$PROMPT" >"$LOG" 2>&1
+      RC=$?
+    fi
   fi
   if [ $RC -ne 0 ]; then
     tail -20 "$LOG" 2>/dev/null | sed 's/^/      /'
@@ -525,8 +617,16 @@ MCP_SHA_AFTER=$(shasum -a 256 "$MCP_CFG" | cut -d' ' -f1)
 [ "$CLAUDE_VER_AFTER" = "$CLAUDE_VER" ] || refuse "claude --version changed mid-probe (\"$CLAUDE_VER\" -> \"$CLAUDE_VER_AFTER\"). The key moved; the probe is void. Re-run."
 [ "$CLAUDE_SHA_AFTER" = "$CLAUDE_SHA" ] || refuse "the claude binary's sha256 changed mid-probe. The key moved; the probe is void. Re-run."
 [ "$MCP_SHA_AFTER" = "$MCP_SHA" ] || refuse "the --mcp-config bytes changed mid-probe. The key moved; the probe is void. Re-run."
+if [ $POLICY_SET -eq 1 ]; then
+  # Git objects are immutable, so movement here means the OBJECT STORE moved
+  # under the key — repo swapped, replaced or pruned mid-probe.
+  POLICY_T_SHA_AFTER=$(policy_blob_sha "$POLICY_T_PATH")
+  POLICY_C_SHA_AFTER=$(policy_blob_sha "$POLICY_C_PATH")
+  [ "$POLICY_T_SHA_AFTER" = "$POLICY_T_SHA" ] || refuse "the treatment policy blob's bytes changed mid-probe. The key moved; the probe is void. Re-run."
+  [ "$POLICY_C_SHA_AFTER" = "$POLICY_C_SHA" ] || refuse "the control policy blob's bytes changed mid-probe. The key moved; the probe is void. Re-run."
+fi
 assert_env_still "after the last session"
-ok "binary, mcp-config and environment unchanged across the probe"
+ok "binary, mcp-config, policy blobs and environment unchanged across the probe"
 
 # ---------------------------------------------------------------------------
 next "Verdict and artifact"
@@ -582,7 +682,7 @@ const row = sustained
       metric: "installed_system_prompt_token_delta_on_pinned_binary",
       value: deltaTokens, unit: "tokens", premise: "B12",
       method: `scripts/b12-installedchars-probe-mac.sh at ${e.B12_SHA_SHORT} on claude ${e.B12_CLAUDE_VER} (binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}...); proof session showed mcp__local-coder__status callable; 3 replicates x (treatment --strict-mcp-config --mcp-config, control --strict-mcp-config), first billed assistant non-apiError request, TOTAL prompt tokens (input+cacheWrite+cacheRead, cache-invariant), treatment minus control; artifact ${e.B12_ART_NAME}`,
-      note: `DELTAS ${deltas.join(", ")} — IDENTICAL, SUSTAINED. installedChars adapter: ${installedChars} chars (tokens x 3.7, divisor cancels). Calibration key: binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}... x arm x mcp-config ${e.B12_MCP_SHA.slice(0, 12)}... x env ${e.B12_ENV_HASH.slice(0, 12)}... x policy blob NONE (none sealed yet — the value is re-taken when blobs exist, and when a manifest pins extraArgs or its own MCP config). Branch: the F24 harness pass proceeds.`,
+      note: `DELTAS ${deltas.join(", ")} — IDENTICAL, SUSTAINED. installedChars adapter: ${installedChars} chars (tokens x 3.7, divisor cancels). Calibration key: binary sha256 ${e.B12_CLAUDE_SHA.slice(0, 12)}... x arm x mcp-config ${e.B12_MCP_SHA.slice(0, 12)}... x env ${e.B12_ENV_HASH.slice(0, 12)}... x policy blobs ${e.B12_POLICY_T_SHA ? `treatment ${e.B12_POLICY_T_SHA.slice(0, 12)}... control ${e.B12_POLICY_C_SHA.slice(0, 12)}... (delivered per arm via --append-system-prompt)` : "NONE (exploratory — the value is re-taken when blobs are sealed, and when a manifest pins extraArgs or its own MCP config)"}. Branch: the F24 harness pass proceeds.`,
     }
   : {
       run_id: runId, ts, machine: "mac-01",
@@ -605,12 +705,23 @@ const artifact = {
       binarySha256: e.B12_EXPECT_SHA || null,
       note: "asserted when set; no manifest exists yet, so there is no sealed pin to consume",
     },
-    policyBlobSha256: null,
-    policyBlobNote: "no per-arm policy blobs are sealed yet; they are part of the calibration key, so this value must be re-taken when they exist",
+    // DUAL — both arms deliver their own blob via --append-system-prompt in
+    // the real run, so both hashes are calibration-key components. Nulls name
+    // an EXPLORATORY probe, which cannot calibrate a sealing manifest.
+    policyBlobSha256s: {
+      treatment: e.B12_POLICY_T_SHA || null,
+      control: e.B12_POLICY_C_SHA || null,
+    },
+    policyBlobProvenance: e.B12_POLICY_T_SHA
+      ? { repo: e.B12_POLICY_REPO, commit: e.B12_POLICY_COMMIT, treatmentPath: e.B12_POLICY_T_PATH, controlPath: e.B12_POLICY_C_PATH }
+      : null,
+    policyBlobNote: e.B12_POLICY_T_SHA
+      ? "both arms delivered their sealed blob via --append-system-prompt, read from the policy repo's object store (git cat-file blob <commit>:<path>)"
+      : "EXPLORATORY — no policy blobs delivered; every registrable manifest seals blobs, so this probe must be re-taken under them",
     cwd: e.B12_REPO, prompt: e.B12_PROMPT, proofPrompt: e.B12_PROOF_PROMPT,
     argvShape: {
-      treatment: "claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg> --output-format json -- <prompt>",
-      control: "claude --print --session-id <id> --strict-mcp-config --output-format json -- <prompt>",
+      treatment: `claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg>${e.B12_POLICY_T_SHA ? " --append-system-prompt <treatment policy>" : ""} --output-format json -- <prompt>`,
+      control: `claude --print --session-id <id> --strict-mcp-config${e.B12_POLICY_C_SHA ? " --append-system-prompt <control policy>" : ""} --output-format json -- <prompt>`,
       note: "mirrors observe()'s arm flags and option order in scripts/b12-run.mjs (both arms strict since 2026-08-08 — the first probe run found ~30 claude.ai account connectors on the work Mac, unremovable by claude mcp remove; strict on both makes them arm-invariant: excluded from both, or present in both and cancelled by the paired subtraction). NOT byte-for-byte — no manifest exists, so no pinned.extraArgs and no sealed MCP config.",
     },
     mcpJsonPresentInClone: e.B12_MCP_JSON_PRESENT === "true",
@@ -643,6 +754,9 @@ VERDICT_OUT=$(B12_SHA="$LOCAL_SHA" B12_SHA_SHORT="$(git rev-parse --short HEAD)"
   B12_PROMPT="$PROMPT" B12_PROOF_PROMPT="$PROOF_PROMPT" B12_MCP_LIST="$MCP_LIST" \
   B12_MCP_JSON_PRESENT="$MCP_JSON_PRESENT" \
   B12_EXPECT_VER="${B12_EXPECT_CLAUDE_VERSION:-}" B12_EXPECT_SHA="${B12_EXPECT_CLAUDE_SHA256:-}" \
+  B12_POLICY_REPO="$POLICY_REPO" B12_POLICY_COMMIT="$POLICY_COMMIT" \
+  B12_POLICY_T_PATH="$POLICY_T_PATH" B12_POLICY_C_PATH="$POLICY_C_PATH" \
+  B12_POLICY_T_SHA="$POLICY_T_SHA" B12_POLICY_C_SHA="$POLICY_C_SHA" \
   B12_ART_NAME="$(basename "$ART")" \
   node "$VERDICT_JS" "$ART" "$TMP_DIR" 2>&1)
 VERDICT_RC=$?

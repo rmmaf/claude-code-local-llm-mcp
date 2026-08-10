@@ -261,7 +261,9 @@ export interface InstalledCharsRecord {
   calibrationKey: {
     binarySha256: string;
     mcpConfigSha256: string | null;
-    policyBlobSha256: string | null;
+    /** DUAL — both arms deliver their own blob via --append-system-prompt,
+     * so both blobs sit inside the measured delta. */
+    policyBlobSha256s: { treatment: string | null; control: string | null };
     extraArgs: string[];
     protocol: string;
   };
@@ -278,7 +280,7 @@ export function validateInstalledCharsProbe(
   live: {
     binarySha256: string;
     mcpConfigSha256: string | null;
-    policyBlobSha256: string | null;
+    policyBlobSha256s: { treatment: string | null; control: string | null };
     extraArgs: readonly string[];
   }
 ): InstalledCharsRecord;

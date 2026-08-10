@@ -3166,7 +3166,11 @@ describe("the B12 harness", () => {
           commit: "fixture-commit",
           claudeBinarySha256: "bin-sha",
           mcpConfigSha256: "mcp-sha",
-          policyBlobSha256: null as string | null,
+          // DUAL — both arms deliver their own blob, so both are key components.
+          policyBlobSha256s: {
+            treatment: null as string | null,
+            control: null as string | null,
+          },
           prompt: "Reply with exactly: ok. Do not use any tools.",
           argvShape: {
             treatment: "claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg> --output-format json -- <prompt>",
@@ -3179,7 +3183,10 @@ describe("the B12 harness", () => {
     const live = () => ({
       binarySha256: "bin-sha",
       mcpConfigSha256: "mcp-sha" as string | null,
-      policyBlobSha256: null as string | null,
+      policyBlobSha256s: {
+        treatment: null as string | null,
+        control: null as string | null,
+      },
       extraArgs: [] as string[],
     });
 
@@ -3189,7 +3196,7 @@ describe("the B12 harness", () => {
       expect(rec.value).toBe(310.8);
       expect(rec.deltaTokens).toBe(84);
       expect(rec.probeRunId).toBe("probe-run-id");
-      expect(rec.calibrationKey.policyBlobSha256).toBeNull();
+      expect(rec.calibrationKey.policyBlobSha256s).toEqual({ treatment: null, control: null });
       // The protocol is the artifact's own registered reference, never a
       // fallback — the old default labelled missing provenance as valid.
       expect(rec.calibrationKey.protocol).toBe("PREMISES.md § B12 — test fixture");
@@ -3355,15 +3362,32 @@ describe("the B12 harness", () => {
       );
     });
 
-    it("fires when the manifest seals policy blobs the probe never saw", async () => {
-      // The committed probe pre-dates any sealed blob (`policyBlobSha256: null`),
-      // so the first manifest that carries blobs MUST refuse until a re-probe
-      // exists — this refusal is the mechanism that keeps the re-take rule from
-      // being forgotten, and it is asserted here so it cannot rot silently.
+    it("fires when the manifest seals a TREATMENT blob the probe never saw", async () => {
+      // The committed probe pre-dates any sealed blob, so the first manifest
+      // that carries blobs MUST refuse until a re-probe exists — this refusal
+      // is the mechanism that keeps the re-take rule from being forgotten.
+      // SEPARATE controls per arm: one arm's blob moving shifts the measured
+      // delta without touching the other's, so each mismatch is its own guard.
       const { validateInstalledCharsProbe } = await load();
-      expect(() => validateInstalledCharsProbe(probe(), { ...live(), policyBlobSha256: "sealed-blob-sha" })).toThrow(
-        /policy-blob .* re-probe/
-      );
+      const moved = { ...live(), policyBlobSha256s: { treatment: "sealed-blob-sha", control: null } };
+      expect(() => validateInstalledCharsProbe(probe(), moved)).toThrow(/treatment policy-blob .* re-probe/);
+    });
+
+    it("fires when the manifest seals a CONTROL blob the probe never saw", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const moved = { ...live(), policyBlobSha256s: { treatment: null, control: "sealed-blob-sha" } };
+      expect(() => validateInstalledCharsProbe(probe(), moved)).toThrow(/control policy-blob .* re-probe/);
+    });
+
+    it("fires on a probe still carrying the SINGULAR pre-dual key — the schema names the re-probe", async () => {
+      // The committed 2026-08-08 evidence artifact has `policyBlobSha256: null`
+      // and no per-arm component; every registrable manifest now seals blobs,
+      // so that artifact can never calibrate again and the validator says WHY.
+      const { validateInstalledCharsProbe } = await load();
+      const p = probe() as { context: Record<string, unknown> };
+      delete p.context.policyBlobSha256s;
+      p.context.policyBlobSha256 = null;
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/no per-arm policy-blob component .* re-probe/);
     });
 
     it("fires when the manifest pins extraArgs the probe ran without", async () => {

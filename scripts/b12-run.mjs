@@ -1240,12 +1240,14 @@ function restoreMemory(snapshotDir, memoryDir) {
  * statistic is the paired first-request TOTAL prompt-token delta on the pinned
  * binary; `installedChars := tokens × 3.7`, an adapter, so the frozen divisor
  * cancels; the calibration key is binary sha256 × arm × MCP-config hash ×
- * policy-blob hash × protocol; "Any component moves, the value is re-taken";
- * "a value with no provenance is refused". So a mismatch on ANY component
- * throws rather than degrades — including the null-blob case: the committed
- * probe ran before any policy blob was sealed (`policyBlobSha256: null`), so a
- * manifest that declares blobs is refused until a re-probe under those blobs
- * exists. The refusal is what keeps the re-take rule from being forgotten.
+ * the DUAL per-arm policy-blob hashes × protocol; "Any component moves, the
+ * value is re-taken"; "a value with no provenance is refused". So a mismatch
+ * on ANY component throws rather than degrades — including the pre-blob case:
+ * the committed 2026-08-08 probe ran before any policy blob was sealed and
+ * carries the SINGULAR pre-dual key, so a manifest that seals blobs (every
+ * registrable manifest now does) is refused until a re-probe under those
+ * blobs exists. The refusal is what keeps the re-take rule from being
+ * forgotten.
  *
  * ONLY THE TREATMENT ARM CARRIES A VALUE. The probe measured ONE delta
  * (treatment − control); the control arm is the baseline INSIDE that
@@ -1405,11 +1407,28 @@ export function validateInstalledCharsProbe(probe, live) {
   if ((ctx.mcpConfigSha256 ?? null) !== (live.mcpConfigSha256 ?? null)) {
     fail(`calibration key moved: probe MCP-config sha256 ${String(ctx.mcpConfigSha256 ?? null)} != live ${String(live.mcpConfigSha256 ?? null)}`);
   }
-  if ((ctx.policyBlobSha256 ?? null) !== (live.policyBlobSha256 ?? null)) {
+  // THE POLICY-BLOB COMPONENT IS DUAL — {treatment, control} — because BOTH
+  // arms deliver their own blob via `--append-system-prompt`, so both blobs
+  // sit INSIDE the delta the probe measured: treatment − control includes
+  // (treatment blob − control blob) alongside the MCP installation. One arm's
+  // blob moving shifts the delta without touching the other's, so each arm is
+  // compared separately and each mismatch is named separately.
+  if (ctx.policyBlobSha256s === undefined) {
     fail(
-      `calibration key moved: probe policy-blob sha256 ${String(ctx.policyBlobSha256 ?? null)} != live ${String(live.policyBlobSha256 ?? null)} — ` +
-        "the committed probe pre-dates any sealed blob, so sealed blobs demand a re-probe"
+      "the probe's calibration key carries no per-arm policy-blob component (policyBlobSha256s) — " +
+        "it pre-dates the dual {treatment, control} key, and every registrable manifest now seals blobs, " +
+        "so a re-probe under the sealed blobs is required (the re-take rule, not a schema nicety)"
     );
+  }
+  for (const armName of ["treatment", "control"]) {
+    const probeSha = ctx.policyBlobSha256s?.[armName] ?? null;
+    const liveSha = live.policyBlobSha256s?.[armName] ?? null;
+    if (probeSha !== liveSha) {
+      fail(
+        `calibration key moved: probe ${armName} policy-blob sha256 ${String(probeSha)} != live ${String(liveSha)} — ` +
+          "the blob sits inside the measured delta, so a moved blob demands a re-probe"
+      );
+    }
   }
   const probeExtra = JSON.stringify(ctx.extraArgs ?? []);
   const liveExtra = JSON.stringify(live.extraArgs ?? []);
@@ -1425,7 +1444,10 @@ export function validateInstalledCharsProbe(probe, live) {
     calibrationKey: {
       binarySha256: ctx.claudeBinarySha256,
       mcpConfigSha256: ctx.mcpConfigSha256 ?? null,
-      policyBlobSha256: ctx.policyBlobSha256 ?? null,
+      policyBlobSha256s: {
+        treatment: ctx.policyBlobSha256s?.treatment ?? null,
+        control: ctx.policyBlobSha256s?.control ?? null,
+      },
       extraArgs: ctx.extraArgs ?? [],
       // Never defaulted — validated above; a fallback here would label missing
       // provenance as the registered protocol.
@@ -1434,7 +1456,7 @@ export function validateInstalledCharsProbe(probe, live) {
   };
 }
 
-function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
+function findInstalledChars(manifest, binary, mcp, policyBlobs) {
   const declared = manifest.pinned?.installedCharsProbe;
   if (!declared) {
     return {
@@ -1458,7 +1480,13 @@ function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
   if (!want) return { record: null, why: "manifest.pinned.installedCharsProbeSha256 is absent — required, not compared-if-present" };
   if (want !== sha) return { record: null, why: `probe artifact sha256 ${sha} != pinned ${want}` };
   if (mcp === null) return { record: null, why: "cannot validate the probe's calibration key without a resolved treatment MCP config" };
-  if (treatmentBlob === null) return { record: null, why: "cannot validate the probe's calibration key without a resolved treatment policy blob" };
+  // BOTH arms' blobs, because the calibration key is dual: each arm's argv
+  // carries its own blob, so each blob sits inside the measured delta.
+  for (const armName of ["treatment", "control"]) {
+    if ((policyBlobs?.[armName] ?? null) === null) {
+      return { record: null, why: `cannot validate the probe's calibration key without a resolved ${armName} policy blob` };
+    }
+  }
   let probe;
   try {
     probe = JSON.parse(readFileSync(file, "utf8"));
@@ -1469,7 +1497,10 @@ function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
     const record = validateInstalledCharsProbe(probe, {
       binarySha256: binary.sha256,
       mcpConfigSha256: mcp.sha256,
-      policyBlobSha256: treatmentBlob.sha256,
+      policyBlobSha256s: {
+        treatment: policyBlobs.treatment.sha256,
+        control: policyBlobs.control.sha256,
+      },
       extraArgs: manifest.pinned?.extraArgs ?? [],
     });
     return { record: { ...record, probeArtifact: declared, probeArtifactSha256: sha }, why: null };
@@ -1478,8 +1509,8 @@ function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
   }
 }
 
-function resolveInstalledChars(manifest, binary, mcp, treatmentBlob) {
-  const { record, why } = findInstalledChars(manifest, binary, mcp, treatmentBlob);
+function resolveInstalledChars(manifest, binary, mcp, policyBlobs) {
+  const { record, why } = findInstalledChars(manifest, binary, mcp, policyBlobs);
   if (record === null) refuse(why);
   return record;
 }
@@ -1851,7 +1882,7 @@ function preflight(args) {
     if (binary === null) {
       check("installedChars probe calibrates to this machine", false, "no claude binary to compare the calibration key against");
     } else {
-      const { record, why } = findInstalledChars(manifest, binary, mcp, blobs.treatment);
+      const { record, why } = findInstalledChars(manifest, binary, mcp, blobs);
       check(
         "installedChars probe calibrates to this machine",
         record !== null,
@@ -2001,16 +2032,19 @@ async function observe(args, pilotMode = false) {
   // that cannot produce a compliant observation costs nothing to discover.
   const mcp = arm === "treatment" ? resolveMcpConfig(manifest) : null;
   const policyBlob = resolvePolicyBlob(manifest, arm);
-  // The other arm's blob is not carried further, but a pair whose other arm
-  // cannot run was never a pair — so it must resolve too.
-  resolvePolicyBlob(manifest, arm === "treatment" ? "control" : "treatment");
+  // The other arm's blob resolves too — a pair whose other arm cannot run was
+  // never a pair, and the calibration key is DUAL, so the other arm's blob
+  // participates in probe validation even on the arm that never delivers it.
+  const otherBlob = resolvePolicyBlob(manifest, arm === "treatment" ? "control" : "treatment");
+  const policyBlobs =
+    arm === "treatment" ? { treatment: policyBlob, control: otherBlob } : { treatment: otherBlob, control: policyBlob };
   const memorySnapshot = resolveMemorySnapshot(manifest);
   // ONE `O_o`, treatment only. The control arm records a named absence, not a
   // second value — see `validateInstalledCharsProbe`'s header for why 0 would
   // be the two-valued `O` the boundary refuses.
   const installedChars =
     arm === "treatment"
-      ? resolveInstalledChars(manifest, binary, mcp, policyBlob)
+      ? resolveInstalledChars(manifest, binary, mcp, policyBlobs)
       : {
           value: null,
           reason:
