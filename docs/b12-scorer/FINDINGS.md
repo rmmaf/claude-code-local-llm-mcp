@@ -1708,13 +1708,16 @@ Two high findings, and both are about a proof that was never asked for.
   this run; `inputs.head` is a real commit and an ANCESTOR of HEAD; the diff
   `inputs.head..HEAD` touches ONLY `evidence/**`; and the inputs read from
   INSIDE evidence — prereg, both manifests, the attestation — are RE-HASHED
-  at HEAD against what the artifact recorded. Those two halves are complete
-  over the audit's own input set: everything outside evidence is frozen by
-  the confined diff (including the clause-5 pinned paths and the tool's own
-  source), and everything inside it is re-hashed, because the diff rule
-  cannot see a change there. Codex's literal recommendation — recompute the
-  audit and require the input set to match EXACTLY — is not implementable:
-  `head` necessarily differs, since committing the audit is what moved HEAD.
+  at HEAD against what the artifact recorded. ~~Those two halves are complete
+  over the audit's own input set~~ — **THAT CLAIM WAS FALSE and R24 says so:
+  the evidence clause 5 is COMPUTED FROM (runlog, counterfactual,
+  per-observation archives) is also inside `evidence/`, was named by no key,
+  and is now covered by `clause5.evidenceDigest`.** What stands: everything
+  outside evidence is frozen by the confined diff (the clause-5 pinned paths,
+  the tool's own source), and what is inside it is re-hashed. Codex's literal
+  recommendation — recompute the audit and require the input set to match
+  EXACTLY — is not implementable: `head` necessarily differs, since
+  committing the audit is what moved HEAD.
 
   A refusal keeps clauses 4–6 UNCHECKED, never "clean" — the same
   fail-closed shape as an unparseable audit.
@@ -1782,6 +1785,51 @@ pinned. **This belongs on the pre-seal decision list.**
 **Both controls fire.** With `openBRefusals` neutered, a colliding id yields
 no refusal at all; with the file dropped from the control match, a control
 attested from `tests/somewhere-else.test.ts` satisfies the clause.
+
+### SEVENTEENTH POST-IMPLEMENTATION ROUND (R24) — adjudicated 2026-08-10
+
+Two findings. The first is R22's own fix reviewed, and it falsifies a claim
+written in this file two rounds ago.
+
+- **R24#1 (high) — the binding named four evidence files and called it
+  `evidence/**`.** R22 bound a committed audit to HEAD by refusing any change
+  OUTSIDE `evidence/**` and re-hashing the inputs read from inside it —
+  prereg, both manifests, the attestation — and this document then claimed
+  "those two halves are complete over the audit's own input set". **They were
+  not.** Clause 5's facts are derived from the runlog (row order and the
+  sessionId join), the counterfactual (which observation is the freeze
+  anchor) and every per-observation archive. All of those live under
+  `evidence/`, so an observation appended after a clean audit changes the
+  anchor's population and the archive being SCORED while the verdict rides
+  along unchanged. New `runEvidenceDigest` enumerates that set at HEAD,
+  hashes each blob, and digests the canonical `"<path> <sha256>"` lines; the
+  artifact records the digest AND the path list, and the emission binding
+  recomputes it. Paths are inside the hashed lines on purpose — an added file
+  moves the digest exactly as an edited one does. A failed enumeration is a
+  REFUSAL in the collector, never "no evidence".
+
+  It lives in `archive.ts` rather than `audit.ts` because `audit.ts` already
+  imports `parseGitAudit` from `emit.ts`; putting it where both import from
+  keeps the cycle from existing at all.
+
+- **R24#2 (medium) — the attestation ran on dependencies from outside the
+  commit it attested.** The detached worktree lives under `.b12/`, so node
+  resolution walks UP into the enclosing repository's `node_modules`: a
+  newer, staler or hand-modified installation could carry the conformance
+  suite past a commit whose own lockfile does not even build, and the
+  artifact recorded only `subjectCommit` — the skew invisible. `--attest-
+  suite` now runs `npm ci` INSIDE the worktree from the checked-out
+  `package-lock.json` (the nearer `node_modules` wins every resolution
+  afterwards), refuses a subject commit that carries no lockfile or does not
+  install, and records `lockfileSha256` in the attestation. An attestation
+  that cannot say which dependency tree it ran on is an `attestationProblem`
+  — the shape check that already voids a malformed artifact.
+
+**Controls.** With the digest comparison suppressed, an observation appended
+after the audit leaves `gitAudit.ran === true` — the archive scored is not
+the archive audited. With it, the refusal names what moved ("1 added") and
+UN-refuses when the file is removed again. On the attestation: the producer
+records the lockfile sha, and an attestation without one is a problem.
 
 ---
 

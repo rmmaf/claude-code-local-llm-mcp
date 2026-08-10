@@ -35,7 +35,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { sha256 } from "./archive.js";
+import { runEvidenceDigest, sha256 } from "./archive.js";
 import { parseGitAudit } from "./emit.js";
 import type { GitAudit } from "./types.js";
 
@@ -142,6 +142,8 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause5.commitsTouchingPinned",
   "clause5.offenders",
   "clause5.excusedByReemission",
+  "clause5.evidencePaths",
+  "clause5.evidenceDigest",
   "clause6.attestationPath",
   "clause6.attestationSha256",
   "clause6.subjectCommit",
@@ -192,6 +194,14 @@ export interface AuditFacts {
     offenders: string[];
     /** Offenders excused because EVERY run artifact was re-emitted after them. */
     excusedByReemission: string[];
+    /**
+     * The committed files these facts were DERIVED from — the runlog, the
+     * counterfactual, every per-observation archive — and their canonical
+     * digest. Recorded so the emission-time binding can prove the archive it
+     * is scoring is the archive that was audited (R24).
+     */
+    evidencePaths: string[];
+    evidenceDigest: string;
   };
   clause6: {
     /** null when the attestation is absent from HEAD. */
@@ -213,6 +223,15 @@ export interface SuiteAttestation {
   /** HEAD when the suite ran — the multi-commit model's subject. */
   subjectCommit: string;
   generatedAt: string;
+  /**
+   * Content sha of `package-lock.json` AT `subjectCommit` — the tree the
+   * suite was installed from. The attestation used to borrow the enclosing
+   * repository's `node_modules`, so a newer, staler or hand-modified
+   * installation could carry the suite past a commit that a clean install
+   * cannot even build (R24). The producer now installs from this lockfile;
+   * recording it is what lets a reader see WHICH one.
+   */
+  lockfileSha256: string;
   files: Array<{ file: string; total: number; passed: number; failed: number; skipped: number }>;
   tests: Array<{ file: string; fullName: string; status: string }>;
 }
@@ -237,6 +256,14 @@ const isCount = (v: unknown): v is number => typeof v === "number" && Number.isS
  */
 export function attestationProblems(att: SuiteAttestation): string[] {
   const problems: string[] = [];
+  // The dependency tree the suite ran on, by the lockfile it was installed
+  // from (R24). An attestation that cannot say which one ran is incomplete
+  // evidence about the only question clause 6 asks.
+  if (typeof att.lockfileSha256 !== "string" || !/^[0-9a-f]{64}$/.test(att.lockfileSha256)) {
+    problems.push(
+      "the attestation records no lockfileSha256 — it cannot say which dependency tree the conformance suite ran on"
+    );
+  }
   if (!Array.isArray(att.files)) {
     problems.push("the attestation's `files` is not an array — no per-file counter can be read");
   } else {
@@ -465,6 +492,8 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     ),
     "clause5.offenders": joined(facts.clause5.offenders),
     "clause5.excusedByReemission": joined(facts.clause5.excusedByReemission),
+    "clause5.evidencePaths": joined(facts.clause5.evidencePaths),
+    "clause5.evidenceDigest": facts.clause5.evidenceDigest,
     "clause6.attestationPath": `evidence/${facts.runId}.b12.suite.json`,
     "clause6.attestationSha256": orNone(facts.clause6.attestationSha256),
     "clause6.subjectCommit": orNone(att?.subjectCommit ?? null),
@@ -749,6 +778,16 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     }
   }
 
+  // The evidence clause 5 was COMPUTED FROM, digested so the emission-time
+  // binding can prove it is scoring the archive that was audited (R24). A
+  // failed enumeration is git not answering — a refusal, never "no evidence".
+  const evidence = runEvidenceDigest(runId, git);
+  if (evidence.digest === null) {
+    throw new AuditRefused(
+      `the clause-5 evidence under evidence/${runId}/ could not be enumerated or read — an audit that cannot name what it judged cannot be replayed`
+    );
+  }
+
   // ---- clause 6: the committed attestation --------------------------------
   const suiteRel = `evidence/${runId}.b12.suite.json`;
   const suiteShow = git(["show", `HEAD:${suiteRel}`]);
@@ -808,7 +847,15 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       registrationSha256: registrationCommit === null ? null : blobSha(git, registrationCommit, manifestBRel),
       headSha256: blobSha(git, "HEAD", manifestBRel),
     },
-    clause5: { anchor, anchorProblems, commitsTouchingPinned, offenders, excusedByReemission },
+    clause5: {
+      anchor,
+      anchorProblems,
+      commitsTouchingPinned,
+      offenders,
+      excusedByReemission,
+      evidencePaths: evidence.paths,
+      evidenceDigest: evidence.digest,
+    },
     clause6: { attestation, attestationSha256, subjectIsAncestor, nonEvidenceDrift },
     toolSrcSha256: blobSha(git, "HEAD", "src/cost/b12/audit.ts"),
   };
@@ -848,7 +895,8 @@ export function attestationFromVitest(
   runId: string,
   subjectCommit: string,
   generatedAt: string,
-  vitestJson: unknown
+  vitestJson: unknown,
+  lockfileSha256: string
 ): SuiteAttestation {
   const results =
     typeof vitestJson === "object" && vitestJson !== null
@@ -876,6 +924,7 @@ export function attestationFromVitest(
     runId,
     subjectCommit,
     generatedAt,
+    lockfileSha256,
     files: [...perFile.entries()].map(([file, b]) => ({ file, ...b })),
     tests,
   };
@@ -932,10 +981,38 @@ if (isMain) {
       if (!added.ok) {
         throw new AuditRefused(`could not create the attestation worktree at ${treeDir} — the suite may not run over mutable bytes`);
       }
+      // THE DEPENDENCIES COME FROM THE SUBJECT COMMIT'S LOCKFILE (R24). The
+      // worktree lives under `.b12/`, so node resolution walks UP into the
+      // enclosing repository's `node_modules` — a newer, staler or
+      // hand-modified installation could carry the suite past a commit whose
+      // own lockfile does not even build, and the attestation would record
+      // only `subjectCommit`, hiding the skew. `npm ci` installs INTO the
+      // worktree from the checked-out `package-lock.json`, and the nearer
+      // `node_modules` wins every resolution afterwards.
+      const lockShow = git(["show", `${subjectCommit}:package-lock.json`]);
+      if (!lockShow.ok) {
+        rmSync(treeDir, { recursive: true, force: true });
+        git(["worktree", "prune"]);
+        throw new AuditRefused(
+          `${subjectCommit.slice(0, 12)} carries no package-lock.json — the suite cannot be installed from the commit it would attest`
+        );
+      }
+      const lockfileSha256 = sha256(lockShow.out);
       // Exactly `suiteRunRefusal`'s contract — the encoding: "utf8" overload
       // returns strings, but the generic signature does not say so.
       let run: { error?: unknown; status: number | null; signal: string | null; stdout: string | null };
       try {
+        const installed = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["ci"], {
+          cwd: treeDir,
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+          shell: process.platform === "win32",
+        });
+        if (installed.status !== 0) {
+          throw new AuditRefused(
+            `the attestation worktree does not install (exit ${String(installed.status)}) — the suite may not run on dependencies the subject commit does not pin:\n${(installed.stderr || installed.stdout || "").slice(0, 2000)}`
+          );
+        }
         // THE BUILD HAPPENS IN THE WORKTREE. `dist/` is derived and ignored,
         // so a fresh checkout has none — and six conformance tests invoke the
         // built CLI. Compiling here is not a workaround: it makes the
@@ -970,7 +1047,8 @@ if (isMain) {
         runId,
         subjectCommit,
         new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
-        JSON.parse(jsonLine)
+        JSON.parse(jsonLine),
+        lockfileSha256
       );
       const out = path.join(repoRoot, "evidence", `${runId}.b12.suite.json`);
       writeFileSync(out, JSON.stringify(attestation, null, 2) + "\n", "utf8");

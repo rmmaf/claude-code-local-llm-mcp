@@ -60,6 +60,49 @@ export const sha256 = (bytes: string | Buffer): string =>
 export const sameCommittedText = (a: string, b: string): boolean =>
   a.replace(/\r\n/g, "\n").trim() === b.replace(/\r\n/g, "\n").trim();
 
+/**
+ * THE EVIDENCE CLAUSE 5 IS COMPUTED FROM, AS ONE CANONICAL DIGEST.
+ *
+ * The audit's clause-5 facts are derived from committed FILES — the runlog
+ * (the row order and the sessionId join), the counterfactual (which
+ * observation is the freeze anchor, by `aPlusSPositive`), and every
+ * per-observation archive under `evidence/<runId>/`. R22 bound a committed
+ * audit to HEAD by refusing any change OUTSIDE `evidence/**` and re-hashing
+ * the four evidence inputs the artifact named. That left this set free: an
+ * observation appended after a clean audit changes the anchor's population
+ * and the archive being scored, while the audit's verdict rides along
+ * unchanged (R24). So the set is enumerated, hashed, and recorded — one key
+ * the emission-time binding can recompute.
+ *
+ * Canonical form: paths repo-relative with `/`, SORTED, one `"<path>
+ * <sha256>"` line each, newline-joined; the digest is the sha256 of that
+ * text. Paths are inside the hashed lines ON PURPOSE — an added or removed
+ * file moves the digest exactly as an edited one does. `null` means git
+ * could not enumerate, which is a refusal at the caller, never "no evidence".
+ */
+export function runEvidenceDigest(
+  runId: string,
+  git: (args: string[]) => { ok: boolean; out: string }
+): { paths: string[]; digest: string | null } {
+  const listed = git(["ls-tree", "-r", "--name-only", "HEAD", "--", `evidence/${runId}/`]);
+  if (!listed.ok) return { paths: [], digest: null };
+  const paths = listed.out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
+  for (const rel of [`evidence/${runId}.b12.runlog.jsonl`, `evidence/${runId}.b12.counterfactual.json`]) {
+    if (git(["cat-file", "-e", `HEAD:${rel}`]).ok) paths.push(rel);
+  }
+  paths.sort();
+  const lines: string[] = [];
+  for (const rel of paths) {
+    const show = git(["show", `HEAD:${rel}`]);
+    if (!show.ok) return { paths, digest: null };
+    lines.push(`${rel} ${sha256(show.out)}`);
+  }
+  return { paths, digest: sha256(lines.join("\n")) };
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 

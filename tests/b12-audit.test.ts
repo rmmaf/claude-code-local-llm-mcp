@@ -93,6 +93,7 @@ function attestationOf(subjectCommit: string, over: Partial<SuiteAttestation> = 
     runId: "replay-01",
     subjectCommit,
     generatedAt: at(0),
+    lockfileSha256: "1".repeat(64),
     files: CONFORMANCE_FILES.map((file) => ({ file, total: 10, passed: 10, failed: 0, skipped: 0 })),
     tests: CONTROL_TESTS.map(({ file, fullName }) => ({ file, fullName, status: "passed" })),
     ...over,
@@ -113,6 +114,8 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
       commitsTouchingPinned: [],
       offenders: [],
       excusedByReemission: [],
+      evidencePaths: ["evidence/replay-01.b12.runlog.jsonl"],
+      evidenceDigest: "e".repeat(64),
     },
     clause6: {
       attestation: attestationOf("s".repeat(40)),
@@ -166,6 +169,8 @@ describe("the pure decider — every clause firing and not firing", () => {
         commitsTouchingPinned: [{ sha: offender, committerDate: at(10) }],
         offenders: [offender],
         excusedByReemission: [],
+        evidencePaths: ["evidence/replay-01.b12.runlog.jsonl"],
+        evidenceDigest: "e".repeat(64),
       },
     });
     expect(decideAudit(withOffender).verdict).toBe("void");
@@ -324,9 +329,15 @@ describe("attestationFromVitest — the reporter payload, narrowed", () => {
         },
       ],
     };
-    const att = attestationFromVitest("replay-01", "s".repeat(40), at(0), payload);
+    const att = attestationFromVitest("replay-01", "s".repeat(40), at(0), payload, "9".repeat(64));
     expect(att.files).toEqual([{ file: "tests/cost-meter.test.ts", total: 3, passed: 1, failed: 1, skipped: 1 }]);
     expect(att.tests.map((t) => t.status)).toEqual(["passed", "failed", "skipped"]);
+    // R24: the dependency tree the suite ran on, by the lockfile it installed
+    // from — the attestation used to borrow the enclosing repo's node_modules
+    // and record only subjectCommit, hiding the skew.
+    expect(att.lockfileSha256).toBe("9".repeat(64));
+    expect(attestationProblems({ ...att, lockfileSha256: "" }).join(" ")).toMatch(/records no lockfileSha256/);
+    expect(attestationProblems(att).join(" ")).not.toMatch(/lockfileSha256/);
   });
 });
 
@@ -637,7 +648,23 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     commitAll(root, "the attestation restored");
     expect((await emit()).ran).toBe(true);
 
-    // (2) A PINNED PATH MOVES — outside evidence/, so the one confined-diff
+    // (2) THE EVIDENCE CLAUSE 5 WAS COMPUTED FROM MOVES (R24). Naming four
+    // evidence files was not the same as covering evidence/**: an observation
+    // appended after a clean audit changes the anchor's population and the
+    // archive being scored, while the verdict rides along unchanged.
+    const obsRel = "evidence/replay-01/obs-t9-treatment/observation.json";
+    await fs.mkdir(path.join(root, path.dirname(obsRel)), { recursive: true });
+    await fs.writeFile(path.join(root, obsRel), `{"taskId":"t9","arm":"treatment"}\n`, "utf8");
+    commitAll(root, "an observation appended after the audit");
+    const appended = await emit();
+    expect(appended.ran).toBe(false);
+    expect(appended.problems.join(" ")).toMatch(/clause-5 evidence changed after the audit judged it/);
+    expect(appended.problems.join(" ")).toMatch(/1 added/);
+    await fs.rm(path.join(root, path.dirname(obsRel)), { recursive: true, force: true });
+    commitAll(root, "the appended observation removed");
+    expect((await emit()).ran).toBe(true);
+
+    // (3) A PINNED PATH MOVES — outside evidence/, so the one confined-diff
     // predicate covers every input the audit read from outside evidence.
     await fs.mkdir(path.join(root, "src", "cost"), { recursive: true });
     await fs.writeFile(path.join(root, "src", "cost", "report.ts"), "export const CHANGED = 1;\n", "utf8");

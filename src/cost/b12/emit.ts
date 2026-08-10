@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { readRunArchive, sameCommittedText, sha256 } from "./archive.js";
+import { readRunArchive, runEvidenceDigest, sameCommittedText, sha256 } from "./archive.js";
 import { assembleRun } from "./assemble.js";
 import type { GitAudit } from "./types.js";
 
@@ -127,7 +127,13 @@ export function committedAuditCheck(
  *   (d) the inputs the audit read from INSIDE `evidence/**` — prereg,
  *       manifest A, manifest B, the suite attestation — are RE-HASHED at
  *       HEAD and must equal what the artifact recorded, because (c) cannot
- *       see a change there.
+ *       see a change there;
+ *   (e) and so is the whole set clause 5 was COMPUTED FROM — the runlog, the
+ *       counterfactual, every per-observation archive — through the digest
+ *       the artifact records. R22 stopped at (d) and claimed completeness;
+ *       R24 showed the claim was false, because an observation appended
+ *       after a clean audit changes the anchor's population and the archive
+ *       being scored while the verdict rides along unchanged.
  *
  * A refusal keeps clauses 4–6 UNCHECKED — never "clean", the same fail-closed
  * shape as an unparseable audit. Returns the reason, or null.
@@ -177,6 +183,26 @@ export function auditBindingRefusal(repoRoot: string, runId: string, audit: GitA
     if (sha256(show.out) !== want) {
       return `${rel} changed after the audit judged it (${want.slice(0, 12)} → ${sha256(show.out).slice(0, 12)})`;
     }
+  }
+  // AND THE EVIDENCE CLAUSE 5 WAS COMPUTED FROM (R24). Naming four evidence
+  // files was not the same as covering `evidence/**`: the anchor, the
+  // offender set and the archive being scored all derive from the runlog, the
+  // counterfactual and the per-observation archives. An observation appended
+  // after a clean audit changes what is scored while the verdict rides along.
+  const recordedDigest = inputs["clause5.evidenceDigest"];
+  if (recordedDigest === undefined) return "the audit records no clause-5 evidence digest — it cannot say what archive it judged";
+  const current = runEvidenceDigest(runId, git);
+  if (current.digest === null) return "the clause-5 evidence could not be enumerated at HEAD — the audit cannot be bound to it";
+  if (current.digest !== recordedDigest) {
+    const before = new Set((inputs["clause5.evidencePaths"] ?? "").split("\n").filter((l) => l !== ""));
+    const now = new Set(current.paths);
+    const added = current.paths.filter((p) => !before.has(p));
+    const removed = [...before].filter((p) => !now.has(p));
+    const how =
+      added.length > 0 || removed.length > 0
+        ? `${added.length} added (${added.slice(0, 3).join(", ") || "—"}), ${removed.length} removed (${removed.slice(0, 3).join(", ") || "—"})`
+        : "same files, different bytes";
+    return `the clause-5 evidence changed after the audit judged it — ${how}; the archive being scored is not the archive that was audited`;
   }
   return null;
 }
