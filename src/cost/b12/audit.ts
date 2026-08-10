@@ -177,6 +177,8 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause6.controls",
   "clause6.files",
   "clause6.conformanceHashes",
+  "clause6.lockfileClaimed",
+  "clause6.lockfileAtSubject",
   "tool.srcSha256",
 ];
 
@@ -318,6 +320,15 @@ export interface AuditFacts {
      * decoration is not a refusal, because nothing depends on it.
      */
     conformance: Array<{ file: string; atRegistration: string | null; atSubject: string | null }>;
+    /**
+     * sha256 of `package-lock.json` AT the attestation's `subjectCommit` —
+     * the dependency tree the suite CLAIMS it installed from, recomputed from
+     * the commit itself. Null when there is no attestation, or when that
+     * commit carries no readable lockfile: R24 recorded the producer's number
+     * and R29 found that nobody ever checked it, so a copied or hand-edited
+     * attestation could name any tree it liked and still satisfy clause 6.
+     */
+    lockfileAtSubject: string | null;
   };
   /** Content sha of this tool's own SOURCE at HEAD; null when absent. */
   toolSrcSha256: string | null;
@@ -543,6 +554,22 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
         }
       }
     }
+    // THE DEPENDENCY TREE, CHECKED AND NOT JUST CLAIMED (R29). The shape rule
+    // above only asks for 64 hex digits; the number has to be the LOCKFILE AT
+    // THE SUBJECT COMMIT, or `--attest-suite`'s whole guarantee — that the
+    // suite ran on dependencies the attested commit pins — is a sentence the
+    // artifact says about itself.
+    if (typeof att.lockfileSha256 === "string" && /^[0-9a-f]{64}$/.test(att.lockfileSha256)) {
+      if (facts.clause6.lockfileAtSubject === null) {
+        reasons.push(
+          "clause 6: the attestation's subjectCommit carries no readable package-lock.json — the dependency tree it names cannot be checked"
+        );
+      } else if (facts.clause6.lockfileAtSubject !== att.lockfileSha256) {
+        reasons.push(
+          `clause 6: the attestation claims lockfile ${att.lockfileSha256.slice(0, 12)} and subjectCommit carries ${facts.clause6.lockfileAtSubject.slice(0, 12)} — the suite did not run on the dependencies that commit pins`
+        );
+      }
+    }
     if (facts.clause6.subjectIsAncestor === null) {
       reasons.push("clause 6: the attestation's subjectCommit cannot be related to HEAD");
     } else if (facts.clause6.subjectIsAncestor === false) {
@@ -655,6 +682,8 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
         return `${c.file} registration=${orNone(c.atRegistration)} subject=${orNone(c.atSubject)} ${verdictless}`;
       })
     ),
+    "clause6.lockfileClaimed": orNone(typeof att?.lockfileSha256 === "string" ? att.lockfileSha256 : null),
+    "clause6.lockfileAtSubject": orNone(facts.clause6.lockfileAtSubject),
     "tool.srcSha256": orNone(facts.toolSrcSha256),
   };
 }
@@ -798,9 +827,43 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
         })
         .filter((x): x is { i: number; row: Record<string, unknown> } => x !== null);
       const joinedObs: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; sessionId: string; aPlusSPositive: unknown }> = [];
+      // THE POPULATION THE COUNTERFACTUAL CLAIMS, held against the population
+      // that is COMMITTED (R29).
+      //
+      // The anchor used to be derived from `counterfactual.observations`
+      // alone, and that list was never shown to cover anything. The
+      // counterfactual is written by the EMITTER, so an early unchecked emit
+      // followed by more observations leaves a STALE one committed: the loop
+      // below finds nothing to join, no anchor problem is raised, and clause 5
+      // reads "before the first scored observation — free". A pinned-path
+      // change made after the real first observation then gets a CLEAN audit,
+      // and the emission re-derives the same stale state and agrees with it.
+      //
+      // So the committed observation directories are enumerated and every one
+      // of them must be declared. Fail-closed: a probe that cannot answer may
+      // not wear the empty list a clean answer wears.
+      const declaredDirs = new Set<string>();
+      const dirProbe = git(["ls-tree", "-d", "--name-only", "HEAD", `evidence/${runId}/`]);
+      if (!dirProbe.ok) {
+        throw new AuditRefused(
+          `the committed observation directories under evidence/${runId}/ could not be enumerated — the anchor's population cannot be checked, and an empty answer is not a clean one`
+        );
+      }
+      const committedDirs = dirProbe.out
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l !== "" && l.includes("/obs-"));
       for (const o of cf.observations ?? []) {
-        if (typeof o.taskId !== "string" || typeof o.arm !== "string" || typeof o.attempt !== "number") continue;
+        if (typeof o.taskId !== "string" || typeof o.arm !== "string" || typeof o.attempt !== "number") {
+          // Silently skipped until R29. A malformed entry is a counterfactual
+          // that cannot be checked against anything, not a free pass.
+          anchorProblems.push(
+            `a counterfactual observation carries no (taskId, arm, attempt) — the anchor's population cannot be joined to committed evidence`
+          );
+          continue;
+        }
         const dir = `evidence/${runId}/obs-${o.taskId}-${o.arm}${o.attempt === 1 ? "" : `-r${o.attempt}`}`;
+        declaredDirs.add(dir);
         const recShow = git(["show", `HEAD:${dir}/observation.json`]);
         if (!recShow.ok) {
           anchorProblems.push(`${dir}/observation.json is not committed — the attempt cannot be joined to its runlog row`);
@@ -840,6 +903,16 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
           sessionId,
           aPlusSPositive: o.aPlusSPositive,
         });
+      }
+      // THE OTHER DIRECTION, and the one that was missing: committed evidence
+      // the counterfactual does not know about. One undeclared directory is
+      // enough — the list the anchor walks is not the run.
+      for (const dir of committedDirs) {
+        if (!declaredDirs.has(dir)) {
+          anchorProblems.push(
+            `${dir} is committed evidence the counterfactual does not declare — the anchor would be derived from a STALE population (re-emit before auditing)`
+          );
+        }
       }
       if (anchorProblems.length === 0) {
         joinedObs.sort((a, b) => a.rowIndex - b.rowIndex);
@@ -1028,6 +1101,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       attestationSha256,
       subjectIsAncestor,
       nonEvidenceDrift,
+      lockfileAtSubject: attestation === null ? null : blobSha(git, attestation.subjectCommit, "package-lock.json"),
       // Reported beside the verdict, never inside it.
       conformance: CONFORMANCE_FILES.map((file) => ({
         file,

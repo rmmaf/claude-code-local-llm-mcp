@@ -1878,6 +1878,49 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTY-SECOND POST-IMPLEMENTATION ROUND (R29) — adjudicated 2026-08-10
+
+Two high findings, both in the audit computer, and both of the same family:
+a fact the artifact ASSERTS and nobody checks.
+
+- **R29#1 (high) — a stale counterfactual switched clause 5 off.** The anchor
+  walked `counterfactual.observations` and nothing ever proved that list
+  covers the committed evidence. The counterfactual is written by the
+  EMITTER, so the ordinary sequence — an early unchecked emit, then more
+  observations, then the audit — leaves a stale one committed. `joinedObs`
+  comes out empty, NO anchor problem is raised, and `decideAudit` reads the
+  clause's own "before the first scored observation these are free". **A
+  pinned-path change made after the run's real first scored observation
+  therefore got a CLEAN audit** — and the emission's re-derivation (R26)
+  agrees with it, because it re-derives from the same stale file.
+
+  The committed observation directories are now enumerated (`ls-tree -d`,
+  fail-closed: a probe that cannot answer may not wear the empty list a clean
+  answer wears) and every one of them must be DECLARED. One undeclared
+  directory is an anchor problem — which is a VOID, never a freedom. A
+  malformed counterfactual entry, which used to be skipped in silence, is an
+  anchor problem too.
+
+- **R29#2 (high) — the attestation's lockfile was asserted, never verified.**
+  R24 made `--attest-suite` install from the subject commit's own
+  `package-lock.json` and RECORD its sha256; the reader only ever checked
+  that the recorded value was 64 hex digits. So a copied or hand-edited
+  attestation could name any dependency tree and satisfy clause 6 — the
+  guarantee R24 was written to give ("the suite ran on the dependencies that
+  commit pins") was a sentence the artifact said about itself. The collector
+  now hashes `<subjectCommit>:package-lock.json` and the decider requires
+  equality; a subject commit with no readable lockfile is a reason, not a
+  free pass. Both numbers ride in the artifact's inputs.
+
+**Controls.** #1: with the population check suppressed, the e2e — a scored
+run, its counterfactual emptied, a pinned path touched, and the attestation
+naming the drift commit so clause 6 stays silent — audits **`clean`**. That
+is the finding, reproduced exactly. Restored, it is void and names the
+undeclared directory. #2: changing ONLY the recorded lockfile hash voids and
+says the suite did not run on the dependencies the commit pins; a null
+lockfile at the subject voids with its own sentence. The e2e's scratch
+repository now commits a real lockfile and attests its real hash.
+
 ### TWENTY-FIRST POST-IMPLEMENTATION ROUND (R28) — adjudicated 2026-08-10
 
 One finding, and it is the CAS from one round earlier failing in the

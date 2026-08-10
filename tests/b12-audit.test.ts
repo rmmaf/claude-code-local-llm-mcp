@@ -37,6 +37,7 @@ import {
   type Git,
   type SuiteAttestation,
 } from "../src/cost/b12/audit.js";
+import { sha256 } from "../src/cost/b12/archive.js";
 import { emitRun } from "../src/cost/b12/emit.js";
 import { at } from "./b12-fixtures.js";
 import { makeTempRoot } from "./helpers.js";
@@ -85,6 +86,10 @@ function commitAll(root: string, message: string): string {
 
 const FIXTURE = path.join(process.cwd(), "tests", "fixtures", "b12-run");
 
+/** The scratch repositories' stand-in dependency tree — clause 6 hashes the
+ * real thing at `subjectCommit`, so the oracle has to commit one. */
+const LOCKFILE_TEXT = `{"name":"b12-scratch","lockfileVersion":3,"packages":{}}\n`;
+
 // ---------------------------------------------------------------------------
 // Facts fixtures for the pure decider.
 // ---------------------------------------------------------------------------
@@ -132,6 +137,9 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
       attestationSha256: "t".repeat(64),
       subjectIsAncestor: true,
       nonEvidenceDrift: [],
+      // The default facts describe an attestation whose claimed lockfile IS
+      // the one its subject commit carries (R29).
+      lockfileAtSubject: "1".repeat(64),
       conformance: CONFORMANCE_FILES.map((file) => ({
         file,
         atRegistration: "c".repeat(64),
@@ -210,6 +218,21 @@ describe("the pure decider — every clause firing and not firing", () => {
     });
     expect(decideAudit(broken).verdict).toBe("void");
     expect(decideAudit(broken).reasons.join(" ")).toMatch(/clause 5: 2 runlog rows match/);
+  });
+
+  it("clause 6 fires when the attested lockfile is not the subject commit's — R29", () => {
+    // R24 recorded the producer's number; nobody ever checked it, so a copied
+    // or hand-edited attestation could name any dependency tree and still
+    // satisfy the clause. Only the recorded hash changes here.
+    const drifted = decideAudit(
+      factsOf({ clause6: { ...factsOf().clause6, lockfileAtSubject: "9".repeat(64) } })
+    );
+    expect(drifted.verdict).toBe("void");
+    expect(drifted.reasons.join(" ")).toMatch(/did not run on the dependencies that commit pins/);
+    // And a subject commit with no readable lockfile is not a free pass.
+    const unreadable = decideAudit(factsOf({ clause6: { ...factsOf().clause6, lockfileAtSubject: null } }));
+    expect(unreadable.verdict).toBe("void");
+    expect(unreadable.reasons.join(" ")).toMatch(/no readable package-lock\.json/);
   });
 
   it("clause 6 fires on absence, a failing file, a skipped file, a missing control, and foreign drift", () => {
@@ -556,6 +579,10 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     const root = tempRoot();
     await fs.cp(FIXTURE, root, { recursive: true });
     initRepo(root);
+    // The dependency tree clause 6 now checks against the subject commit
+    // (R29): the scratch repo needs a real lockfile, and the attestation gets
+    // its real hash.
+    await fs.writeFile(path.join(root, "package-lock.json"), LOCKFILE_TEXT, "utf8");
     await hooks.seed?.(root);
     // Manifest B sealed in the SAME act as A — byte-identical blob, which is
     // what `open-b` will hold the real register to.
@@ -572,7 +599,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
 
     // 2. the attestation, subject = the commit the suite would have run at.
     const subject = (await hooks.beforeAttestation?.(root)) ?? afterEmit;
-    const attestation = attestationOf(subject, { runId: "replay-01" });
+    const attestation = attestationOf(subject, { runId: "replay-01", lockfileSha256: sha256(LOCKFILE_TEXT) });
     await fs.writeFile(
       path.join(root, "evidence", "replay-01.b12.suite.json"),
       JSON.stringify(attestation, null, 2) + "\n",
@@ -772,6 +799,40 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     await fs.writeFile(path.join(root, CONFORMANCE_FILES[0]!), "// the control, emptied\n", "utf8");
     return commitAll(root, "the control gutted — mid-run, BEFORE the attestation");
   };
+
+  it("a STALE counterfactual cannot make a scored run look anchorless", async () => {
+    // R29: the anchor walked `counterfactual.observations` and nothing ever
+    // proved that list covers the committed evidence. The counterfactual is
+    // written by the EMITTER, so an early unchecked emit followed by more
+    // observations leaves a stale one committed — and the audit then read
+    // "no observation scored yet, sources FREE" over a run that had scored.
+    // A pinned-path change after the real first observation got a CLEAN
+    // audit, and the emission re-derived the same stale state and agreed.
+    // The drift lands BEFORE the attestation and the attestation names it, so
+    // clause 6's own non-evidence check is silent: whatever fires here fires
+    // because of clause 5, and nothing else.
+    const cfRel = "evidence/replay-01.b12.counterfactual.json";
+    const { root, registration } = await operatorLoop({
+      beforeAttestation: async (r) => {
+        const cf = JSON.parse(await fs.readFile(path.join(r, cfRel), "utf8")) as { observations: unknown[] };
+        expect(cf.observations.length).toBeGreaterThan(0); // the run DID score
+        await fs.writeFile(path.join(r, cfRel), JSON.stringify({ ...cf, observations: [] }, null, 2) + "\n", "utf8");
+        await fs.mkdir(path.join(r, "src", "cost"), { recursive: true });
+        await fs.writeFile(path.join(r, "src", "cost", "hostile.ts"), "export const x = 1;\n", "utf8");
+        return commitAll(r, "a stale counterfactual, and a pinned path touched after the first score");
+      },
+    });
+
+    const facts = collectAuditFacts(root, "replay-01", {
+      preregFrozenCommit: registration,
+      preregPath: "evidence/replay-01.b12.tasks.json",
+    });
+    expect(facts.clause5.anchor).toBeNull(); // the stale list yields no anchor…
+    const { verdict, reasons } = decideAudit(facts);
+    expect(verdict).toBe("void"); // …and that is a VOID, never a freedom
+    expect(facts.clause5.anchorProblems.join(" ")).toMatch(/committed evidence the counterfactual does not declare/);
+    expect(reasons.join(" ")).toMatch(/re-emit before auditing/);
+  }, 60_000);
 
   it("a FORGED clean audit — committed, correctly hashed — is refused by re-derivation", async () => {
     // R26: every binding check asked what the artifact SAYS about a handful
