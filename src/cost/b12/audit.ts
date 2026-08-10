@@ -374,9 +374,12 @@ export interface CollectorOptions {
   preregFrozenCommit?: string;
   preregPath?: string;
   pinnedPaths?: readonly string[];
+  /** Test seam: wrap or replace the git runner — how the oracle makes a
+   * MANDATORY probe fail without corrupting a repository. */
+  gitRunner?: Git;
 }
 
-interface Git {
+export interface Git {
   (args: string[]): { ok: boolean; out: string };
 }
 
@@ -426,7 +429,7 @@ function isAncestor(git: Git, a: string, b: string): boolean | null {
 }
 
 export function collectAuditFacts(repoRoot: string, runId: string, options: CollectorOptions = {}): AuditFacts {
-  const git = gitIn(repoRoot);
+  const git = options.gitRunner ?? gitIn(repoRoot);
   const head = git(["rev-parse", "HEAD"]);
   if (!head.ok) {
     throw new AuditRefused("git answered but HEAD does not resolve — not a repository this audit can read");
@@ -539,18 +542,29 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   const offenders: string[] = [];
   const excusedByReemission: string[] = [];
   {
+    // FAIL-CLOSED: a failed MANDATORY probe may never wear the same empty
+    // list a clean answer wears — "no commits touch the pinned paths" and
+    // "the history could not be inspected" fire different clauses.
     const log = git(["log", "--format=%H %cI", "--", ...pinnedPaths]);
-    if (log.ok) {
-      for (const line of log.out.trim().split("\n").filter(Boolean)) {
-        const [sha, committerDate] = line.split(" ");
-        if (sha !== undefined && committerDate !== undefined) commitsTouchingPinned.push({ sha, committerDate });
-      }
+    if (!log.ok) {
+      throw new AuditRefused(
+        "git log over the pinned paths failed — clause 5's history cannot be inspected, and an empty answer is not a clean one"
+      );
+    }
+    for (const line of log.out.trim().split("\n").filter(Boolean)) {
+      const [sha, committerDate] = line.split(" ");
+      if (sha !== undefined && committerDate !== undefined) commitsTouchingPinned.push({ sha, committerDate });
     }
     if (anchor !== null) {
       const anchorMs = Date.parse(anchor.started);
       for (const c of commitsTouchingPinned) {
         const byDate = Date.parse(c.committerDate) > anchorMs;
         const anc = isAncestor(git, c.sha, anchor.commit);
+        if (anc === null) {
+          throw new AuditRefused(
+            `ancestry of ${c.sha} against the anchor commit cannot be asked — clause 5's probe union cannot be computed`
+          );
+        }
         const byAncestry = anc === false; // NOT an ancestor of the anchor commit
         if (byDate || byAncestry) offenders.push(c.sha);
       }
@@ -584,24 +598,35 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   let nonEvidenceDrift: string[] = [];
   if (suiteShow.ok) {
     attestationSha256 = sha256(suiteShow.out);
+    // The catch is the PARSE'S alone — a wider one would swallow the
+    // fail-closed refusals below and turn them back into "no attestation".
+    let parsed: SuiteAttestation | null = null;
     try {
-      const parsed = JSON.parse(suiteShow.out) as SuiteAttestation;
-      if (parsed.schema === "b12-suite/1" && typeof parsed.subjectCommit === "string" && Array.isArray(parsed.tests)) {
-        attestation = parsed;
-        subjectIsAncestor = isAncestor(git, parsed.subjectCommit, headSha);
-        if (subjectIsAncestor === true) {
-          const diff = git(["diff", "--name-only", `${parsed.subjectCommit}..HEAD`]);
-          if (diff.ok) {
-            nonEvidenceDrift = diff.out
-              .trim()
-              .split("\n")
-              .filter(Boolean)
-              .filter((p) => !p.startsWith("evidence/"));
-          }
-        }
+      const candidate = JSON.parse(suiteShow.out) as SuiteAttestation;
+      if (candidate.schema === "b12-suite/1" && typeof candidate.subjectCommit === "string" && Array.isArray(candidate.tests)) {
+        parsed = candidate;
       }
     } catch {
-      attestation = null;
+      parsed = null;
+    }
+    if (parsed !== null) {
+      attestation = parsed;
+      subjectIsAncestor = isAncestor(git, parsed.subjectCommit, headSha);
+      if (subjectIsAncestor === true) {
+        // FAIL-CLOSED, same doctrine as the clause-5 log: a failed diff may
+        // not impersonate "no drift".
+        const diff = git(["diff", "--name-only", `${parsed.subjectCommit}..HEAD`]);
+        if (!diff.ok) {
+          throw new AuditRefused(
+            "git diff subjectCommit..HEAD failed — the attestation's non-evidence drift cannot be inspected"
+          );
+        }
+        nonEvidenceDrift = diff.out
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .filter((p) => !p.startsWith("evidence/"));
+      }
     }
   }
 
@@ -625,6 +650,31 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     clause6: { attestation, attestationSha256, subjectIsAncestor, nonEvidenceDrift },
     toolSrcSha256: blobSha(git, "HEAD", "src/cost/b12/audit.ts"),
   };
+}
+
+/**
+ * Working-tree entries OUTSIDE `evidence/**` — the attestation REFUSES them:
+ * the suite executes DISK code while `subjectCommit` names HEAD, so a dirty
+ * edit could pass the suite, be attested under an untouched commit's name,
+ * and be discarded before anything lands. The audit's own drift check
+ * (`subjectCommit..HEAD`) sees COMMITS only and cannot catch this.
+ * `evidence/**` stays writable because the attestation itself is born there.
+ */
+export function workingTreeDirtOutsideEvidence(repoRoot: string, gitRunner?: Git): string[] {
+  const status = (gitRunner ?? gitIn(repoRoot))(["status", "--porcelain"]);
+  if (!status.ok) {
+    throw new AuditRefused("git status failed — the tree's cleanliness cannot be inspected");
+  }
+  const dirt: string[] = [];
+  for (const line of status.out.split("\n")) {
+    if (line.trim() === "") continue;
+    const entry = line.slice(3);
+    // Renames carry both halves; quoted paths carry quotes. Either half
+    // escaping evidence/ makes the entry dirt.
+    const parts = entry.split(" -> ").map((p) => p.replace(/^"|"$/g, ""));
+    if (parts.some((p) => !p.startsWith("evidence/"))) dirt.push(entry.trim());
+  }
+  return dirt;
 }
 
 // ---------------------------------------------------------------------------
@@ -698,6 +748,12 @@ if (isMain) {
       const git = gitIn(repoRoot);
       const head = git(["rev-parse", "HEAD"]);
       if (!head.ok) throw new AuditRefused("git answered but HEAD does not resolve");
+      const dirt = workingTreeDirtOutsideEvidence(repoRoot);
+      if (dirt.length > 0) {
+        throw new AuditRefused(
+          `the working tree is dirty outside evidence/ (${dirt.slice(0, 5).join(", ")}${dirt.length > 5 ? ", …" : ""}) — the suite would attest DISK code under subjectCommit's name; commit or revert first`
+        );
+      }
       const run = spawnSync(
         process.platform === "win32" ? "npx.cmd" : "npx",
         ["vitest", "run", ...CONFORMANCE_FILES, "--reporter=json"],

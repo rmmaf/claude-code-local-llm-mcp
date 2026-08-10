@@ -25,7 +25,9 @@ import {
   CONFORMANCE_FILES,
   CONTROL_TESTS,
   decideAudit,
+  workingTreeDirtOutsideEvidence,
   type AuditFacts,
+  type Git,
   type SuiteAttestation,
 } from "../src/cost/b12/audit.js";
 import { parseGitAudit } from "../src/cost/b12/emit.js";
@@ -320,6 +322,70 @@ describe("the collector over a deterministic scratch repository", () => {
     const { verdict, reasons } = decideAudit(facts);
     expect(verdict).toBe("void");
     expect(reasons.join(" ")).toMatch(/manifest B is ABSENT from the registration commit/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R9: fail-closed probes, and the attestation's dirty-tree guard. A failed
+// MANDATORY git probe may never wear the same empty list a clean answer
+// wears; a dirty tree may never be attested under subjectCommit's name.
+// ---------------------------------------------------------------------------
+
+describe("fail-closed probes and the dirty-tree guard", () => {
+  async function minimalRepo(): Promise<{ root: string; first: string }> {
+    const root = tempRoot();
+    initRepo(root);
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    await fs.writeFile(path.join(root, "prereg.json"), `{"frozen":true}\n`, "utf8");
+    await fs.writeFile(path.join(root, "evidence", "r1.b12.tasks.json"), `{"runId":"r1"}\n`, "utf8");
+    await fs.writeFile(path.join(root, "evidence", "r1.b12.manifest-B.tasks.json"), `{"runId":"r1"}\n`, "utf8");
+    const first = commitAll(root, "registration");
+    return { root, first };
+  }
+
+  /** A passthrough runner over the scratch repo, for wrapping. */
+  const realGit = (root: string): Git => (args) => {
+    const r = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout ?? "" };
+  };
+
+  it("REFUSES when the clause-5 history log fails — an empty answer is not a clean one", async () => {
+    const { root, first } = await minimalRepo();
+    const base = realGit(root);
+    const failing: Git = (args) => (args[0] === "log" && args.includes("--format=%H %cI") ? { ok: false, out: "" } : base(args));
+    expect(() =>
+      collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: failing })
+    ).toThrow(/clause 5's history cannot be inspected/);
+  });
+
+  it("REFUSES when the attestation drift diff fails — a failed diff may not impersonate 'no drift'", async () => {
+    const { root, first } = await minimalRepo();
+    await fs.writeFile(
+      path.join(root, "evidence", "r1.b12.suite.json"),
+      JSON.stringify(attestationOf(first, { runId: "r1" }), null, 2) + "\n",
+      "utf8"
+    );
+    commitAll(root, "attestation");
+    const base = realGit(root);
+    const failing: Git = (args) => (args[0] === "diff" ? { ok: false, out: "" } : base(args));
+    expect(() =>
+      collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: failing })
+    ).toThrow(/drift cannot be inspected/);
+  });
+
+  it("names working-tree dirt outside evidence/ and stays quiet inside it", async () => {
+    const { root } = await minimalRepo();
+    expect(workingTreeDirtOutsideEvidence(root)).toEqual([]);
+    // Dirt INSIDE evidence/ is lawful — the attestation itself is born there.
+    await fs.writeFile(path.join(root, "evidence", "r1.b12.suite.json"), "{}\n", "utf8");
+    expect(workingTreeDirtOutsideEvidence(root)).toEqual([]);
+    // A tracked edit outside evidence/ is dirt…
+    await fs.writeFile(path.join(root, "prereg.json"), `{"frozen":true,"edited":true}\n`, "utf8");
+    expect(workingTreeDirtOutsideEvidence(root).join(" ")).toMatch(/prereg\.json/);
+    // …and so is an untracked newcomer.
+    git(root, ["checkout", "--", "prereg.json"]);
+    await fs.writeFile(path.join(root, "loose.ts"), "export {};\n", "utf8");
+    expect(workingTreeDirtOutsideEvidence(root).join(" ")).toMatch(/loose\.ts/);
   });
 });
 

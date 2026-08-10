@@ -17,13 +17,12 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8 (the post-implementation adversarial round over the full branch diff) is
-ADJUDICATED: two high findings, both confirmed and fixed with controls — the
-CAS temp index broke in linked worktrees (now `rev-parse
---absolute-git-dir`), and validation ran outside the captured state (now
-`registerRun`: capture head + candidate bytes FIRST, validate exactly those,
-CAS the same buffers; `open-b` reordered alike). PR to main is open — merge
-is the user's act.
+R8 and R9 (post-implementation adversarial rounds) are ADJUDICATED — five
+high findings, all confirmed, fixed with controls: the CAS worktree index
+and capture-before-validate (R8); fail-open probes made fail-closed —
+dirty-tree guard on `--attest-suite`, `AuditRefused` on failed
+`git log`/`git diff`/`isAncestor`, narrowed clause-6 catch, dirty-validator
+refusal in `registerRun` (R9). PR to main is open — merge is the user's act.
 
 ## Still blocking a run
 

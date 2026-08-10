@@ -1166,6 +1166,43 @@ findings, BOTH confirmed against the repo and fixed with controls:
   registers the VALIDATED bytes; a concurrent commit fails the CAS with
   nothing installed. `check` remains the DISK preview, documented as such.
 
+### SECOND POST-IMPLEMENTATION ROUND (R9) — adjudicated 2026-08-10
+
+Three high findings, all confirmed: the instrument could certify state it
+never validated. All three are one disease — fail-open where the doctrine
+says fail-closed:
+
+- **R9#1 — the attestation ran DISK code under HEAD's name.**
+  `--attest-suite` recorded `subjectCommit = HEAD` and ran vitest over the
+  working tree; a dirty edit could pass the suite, be attested under an
+  untouched commit, and be discarded — invisible to the audit's
+  `subjectCommit..HEAD` drift check, which sees commits only. Now
+  `workingTreeDirtOutsideEvidence` refuses ANY porcelain entry outside
+  `evidence/**` (which stays writable — the attestation is born there)
+  before the suite runs. The isolated-worktree alternative was considered
+  and declined: the refusal is the honest primitive, and the operator loop
+  already commits between steps.
+- **R9#2 — failed git probes wore a clean answer's clothes.** A non-zero
+  `git log` over the pinned paths became an empty `commitsTouchingPinned`;
+  a failed `git diff subjectCommit..HEAD` became "no drift"; an unanswerable
+  `isAncestor` silently unmarked an offender. Each is now `AuditRefused` —
+  "an empty answer is not a clean one". Fixing this exposed a LATENT hole
+  the control caught in my own first fix: the clause-6 `try/catch` meant for
+  `JSON.parse` swallowed everything thrown inside it (including a gitIn
+  refusal mid-`merge-base`) into `attestation = null`; the catch is now the
+  parse's alone. Controls inject a failing runner via the new
+  `gitRunner` collector seam.
+- **R9#3 — the register's gate judged with code the act does not register.**
+  `priorRunsGate` builds and imports the WORKING TREE's scorer, and
+  `checkCore`'s frozen predicates come from the working tree's
+  `b12-run.mjs` — while the act anchors at `expectedHead`. `registerRun` now
+  refuses when `git status --porcelain -- src scripts package.json
+  package-lock.json tsconfig.json` shows anything: clean tree at the
+  captured head ⇒ validator bytes ≡ expectedHead's ≡ what the CAS commit
+  carries. (An isolated checkout of expectedHead was considered and
+  declined for the same reason as R9#1 — the machine is the operator's own,
+  the threat is accident, and the CAS still seals every ref race.)
+
 ---
 
 ## CLOSED

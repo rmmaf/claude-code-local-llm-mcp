@@ -380,6 +380,19 @@ describe("registerRun — the act validates the captured state, and only that", 
     const result = await registerRun(root, "run-r1", { gate: greenGate });
     expect(redOf(result).join(" ")).toMatch(/seal-harness is the barrier/);
   });
+
+  it("refuses DIRTY validator inputs — the gate may not judge with code the act does not register", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    await fs.appendFile(path.join(root, "scripts", "b12-run.mjs"), "// drifted validator\n", "utf8");
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(redOf(result).join(" ")).toMatch(/validator input\(s\) dirty against expectedHead/);
+    // Nothing registered.
+    const probe = spawnSync("git", ["-C", root, "cat-file", "-e", "HEAD:evidence/run-r1.b12.tasks.json"], {
+      encoding: "utf8",
+    });
+    expect(probe.status).not.toBe(0);
+  });
 });
 
 describe("seal-harness — create-only, explicit budgets, committed bytes", () => {

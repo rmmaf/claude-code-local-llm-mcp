@@ -310,6 +310,23 @@ export async function registerRun(repoRoot, runId, opts = {}) {
   const head = git(repoRoot, ["rev-parse", "HEAD"]);
   if (head.code !== 0) return { ok: false, red: ["HEAD does not resolve"] };
   const expectedHead = head.out.trim();
+  // THE VALIDATOR'S OWN BYTES must be expectedHead's. The prior-runs gate
+  // builds and imports the WORKING TREE's scorer, and `checkCore`'s frozen
+  // predicates were imported from the working tree's `b12-run.mjs` — so a
+  // dirty validator input would judge the act with code the act does not
+  // register. Candidates live under `evidence/` and stay writable.
+  const validatorPathspecs = ["src", "scripts", "package.json", "package-lock.json", "tsconfig.json"];
+  const dirt = git(repoRoot, ["status", "--porcelain", "--", ...validatorPathspecs]);
+  if (dirt.code !== 0) return { ok: false, red: ["git status over the validator inputs failed — their cleanliness cannot be inspected"] };
+  const dirtEntries = dirt.out.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  if (dirtEntries.length > 0) {
+    return {
+      ok: false,
+      red: [
+        `validator input(s) dirty against expectedHead (${dirtEntries.slice(0, 5).join(", ")}${dirtEntries.length > 5 ? ", …" : ""}) — the gate would judge with code the act does not register; commit or revert them`,
+      ],
+    };
+  }
   const aRel = `evidence/${runId}.b12.tasks.json`;
   const bRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
   let aBytes = null;
