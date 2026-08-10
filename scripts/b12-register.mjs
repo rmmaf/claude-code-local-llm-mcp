@@ -25,7 +25,19 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -245,27 +257,61 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
         postFailure: `registered as ${newCommit.slice(0, 12)} on ${ref}, but HEAD is now ${refNow.code === 0 ? refNow.out.trim() : "detached"} — NOTHING was synced; the registered bytes live in the commit`,
       };
     }
-    // THE INDEX MUST FOLLOW THE BRANCH IT IS THE INDEX OF. The act builds its
-    // tree in a TEMPORARY index and moves the checked-out branch — which
-    // leaves the REAL index describing `expectedHead`. Against the new HEAD
-    // that index reads as staged DELETIONS of the manifests and a staged
-    // REVERSION of the register, so the operator's very next ordinary
-    // `git add <result>; git commit` would carry them and undo the
-    // registration (reproduced: manifest gone, row gone). `read-tree` here is
-    // safe precisely BECAUSE the index still equals expectedHead's tree — an
-    // index carrying nothing of its own loses nothing by being retargeted.
-    // If it carries staged work, we do NOT touch it (R15's doctrine) and say
-    // so, because the alternative is destroying bytes nobody validated.
-    const indexClean = git(repoRoot, ["diff-index", "--cached", "--quiet", expectedHead]).code === 0;
-    if (indexClean) {
-      const rebased = git(repoRoot, ["read-tree", newCommit]);
-      if (rebased.code !== 0) {
-        post.push(`the index could not be retargeted to ${newCommit.slice(0, 12)} — run: git reset --mixed ${newCommit.slice(0, 12)} before committing anything else`);
-      }
-    } else {
+    // THE INDEX MUST FOLLOW THE BRANCH IT IS THE INDEX OF — UNDER GIT'S OWN
+    // LOCK. The act builds its tree in a TEMPORARY index and moves the
+    // checked-out branch, which leaves the REAL index describing
+    // `expectedHead`. Against the new HEAD that reads as staged DELETIONS of
+    // the manifests and a staged REVERSION of the register, so the operator's
+    // next ordinary `git add <result>; git commit` would carry them and undo
+    // the registration (reproduced: manifest gone, row gone).
+    //
+    // R16 fixed that with check-then-`read-tree`, which R17 correctly called
+    // a TOCTOU: between the check and the write, another process can stage
+    // work or switch branches, and `read-tree` would then overwrite it. The
+    // primitive that closes it is git's OWN mutex — `.git/index.lock`, taken
+    // with O_EXCL and released by RENAMING it over `.git/index`, which is
+    // exactly how every git command writes an index. Holding it also blocks a
+    // concurrent `git checkout`, so the branch re-check below cannot go stale
+    // underneath us either: one lock closes both gaps.
+    //
+    // And the index we install is the TEMPORARY one that built the tree — it
+    // already IS `newCommit`'s tree, so no second read-tree is needed. If the
+    // lock is held elsewhere, or the state moved before we took it, nothing
+    // is written and the repair is named (R15's doctrine: never destroy bytes
+    // nobody validated).
+    const gitDir = gitDirProbe.out.trim();
+    const lockPath = path.join(gitDir, "index.lock");
+    let holdingLock = false;
+    try {
+      closeSync(openSync(lockPath, "wx")); // O_EXCL — git's own mutual exclusion
+      holdingLock = true;
+    } catch {
       post.push(
-        `the index still describes ${expectedHead.slice(0, 12)} and carries staged work, so it was left alone — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)} (then restage) before committing anything else`
+        `another git process holds ${path.basename(lockPath)}, so the index was left describing ${expectedHead.slice(0, 12)} — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)}`
       );
+    }
+    if (holdingLock) {
+      try {
+        const refUnderLock = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+        const indexUnderLock = git(repoRoot, ["diff-index", "--cached", "--quiet", expectedHead]);
+        if (refUnderLock.code === 0 && refUnderLock.out.trim() === ref && indexUnderLock.code === 0) {
+          copyFileSync(tmpIndex, lockPath);
+          renameSync(lockPath, path.join(gitDir, "index")); // atomic; releases the lock
+          holdingLock = false;
+        } else {
+          post.push(
+            `the index carries staged work or HEAD moved, so it was left describing ${expectedHead.slice(0, 12)} — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)} (then restage)`
+          );
+        }
+      } finally {
+        if (holdingLock) {
+          try {
+            unlinkSync(lockPath);
+          } catch {
+            // The lock outlives us only if the filesystem refused; git will say so.
+          }
+        }
+      }
     }
     for (const e of entries) {
       const abs = path.join(repoRoot, e.path);

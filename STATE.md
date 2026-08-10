@@ -17,18 +17,20 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R16 (post-implementation adversarial rounds) are ADJUDICATED — eighteen
+R8–R17 (post-implementation adversarial rounds) are ADJUDICATED — nineteen
 findings, all confirmed, fixed with controls: R8 CAS index +
 capture-before-validate; R9 fail-open probes made fail-closed; R10 the
 conditional sync; R11 the branch captured, artifact 6's runlog barrier,
 case-folded scopes; R12 clause 6's two holes; R13 a stripped snapshot stamp
 scoring; R14 the sync's index and leaked worktrees; R15 the sync became an
 APPEND and `--attest-suite` moved to a detached worktree that BUILDS before
-it tests (validated by a real run); **R16 the worst one — the real index
-stayed on `expectedHead` after the swap, so the operator's next ordinary
-commit UNDID the registration (reproduced: manifest gone, row gone); the
-index now follows the branch, and the evidence claim moved past every
-fallible step with the exit hook owning it while uncommitted.**
+it tests; **R16 the worst one — the real index stayed on `expectedHead`
+after the swap, so the operator's next ordinary commit UNDID the
+registration (reproduced: manifest gone, row gone)**; R17 that fix's own
+TOCTOU, closed with git's OWN mutex (`.git/index.lock` by O_EXCL, released
+by renaming over `.git/index` — which also blocks a concurrent checkout).
+The registration surface took five rounds; each answer moved further from
+"check more carefully" toward "use the primitive that cannot race".
 PR to main is open — merge is the user's act.
 
 ## Still blocking a run

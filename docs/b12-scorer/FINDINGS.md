@@ -1459,6 +1459,34 @@ could undo itself one commit later.
   never touched. Control: the refusal-path test now also asserts that
   `evidence/<runId>/` does not exist.
 
+### TENTH POST-IMPLEMENTATION ROUND (R17) — adjudicated 2026-08-10
+
+One high finding, and it is R16's own fix reviewed: the index retarget was
+`diff-index` (check) followed by `read-tree` (write), which is a TOCTOU —
+between the two, another process can stage work or switch branches, and the
+`read-tree` would overwrite it. The same gap sat under the `symbolic-ref`
+re-check.
+
+The primitive that closes it is **git's own mutex**: `.git/index.lock`,
+created with O_EXCL and released by RENAMING it over `.git/index` — exactly
+how every git command writes an index. Holding it also blocks a concurrent
+`git checkout` (checkout must write the index), so ONE lock closes both the
+index gap and the branch gap. Under the lock the ref and the index are
+re-validated, and the index installed is the TEMPORARY one that built the
+tree — it already IS `newCommit`'s tree, so no second `read-tree` exists to
+race. A held lock, or state that moved before we took it, writes nothing and
+names the `git reset --mixed` that repairs it.
+
+This is the fourth round on this surface, and the arc is worth recording:
+disk bytes (R10) → index bytes (R14) → the operation itself became an
+append (R15) → the index had to follow the branch (R16) → and that follow
+had to happen under a lock (R17). Each round the answer moved further from
+"check more carefully" and closer to "use the primitive that cannot race".
+Controls: a foreign `index.lock` leaves the index byte-identical and the
+lock untouched, with the repair reported; the R16 control — a real
+`git add <result>; git commit` after registering — still finds both
+manifests and the row.
+
 ---
 
 ## CLOSED

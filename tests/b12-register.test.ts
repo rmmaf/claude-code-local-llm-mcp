@@ -369,6 +369,29 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).toMatch(/b12_registration/);
   });
 
+  it("writes NO index while another git process holds the lock — and says how to repair it", async () => {
+    // R17: R16's check-then-read-tree was a TOCTOU. The index is now
+    // installed under git's OWN mutex, `.git/index.lock`, taken with O_EXCL —
+    // so a held lock means no write at all, not a racing one.
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    const gitDir = git(root, ["rev-parse", "--absolute-git-dir"]);
+    const lockPath = path.join(gitDir, "index.lock");
+    const indexBefore = await fs.readFile(path.join(gitDir, "index"));
+    await fs.writeFile(lockPath, "another git process\n", "utf8");
+    try {
+      const result = await registerRun(root, "run-r1", { gate: greenGate });
+      expect(result.ok).toBe(true);
+      expect(okOf(result).postFailure).toMatch(/index\.lock/);
+      expect(okOf(result).postFailure).toMatch(/git reset --mixed/);
+      // The index is byte-identical, and the foreign lock is still theirs.
+      expect(await fs.readFile(path.join(gitDir, "index"))).toEqual(indexBefore);
+      expect(await fs.readFile(lockPath, "utf8")).toBe("another git process\n");
+    } finally {
+      await fs.rm(lockPath, { force: true });
+    }
+  });
+
   it("leaves a STAGED index alone and says the registration would be reverted", async () => {
     // The other half: an index carrying someone's staged work may not be
     // retargeted — that would destroy bytes the act never validated (R15).
