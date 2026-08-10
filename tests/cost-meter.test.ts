@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, promises as fs } from "node:fs";
+import { existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -2491,12 +2491,109 @@ describe("the B12 harness", () => {
       },
       { telemetry: [], lineage: [] }
     );
-    appendPilotRecord(root, "run-p", record);
-    appendPilotRecord(root, "run-p", { ...record, taskId: "t2" });
+    await appendPilotRecord(root, "run-p", record);
+    await appendPilotRecord(root, "run-p", { ...record, taskId: "t2" });
     const file = JSON.parse(await fs.readFile(path.join(root, "evidence", "run-p.b12.pilot.json"), "utf8"));
     expect(file.schema).toBe("b12-pilot/1");
     expect(file.observations).toHaveLength(2);
     expect(file.covariateTable).toEqual(PILOT_COVARIATE_TABLE);
+  });
+
+  it("the pilot append REFUSES rather than dropping an observation written under it", async () => {
+    // R31. The pilot rewrites its one file whole and holds only the SESSION
+    // lock, which is keyed by (runId, taskId, arm) — so two pilot tasks never
+    // exclude each other, both read the same prior state, and the second write
+    // silently drops the first. There is no obs dir, no runlog row and no
+    // commit to reconstruct it from: the loss costs a paid session.
+    //
+    // The seam stands in for the writer the lock CANNOT cover — one that did
+    // not take it. Suppress the re-read and `t9` below is simply gone.
+    const { buildPilotRecord, appendPilotRecord } = await import("../scripts/b12-run.mjs");
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const pilotFile = path.join(root, "evidence", "run-r.b12.pilot.json");
+    const recordFor = (taskId: string) =>
+      buildPilotRecord(
+        {
+          taskId,
+          arm: "treatment",
+          sessionId: `s-${taskId}`,
+          outcome: "completed",
+          valid: true,
+          censored: false,
+          accepted: true,
+          invalidReasons: [],
+        },
+        { telemetry: [], lineage: [] }
+      );
+
+    await appendPilotRecord(root, "run-r", recordFor("t1"));
+
+    let staged: string | null = null;
+    await expect(
+      appendPilotRecord(root, "run-r", recordFor("t2"), {
+        beforeWrite: ({ tmp, atRead }) => {
+          staged = tmp;
+          // ATOMIC INSTALL, asserted where it is observable: the full next
+          // state is already complete on disk under another name, and the
+          // target still holds only what this call read. Structural — it
+          // shows the target is never the half-written one, it does not
+          // reproduce an OS-level torn write.
+          const stagedState = JSON.parse(readFileSync(tmp, "utf8"));
+          expect(stagedState.observations.map((o: { taskId: string }) => o.taskId)).toEqual(["t1", "t2"]);
+          expect(JSON.parse(atRead!).observations).toHaveLength(1);
+          // …and now the other writer completes, inside this call's window.
+          const foreign = JSON.parse(atRead!);
+          foreign.observations.push(recordFor("t9"));
+          writeFileSync(pilotFile, JSON.stringify(foreign, null, 2) + "\n", "utf8");
+        },
+      })
+    ).rejects.toThrow(/changed under this write/);
+
+    // The other observation SURVIVED, and this one is recoverable by hand
+    // instead of being re-run.
+    const onDisk = JSON.parse(await fs.readFile(pilotFile, "utf8"));
+    expect(onDisk.observations.map((o: { taskId: string }) => o.taskId)).toEqual(["t1", "t9"]);
+    expect(staged).not.toBeNull();
+    expect(JSON.parse(readFileSync(staged!, "utf8")).observations.map((o: { taskId: string }) => o.taskId)).toEqual([
+      "t1",
+      "t2",
+    ]);
+  });
+
+  it("the pilot append takes the RUN-wide lock, not the per-task one", async () => {
+    // The run lock's own header already said the session lock cannot serialize
+    // a shared file. The pilot path took only the session lock anyway — the
+    // sixth-and-now-seventh time a rule this repository had written down was
+    // missing at a second site.
+    const { acquireRunlogLock, buildPilotRecord, appendPilotRecord } = await import("../scripts/b12-run.mjs");
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const record = buildPilotRecord(
+      {
+        taskId: "t1",
+        arm: "treatment",
+        sessionId: "s1",
+        outcome: "completed",
+        valid: true,
+        censored: false,
+        accepted: true,
+        invalidReasons: [],
+      },
+      { telemetry: [], lineage: [] }
+    );
+    const held = acquireRunlogLock(path.join(root, "evidence"), "run-l");
+    expect(held.ok).toBe(true);
+    await expect(
+      appendPilotRecord(root, "run-l", record, { lockAttempts: 2, lockWaitMs: 1 })
+    ).rejects.toThrow(/holds this run's evidence lock/);
+    // NOTHING was written while the other writer held the run.
+    expect(existsSync(path.join(root, "evidence", "run-l.b12.pilot.json"))).toBe(false);
+    held.release();
+    await appendPilotRecord(root, "run-l", record, { lockAttempts: 2, lockWaitMs: 1 });
+    expect(
+      JSON.parse(await fs.readFile(path.join(root, "evidence", "run-l.b12.pilot.json"), "utf8")).observations
+    ).toHaveLength(1);
   });
 
   it("the registration guard: one act, byte-identical bytes, and a prefix-preserved register", async () => {

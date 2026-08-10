@@ -29,7 +29,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -232,6 +232,12 @@ export function acquireSessionLock(evidenceDir, runId, taskId, arm) {
  * dir. The session lock cannot do this job: it is keyed by (runId, taskId,
  * arm), so two observations of DIFFERENT tasks hold different locks and
  * interleave freely, which is exactly the case R18 found.
+ *
+ * ONE lock for the run's whole evidence write, not one per writer: the scored
+ * path's [row, commit] act and the pilot's read-modify-write of artifact 4
+ * both take THIS lock. A second lock of its own would exclude nothing from
+ * the first — and the reason above is not about the runlog, it is about the
+ * session lock's key, which the pilot shares (R31).
  */
 export function acquireRunlogLock(evidenceDir, runId) {
   const lockDir = path.join(evidenceDir, `.runlog-lock-${runId}`);
@@ -2177,15 +2183,82 @@ export function buildPilotRecord(observation, archiveData) {
   return record;
 }
 
-/** Read-modify-write of the ONE pilot file, shape-checked before every write. */
-export function appendPilotRecord(repoRoot, runId, record) {
-  const file = path.join(repoRoot, "evidence", `${runId}.b12.pilot.json`);
-  const current = existsSync(file)
-    ? JSON.parse(readFileSync(file, "utf8"))
-    : { schema: "b12-pilot/1", runId, covariateTable: PILOT_COVARIATE_TABLE, observations: [] };
-  current.observations.push(record);
-  assertPilotShape(current);
-  writeFileSync(file, JSON.stringify(current, null, 2) + "\n", "utf8");
+/**
+ * Read-modify-write of the ONE pilot file, shape-checked before every write —
+ * UNDER THE RUN'S LOCK, THROUGH A TEMP FILE, AND VERIFIED (R31).
+ *
+ * This block used to read, push and `writeFileSync` the whole file with no
+ * lock at all. The only claim the pilot path holds is the SESSION lock, and
+ * the run lock's own header already says why that one cannot serialize this:
+ * it is keyed by (runId, taskId, arm), so two pilot tasks hold DIFFERENT
+ * locks and interleave freely. Both read the same prior state, the second
+ * write silently drops the first observation — and the pilot has no obs dir,
+ * no runlog row and no commit, so nothing on disk can reconstruct it. The
+ * cost of that loss is a paid session.
+ *
+ * Three teeth, not one:
+ *   - the RUN-WIDE lock, so lawful writers serialize;
+ *   - a re-read immediately before the write, so a writer that did NOT take
+ *     the lock turns a silent lost update into a refusal;
+ *   - temp file + rename, so a torn or failed write cannot truncate the only
+ *     copy of every earlier observation.
+ *
+ * The temp carries the FULL next state, and is consumed by the rename. On any
+ * refusal past that point it is left behind ON PURPOSE and named in the
+ * message: it is this session's work, mergeable by hand, and the alternative
+ * is re-running a paid observation. Same doctrine as the leaked lock dir —
+ * the operator removes it, the harness never guesses.
+ */
+export async function appendPilotRecord(repoRoot, runId, record, opts = {}) {
+  const { lockAttempts = 20, lockWaitMs = 250, beforeWrite = null } = opts;
+  const evidenceDir = path.join(repoRoot, "evidence");
+  const file = path.join(evidenceDir, `${runId}.b12.pilot.json`);
+  const readFile = () => (existsSync(file) ? readFileSync(file, "utf8") : null);
+
+  let lock = acquireRunlogLock(evidenceDir, runId);
+  for (let attempt = 1; !lock.ok && attempt < lockAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, lockWaitMs));
+    lock = acquireRunlogLock(evidenceDir, runId);
+  }
+  if (!lock.ok) {
+    throw new Error(
+      `another pilot observation holds this run's evidence lock (${lock.lockDir}) and did not release it — the pilot ` +
+        `file is rewritten whole, so two writers lose an observation; remove the lock only after confirming no live process`
+    );
+  }
+  const tmp = path.join(evidenceDir, `.${runId}.b12.pilot.json.tmp-${process.pid}-${Date.now()}`);
+  try {
+    const atRead = readFile();
+    const current =
+      atRead === null
+        ? { schema: "b12-pilot/1", runId, covariateTable: PILOT_COVARIATE_TABLE, observations: [] }
+        : JSON.parse(atRead);
+    current.observations.push(record);
+    assertPilotShape(current);
+    const next = JSON.stringify(current, null, 2) + "\n";
+    writeFileSync(tmp, next, "utf8");
+    if (beforeWrite) beforeWrite({ file, tmp, atRead });
+    // THE WINDOW, CLOSED. Everything above read a snapshot; this asks the disk
+    // whether that snapshot is still what is there. A writer outside the lock
+    // is the one case the lock cannot cover, and overwriting it here would be
+    // exactly the silent loss this function exists to stop.
+    if (readFile() !== atRead) {
+      throw new Error(
+        `the pilot file changed under this write — refusing to overwrite ${path.basename(file)} with a state read before ` +
+          `that change; this observation's full state is staged at ${tmp} and can be merged by hand (do not re-run the session)`
+      );
+    }
+    renameSync(tmp, file);
+    const after = readFile();
+    if (after !== next) {
+      throw new Error(
+        `the pilot file on disk is not the bytes this observation wrote — something wrote ${path.basename(file)} between ` +
+          `the rename and this read; every earlier observation is at risk`
+      );
+    }
+  } finally {
+    lock.release();
+  }
   return file;
 }
 
@@ -2982,7 +3055,7 @@ async function observe(args, pilotMode = false) {
   // write. No obs-dir, no runlog row, no MEASUREMENTS line, no commit:
   // committing is the session's act, and registration has not happened.
   if (pilotMode) {
-    const pilotFile = appendPilotRecord(REPO, runId, buildPilotRecord(observation, archive));
+    const pilotFile = await appendPilotRecord(REPO, runId, buildPilotRecord(observation, archive));
     sessionLock.release();
     process.stdout.write(
       `  pilot  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  outcome ${verdict.outcome}  ` +

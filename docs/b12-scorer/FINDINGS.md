@@ -1878,6 +1878,66 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTY-FOURTH POST-IMPLEMENTATION ROUND (R31) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED: a completed, paid observation is
+deleted, in silence, by a call that returns success.
+
+- **R31#1 (high) — the pilot's only artifact lost observations under a
+  concurrent or interrupted write.** `appendPilotRecord` read the whole
+  `evidence/<runId>.b12.pilot.json`, pushed one record in memory, and
+  `writeFileSync`'d the file back — with **no lock at all**. The only claim
+  the pilot path holds is the SESSION lock, and the run lock's own header had
+  already written down why that one cannot serialize a shared file: it is
+  keyed by (runId, taskId, arm), so two pilot TASKS take different locks and
+  interleave freely. Both read the same prior state; the second write drops
+  the first observation. The pilot has no obs dir, no runlog row and no
+  commit — artifact 4 says its one file is the only output — so nothing on
+  disk can reconstruct what was dropped. The unit of loss is a paid session.
+  A kill or a full disk mid-`writeFileSync` is the same wound with a wider
+  blast radius: the truncated file takes EVERY earlier observation with it.
+
+  **Seventh occurrence of the pattern** this loop keeps finding: the rule was
+  already written, in the header of the very lock that exists to fix exactly
+  this, and the second site did not apply it. That lock is now what its
+  header always said it was — ONE run-wide claim over the run's evidence
+  write, taken by the scored path's [row, commit] act and by the pilot's
+  read-modify-write alike. A second lock of the pilot's own would have
+  excluded nothing from the first.
+
+  Three teeth, not one: the run-wide lock, so lawful writers serialize; a
+  RE-READ immediately before the write, so a writer that never took the lock
+  turns a silent lost update into a refusal; and temp-file + rename, so a
+  torn or failed install cannot truncate the only copy. The temp carries the
+  FULL next state and is consumed by the rename; on any refusal past that
+  point it is left behind ON PURPOSE and named in the message, because it is
+  that session's work and the alternative is re-running a paid observation.
+  Same doctrine as the leaked lock dir: the operator removes it, the harness
+  never guesses.
+
+  **Both controls fire.** Suppressing the re-read and replaying the scenario
+  outside vitest prints `on disk: t1,t2` — `t9`, a completed observation
+  written inside the window, is simply gone and the function returns the file
+  path as if it had succeeded. Restored, the same script refuses by name and
+  points at the staged temp. Suppressing the lock acquisition turns the
+  second control green-to-red the same way.
+
+  Codex also proposed durable per-observation artifacts with the aggregate
+  derived from them. **Declined, with the reason:** artifact 4 registers that
+  ONE file as the pilot's only output, and the code already refuses to claim
+  an obs dir here because an empty claimed dir in append-only `evidence/` is
+  a permanent void at scoring time. Minting a second evidence class
+  pre-registration to fix a locking defect trades a bug for an unregistered
+  surface. The lock, the re-read and the atomic install give the durability
+  without touching the registered artifact set.
+
+  **One honest scope note.** The temp+rename half is asserted STRUCTURALLY —
+  the seam shows the full next state complete on disk under another name
+  while the target still holds only what this call read, so the target is
+  never the half-written one. It does not reproduce an OS-level torn write,
+  which is not injectable from a test. The two firing controls above are the
+  lock and the re-read.
+
 ### TWENTY-THIRD POST-IMPLEMENTATION ROUND (R30) — adjudicated 2026-08-10
 
 Two findings. One is confirmed and reproduced arithmetically; the other is

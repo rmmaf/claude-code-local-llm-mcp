@@ -105,8 +105,14 @@ export function buildPilotRecord(
 export function appendPilotRecord(
   repoRoot: string,
   runId: string,
-  record: Record<string, unknown>
-): string;
+  record: Record<string, unknown>,
+  opts?: {
+    lockAttempts?: number;
+    lockWaitMs?: number;
+    /** Test seam: fires with the staged temp still on disk, before the re-read. */
+    beforeWrite?: (info: { file: string; tmp: string; atRead: string | null }) => void;
+  }
+): Promise<string>;
 
 /**
  * The registration guard: every reason `observe` may not spend a session —

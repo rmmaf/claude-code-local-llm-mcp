@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R30 (post-implementation adversarial rounds) are ADJUDICATED — forty-one
+R8–R31 (post-implementation adversarial rounds) are ADJUDICATED — forty-two
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -76,6 +76,12 @@ the register's grammar, applied where the id becomes a filename, SIXTH time a
 written-down rule was missing at a second site; and repair's abort telemetry
 could skip the rollback — fixed, but its control does NOT fire (every path
 reaching that catch already restored), which is recorded, not dressed up.**
+**R31: the PILOT's one artifact — no obs dir, no row, no commit behind it —
+was rewritten whole with NO lock, so two pilot tasks (different session locks,
+by that lock's own header) both read the prior state and the second silently
+deleted a paid observation; REPRODUCED. Run-wide lock + re-read before the
+write + temp-and-rename; per-observation artifacts DECLINED (artifact 4
+registers the one file, and an unregistered evidence surface is not a fix).**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The
