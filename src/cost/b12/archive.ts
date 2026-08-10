@@ -902,20 +902,30 @@ function readObservationDir(
     }
   }
   // The snapshots joined the binding when the harness started stamping them
-  // (the R7 debt): a PRESENT stamp is held to the directory's identity — a
-  // disagreement is a swapped or copied snapshot and refuses terms with the
-  // rest of the cross-wired family — while an ABSENT stamp is a reported
-  // problem, because stripping the stamp is a swapper's cheapest move and
-  // silence would reward it.
+  // (the R7 debt), and they are held to EXACTLY the standard the record and
+  // the archive are held to: a disagreeing stamp is cross-wired evidence, an
+  // ABSENT stamp is an identity that cannot be shown bound, and the PHASE
+  // must be the one the filename claims — `narrowSnapshot` parsed `phase`
+  // from the start while nothing compared it.
+  //
+  // THE LENIENT READING IS SUPERSEDED (R13). Absence used to be a reported
+  // problem only, on the argument that absence is not proof of cross-wiring.
+  // Three things overrule it: the type has always said `identityIntact` goes
+  // false when evidence carries "no identity to check"; `observation.json`
+  // with no `sessionId` was ALREADY an identity problem by that same reading,
+  // so the snapshot was the one member of the binding judged by a softer
+  // rule; and the incentive ran backwards — DELETING a snapshot voids the run
+  // through `voidConditions` 14, while stripping its stamp cost nothing,
+  // making the cheapest tampering the safest.
   const snapshotBefore = narrowSnapshot(readJson("snapshot-before.json"));
   const snapshotAfter = narrowSnapshot(readJson("snapshot-after.json"));
-  for (const [name, snap] of [
-    ["snapshot-before.json", snapshotBefore],
-    ["snapshot-after.json", snapshotAfter],
+  for (const [name, snap, expectedPhase] of [
+    ["snapshot-before.json", snapshotBefore, "before"],
+    ["snapshot-after.json", snapshotAfter, "after"],
   ] as const) {
-    if (snap === null) continue; // the missing FILE is its own problem below
+    if (snap === null) continue; // the missing FILE is its own problem, and clause 14's
     if (snap.identity === null) {
-      problems.push(`${name} carries no identity stamps — a swapped snapshot cannot be shown bound`);
+      identityProblems.push(`${name} carries no identity stamps — a swapped snapshot cannot be shown bound`);
       continue;
     }
     const wrong: string[] = [];
@@ -927,6 +937,9 @@ function readObservationDir(
     }
     if (record !== null && snap.identity.sessionId !== record.sessionId) {
       wrong.push(`is stamped for session ${snap.identity.sessionId ?? "(absent)"} while observation.json names ${record.sessionId}`);
+    }
+    if (snap.identity.phase !== expectedPhase) {
+      wrong.push(`is stamped phase ${snap.identity.phase ?? "(absent)"} while the file is the ${expectedPhase} snapshot`);
     }
     if (wrong.length > 0) identityProblems.push(`${name} ${wrong.join("; ")}`);
   }

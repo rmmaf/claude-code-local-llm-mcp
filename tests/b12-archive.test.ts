@@ -343,9 +343,11 @@ describe("readRunArchive — the hostile disk", () => {
       /snapshot-before\.json is stamped for session sess-evil/
     );
 
-    // STRIPPED: removing the stamp is a swapper's cheapest move, and silence
-    // would reward it — a REPORTED problem, on the artifact's face, while the
-    // binding itself stays undecided rather than falsely refused.
+    // STRIPPED: removing the stamp is a swapper's CHEAPEST move, and R13
+    // found it was also the only one that cost nothing — deleting the
+    // snapshot voids through clause 14, while stripping its stamp merely
+    // printed a line. An unshowable binding is now refused terms, exactly as
+    // `observation.json` with no sessionId always was.
     const stripped = await readRunArchive(
       await fixtureCopy(async (root) => {
         const file = path.join(root, OBS, "snapshot-after.json");
@@ -355,9 +357,35 @@ describe("readRunArchive — the hostile disk", () => {
       }),
       "replay-01"
     );
-    expect(stripped.observations[0]!.identityIntact).toBe(true);
+    expect(stripped.observations[0]!.identityIntact).toBe(false);
     expect(stripped.observations[0]!.problems.join(" ")).toMatch(
       /snapshot-after\.json carries no identity stamps/
+    );
+    // end to end: no terms, an integrity failure, nothing scored.
+    const strippedRun = assembleRun({
+      archive: stripped,
+      gitAudit: { ran: false },
+      scoringCommandActual: "node dist/cost/b12/emit.js replay-01",
+    });
+    expect(strippedRun.result.integrityFailures).toHaveLength(1);
+    expect(strippedRun.result.admitted).toBe(0);
+
+    // MIS-PHASED: `phase` was parsed from the first day and compared by
+    // nothing, so an after-snapshot wearing the before-stamp — the exact
+    // swap that makes originated ids look inherited, or the reverse — passed
+    // every other check in the family.
+    const misphased = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "snapshot-after.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        parsed.identity.phase = "before";
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(misphased.observations[0]!.identityIntact).toBe(false);
+    expect(misphased.observations[0]!.problems.join(" ")).toMatch(
+      /snapshot-after\.json is stamped phase before while the file is the after snapshot/
     );
   });
 

@@ -760,10 +760,12 @@ export interface SnapshotFacts {
   ts: string | null;
   /**
    * WHOSE snapshot this is — stamped by the harness since the R7 debt closed,
-   * and CHECKED by the archive reader against the directory, the record and
-   * the run: a stamp that disagrees is cross-wired evidence (`identityIntact`
-   * false, terms refused); a stamp that is absent is a reported problem,
-   * because stripping the stamp is a swapper's cheapest move.
+   * and CHECKED by the archive reader against the directory, the record, the
+   * run AND the filename's phase. A stamp that disagrees, that names the
+   * wrong phase, or that is ABSENT all make `identityIntact` false and refuse
+   * terms (R13 superseded the reading where absence was merely reported —
+   * stripping the stamp is a swapper's cheapest move, and it was also the
+   * only one that cost nothing).
    */
   identity: {
     runId: string | null;

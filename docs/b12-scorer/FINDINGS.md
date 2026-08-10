@@ -1306,6 +1306,46 @@ whole job is to prove the conformance suite ran:
   `files`/`tests` (verdict void AND the artifact still serializes), and
   silence on the well-formed attestation the e2e writes.
 
+### SIXTH POST-IMPLEMENTATION ROUND (R13) — adjudicated 2026-08-10
+
+One high finding, confirmed — and it SUPERSEDES a reading this repository
+had registered in a comment, a type docstring's neighbour and a passing
+test:
+
+**A snapshot with its identity stamp STRIPPED was scored.** `identityIntact`
+is computed from `identityProblems`, but an absent stamp went to the
+informational `problems` list — so evidence that could not be shown bound to
+its directory priced terms and could reach a clean verdict. The `phase`
+field, parsed by `narrowSnapshot` from the first day, was compared against
+nothing, so an after-snapshot wearing the before-stamp passed every other
+check in the family.
+
+The lenient reading was not an oversight: the old test asserted it, on the
+argument that absence is not proof of cross-wiring. Three things overrule
+it, and the third decides:
+
+1. `ArchivedObservation.identityIntact`'s own docstring has always said
+   FALSE when the evidence carries "no identity to check" — the type
+   promised the strict reading while the code did the lenient one, and
+   `archive.ts`'s own header comment promised it too, two lines above the
+   code that did the opposite.
+2. `observation.json` with an empty `sessionId` was ALREADY an identity
+   problem ("the session binding is unshowable"). The snapshot was the one
+   member of the binding judged by a softer rule, with no argument for the
+   asymmetry.
+3. **The incentive ran backwards.** DELETING a snapshot voids the run
+   through `voidConditions` 14 (assemble's snapshot-scope check), while
+   STRIPPING its stamp printed a line and scored — the cheapest tampering
+   was also the safest. That is the shape of a hole, not of a limit.
+
+Now an absent stamp and a wrong phase are both `identityProblems`: terms
+refused, integrity failure, no scored bracket. Cost measured BEFORE
+committing to the change: the committed fixture already carries both stamps
+with correct phases and the harness stamps `before`/`after` explicitly, so
+no lawful evidence changes verdict. Controls: stripped stamp →
+`identityIntact` false END TO END (integrity failure, `admitted === 0`);
+after-snapshot stamped `before` → refused by name.
+
 ---
 
 ## CLOSED
