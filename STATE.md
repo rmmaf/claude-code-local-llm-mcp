@@ -17,18 +17,18 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R15 (post-implementation adversarial rounds) are ADJUDICATED — sixteen
-findings, all confirmed, fixed with controls: CAS worktree index +
-capture-before-validate (R8); fail-open probes made fail-closed (R9); the
-conditional post-swap sync (R10); the branch in the captured state, artifact
-6's runlog barrier, case-folded scope intersection (R11); clause 6's two
-holes (R12); a STRIPPED snapshot stamp scoring, `phase` compared against
-nothing (R13); the sync extended to the INDEX, no more leaked worktrees
-(R14); and R15, where two recurrences forced the shape to change rather than
-the checks: the sync is now an APPEND (non-destructive by construction, no
-`git checkout`, index never touched), and `--attest-suite` runs the
-conformance suite from a detached worktree at `subjectCommit` that BUILDS
-before it tests — validated by a real run, not by argument.
+R8–R16 (post-implementation adversarial rounds) are ADJUDICATED — eighteen
+findings, all confirmed, fixed with controls: R8 CAS index +
+capture-before-validate; R9 fail-open probes made fail-closed; R10 the
+conditional sync; R11 the branch captured, artifact 6's runlog barrier,
+case-folded scopes; R12 clause 6's two holes; R13 a stripped snapshot stamp
+scoring; R14 the sync's index and leaked worktrees; R15 the sync became an
+APPEND and `--attest-suite` moved to a detached worktree that BUILDS before
+it tests (validated by a real run); **R16 the worst one — the real index
+stayed on `expectedHead` after the swap, so the operator's next ordinary
+commit UNDID the registration (reproduced: manifest gone, row gone); the
+index now follows the branch, and the evidence claim moved past every
+fallible step with the exit hook owning it while uncommitted.**
 PR to main is open — merge is the user's act.
 
 ## Still blocking a run

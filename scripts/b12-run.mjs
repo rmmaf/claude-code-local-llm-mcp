@@ -2172,6 +2172,12 @@ async function observe(args, pilotMode = false) {
   // before finding the cause. `--keep` still keeps, and a COMPLETED
   // observation removes the tree in its own line below rather than here.
   let observationCompleted = false;
+  // Set the moment the evidence directory is CLAIMED, far below — the hook
+  // removes it on any non-completion, but ONLY while it is uncommitted: the
+  // append-only rule governs the committed record, and an empty or partial
+  // attempt that was never committed is a claim nobody made good on, not
+  // evidence. A committed one is never touched.
+  let claimedDir = null;
   process.on("exit", () => {
     if (observationCompleted || args.keep) return;
     try {
@@ -2180,6 +2186,16 @@ async function observe(args, pilotMode = false) {
       // Best effort — the prune below still unregisters it.
     }
     spawnSync("git", ["-C", REPO, "worktree", "prune"], { encoding: "utf8" });
+    if (claimedDir === null) return;
+    const rel = path.relative(REPO, claimedDir).split(path.sep).join("/");
+    const committed = spawnSync("git", ["-C", REPO, "cat-file", "-e", `HEAD:${rel}`], { encoding: "utf8" });
+    if (committed.status === 0) return; // committed evidence is never removed
+    try {
+      rmSync(claimedDir, { recursive: true, force: true });
+      process.stderr.write(`  (removed the uncommitted claim ${rel} — the attempt was never completed)\n`);
+    } catch {
+      // Best effort; a leftover empty dir is reported by the scorer's sweep.
+    }
   });
   const treeHash = git(["rev-parse", "HEAD"], treeDir);
   const dirty = run("git", ["-C", treeDir, "status", "--porcelain"]).out.trim();
@@ -2451,7 +2467,14 @@ async function observe(args, pilotMode = false) {
   // The pilot claims NO evidence directory — artifact 4's only output is the
   // pilot file, and an empty claimed dir in append-only evidence/ would be a
   // permanent void at scoring time.
-  const { dir } = pilotMode ? { dir: null } : claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
+  //
+  // THE CLAIM ITSELF MOVED (R16). It used to happen HERE, before the capture
+  // below — and the capture is fallible: an unreadable transcript, a missing
+  // telemetry file, a dependency that throws. A failure then left an EMPTY
+  // claimed attempt in append-only `evidence/`, which the scorer reads as an
+  // observation with no identity: integrity failure, run void, after the
+  // session was already paid for. The claim now happens immediately before
+  // the writes, once everything fallible has succeeded.
 
   // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the
   // only window in which the tree and its `.local-coder/telemetry.jsonl` are
@@ -2592,6 +2615,14 @@ async function observe(args, pilotMode = false) {
     }
     return;
   }
+
+  // THE ATOMIC CLAIM, now that nothing fallible remains between it and the
+  // bytes. `claimedDir` is also handed to the exit hook: a partial write —
+  // a full disk, a killed process — would otherwise leave a half-populated
+  // attempt behind, and removing an UNCOMMITTED directory violates nothing,
+  // because append-only is a property of the committed record.
+  const { dir } = claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
+  claimedDir = dir;
 
   // NAMED AS THEY ARE WRITTEN, because the commit barrier below verifies THIS
   // list against `HEAD` blob by blob. A hand-maintained second list is how a new

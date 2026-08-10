@@ -345,6 +345,46 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(okOf(result).postFailure).toMatch(/NOT synced/);
   });
 
+  it("survives the operator's NEXT ordinary commit — the index follows the branch it indexes", async () => {
+    // R16, reproduced before it was believed: the act builds its tree in a
+    // temporary index and moves the branch, leaving the REAL index on
+    // expectedHead. Against the new HEAD that reads as staged deletions of
+    // the manifests and a staged reversion of the register — so
+    // `git add <result>; git commit` carried them and UNDID the registration.
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root, aBytes } = await registerFixture();
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(result.ok).toBe(true);
+    // Nothing staged against the new HEAD, and nothing dirty either.
+    expect(git(root, ["status", "--porcelain"])).toBe("");
+
+    // The operator's next act: an unrelated artifact, added and committed.
+    await fs.writeFile(path.join(root, "evidence", "run-r1.b12.result.json"), `{"verdict":"void"}\n`, "utf8");
+    git(root, ["add", "evidence/run-r1.b12.result.json"]);
+    git(root, ["commit", "-q", "-m", "the result"]);
+
+    // THE REGISTRATION SURVIVES IT.
+    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
+    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.manifest-B.tasks.json"])).not.toBe("");
+    expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).toMatch(/b12_registration/);
+  });
+
+  it("leaves a STAGED index alone and says the registration would be reverted", async () => {
+    // The other half: an index carrying someone's staged work may not be
+    // retargeted — that would destroy bytes the act never validated (R15).
+    // So it is left, and the hazard is named instead of hidden.
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    await fs.writeFile(path.join(root, "scratch.txt"), "someone's staged work\n", "utf8");
+    git(root, ["add", "scratch.txt"]);
+    const stagedBlob = git(root, ["rev-parse", ":scratch.txt"]);
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(result.ok).toBe(true);
+    expect(okOf(result).postFailure).toMatch(/would REVERT this registration/);
+    // The staged work is untouched.
+    expect(git(root, ["rev-parse", ":scratch.txt"])).toBe(stagedBlob);
+  });
+
   it("never touches the INDEX — the sync is an append, so staged work is not its business", async () => {
     // R10 conditioned the sync on disk bytes; R14 added the index; R15 found
     // the residual TOCTOU and the operation changed instead of the checking.

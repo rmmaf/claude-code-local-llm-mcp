@@ -2665,6 +2665,13 @@ describe("the B12 harness", () => {
     expect(unregistered.code).not.toBe(0);
     expect(unregistered.stderr).toMatch(/registration guard/);
     await noWorktree("a refused registration guard");
+
+    // R16's other half: a refusal must not leave a CLAIMED evidence attempt
+    // behind either. The claim is append-only and the scorer reads an empty
+    // one as an observation with no identity — a void bought with a paid
+    // session. No attempt reached the claim here, so evidence/<runId>/ holds
+    // nothing at all.
+    expect(existsSync(path.join(root, "evidence", "run-w"))).toBe(false);
   }, 60_000);
 
   describe("policy blob provenance — the seal is {repo, commit, path, sha256} and delivery reads the object store", () => {

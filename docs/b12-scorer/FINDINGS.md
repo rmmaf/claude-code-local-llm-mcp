@@ -1422,6 +1422,43 @@ Two high findings, both RECURRENCES, and the recurrence is the finding:
   produced `subjectCommit === HEAD`, 147 + 14 tests passed with none
   skipped, all six controls present and passing, and removed its worktree.
 
+### NINTH POST-IMPLEMENTATION ROUND (R16) — adjudicated 2026-08-10
+
+Two high findings. The first was REPRODUCED in a scratch repository before
+it was believed, and it is the worst defect any round has found: the act
+could undo itself one commit later.
+
+- **R16#1 — the index did not follow the branch it indexes.** The act builds
+  its tree in a TEMPORARY index and moves the checked-out branch, which
+  leaves the REAL index describing `expectedHead`. Against the new HEAD that
+  index reads as staged DELETIONS of both manifests and a staged REVERSION
+  of the register — so the operator's very next ordinary
+  `git add <result>; git commit` carries them. Reproduced end to end: after
+  the registration, one unrelated commit later, `manifest: GONE`,
+  `row: GONE`. Every guard in the instrument would then be reading a run
+  whose registration a routine act had silently withdrawn. The fix retargets
+  the real index with `read-tree <newCommit>` — safe PRECISELY because the
+  index still equals `expectedHead`'s tree, so an index carrying nothing of
+  its own loses nothing by being retargeted. When it DOES carry staged work
+  it is not touched (R15's doctrine holds: never destroy unvalidated bytes)
+  and the hazard is named with the `git reset --mixed` that repairs it.
+  Controls: a real `git add <result>; git commit` after registering,
+  asserting both manifests and the row survive; and a staged index left
+  byte-identical with the warning on the act's face.
+- **R16#2 — a paid session could be voided by a fallible capture.** The
+  evidence directory was CLAIMED before `captureObservation`, which reads
+  transcripts, telemetry and worktree files and can throw. A failure left an
+  EMPTY claimed attempt in append-only `evidence/`, which the scorer reads as
+  an observation with no identity — integrity failure, run void, after the
+  session was already spent; a retry then claimed `-r2` beside the ruined
+  `-r1`. The claim now happens immediately before the writes, once every
+  fallible step has succeeded, and the exit hook that owns the worktree also
+  owns the claim: on any non-completion it removes the claimed directory
+  **only while uncommitted** — append-only governs the COMMITTED record, and
+  a claim nobody made good on is not evidence. A committed directory is
+  never touched. Control: the refusal-path test now also asserts that
+  `evidence/<runId>/` does not exist.
+
 ---
 
 ## CLOSED

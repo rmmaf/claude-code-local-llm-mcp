@@ -245,6 +245,28 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
         postFailure: `registered as ${newCommit.slice(0, 12)} on ${ref}, but HEAD is now ${refNow.code === 0 ? refNow.out.trim() : "detached"} — NOTHING was synced; the registered bytes live in the commit`,
       };
     }
+    // THE INDEX MUST FOLLOW THE BRANCH IT IS THE INDEX OF. The act builds its
+    // tree in a TEMPORARY index and moves the checked-out branch — which
+    // leaves the REAL index describing `expectedHead`. Against the new HEAD
+    // that index reads as staged DELETIONS of the manifests and a staged
+    // REVERSION of the register, so the operator's very next ordinary
+    // `git add <result>; git commit` would carry them and undo the
+    // registration (reproduced: manifest gone, row gone). `read-tree` here is
+    // safe precisely BECAUSE the index still equals expectedHead's tree — an
+    // index carrying nothing of its own loses nothing by being retargeted.
+    // If it carries staged work, we do NOT touch it (R15's doctrine) and say
+    // so, because the alternative is destroying bytes nobody validated.
+    const indexClean = git(repoRoot, ["diff-index", "--cached", "--quiet", expectedHead]).code === 0;
+    if (indexClean) {
+      const rebased = git(repoRoot, ["read-tree", newCommit]);
+      if (rebased.code !== 0) {
+        post.push(`the index could not be retargeted to ${newCommit.slice(0, 12)} — run: git reset --mixed ${newCommit.slice(0, 12)} before committing anything else`);
+      }
+    } else {
+      post.push(
+        `the index still describes ${expectedHead.slice(0, 12)} and carries staged work, so it was left alone — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)} (then restage) before committing anything else`
+      );
+    }
     for (const e of entries) {
       const abs = path.join(repoRoot, e.path);
       const now = readDisk(e.path);
