@@ -836,10 +836,31 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   } else if (!runlogShow.ok) {
     anchorProblems.push(`HEAD carries no evidence/${runId}.b12.runlog.jsonl — real row order is the anchor's clock`);
   } else {
+    // THE CATCH COVERS THE COUNTERFACTUAL'S PARSE AND NOTHING ELSE (R32).
+    //
+    // It used to wrap the whole derivation below, including the MANDATORY
+    // directory probe that throws `AuditRefused` by design. A git that could
+    // not answer was therefore caught here, relabelled "the counterfactual
+    // does not parse" — a claim about a file that parsed perfectly — and
+    // `decideAudit` turned that fabricated anchor problem into a VOID. That
+    // inverts the whole doctrine: a refusal is retryable and writes no
+    // artifact; a VOID is a committable verdict that kills a paid run. A
+    // transient git failure may not spend the run.
+    type Counterfactual = {
+      observations?: Array<{ taskId?: unknown; arm?: unknown; attempt?: unknown; aPlusSPositive?: unknown }>;
+    };
+    let cf: Counterfactual | null = null;
     try {
-      const cf = JSON.parse(cfShow.out) as {
-        observations?: Array<{ taskId?: unknown; arm?: unknown; attempt?: unknown; aPlusSPositive?: unknown }>;
-      };
+      const parsed: unknown = JSON.parse(cfShow.out);
+      // `null` and scalars parse without throwing and carry no observations —
+      // the same nothing a broken file carries, said out loud rather than
+      // read as an empty population.
+      if (parsed === null || typeof parsed !== "object") throw new SyntaxError("not an object");
+      cf = parsed as Counterfactual;
+    } catch {
+      anchorProblems.push("the committed counterfactual does not parse — the anchor derivation has no observations to read");
+    }
+    if (cf !== null) {
       const rows = runlogShow.out
         .split("\n")
         .filter((l) => l.trim() !== "")
@@ -851,7 +872,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
           }
         })
         .filter((x): x is { i: number; row: Record<string, unknown> } => x !== null);
-      const joinedObs: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; sessionId: string; aPlusSPositive: unknown }> = [];
+      const joinedObs: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; sessionId: string; started: string; aPlusSPositive: unknown }> = [];
       // THE POPULATION THE COUNTERFACTUAL CLAIMS, held against the population
       // that is COMMITTED (R29).
       //
@@ -926,6 +947,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
           attempt: o.attempt,
           rowIndex: matches[0]!.i,
           sessionId,
+          started,
           aPlusSPositive: o.aPlusSPositive,
         });
       }
@@ -944,7 +966,10 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
         const first = joinedObs.find((o) => o.aPlusSPositive !== null && o.aPlusSPositive !== undefined);
         if (first !== undefined) {
           const dir = `evidence/${runId}/obs-${first.taskId}-${first.arm}${first.attempt === 1 ? "" : `-r${first.attempt}`}`;
-          const rec = JSON.parse(git(["show", `HEAD:${dir}/observation.json`]).out) as Record<string, unknown>;
+          // `started` is CARRIED from the join, not shown and parsed a second
+          // time: the re-read was an unguarded `JSON.parse` over whatever a
+          // second `git show` returned, which is a SyntaxError wearing the
+          // counterfactual's name if HEAD moved underneath the audit.
           const commit = introducingCommit(git, dir);
           if (commit === null) {
             anchorProblems.push(`${dir} has no introducing commit — scored evidence that was never committed cannot anchor the freeze`);
@@ -953,14 +978,12 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
               taskId: first.taskId,
               arm: first.arm,
               attempt: first.attempt,
-              started: String(rec.started),
+              started: first.started,
               commit,
             };
           }
         }
       }
-    } catch {
-      anchorProblems.push("the committed counterfactual does not parse — the anchor derivation has no observations to read");
     }
   }
 

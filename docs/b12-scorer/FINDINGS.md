@@ -1878,6 +1878,44 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTY-FIFTH POST-IMPLEMENTATION ROUND (R32) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED — and it inverts the two outcomes that
+must never be swapped.
+
+- **R32#1 (high) — a mandatory git failure was relabelled and published as a
+  VOID.** The clause-5 anchor derivation sat inside one broad `try/catch`
+  whose handler pushed `the committed counterfactual does not parse`. The
+  MANDATORY directory probe — **R29's own fail-closed guard**, whose comment
+  reads "a probe that cannot answer may not wear the empty list a clean answer
+  wears" — throws `AuditRefused` from INSIDE that block. So a git that could
+  not answer was caught by the enclosing handler, recorded as a claim about a
+  file that parses perfectly, and handed to `decideAudit`, which turned the
+  fabricated anchor problem into a **void**. Reproduced: with the probe
+  blinded, the collector returns facts and the decider prints
+  `void | the committed counterfactual does not parse`.
+
+  A refusal and a VOID are not neighbours. A refusal writes NO artifact and is
+  retryable; a VOID is a committable verdict that kills a run of paid
+  sessions. Transient git may not spend the run. The catch now covers the
+  counterfactual's `JSON.parse` and nothing else — including `null` and
+  scalars, which parse without throwing and carry no observations, said out
+  loud rather than read as an empty population. Every `AuditRefused` below it
+  propagates.
+
+  The same edit removed an unguarded `JSON.parse(git(["show", …]).out)` in the
+  anchor step: `started` is now CARRIED from the join instead of shown and
+  parsed a second time. That re-read was a `SyntaxError` wearing the
+  counterfactual's name if HEAD moved under the audit.
+
+  **The control fires — but its first version did not, and that is worth
+  recording.** The seam blinded every `ls-tree` over `evidence/<runId>/`, and
+  there are TWO: R29's `-d` inside the block, and R24's evidence digest with
+  `-r` OUTSIDE it. Blinding both let the second refusal stand in for the
+  first, so the test passed against the defect. Discriminating on `-d` is what
+  makes it a control rather than a coincidence — and the test says so in
+  place, because the next person to widen that seam will re-break it.
+
 ### TWENTY-FOURTH POST-IMPLEMENTATION ROUND (R31) — adjudicated 2026-08-10
 
 One finding, confirmed and REPRODUCED: a completed, paid observation is

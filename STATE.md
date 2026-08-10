@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R31 (post-implementation adversarial rounds) are ADJUDICATED — forty-two
+R8–R32 (post-implementation adversarial rounds) are ADJUDICATED — forty-three
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -82,6 +82,11 @@ by that lock's own header) both read the prior state and the second silently
 deleted a paid observation; REPRODUCED. Run-wide lock + re-read before the
 write + temp-and-rename; per-observation artifacts DECLINED (artifact 4
 registers the one file, and an unregistered evidence surface is not a fix).**
+**R32 inverts the two outcomes that may never swap: R29's fail-closed probe
+threw INSIDE a broad catch, so a git that could not answer was relabelled "the
+counterfactual does not parse" and published as a VOID — a refusal is
+retryable and writes nothing; a VOID kills a run of paid sessions
+(REPRODUCED). The catch is now the counterfactual's parse and nothing else.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The

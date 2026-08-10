@@ -857,6 +857,57 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     expect(reasons.join(" ")).toMatch(/re-emit before auditing/);
   }, 60_000);
 
+  it("a failing MANDATORY probe refuses — it does not become a VOID wearing the counterfactual's name", async () => {
+    // R32. The anchor derivation sat inside one broad try/catch whose handler
+    // pushed "the committed counterfactual does not parse". The MANDATORY
+    // directory probe — R29's own fail-closed guard — throws `AuditRefused`
+    // from INSIDE that block, so a git that could not answer was caught,
+    // relabelled as a claim about a file that parsed perfectly, and handed to
+    // `decideAudit`, which turned it into a VOID.
+    //
+    // That inverts the two outcomes that must never be swapped: a refusal
+    // writes NO artifact and can be retried; a VOID is a committable verdict
+    // that kills a paid run. Transient git may not spend the run.
+    const { root, registration } = await operatorLoop();
+    const collector = { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" };
+    const base: Git = (args) => {
+      const r = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+      return { ok: r.status === 0, out: r.stdout ?? "" };
+    };
+    // ONLY R29's probe — `ls-tree -d`. The R24 evidence digest enumerates the
+    // same directory with `-r` and refuses from OUTSIDE the block, so blinding
+    // both would let that second refusal stand in for the first and the
+    // control would pass against the defect. Discriminating on `-d` is what
+    // makes this a control rather than a coincidence.
+    const failing: Git = (args) =>
+      args[0] === "ls-tree" && args.includes("-d") ? { ok: false, out: "" } : base(args);
+
+    // Unwrapped, this repository audits without refusing at all…
+    expect(() => collectAuditFacts(root, "replay-01", collector)).not.toThrow();
+    // …and with the one mandatory probe blinded it REFUSES, by its own name.
+    let thrown: unknown = null;
+    try {
+      collectAuditFacts(root, "replay-01", { ...collector, gitRunner: failing });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(AuditRefused);
+    expect(String(thrown)).toMatch(/committed observation directories/);
+    // The fabricated claim is the thing that must NOT come back.
+    expect(String(thrown)).not.toMatch(/does not parse/);
+
+    // AND THE CATCH STILL DOES ITS REAL JOB: a counterfactual that genuinely
+    // does not parse is an anchor problem, not a refusal — narrowing the
+    // boundary did not delete the case it was written for.
+    const cfRel = "evidence/replay-01.b12.counterfactual.json";
+    await fs.writeFile(path.join(root, cfRel), "{not json", "utf8");
+    commitAll(root, "a corrupted counterfactual");
+    const facts = collectAuditFacts(root, "replay-01", collector);
+    expect(facts.clause5.anchorProblems.join(" ")).toMatch(/does not parse/);
+    expect(facts.clause5.anchor).toBeNull();
+    expect(decideAudit(facts).verdict).toBe("void");
+  }, 60_000);
+
   it("a FORGED clean audit — committed, correctly hashed — is refused by re-derivation", async () => {
     // R26: every binding check asked what the artifact SAYS about a handful
     // of paths; none asked whether the verdict beside them is the verdict
