@@ -1878,6 +1878,71 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### NINETEENTH POST-IMPLEMENTATION ROUND (R26) — adjudicated 2026-08-10
+
+Two high findings. The first is the whole clause 4–6 apparatus reviewed at
+its weakest joint, and it is the most serious thing this loop has found: the
+verdict was not the audit's, it was the artifact's.
+
+- **R26#1 (high) — a hand-authored audit could certify clauses 4–6 as
+  clean.** `parseGitAudit` accepted ANY committed object with `ran: true`, a
+  valid verdict, an array of reasons and **one** string input. Every binding
+  check added since (R22, R24) re-hashes what the artifact SAYS about a
+  handful of paths; **none of them ever asked whether the verdict beside
+  those hashes is the verdict those facts produce.** So an operator could
+  write `evidence/<runId>.b12.audit.json` by hand, read the four hashes and
+  the evidence digest straight out of the repository, commit it, and the
+  emission would publish clauses 4–6 as CHECKED with no audit ever having
+  run. Everything the audit computer does — the anchor derivation, the
+  offender union, the six controls — was decorative against one JSON file.
+
+  Two changes. `parseGitAudit` now requires **exactly `AUDIT_INPUT_KEYS`**,
+  the same constant the producer has always asserted before writing: a
+  producer-side assertion nobody checks on the reading end is a wish. And the
+  emission **RE-DERIVES the whole judgement** from the repository and
+  requires the artifact to agree: same verdict, every canonical input equal —
+  except `head`, which MUST differ, because committing the audit is what
+  moved HEAD. That is the exact objection R22 raised against a naive exact
+  match, answered by naming the one key that may move; the confinement proved
+  immediately above (`audited..HEAD` touches `evidence/` only) is what makes
+  every other difference illegitimate. The committed artifact is still the
+  evidence and still required — this is a cross-check on its claim, never a
+  substitute for it.
+
+  `parseGitAudit` moved from `emit.ts` to `audit.ts` to make that possible:
+  the emitter has to import the audit computer, and a parse living on the
+  consumer's side made it a module cycle. It belongs beside the constant it
+  enforces anyway.
+
+- **R26#2 (high) — the evidence commit went wherever HEAD pointed.** The
+  observation ran `git add`/`git commit` against the current branch and
+  captured nothing. An observation takes minutes; a checkout in this
+  repository — an operator, another agent — retargets HEAD inside that
+  window. On a branch cut from the same commit the runlog barrier still
+  passes (the committed runlog is identical), the commit succeeds, and every
+  HEAD-based verification agrees, **so the act reported SUCCESS while the
+  paid observation and its ordering row lived on a branch the run is not
+  on.** Back on the run's branch they simply do not exist. The register's CAS
+  captured its ref for exactly this reason; the observation captured nothing.
+
+  The branch is now captured WITH the barrier's bytes, at the start: a
+  detached HEAD is refused outright (evidence no branch holds is evidence the
+  run cannot find), the act re-checks under the run's lock **before anything
+  is appended**, and every post-commit verification reads that ref instead of
+  `HEAD` — because if something moved after the commit, the branch is still
+  where the evidence has to be, so the branch is what the claim is about.
+
+**Controls.** #1: with the re-derivation suppressed, a hand-authored artifact
+naming `clause5.anchor.taskId: "a-task-that-never-ran"` lands `ran: true,
+verdict: clean`; so does the real artifact with only its VERDICT flipped over
+a run whose control genuinely failed. Restored, each is refused by name —
+"does not survive re-derivation", "the verdict was not produced by these
+facts" — and the lawful e2e still lands `ran: true`. #2: with the capture and
+the ref-verification both suppressed (they are complementary — the pre-check
+prevents the wrong commit, the ref-verification catches it), a checkout to a
+sibling branch mid-observation returns `ok: true`. Restored, it refuses
+before appending, and a detached HEAD refuses too.
+
 ### R23'S RESIDUAL, DECIDED — 2026-08-10
 
 The user asked for the decision to be worked through with Codex

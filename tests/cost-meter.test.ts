@@ -3828,9 +3828,11 @@ describe("the B12 harness", () => {
       await fs.writeFile(path.join(root, relDir, "observation.json"), `{"taskId":"t2"}\n`, "utf8");
       await git(root, "add", "--", runLogRel);
       await git(root, "commit", "-q", "-m", "t1's evidence");
+      const branchRef = await git(root, "symbolic-ref", "--quiet", "HEAD");
       const call = async (over: Record<string, unknown> = {}) => {
         const { commitObservationRow } = await load();
         return commitObservationRow(root, {
+          branchRef,
           evidenceDir: path.join(root, "evidence"),
           runId: "run-c",
           runLogRel,
@@ -3845,7 +3847,7 @@ describe("the B12 harness", () => {
           ...over,
         });
       };
-      return { root, git, runLogRel, relDir, committed, call };
+      return { root, git, runLogRel, relDir, committed, call, branchRef };
     };
 
     it("commits the row and its archive as ONE act, then releases the run's lock", async () => {
@@ -3923,6 +3925,35 @@ describe("the B12 harness", () => {
       expect(existsSync(held.lockDir)).toBe(false);
     });
 
+    it("refuses when HEAD moved to another branch while the observation ran", async () => {
+      // R26: `git commit` writes to whatever HEAD names NOW, and an
+      // observation runs for minutes. A checkout in this repository — an
+      // operator, another agent — retargets it. On a branch cut from the same
+      // commit the barrier still passes and every HEAD-based check agrees, so
+      // the act reported SUCCESS while the paid observation and its ordering
+      // row lived on a branch the run is not on.
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      const head0 = await git(root, "rev-parse", "HEAD");
+      await git(root, "checkout", "-q", "-b", "someone-elses-work");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/HEAD moved to refs\/heads\/someone-elses-work/);
+      expect(result.ok === false && result.why).toMatch(/nothing was appended/);
+      // NOTHING was written, on either branch.
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed);
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("refuses a DETACHED HEAD — evidence no branch holds is evidence the run cannot find", async () => {
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      await git(root, "checkout", "-q", "--detach");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/HEAD is detached now/);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed);
+    });
+
     // R25: the postcondition verified `written` — the per-observation
     // artifacts — and the runlog is the OTHER path the same commit names. The
     // threat model is the one the code already writes down for the archive: an
@@ -3947,7 +3978,7 @@ describe("the B12 harness", () => {
       );
       const result = await call();
       expect(result.ok).toBe(false);
-      expect(result.ok === false && result.why).toMatch(/HEAD carries a different .*runlog/);
+      expect(result.ok === false && result.why).toMatch(/refs\/heads\/\S+ carries a different .*runlog/);
       expect(result.ok === false && result.why).toMatch(/design\.artifacts 6/);
       // The commit HAPPENED and the archive is in it — that is the whole
       // point: the old postcondition called this act successful.
@@ -3961,7 +3992,8 @@ describe("the B12 harness", () => {
       await hookThatMutatesTheIndex(root, `git update-index --force-remove ${runLogRel}`);
       const result = await call();
       expect(result.ok).toBe(false);
-      expect(result.ok === false && result.why).toMatch(/HEAD does not carry .*runlog/);
+      // Named by the BRANCH the observation started on, not by HEAD (R26).
+      expect(result.ok === false && result.why).toMatch(/refs\/heads\/\S+ does not carry .*runlog/);
       expect(await git(root, "show", `HEAD:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
       expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
     });

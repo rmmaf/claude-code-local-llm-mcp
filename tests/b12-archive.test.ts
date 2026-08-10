@@ -31,7 +31,8 @@ import {
   telemetryDrift,
 } from "../src/cost/b12/archive.js";
 import { assembleRun } from "../src/cost/b12/assemble.js";
-import { committedAuditCheck, emitRun, invocationString, parseGitAudit } from "../src/cost/b12/emit.js";
+import { AUDIT_INPUT_KEYS, parseGitAudit } from "../src/cost/b12/audit.js";
+import { committedAuditCheck, emitRun, invocationString } from "../src/cost/b12/emit.js";
 import { reduceFile } from "../src/cost/b12/capture.js";
 import { readTranscript } from "../src/cost/transcript.js";
 import { makeScratch, req, at } from "./b12-fixtures.js";
@@ -551,13 +552,28 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
 });
 
 describe("the emitter's small pure pieces", () => {
-  it("parseGitAudit refuses every shape that is not a replayable audit — inputs included", () => {
-    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } })).toEqual({
+  it("parseGitAudit refuses every shape that is not a replayable audit — the WHOLE key set included", () => {
+    // R26: this used to accept ANY artifact carrying one string input, so a
+    // hand-written file with `verdict: "clean"` and a single plausible pair
+    // parsed as a real audit. The producer has always asserted key-set
+    // equality before writing; the consumer asserting the same constant is
+    // what makes that assertion mean anything on the reading end.
+    const full = Object.fromEntries(AUDIT_INPUT_KEYS.map((k) => [k, "x"]));
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: full })).toEqual({
       ran: true,
       verdict: "clean",
       reasons: [],
-      inputs: { head: "abc" },
+      inputs: full,
     });
+    // ONE key short — a partial artifact is no artifact.
+    const { head: _dropped, ...missingOne } = full;
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: missingOne })).toEqual({ ran: false });
+    // …and one key too many: this tool did not write that.
+    expect(
+      parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: { ...full, "clause7.invented": "x" } })
+    ).toEqual({ ran: false });
+    // The old fail-open shape, now refused by name.
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } })).toEqual({ ran: false });
     expect(parseGitAudit({ ran: true, verdict: "maybe", reasons: [] })).toEqual({ ran: false });
     // a verdict whose inputs cannot be replayed is not an audit (artifact 11)
     expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [] })).toEqual({ ran: false });

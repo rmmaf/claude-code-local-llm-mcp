@@ -36,7 +36,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { runEvidenceDigest, sha256 } from "./archive.js";
-import { parseGitAudit } from "./emit.js";
 import type { GitAudit } from "./types.js";
 
 /** The commit the pre-registration froze at; its blob may never drift. */
@@ -180,6 +179,53 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause6.conformanceHashes",
   "tool.srcSha256",
 ];
+
+/**
+ * Parse a committed audit artifact into the input `assemble` takes.
+ *
+ * `inputs` must be EXACTLY `AUDIT_INPUT_KEYS` (R26). It used to require only
+ * that ONE string input survive — so an artifact carrying three keys of forty,
+ * or a hand-written file with `verdict: "clean"` and a single plausible pair,
+ * parsed as a real audit and let clauses 4–6 publish as CHECKED. The producer
+ * has always asserted key-set equality against this constant before writing;
+ * the consumer asserting the same constant is what makes that assertion mean
+ * anything on the reading end. A partial artifact is NO audit — `{ran: false}`
+ * keeps the clauses in `uncheckedClauses` rather than laundering a broken or
+ * invented file into "clean".
+ *
+ * It lives HERE, beside the constant it enforces, and not in `emit.ts`: the
+ * emitter must be able to import the audit computer to re-derive what the
+ * artifact claims, and a parse living on the consumer's side made that a
+ * module cycle.
+ */
+export function parseGitAudit(raw: unknown): GitAudit {
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    (raw as Record<string, unknown>).ran === true &&
+    ((raw as Record<string, unknown>).verdict === "clean" ||
+      (raw as Record<string, unknown>).verdict === "void") &&
+    Array.isArray((raw as Record<string, unknown>).reasons)
+  ) {
+    const o = raw as { verdict: "clean" | "void"; reasons: unknown[]; inputs?: unknown };
+    const inputs: Record<string, string> = {};
+    if (typeof o.inputs === "object" && o.inputs !== null) {
+      for (const [k, v] of Object.entries(o.inputs)) if (typeof v === "string") inputs[k] = v;
+    }
+    // EXACT, both directions: a missing key cannot be replayed, and an extra
+    // one is an artifact this tool did not write.
+    const got = Object.keys(inputs).sort();
+    const want = [...AUDIT_INPUT_KEYS].sort();
+    if (got.length !== want.length || got.some((k, i) => k !== want[i])) return { ran: false };
+    return {
+      ran: true,
+      verdict: o.verdict,
+      reasons: o.reasons.filter((r): r is string => typeof r === "string"),
+      inputs,
+    };
+  }
+  return { ran: false };
+}
 
 // ---------------------------------------------------------------------------
 // The facts — collected once, decided purely.

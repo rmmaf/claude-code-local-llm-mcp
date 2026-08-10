@@ -30,42 +30,15 @@ import { pathToFileURL } from "node:url";
 
 import { readRunArchive, runEvidenceDigest, sameCommittedText, sha256 } from "./archive.js";
 import { assembleRun } from "./assemble.js";
+import {
+  AUDIT_INPUT_KEYS,
+  auditInputs,
+  collectAuditFacts,
+  decideAudit,
+  parseGitAudit,
+  type CollectorOptions,
+} from "./audit.js";
 import type { GitAudit } from "./types.js";
-
-/**
- * Parse a committed audit artifact into the input `assemble` takes.
- *
- * `inputs` is REQUIRED and non-empty: the pre-declaration says "verdict AND
- * inputs, published on `result.json`'s face for artifact 11's replay", and a
- * verdict whose inputs cannot be replayed is exactly the shape the clause 4–6
- * seam exists to refuse. A malformed audit is NO audit — `{ran: false}` keeps
- * the clauses in `uncheckedClauses` rather than laundering a broken file into
- * "clean".
- */
-export function parseGitAudit(raw: unknown): GitAudit {
-  if (
-    typeof raw === "object" &&
-    raw !== null &&
-    (raw as Record<string, unknown>).ran === true &&
-    ((raw as Record<string, unknown>).verdict === "clean" ||
-      (raw as Record<string, unknown>).verdict === "void") &&
-    Array.isArray((raw as Record<string, unknown>).reasons)
-  ) {
-    const o = raw as { verdict: "clean" | "void"; reasons: unknown[]; inputs?: unknown };
-    const inputs: Record<string, string> = {};
-    if (typeof o.inputs === "object" && o.inputs !== null) {
-      for (const [k, v] of Object.entries(o.inputs)) if (typeof v === "string") inputs[k] = v;
-    }
-    if (Object.keys(inputs).length === 0) return { ran: false };
-    return {
-      ran: true,
-      verdict: o.verdict,
-      reasons: o.reasons.filter((r): r is string => typeof r === "string"),
-      inputs,
-    };
-  }
-  return { ran: false };
-}
 
 /**
  * The audit must be COMMITTED EVIDENCE at the run's own path — the probe trust
@@ -138,7 +111,16 @@ export function committedAuditCheck(
  * A refusal keeps clauses 4–6 UNCHECKED — never "clean", the same fail-closed
  * shape as an unparseable audit. Returns the reason, or null.
  */
-export function auditBindingRefusal(repoRoot: string, runId: string, audit: GitAudit): string | null {
+export function auditBindingRefusal(
+  repoRoot: string,
+  runId: string,
+  audit: GitAudit,
+  /** Test seam ONLY — the CLI re-derives with the frozen constants, exactly
+   * as the audit command did. An oracle whose scratch repository carries a
+   * stand-in prereg has to hand the same stand-in to both sides or it would
+   * be comparing two different questions. */
+  collectorOptions: CollectorOptions = {}
+): string | null {
   if (audit.ran !== true) return null;
   const inputs = audit.inputs;
   const git = (args: string[]): { ok: boolean; out: string } => {
@@ -204,6 +186,44 @@ export function auditBindingRefusal(repoRoot: string, runId: string, audit: GitA
         : "same files, different bytes";
     return `the clause-5 evidence changed after the audit judged it — ${how}; the archive being scored is not the archive that was audited`;
   }
+  // AND THE ARTIFACT IS NOT SELF-AUTHENTICATING (R26).
+  //
+  // Everything above re-checks what the artifact SAYS about a handful of
+  // paths. Nothing above asks whether the verdict beside them is the verdict
+  // those facts produce — so a hand-written `evidence/<runId>.b12.audit.json`
+  // carrying `verdict: "clean"` and the few hashes named here was accepted,
+  // and clauses 4–6 published as CHECKED without any audit ever having run.
+  //
+  // So the emission RE-DERIVES the whole judgement from the repository and
+  // requires the artifact to agree with it: same verdict, and every canonical
+  // input equal — except `head`, which MUST differ, because committing the
+  // audit is what moved HEAD (the reason R22 refused a naive exact match).
+  // Under the confinement proved just above, nothing else may legitimately
+  // move between the audited commit and this one, so any other difference is
+  // an artifact that is not a judgement of this tree.
+  //
+  // The committed artifact is still the evidence, and still required: this is
+  // a cross-check on what it claims, never a substitute for it.
+  let recomputed: Record<string, string>;
+  let recomputedVerdict: "clean" | "void";
+  try {
+    const facts = collectAuditFacts(repoRoot, runId, collectorOptions);
+    recomputed = auditInputs(facts);
+    recomputedVerdict = decideAudit(facts).verdict;
+  } catch (error) {
+    return `the audit could not be re-derived at HEAD (${error instanceof Error ? error.message : String(error)}) — an artifact this emission cannot recompute certifies nothing`;
+  }
+  if (recomputedVerdict !== audit.verdict) {
+    return `the artifact says ${audit.verdict} and re-deriving it here says ${recomputedVerdict} — the verdict was not produced by these facts`;
+  }
+  for (const key of AUDIT_INPUT_KEYS) {
+    // The ONE key that must differ, and the audit's binding to HEAD is what
+    // already proved the difference is only the audit's own commit.
+    if (key === "head") continue;
+    if (inputs[key] !== recomputed[key]) {
+      return `the audit's ${key} does not survive re-derivation (${JSON.stringify(inputs[key] ?? null).slice(0, 60)} vs ${JSON.stringify(recomputed[key] ?? null).slice(0, 60)})`;
+    }
+  }
   return null;
 }
 
@@ -217,7 +237,14 @@ export interface EmitResult {
 export async function emitRun(
   repoRoot: string,
   runId: string,
-  options: { auditPath?: string | null; scoringCommandActual?: string | null } = {}
+  options: {
+    auditPath?: string | null;
+    scoringCommandActual?: string | null;
+    /** Test seam ONLY — handed to the re-derivation so an oracle's scratch
+     * repository asks the audit computer the same question its own audit
+     * asked. The CLI never passes it. */
+    auditCollectorOptions?: CollectorOptions;
+  } = {}
 ): Promise<EmitResult> {
   const archive = await readRunArchive(repoRoot, runId);
 
@@ -234,7 +261,7 @@ export async function emitRun(
       }
       // COMMITTED IS NOT THE SAME AS CURRENT: the artifact must still be a
       // judgement about the tree being emitted.
-      const unbound = auditBindingRefusal(repoRoot, runId, gitAudit);
+      const unbound = auditBindingRefusal(repoRoot, runId, gitAudit, options.auditCollectorOptions ?? {});
       if (unbound !== null) {
         archive.problems.push(`audit refused: ${unbound} — clauses 4–6 stay UNCHECKED`);
         gitAudit = { ran: false };

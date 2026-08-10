@@ -211,10 +211,22 @@ export function acquireRunlogLock(evidenceDir, runId) {
  */
 export async function commitObservationRow(
   repoRoot,
-  { evidenceDir, runId, runLogRel, relDir, written, row, sessionId, message, runlogAtBarrier, lockAttempts = 20, lockWaitMs = 250 }
+  { evidenceDir, runId, runLogRel, relDir, written, row, sessionId, message, runlogAtBarrier, branchRef, lockAttempts = 20, lockWaitMs = 250 }
 ) {
   const runLogPath = path.join(repoRoot, runLogRel);
   const readRunlog = () => (existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null);
+  // THE BRANCH IS PART OF THE ACT (R26). `git commit` writes to whatever HEAD
+  // names NOW, and an observation runs for minutes: a checkout in this
+  // repository — an operator, another agent — moves that target. On a branch
+  // cut from the same commit the runlog barrier still passes, the commit
+  // succeeds, and every HEAD-based verification agrees, so the act reports
+  // success while the paid observation and its ordering row live on a branch
+  // the run is not on. The register's CAS captured its ref for exactly this
+  // reason; the observation captured nothing.
+  const refNow = () => {
+    const r = run("git", ["-C", repoRoot, "symbolic-ref", "--quiet", "HEAD"]);
+    return r.code === 0 ? r.out.trim() : null;
+  };
   let lock = acquireRunlogLock(evidenceDir, runId);
   for (let attempt = 1; !lock.ok && attempt < lockAttempts; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, lockWaitMs));
@@ -229,6 +241,24 @@ export async function commitObservationRow(
     };
   }
   try {
+    // BEFORE ANYTHING IS WRITTEN: the branch this observation started on must
+    // still be the one a commit would land on. Refusing here costs the
+    // session and nothing else; discovering it afterwards costs the run.
+    if (typeof branchRef === "string" && branchRef !== "") {
+      const here = refNow();
+      if (here === null) {
+        return {
+          ok: false,
+          why: `HEAD is detached now and this observation started on ${branchRef} — its evidence commit would belong to no branch; nothing was appended`,
+        };
+      }
+      if (here !== branchRef) {
+        return {
+          ok: false,
+          why: `HEAD moved to ${here} while this observation ran on ${branchRef} — the evidence commit would land on another branch and the run would silently lose it; nothing was appended`,
+        };
+      }
+    }
     const headProbe = run("git", ["-C", repoRoot, "show", `HEAD:${runLogRel}`]);
     const headText = headProbe.code === 0 ? headProbe.out : null;
     const diskText = readRunlog();
@@ -299,14 +329,19 @@ export async function commitObservationRow(
     // `git hash-object` on the file and `git rev-parse HEAD:<path>` on the tree
     // are the same function of the same bytes, so equality is exact rather than
     // circumstantial, and a stale `HEAD` fails on content instead of on presence.
+    // VERIFIED AGAINST THE BRANCH, NOT AGAINST `HEAD` (R26). They are the same
+    // thing only while nothing moved — and if something did move after the
+    // commit, the branch is still where the evidence has to be, so the branch
+    // is what the claim is about.
+    const verifyRef = typeof branchRef === "string" && branchRef !== "" ? branchRef : "HEAD";
     for (const name of written) {
       const rel = `${relDir}/${name}`;
       const onDisk = run("git", ["-C", repoRoot, "hash-object", "--", path.join(repoRoot, relDir, name)]);
       if (onDisk.code !== 0) return { ok: false, why: `hash-object failed for ${rel}` };
-      const inHead = run("git", ["-C", repoRoot, "rev-parse", `HEAD:${rel}`]);
-      if (inHead.code !== 0) return { ok: false, why: `HEAD does not carry ${rel} after the commit` };
+      const inHead = run("git", ["-C", repoRoot, "rev-parse", `${verifyRef}:${rel}`]);
+      if (inHead.code !== 0) return { ok: false, why: `${verifyRef} does not carry ${rel} after the commit` };
       if (inHead.out.trim() !== onDisk.out.trim()) {
-        return { ok: false, why: `HEAD carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.out.trim().slice(0, 12)}` };
+        return { ok: false, why: `${verifyRef} carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.out.trim().slice(0, 12)}` };
       }
     }
     // AND THE ROW ITSELF, WHICH THE LOOP ABOVE COULD NOT REACH (R25).
@@ -340,18 +375,18 @@ export async function commitObservationRow(
     }
     const runlogOnDisk = run("git", ["-C", repoRoot, "hash-object", "--", runLogPath]);
     if (runlogOnDisk.code !== 0) return { ok: false, why: `hash-object failed for ${runLogRel}` };
-    const runlogInHead = run("git", ["-C", repoRoot, "rev-parse", `HEAD:${runLogRel}`]);
+    const runlogInHead = run("git", ["-C", repoRoot, "rev-parse", `${verifyRef}:${runLogRel}`]);
     if (runlogInHead.code !== 0) {
       return {
         ok: false,
-        why: `HEAD does not carry ${runLogRel} after the commit — the evidence committed WITHOUT its ordering row (design.artifacts 6)`,
+        why: `${verifyRef} does not carry ${runLogRel} after the commit — the evidence committed WITHOUT its ordering row (design.artifacts 6)`,
       };
     }
     if (runlogInHead.out.trim() !== runlogOnDisk.out.trim()) {
       return {
         ok: false,
         why:
-          `HEAD carries a different ${runLogRel}: ${runlogInHead.out.trim().slice(0, 12)} != ${runlogOnDisk.out.trim().slice(0, 12)} — ` +
+          `${verifyRef} carries a different ${runLogRel}: ${runlogInHead.out.trim().slice(0, 12)} != ${runlogOnDisk.out.trim().slice(0, 12)} — ` +
           `the evidence committed without this observation's row, or with a rewritten one (design.artifacts 6)`,
       };
     }
@@ -2271,8 +2306,19 @@ async function observe(args, pilotMode = false) {
   // again under the run's commit lock at the end. Anything else having written
   // this file in between is another observation that ran INSIDE this one.
   const runlogAtBarrier = existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null;
+  // THE BRANCH, CAPTURED WITH THE BYTES (R26). Everything this observation
+  // commits must land where it started; `git commit` obeys HEAD at commit
+  // time, which is minutes from now. A detached HEAD is refused outright —
+  // evidence that no branch holds is evidence the run cannot find.
+  const branchRef = (() => {
+    const r = run("git", ["-C", REPO, "symbolic-ref", "--quiet", "HEAD"]);
+    if (r.code !== 0 || r.out.trim() === "") {
+      refuse("HEAD is detached — an observation's evidence commit would belong to no branch; check out the run's branch first");
+    }
+    return r.out.trim();
+  })();
   {
-    const headProbe = run("git", ["-C", REPO, "show", `HEAD:${runLogRel}`]);
+    const headProbe = run("git", ["-C", REPO, "show", `${branchRef}:${runLogRel}`]);
     const barrier = runlogBarrierViolation(runlogAtBarrier, headProbe.code === 0 ? headProbe.out : null);
     if (barrier) refuse(barrier);
   }
@@ -2886,6 +2932,7 @@ async function observe(args, pilotMode = false) {
     written,
     sessionId,
     runlogAtBarrier,
+    branchRef,
     message: `evidence: ${runId} ${task.id}/${arm}`,
     row: {
       runId,

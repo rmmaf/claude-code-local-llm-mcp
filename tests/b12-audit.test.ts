@@ -27,6 +27,7 @@ import {
   CONFORMANCE_FILES,
   CONTROL_TESTS,
   decideAudit,
+  parseGitAudit,
   PINNED_PATHS,
   PREREG_FROZEN_COMMIT,
   PREREG_PATH,
@@ -36,7 +37,6 @@ import {
   type Git,
   type SuiteAttestation,
 } from "../src/cost/b12/audit.js";
-import { parseGitAudit } from "../src/cost/b12/emit.js";
 import { emitRun } from "../src/cost/b12/emit.js";
 import { at } from "./b12-fixtures.js";
 import { makeTempRoot } from "./helpers.js";
@@ -613,6 +613,10 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     const emitted = await emitRun(root, "replay-01", {
       auditPath: "evidence/replay-01.b12.audit.json",
       scoringCommandActual: "node dist/cost/b12/emit.js replay-01",
+      // The emission RE-DERIVES the audit (R26); the scratch repo's stand-in
+      // prereg has to reach both sides or they would be asking different
+      // questions. The CLI passes nothing and re-derives with the constants.
+      auditCollectorOptions: { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" },
     });
     const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8")) as {
       gitAudit: { ran: boolean; verdict?: string };
@@ -643,7 +647,10 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     await fs.writeFile(path.join(root, auditRel), JSON.stringify(artifact, null, 2) + "\n", "utf8");
     commitAll(root, "the audit");
     const emit = async (): Promise<{ ran: boolean; problems: string[]; unchecked: string[] }> => {
-      const out = await emitRun(root, "replay-01", { auditPath: auditRel });
+      const out = await emitRun(root, "replay-01", {
+        auditPath: auditRel,
+        auditCollectorOptions: { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" },
+      });
       const result = JSON.parse(await fs.readFile(out.resultPath, "utf8")) as {
         gitAudit: { ran: boolean };
         uncheckedClauses: string[];
@@ -765,6 +772,70 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     await fs.writeFile(path.join(root, CONFORMANCE_FILES[0]!), "// the control, emptied\n", "utf8");
     return commitAll(root, "the control gutted — mid-run, BEFORE the attestation");
   };
+
+  it("a FORGED clean audit — committed, correctly hashed — is refused by re-derivation", async () => {
+    // R26: every binding check asked what the artifact SAYS about a handful
+    // of paths; none asked whether the verdict beside them is the verdict
+    // those facts produce. So an operator could hand-write the artifact,
+    // fill in the four hashes and the evidence digest by reading the repo,
+    // commit it, and clauses 4–6 published as CHECKED with no audit ever
+    // having run. The forgery below is BETTER than plausible: it is the real
+    // artifact with one input rewritten and the verdict flipped.
+    const { root, registration } = await operatorLoop();
+    const collector = { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" };
+    const { artifact } = buildAuditArtifact(collectAuditFacts(root, "replay-01", collector));
+    const auditRel = "evidence/replay-01.b12.audit.json";
+    const forged = {
+      ...artifact,
+      verdict: "clean" as const,
+      reasons: [] as string[],
+      // A control that never ran, and a clause-5 anchor that never was.
+      inputs: { ...artifact.inputs, "clause5.anchor.taskId": "a-task-that-never-ran" },
+    };
+    await fs.writeFile(path.join(root, auditRel), JSON.stringify(forged, null, 2) + "\n", "utf8");
+    commitAll(root, "hostile: a hand-authored audit");
+    const out = await emitRun(root, "replay-01", { auditPath: auditRel, auditCollectorOptions: collector });
+    const result = JSON.parse(await fs.readFile(out.resultPath, "utf8")) as {
+      gitAudit: { ran: boolean };
+      uncheckedClauses: string[];
+      archiveProblems?: string[];
+    };
+    expect(result.gitAudit).toEqual({ ran: false });
+    expect(result.uncheckedClauses).toHaveLength(3);
+    expect((result.archiveProblems ?? []).join(" ")).toMatch(/clause5\.anchor\.taskId does not survive re-derivation/);
+  }, 60_000);
+
+  it("a forged VERDICT is refused even when every input is the truth", async () => {
+    // The other half: keep the real inputs, flip only the answer. Nothing
+    // that re-hashes paths can see this — only re-deriving the decision can.
+    const { root, registration } = await operatorLoop();
+    const collector = { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" };
+    const auditRel = "evidence/replay-01.b12.audit.json";
+    // Make the run genuinely void first (a control flipped to failed), then
+    // publish "clean" over the true inputs.
+    const suitePath = path.join(root, "evidence", "replay-01.b12.suite.json");
+    const attestation = JSON.parse(await fs.readFile(suitePath, "utf8")) as SuiteAttestation;
+    attestation.tests[0]!.status = "failed";
+    await fs.writeFile(suitePath, JSON.stringify(attestation, null, 2) + "\n", "utf8");
+    commitAll(root, "a control that did not pass");
+    const { artifact } = buildAuditArtifact(collectAuditFacts(root, "replay-01", collector));
+    expect(artifact.verdict).toBe("void");
+    await fs.writeFile(
+      path.join(root, auditRel),
+      JSON.stringify({ ...artifact, verdict: "clean", reasons: [] }, null, 2) + "\n",
+      "utf8"
+    );
+    commitAll(root, "hostile: the verdict rewritten");
+    const out = await emitRun(root, "replay-01", { auditPath: auditRel, auditCollectorOptions: collector });
+    const result = JSON.parse(await fs.readFile(out.resultPath, "utf8")) as {
+      gitAudit: { ran: boolean };
+      archiveProblems?: string[];
+    };
+    expect(result.gitAudit).toEqual({ ran: false });
+    expect((result.archiveProblems ?? []).join(" ")).toMatch(
+      /says clean and re-deriving it here says void — the verdict was not produced by these facts/
+    );
+  }, 60_000);
 
   it("the amendment, born BEFORE the anchor, puts the conformance files under clause 5", async () => {
     const { root, registration, subject } = await operatorLoop({

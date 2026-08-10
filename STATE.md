@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R25 (post-implementation adversarial rounds) are ADJUDICATED — thirty-three
+R8–R26 (post-implementation adversarial rounds) are ADJUDICATED — thirty-five
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -49,6 +49,14 @@ not covering `evidence/**`, so the runlog + counterfactual + every
 observation archive now ride in ONE recorded digest the emission recomputes;
 and the attestation stopped borrowing the enclosing repo's node_modules —
 `npm ci` from the SUBJECT commit's lockfile, whose sha it records.**
+**R26 is the worst of the loop: the verdict was the ARTIFACT'S, not the
+audit's — any committed JSON with one input and `verdict: clean` published
+clauses 4–6 as CHECKED. The parse now demands the WHOLE key set and the
+emission RE-DERIVES the judgement, every input equal except `head` (the one
+R22 named). And the evidence commit went wherever HEAD pointed: a checkout
+mid-observation put a paid observation on another branch with the act
+reporting success — the branch is now captured at the barrier and every
+verification reads IT, not HEAD.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The

@@ -274,6 +274,13 @@ export function commitObservationRow(
     sessionId: string;
     message: string;
     runlogAtBarrier: string | null;
+    /**
+     * The branch captured when the observation STARTED. Under the lock the
+     * act refuses if HEAD no longer names it (or is detached), and every
+     * post-commit verification reads THIS ref rather than HEAD — a commit
+     * that landed elsewhere is a paid observation the run cannot find.
+     */
+    branchRef?: string;
     lockAttempts?: number;
     lockWaitMs?: number;
   }
