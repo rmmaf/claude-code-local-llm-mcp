@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R29 (post-implementation adversarial rounds) are ADJUDICATED — thirty-nine
+R8–R30 (post-implementation adversarial rounds) are ADJUDICATED — forty-one
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -70,7 +70,12 @@ that assumption rounds ago. R29, both in the auditor and both the same shape
 then more observations) made a scored run read anchorless, so clause 5 went
 FREE and pinned-path drift audited CLEAN (reproduced); and the attestation's
 lockfile sha was validated as 64 hex and never compared to
-`<subjectCommit>:package-lock.json`.**
+`<subjectCommit>:package-lock.json`.** **R30: the audit CLI let a run id
+ESCAPE `evidence/` and overwrite (`../../target` lands outside the repo) —
+the register's grammar, applied where the id becomes a filename, SIXTH time a
+written-down rule was missing at a second site; and repair's abort telemetry
+could skip the rollback — fixed, but its control does NOT fire (every path
+reaching that catch already restored), which is recorded, not dressed up.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The

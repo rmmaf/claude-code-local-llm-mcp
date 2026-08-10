@@ -1878,6 +1878,54 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTY-THIRD POST-IMPLEMENTATION ROUND (R30) — adjudicated 2026-08-10
+
+Two findings. One is confirmed and reproduced arithmetically; the other is
+confirmed as a contract violation whose damage **is not reachable today**,
+and that distinction is written down rather than smoothed over.
+
+- **R30#1 (high) — the audit CLI let a run id escape `evidence/` and
+  overwrite.** The entry point checked only that the argument existed and did
+  not begin with `--`, then interpolated it into
+  `evidence/<runId>.b12.audit.json` (or the attestation's equivalent) and
+  wrote with overwrite semantics. From this worktree, `../../target` resolves
+  to `…/.claude/worktrees/target.b12.audit.json` — outside the repository,
+  replacing whatever sits there. A destructive boundary failure reachable by
+  a typo or a paste.
+
+  The id is now held to the register's own grammar
+  (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) at the point where it BECOMES a
+  filename, and `evidenceArtifactPath` resolves the result and refuses
+  anything not landing directly under `evidence/`. **Sixth occurrence of the
+  same pattern**: the rule was already written down — R23 applied this exact
+  grammar in `b12-register.mjs`, at its own point of use — and the second
+  place that turns an id into a path did not apply it.
+
+  Codex also suggested create-only writes. **Declined, with the reason:** the
+  audit artifact is REGENERATED before it is committed (fix something, run
+  the audit again), and what makes it evidence is `committedAuditCheck`, not
+  the write mode. Create-only belongs to the seal, which is frozen by sha
+  (R21). Confining the path is the property that was missing.
+
+- **R30#2 (medium) — a telemetry failure could skip the rollback.** In
+  `repair`'s catch, `emission.abort(...)` was awaited BARE, ahead of
+  `restore(snapshots)`: a rejecting writer exited the block before the undo
+  and replaced the repair's own error with the telemetry's, so the caller
+  learned neither. Telemetry is best-effort; the tree is not. The abort is
+  now wrapped, its failure kept and REPORTED (`abort_telemetry_error`, plus a
+  sentence in the message), and the rollback runs regardless.
+
+  **The control does not fire, and here is why.** Every path that reaches
+  that catch today has already restored on its way out: the loop restores
+  whenever it does not apply, and the gate turns a runner error into a failed
+  check rather than a throw. I built the "checks vanish mid-repair" scenario
+  specifically to leave the tree dirty, and it still arrived at the catch
+  clean. So the fix makes the stated contract true independently of which
+  path arrives — defense in depth for a sentence the code already claimed —
+  and the new test proves the end-to-end invariant (tree restored, error
+  surfaced) rather than pre-fix damage. Suppressing the fix leaves that test
+  GREEN. Recorded here so nobody later reads it as a firing control.
+
 ### TWENTY-SECOND POST-IMPLEMENTATION ROUND (R29) — adjudicated 2026-08-10
 
 Two high findings, both in the audit computer, and both of the same family:

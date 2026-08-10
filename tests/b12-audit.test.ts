@@ -27,8 +27,10 @@ import {
   CONFORMANCE_FILES,
   CONTROL_TESTS,
   decideAudit,
+  evidenceArtifactPath,
   parseGitAudit,
   PINNED_PATHS,
+  SAFE_RUN_ID,
   PREREG_FROZEN_COMMIT,
   PREREG_PATH,
   suiteRunRefusal,
@@ -466,6 +468,27 @@ describe("the attestation's runtime shape — committed bytes are not the type",
 
   it("stays SILENT on the well-formed attestation the e2e writes", () => {
     expect(attestationProblems(attestationOf("s".repeat(40)))).toEqual([]);
+  });
+});
+
+describe("the run id becomes a filename — the traversal boundary", () => {
+  it("REFUSES an id that would escape evidence/, and takes the ordinary one", async () => {
+    // R30: the CLI checked only that the argument existed and did not start
+    // with `--`, then interpolated it into `evidence/<runId>.b12.audit.json`
+    // and WROTE with overwrite semantics. `../../target` left the directory
+    // and replaced whatever sat at the resolved path — a destructive boundary
+    // failure reachable by a typo or a paste. The register already applied
+    // this grammar at its own point of use; this file did not.
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    expect(evidenceArtifactPath(root, "replay-01", ".b12.audit.json")).toBe(
+      path.resolve(root, "evidence", "replay-01.b12.audit.json")
+    );
+    for (const hostile of ["../../target", "..", "a/b", "a\\b", ".hidden", "-leading", "", "x".repeat(65)]) {
+      expect(() => evidenceArtifactPath(root, hostile, ".b12.audit.json")).toThrow(AuditRefused);
+    }
+    // The grammar is the register's, verbatim.
+    expect(SAFE_RUN_ID.source).toBe("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$");
   });
 });
 

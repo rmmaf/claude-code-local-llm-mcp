@@ -129,6 +129,31 @@ export const CONFORMANCE_FILES = ["tests/cost-meter.test.ts", "tests/session-tok
 export const AMENDMENT_CONFORMANCE_PATHS = "evidence/2026-08-10-b12-amendment-conformance-paths.json";
 
 /**
+ * The only spellings a run id may take when it becomes a FILENAME — the same
+ * grammar `b12-register.mjs` applies at its own point of use, written here
+ * because this file interpolates the id into paths it then WRITES.
+ */
+export const SAFE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+/**
+ * The artifact path for a run, refusing anything that would not land DIRECTLY
+ * under `evidence/`. The grammar above already forbids separators and dots;
+ * this resolves and checks anyway, because the property that matters is about
+ * the path and is cheapest to state about the path.
+ */
+export function evidenceArtifactPath(repoRoot: string, runId: string, suffix: string): string {
+  if (!SAFE_RUN_ID.test(runId)) {
+    throw new AuditRefused(`refusing runId ${JSON.stringify(runId)} — it becomes a filename under evidence/`);
+  }
+  const dir = path.resolve(repoRoot, "evidence");
+  const out = path.resolve(dir, `${runId}${suffix}`);
+  if (path.dirname(out) !== dir) {
+    throw new AuditRefused(`refusing to write ${out} — the run's artifacts live directly under evidence/`);
+  }
+  return out;
+}
+
+/**
  * THE LITERAL KEY SET of the audit artifact's `inputs` — never "about 25".
  * `parseGitAudit` drops non-string values in silence (emit.ts), so without
  * this constant the producer and its own round-trip check would agree on
@@ -1203,6 +1228,17 @@ if (isMain) {
     process.stderr.write("usage: node dist/cost/b12/audit.js <runId> [--attest-suite]\n");
     process.exit(2);
   }
+  // THE RUN ID BECOMES A PATH HERE (R30), so it is held to the grammar the
+  // register already applies at ITS point of use — the same rule, in the
+  // second place that interpolates an id into a filename. Without it
+  // `../../something` escaped `evidence/` and OVERWROTE whatever sat at the
+  // resolved path: a destructive boundary failure reachable by a typo.
+  if (!SAFE_RUN_ID.test(runId)) {
+    process.stderr.write(
+      `refusing runId ${JSON.stringify(runId)} — it becomes a filename under evidence/, and only ${SAFE_RUN_ID.source} may\n`
+    );
+    process.exit(2);
+  }
   const repoRoot = process.cwd();
   try {
     if (args.includes("--attest-suite")) {
@@ -1302,13 +1338,13 @@ if (isMain) {
         JSON.parse(jsonLine),
         lockfileSha256
       );
-      const out = path.join(repoRoot, "evidence", `${runId}.b12.suite.json`);
+      const out = evidenceArtifactPath(repoRoot, runId, ".b12.suite.json");
       writeFileSync(out, JSON.stringify(attestation, null, 2) + "\n", "utf8");
       process.stdout.write(`${out}\n(commit it; the audit reads the COMMITTED bytes)\n`);
     } else {
       const facts = collectAuditFacts(repoRoot, runId);
       const { artifact } = buildAuditArtifact(facts);
-      const out = path.join(repoRoot, "evidence", `${runId}.b12.audit.json`);
+      const out = evidenceArtifactPath(repoRoot, runId, ".b12.audit.json");
       writeFileSync(out, JSON.stringify(artifact, null, 2) + "\n", "utf8");
       process.stdout.write(
         `${out}\nverdict: ${artifact.verdict}${artifact.reasons.length > 0 ? `\n${artifact.reasons.map((r) => `  - ${r}`).join("\n")}` : ""}\n(commit it; emit takes it as --audit)\n`

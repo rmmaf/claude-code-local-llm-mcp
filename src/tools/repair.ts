@@ -451,24 +451,35 @@ export async function runRepair(
       emission,
     });
   } catch (error) {
-    // The responses this abort would otherwise erase. Written before the
+    // The responses this abort would otherwise erase. Attempted before the
     // rollback, because the rollback can throw too, and a row that says only
     // "aborted" is still a row: B16 needs to know the request happened.
     // `abort` is a no-op when the normal row was already claimed.
-    await emission.abort({
-      tool: "repair",
-      invocation_id: invocationId,
-      // No verdict was produced, so there are no suppression figures to claim.
-      bytes_raw: 0,
-      bytes_returned: 0,
-      turns_collapsed: 0,
-      latency_ms: now() - started,
-      detail: {
-        aborted: true,
-        stopped_because: "aborted",
-        attempts: attempts.map(({ round, ...a }) => ({ round, ...a })),
-      },
-    });
+    //
+    // ITS FAILURE MAY NOT SKIP THE ROLLBACK (R30). Awaiting it bare put a
+    // telemetry writer between the model's edits and their undo: a rejecting
+    // writer left half-repaired bytes on disk AND replaced the repair's own
+    // error with the telemetry's, so the caller learned neither. Telemetry is
+    // best-effort here and the tree is not.
+    let abortFailure: string | null = null;
+    try {
+      await emission.abort({
+        tool: "repair",
+        invocation_id: invocationId,
+        // No verdict was produced, so there are no suppression figures to claim.
+        bytes_raw: 0,
+        bytes_returned: 0,
+        turns_collapsed: 0,
+        latency_ms: now() - started,
+        detail: {
+          aborted: true,
+          stopped_because: "aborted",
+          attempts: attempts.map(({ round, ...a }) => ({ round, ...a })),
+        },
+      });
+    } catch (telemetryError) {
+      abortFailure = telemetryError instanceof Error ? telemetryError.message : String(telemetryError);
+    }
     // The tool's contract is that a failed loop leaves the tree as it found it.
     // Without this, anything thrown after the model has already written — a
     // locked file, a check config the repair itself invalidated — would hand the
@@ -491,6 +502,24 @@ export async function runRepair(
     const rollbackTroubled =
       rollback === null || rollback.failed.length > 0 || rollback.conflicts.length > 0;
     const sideTroubled = side !== null && side.length > 0;
+    // A telemetry failure never decides the tree's fate, but it is not
+    // swallowed either: the caller is told the abort row may be missing.
+    if (abortFailure !== null && !rollbackTroubled && !sideTroubled && !(side === null && progress.checksRan)) {
+      throw new ToolError(
+        `${error instanceof Error ? error.message : String(error)}\n\n` +
+          `The tree was restored. The abort telemetry row could not be written (${abortFailure}), so this ` +
+          `invocation may be missing from the telemetry log.`,
+        "repair_aborted",
+        {
+          original_error: error instanceof Error ? error.message : String(error),
+          abort_telemetry_error: abortFailure,
+          restore_failed: rollback?.failed ?? null,
+          restore_conflicts: rollback?.conflicts ?? null,
+          check_side_effects: side,
+          files: snapshots.map((s) => s.rel),
+        }
+      );
+    }
     // "Could not tell" must not read as "nothing changed" — but only once there
     // was something it could have missed.
     const sideUnknown = side === null && progress.checksRan;
@@ -516,8 +545,12 @@ export async function runRepair(
           "other files is UNKNOWN — which is not the same as nothing having changed. Check it yourself."
       );
     }
+    if (abortFailure !== null) {
+      notes.push(`The abort telemetry row could not be written (${abortFailure}) — this invocation may be missing from the log.`);
+    }
     throw new ToolError(`${original}\n\n${notes.join("\n")}`, "repair_aborted", {
       original_error: original,
+      abort_telemetry_error: abortFailure,
       restore_failed: rollback?.failed ?? null,
       restore_conflicts: rollback?.conflicts ?? null,
       check_side_effects: side,
