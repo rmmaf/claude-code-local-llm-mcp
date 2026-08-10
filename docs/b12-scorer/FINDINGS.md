@@ -1679,6 +1679,64 @@ instrument set admitted as non-intersecting, which is the defect. With the
 are gone. The twin-agreement sweep carries the new cases, so the harness copy
 cannot drift away from the scorer's.
 
+### FIFTEENTH POST-IMPLEMENTATION ROUND (R22) — adjudicated 2026-08-10
+
+Two high findings, and both are about a proof that was never asked for.
+
+- **R22#1 — the act could mint a run that was already impossible.**
+  `registerRun` read the candidate manifests from disk and never asked
+  whether their canonical paths ALREADY had an introducing commit. But
+  `voidConditions` 1 seals the manifest and its MEASUREMENTS row in ONE
+  commit, and `registrationGuard` proves it by comparing the two introducing
+  commits — so a manifest committed by hand, or committed, deleted and
+  recreated, can never satisfy it. The act would still append the
+  IRREVERSIBLE row, and then every `observe` refuses and the prior-runs gate
+  refuses every NEXT registration over the abandoned one. Same doom loop as
+  R20, entered from a different door. Asked now at the captured commit,
+  before anything is built, in the act and in the `check` preview; the
+  repair names the only lawful exit, since history cannot be un-committed.
+
+- **R22#2 — a committed clean audit was trusted forever.** `emitRun` proved
+  the artifact was committed evidence at the run's path and then took its
+  verdict, without ever asking WHAT it judged. A clean audit could be kept —
+  or cherry-picked — while the pinned sources, the manifests or the suite
+  attestation moved underneath it, and clauses 4–6 would publish clean over
+  facts nobody audited.
+
+  The binding reuses the rule the audit computer already applies to clause
+  6's `subjectCommit`, turned on the audit itself: the artifact's `runId` is
+  this run; `inputs.head` is a real commit and an ANCESTOR of HEAD; the diff
+  `inputs.head..HEAD` touches ONLY `evidence/**`; and the inputs read from
+  INSIDE evidence — prereg, both manifests, the attestation — are RE-HASHED
+  at HEAD against what the artifact recorded. Those two halves are complete
+  over the audit's own input set: everything outside evidence is frozen by
+  the confined diff (including the clause-5 pinned paths and the tool's own
+  source), and everything inside it is re-hashed, because the diff rule
+  cannot see a change there. Codex's literal recommendation — recompute the
+  audit and require the input set to match EXACTLY — is not implementable:
+  `head` necessarily differs, since committing the audit is what moved HEAD.
+
+  A refusal keeps clauses 4–6 UNCHECKED, never "clean" — the same
+  fail-closed shape as an unparseable audit.
+
+**A third defect fell out of writing the control**, and it is the recurring
+one: `CollectorOptions` says "the artifact records what was used, so a
+divergence is on its face", and `auditInputs` recorded the CONSTANTS
+`PREREG_PATH`/`PREREG_FROZEN_COMMIT` no matter what the collector read. The
+artifact's `prereg.headSha256` therefore described a file its own
+`prereg.path` did not name — unreplayable by anyone, including this binding.
+`AuditFacts.prereg` now carries the path and freeze commit actually read, and
+clause 4's reasons name them too. That is the fourth finding of this arc
+where a comment already stated the rule and the code did something else
+(R13, R14#2, R16#1, R20).
+
+**Both controls fire.** Suppressed, the register returns `ok: true` over a
+manifest already in history — the irreversible row appended to a run every
+observation refuses; suppressed, emission keeps `gitAudit.ran === true` after
+the attestation it judged was edited. The binding control also proves the
+refusal is NOT sticky: restore the bytes and the audit counts again, which is
+what makes it a binding rather than a tripwire.
+
 ---
 
 ## CLOSED

@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { readRunArchive, sameCommittedText } from "./archive.js";
+import { readRunArchive, sameCommittedText, sha256 } from "./archive.js";
 import { assembleRun } from "./assemble.js";
 import type { GitAudit } from "./types.js";
 
@@ -103,6 +103,84 @@ export function committedAuditCheck(
   return { ok: true, bytes: onDisk, why: null };
 }
 
+/**
+ * THE AUDIT IS A JUDGEMENT ABOUT A COMMIT, AND EMISSION MUST BE ON THAT
+ * COMMIT'S SIDE OF HISTORY.
+ *
+ * `committedAuditCheck` proves the artifact is committed evidence at the run's
+ * path; it says nothing about WHAT the artifact judged. A clean audit could
+ * therefore be committed and then kept — or cherry-picked — while the pinned
+ * sources, the manifests or the suite attestation moved underneath it, and
+ * clauses 4–6 would still publish as clean over facts nobody audited.
+ *
+ * The binding is the one the audit computer already uses for clause 6's
+ * `subjectCommit`, turned on the audit itself:
+ *
+ *   (a) the audit's `runId` is THIS run — one identity, and the path pins
+ *       only the file name;
+ *   (b) `inputs.head` is a real commit and an ANCESTOR of HEAD — an audit
+ *       computed on a history this emission is not on judges nothing here;
+ *   (c) `inputs.head..HEAD` touches ONLY `evidence/**` — every input the
+ *       audit reads from outside evidence (the clause-5 pinned paths, the
+ *       tool's own source) is frozen by that one predicate, and the lawful
+ *       gap is exactly the audit's own commit;
+ *   (d) the inputs the audit read from INSIDE `evidence/**` — prereg,
+ *       manifest A, manifest B, the suite attestation — are RE-HASHED at
+ *       HEAD and must equal what the artifact recorded, because (c) cannot
+ *       see a change there.
+ *
+ * A refusal keeps clauses 4–6 UNCHECKED — never "clean", the same fail-closed
+ * shape as an unparseable audit. Returns the reason, or null.
+ */
+export function auditBindingRefusal(repoRoot: string, runId: string, audit: GitAudit): string | null {
+  if (audit.ran !== true) return null;
+  const inputs = audit.inputs;
+  const git = (args: string[]): { ok: boolean; out: string } => {
+    const r = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8", maxBuffer: 1 << 28 });
+    return { ok: r.status === 0, out: r.stdout ?? "" };
+  };
+  if (inputs["runId"] !== runId) {
+    return `the audit judges run ${JSON.stringify(inputs["runId"] ?? null)}, not ${runId} — the path names the run, and so must the artifact`;
+  }
+  const audited = inputs["head"] ?? "";
+  if (!/^[0-9a-f]{40}$/.test(audited)) return "the audit records no head commit — it cannot be bound to anything";
+  if (!git(["cat-file", "-e", `${audited}^{commit}`]).ok) {
+    return `the audit's head ${audited.slice(0, 12)} is not a commit in this repository`;
+  }
+  if (!git(["merge-base", "--is-ancestor", audited, "HEAD"]).ok) {
+    return `the audit's head ${audited.slice(0, 12)} is not an ancestor of HEAD — it judged a history this emission is not on`;
+  }
+  const diff = git(["diff", "--name-only", audited, "HEAD"]);
+  if (!diff.ok) return `git could not diff ${audited.slice(0, 12)}..HEAD — the audit cannot be bound to HEAD`;
+  const moved = diff.out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "")
+    .filter((p) => !p.startsWith("evidence/"));
+  if (moved.length > 0) {
+    return `${moved.length} path(s) outside evidence/ changed after the audit judged them (${moved.slice(0, 5).join(", ")}${moved.length > 5 ? ", …" : ""}) — clauses 4–6 would be clean about a tree that no longer exists`;
+  }
+  for (const [pathKey, shaKey] of [
+    ["prereg.path", "prereg.headSha256"],
+    ["manifestA.path", "manifestA.headSha256"],
+    ["manifestB.path", "manifestB.headSha256"],
+    ["clause6.attestationPath", "clause6.attestationSha256"],
+  ] as const) {
+    const rel = inputs[pathKey];
+    const want = inputs[shaKey];
+    if (rel === undefined || want === undefined) return `the audit records no ${pathKey}/${shaKey} — it cannot be re-checked`;
+    // `(none)` is the artifact's literal for a lawful absence: the audit
+    // decided about that absence, and clause 4 is where it is judged.
+    if (rel === "(none)" || want === "(none)") continue;
+    const show = git(["show", `HEAD:${rel}`]);
+    if (!show.ok) return `HEAD no longer carries ${rel}, which the audit judged`;
+    if (sha256(show.out) !== want) {
+      return `${rel} changed after the audit judged it (${want.slice(0, 12)} → ${sha256(show.out).slice(0, 12)})`;
+    }
+  }
+  return null;
+}
+
 export interface EmitResult {
   counterfactualPath: string;
   resultPath: string;
@@ -127,6 +205,13 @@ export async function emitRun(
         gitAudit = parseGitAudit(JSON.parse(committed.bytes ?? ""));
       } catch {
         archive.problems.push("audit refused: the committed audit does not parse — clauses 4–6 stay UNCHECKED");
+      }
+      // COMMITTED IS NOT THE SAME AS CURRENT: the artifact must still be a
+      // judgement about the tree being emitted.
+      const unbound = auditBindingRefusal(repoRoot, runId, gitAudit);
+      if (unbound !== null) {
+        archive.problems.push(`audit refused: ${unbound} — clauses 4–6 stay UNCHECKED`);
+        gitAudit = { ran: false };
       }
     }
   }

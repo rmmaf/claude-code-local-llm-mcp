@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R21 (post-implementation adversarial rounds) are ADJUDICATED — twenty-five
+R8–R22 (post-implementation adversarial rounds) are ADJUDICATED — twenty-eight
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -36,8 +36,13 @@ session can use and no result can close.** **R21: `src/cost./**` OPENS
 `src/cost` on Windows and compared unequal to it — trailing dots/spaces,
 colons and the 8.3 `NAME~1` shape are now REFUSED by admissionRule 7's
 grammar in both copies (case stays FOLDED: that spelling is lawful, these are
-not); and the create-only seal became create-only by its WRITE (`wx`), not by
-a check taken six validations earlier.**
+not); and the create-only seal became create-only by its WRITE (`wx`).**
+**R22: a manifest ALREADY in history can never satisfy "the same command", so
+the act now asks before minting the irreversible row; and a committed clean
+audit no longer counts forever — it must be an ANCESTOR of HEAD whose diff
+touches only `evidence/**`, with its evidence-borne inputs RE-HASHED. Writing
+that control found a third: the artifact recorded the prereg CONSTANTS, not
+the path it actually read.**
 PR to main is open — merge is the user's act.
 
 ## Still blocking a run

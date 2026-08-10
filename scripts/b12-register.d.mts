@@ -22,6 +22,20 @@ export function checkCore(
 export function runIdMismatch(requestedRunId: string, manifestA: unknown): string | null;
 
 /**
+ * One refusal per candidate path that ALREADY has an introducing commit at
+ * `atCommit` (and one when git cannot answer). voidConditions 1 seals the
+ * manifest and its row in ONE commit and `registrationGuard` compares the two
+ * introducing commits, so a path already in history can only produce a run
+ * every observation refuses — and an append-only register that then blocks
+ * the next registration. Asked before anything is built.
+ */
+export function priorIntroductionRefusals(
+  repoRoot: string,
+  atCommit: string,
+  rels: readonly string[]
+): string[];
+
+/**
  * The registration act as a compare-and-swap at the branch ref. New bytes
  * become blobs, lie into a TEMPORARY index over expectedHead's tree, commit
  * with `-p expectedHead`, and install only if the ref still points there.

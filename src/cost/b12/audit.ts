@@ -131,6 +131,15 @@ export interface AuditFacts {
   /** The commit that INTRODUCED the manifest; null when it was never committed. */
   registrationCommit: string | null;
   prereg: {
+    /**
+     * The path and freeze commit ACTUALLY read — the constants unless a test
+     * seam overrode them. `CollectorOptions` promises "the artifact records
+     * what was used, so a divergence is on its face"; recording the constants
+     * instead made that promise false, and made the artifact's own
+     * `headSha256` unreplayable from the path beside it (R22).
+     */
+    path: string;
+    frozenCommit: string;
     /** Content sha at the freeze commit; null when the blob is unreadable there. */
     frozenSha256: string | null;
     /** Content sha at HEAD; null when HEAD does not carry it. */
@@ -275,10 +284,12 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
     reasons.push("clause 4: the manifest was never committed — there is no registration commit to anchor the frozen set");
   }
   if (facts.prereg.frozenSha256 === null) {
-    reasons.push(`clause 4: ${PREREG_PATH} is unreadable at the freeze commit ${PREREG_FROZEN_COMMIT} — the frozen text cannot be shown frozen`);
+    reasons.push(
+      `clause 4: ${facts.prereg.path} is unreadable at the freeze commit ${facts.prereg.frozenCommit} — the frozen text cannot be shown frozen`
+    );
   }
   if (facts.prereg.headSha256 === null) {
-    reasons.push(`clause 4: HEAD does not carry ${PREREG_PATH}`);
+    reasons.push(`clause 4: HEAD does not carry ${facts.prereg.path}`);
   }
   if (
     facts.prereg.frozenSha256 !== null &&
@@ -382,8 +393,12 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     runId: facts.runId,
     head: facts.head,
     registrationCommit: orNone(facts.registrationCommit),
-    "prereg.path": PREREG_PATH,
-    "prereg.frozenCommit": PREREG_FROZEN_COMMIT,
+    // WHAT WAS READ, not what the constant says — `CollectorOptions` already
+    // promised the artifact would show a divergence on its face, and a
+    // recorded path that does not name the file the sha beside it describes
+    // cannot be replayed by anyone, including the emission-time binding.
+    "prereg.path": facts.prereg.path,
+    "prereg.frozenCommit": facts.prereg.frozenCommit,
     "prereg.frozenSha256": orNone(facts.prereg.frozenSha256),
     "prereg.headSha256": orNone(facts.prereg.headSha256),
     "manifestA.path": `evidence/${facts.runId}.b12.tasks.json`,
@@ -734,6 +749,8 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     head: headSha,
     registrationCommit,
     prereg: {
+      path: preregPath,
+      frozenCommit: preregCommit,
       frozenSha256: blobSha(git, preregCommit, preregPath),
       headSha256: blobSha(git, "HEAD", preregPath),
     },

@@ -26,6 +26,8 @@ import {
   CONFORMANCE_FILES,
   CONTROL_TESTS,
   decideAudit,
+  PREREG_FROZEN_COMMIT,
+  PREREG_PATH,
   suiteRunRefusal,
   workingTreeDirtOutsideEvidence,
   type AuditFacts,
@@ -102,7 +104,7 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
     runId: "replay-01",
     head: "h".repeat(40),
     registrationCommit: "r".repeat(40),
-    prereg: { frozenSha256: "p".repeat(64), headSha256: "p".repeat(64) },
+    prereg: { path: PREREG_PATH, frozenCommit: PREREG_FROZEN_COMMIT, frozenSha256: "p".repeat(64), headSha256: "p".repeat(64) },
     manifestA: { registrationSha256: "a".repeat(64), headSha256: "a".repeat(64) },
     manifestB: { registrationSha256: "b".repeat(64), headSha256: "b".repeat(64) },
     clause5: {
@@ -133,10 +135,14 @@ describe("the pure decider — every clause firing and not firing", () => {
   it("clause 4 fires on a missing registration, a drifted prereg, and each manifest failure", () => {
     expect(decideAudit(factsOf({ registrationCommit: null })).reasons.join(" ")).toMatch(/never committed/);
     expect(
-      decideAudit(factsOf({ prereg: { frozenSha256: "p".repeat(64), headSha256: "q".repeat(64) } })).reasons.join(" ")
+      decideAudit(
+        factsOf({ prereg: { path: PREREG_PATH, frozenCommit: PREREG_FROZEN_COMMIT, frozenSha256: "p".repeat(64), headSha256: "q".repeat(64) } })
+      ).reasons.join(" ")
     ).toMatch(/drifted from its freeze-commit blob/);
     expect(
-      decideAudit(factsOf({ prereg: { frozenSha256: null, headSha256: "p".repeat(64) } })).reasons.join(" ")
+      decideAudit(
+        factsOf({ prereg: { path: PREREG_PATH, frozenCommit: PREREG_FROZEN_COMMIT, frozenSha256: null, headSha256: "p".repeat(64) } })
+      ).reasons.join(" ")
     ).toMatch(/unreadable at the freeze commit/);
     expect(
       decideAudit(factsOf({ manifestA: { registrationSha256: null, headSha256: "a".repeat(64) } })).reasons.join(" ")
@@ -553,6 +559,67 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     const auditCheck = result.archiveChecks.find((c) => c.clause.includes("the git audit"));
     expect(auditCheck?.fired).toBe(false);
   }, 60_000);
+
+  it("a committed CLEAN audit stops counting the moment the tree it judged moves", async () => {
+    // R22#2: `committedAuditCheck` proves the artifact is committed evidence
+    // and says NOTHING about what it judged. A clean audit could therefore be
+    // kept — or cherry-picked — while the pinned sources, the manifests or
+    // the suite attestation moved underneath it, and clauses 4–6 would still
+    // publish as clean over facts nobody audited.
+    const { root, registration } = await operatorLoop();
+    const facts = collectAuditFacts(root, "replay-01", {
+      preregFrozenCommit: registration,
+      preregPath: "evidence/replay-01.b12.tasks.json",
+    });
+    const { artifact } = buildAuditArtifact(facts);
+    expect(artifact.verdict).toBe("clean");
+    const auditRel = "evidence/replay-01.b12.audit.json";
+    await fs.writeFile(path.join(root, auditRel), JSON.stringify(artifact, null, 2) + "\n", "utf8");
+    commitAll(root, "the audit");
+    const emit = async (): Promise<{ ran: boolean; problems: string[]; unchecked: string[] }> => {
+      const out = await emitRun(root, "replay-01", { auditPath: auditRel });
+      const result = JSON.parse(await fs.readFile(out.resultPath, "utf8")) as {
+        gitAudit: { ran: boolean };
+        uncheckedClauses: string[];
+        problems?: string[];
+        archiveProblems?: string[];
+      };
+      return {
+        ran: result.gitAudit.ran,
+        problems: [...(result.problems ?? []), ...(result.archiveProblems ?? [])],
+        unchecked: result.uncheckedClauses,
+      };
+    };
+    // The lawful gap: the audit's own commit, touching evidence/ only.
+    expect((await emit()).ran).toBe(true);
+
+    // (1) AN EVIDENCE-BORNE INPUT MOVES — invisible to any "only evidence/
+    // changed" rule, so the artifact's own recorded hashes are re-checked.
+    const suiteRel = "evidence/replay-01.b12.suite.json";
+    const suiteBytes = await fs.readFile(path.join(root, suiteRel), "utf8");
+    await fs.writeFile(path.join(root, suiteRel), suiteBytes.replace(/\n$/, "\n\n"), "utf8");
+    commitAll(root, "the suite attestation, edited after the audit");
+    const drifted = await emit();
+    expect(drifted.ran).toBe(false);
+    expect(drifted.problems.join(" ")).toMatch(/suite\.json changed after the audit judged it/);
+    expect(drifted.unchecked.length).toBeGreaterThan(0);
+
+    // …and the refusal is not STICKY: put the bytes back and the audit counts
+    // again, which is what makes it a binding rather than a tripwire.
+    await fs.writeFile(path.join(root, suiteRel), suiteBytes, "utf8");
+    commitAll(root, "the attestation restored");
+    expect((await emit()).ran).toBe(true);
+
+    // (2) A PINNED PATH MOVES — outside evidence/, so the one confined-diff
+    // predicate covers every input the audit read from outside evidence.
+    await fs.mkdir(path.join(root, "src", "cost"), { recursive: true });
+    await fs.writeFile(path.join(root, "src", "cost", "report.ts"), "export const CHANGED = 1;\n", "utf8");
+    commitAll(root, "a pinned path, edited after the audit");
+    const moved = await emit();
+    expect(moved.ran).toBe(false);
+    expect(moved.problems.join(" ")).toMatch(/outside evidence\/ changed after the audit judged them/);
+    expect(moved.problems.join(" ")).toMatch(/src\/cost\/report\.ts/);
+  }, 90_000);
 
   it("a HOSTILE flip after the fact voids: a failed control, and a post-anchor pinned-path edit", async () => {
     const { root, registration } = await operatorLoop();

@@ -370,6 +370,40 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(existsSync(path.join(root, "evidence", "run-r9.b12.tasks.json"))).toBe(false);
   });
 
+  it("REFUSES a manifest already introduced by an earlier commit — the same act is no longer possible", async () => {
+    // R22#1: voidConditions 1 seals the manifest and its row in ONE commit,
+    // and `registrationGuard` proves it by comparing the two INTRODUCING
+    // commits. A manifest already in history can never satisfy that — so an
+    // act that proceeded would append the irreversible row to a run every
+    // observation refuses, and the prior-runs gate would then block the next
+    // registration over the abandoned one. Asked before anything is built.
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    git(root, ["add", "evidence/run-r1.b12.tasks.json"]);
+    git(root, ["commit", "-q", "-m", "the manifest, committed by hand first"]);
+    const headBefore = git(root, ["rev-parse", "HEAD"]);
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(result.ok).toBe(false);
+    expect(redOf(result).join(" ")).toMatch(/was already introduced by/);
+    expect(redOf(result).join(" ")).toMatch(/run-r1\.b12\.tasks\.json/);
+    expect(git(root, ["rev-parse", "HEAD"])).toBe(headBefore);
+    expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).not.toMatch(/b12_registration/);
+
+    // AND THE SNEAKY SHAPE: committed, deleted, recreated on disk. The path
+    // looks unborn to anyone who only asks `git cat-file -e HEAD:<path>`.
+    await fs.rm(path.join(root, "evidence", "run-r1.b12.tasks.json"));
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "and deleted again"]);
+    await fs.writeFile(
+      path.join(root, "evidence", "run-r1.b12.tasks.json"),
+      JSON.stringify(manifestOf("run-r1", "a")) + "\n",
+      "utf8"
+    );
+    const reborn = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(reborn.ok).toBe(false);
+    expect(redOf(reborn).join(" ")).toMatch(/was already introduced by/);
+  });
+
   it("registers the CAPTURED bytes — a disk mutation between validation and the act changes NOTHING", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
     const { root, aPath, aBytes } = await registerFixture();

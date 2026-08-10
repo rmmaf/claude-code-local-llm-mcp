@@ -165,6 +165,40 @@ export function runIdMismatch(requestedRunId, manifestA) {
 }
 
 /**
+ * THE CANDIDATE PATHS MUST BE UNBORN. `voidConditions` 1 registers a run as
+ * the manifest committed AND its row written "BY THE SAME COMMAND", and
+ * `registrationGuard` proves that by comparing the commit that INTRODUCED the
+ * manifest with the commit that introduced the row. A manifest already in
+ * history — committed by hand, or committed, deleted and recreated — can
+ * never satisfy it: this act would append the irreversible registration row
+ * to a run every later `observe` refuses, and the prior-runs gate would then
+ * refuse every NEXT registration over the abandoned one.
+ *
+ * So the question is asked BEFORE anything is built, at the captured commit,
+ * and the answer is a refusal rather than a discovery made afterwards by the
+ * guard. History cannot be un-committed, so the repair names the only lawful
+ * exit: a run id whose evidence paths are still unborn.
+ */
+export function priorIntroductionRefusals(repoRoot, atCommit, rels) {
+  const out = [];
+  for (const rel of rels) {
+    const born = git(repoRoot, ["log", atCommit, "--diff-filter=A", "--format=%H", "--", rel]);
+    if (born.code !== 0) {
+      out.push(`git could not ask when ${rel} was introduced — the same-act invariant cannot be established, so nothing is registered`);
+      continue;
+    }
+    const commits = born.out.trim().split("\n").filter((l) => l !== "");
+    if (commits.length > 0) {
+      const birth = commits[commits.length - 1].slice(0, 12);
+      out.push(
+        `${rel} was already introduced by ${birth} — voidConditions 1 seals the manifest and its MEASUREMENTS row in ONE commit, and the observe guard compares those two introducing commits, so registering now would mint a run every observation refuses and leave the register blocking the next one; use a run id whose evidence paths are unborn (history cannot be un-committed)`
+      );
+    }
+  }
+  return out;
+}
+
+/**
  * THE CAS COMMIT. `candidates` are the NEW bytes, each read or generated
  * exactly once by the caller; everything else in the tree rides through from
  * `expectedHead` untouched. Returns without side effects on ANY failure
@@ -557,6 +591,12 @@ async function runCheck(repoRoot, runId) {
   if (manifestB === null) red.push("manifest B is missing or does not parse — sealed in the SAME act (design.artifacts 2)");
   const previewMismatch = runIdMismatch(runId, manifestA);
   if (previewMismatch !== null) red.push(previewMismatch);
+  red.push(
+    ...priorIntroductionRefusals(repoRoot, "HEAD", [
+      `evidence/${runId}.b12.tasks.json`,
+      `evidence/${runId}.b12.manifest-B.tasks.json`,
+    ])
+  );
   if (manifestA !== null && manifestB !== null) red.push(...checkCore(manifestA, manifestB, pilot));
   // The seal, present and naming HEAD's harness bytes.
   const seal = loadJson(path.join(repoRoot, "evidence", "b12-harness-seal.json"));
@@ -653,6 +693,9 @@ export async function registerRun(repoRoot, runId, opts = {}) {
   // `evidence/<runId>.b12.tasks.json` and a row saying `run_id: <runId>`.
   const mismatch = runIdMismatch(runId, manifestA);
   if (mismatch !== null) red.push(mismatch);
+  // …and the paths must be UNBORN at the captured commit, or "the same
+  // command" is already impossible and this act would only mint the refusal.
+  red.push(...priorIntroductionRefusals(repoRoot, expectedHead, [aRel, bRel]));
   if (manifestA !== null && manifestB !== null) {
     const pilotId = manifestA?.pilotRunId ?? runId;
     const pilotRel = `evidence/${pilotId}.b12.pilot.json`;
