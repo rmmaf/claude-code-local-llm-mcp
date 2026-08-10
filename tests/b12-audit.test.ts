@@ -94,7 +94,7 @@ function attestationOf(subjectCommit: string, over: Partial<SuiteAttestation> = 
     subjectCommit,
     generatedAt: at(0),
     files: CONFORMANCE_FILES.map((file) => ({ file, total: 10, passed: 10, failed: 0, skipped: 0 })),
-    tests: CONTROL_TESTS.map((fullName) => ({ file: "tests/cost-meter.test.ts", fullName, status: "passed" })),
+    tests: CONTROL_TESTS.map(({ file, fullName }) => ({ file, fullName, status: "passed" })),
     ...over,
   };
 }
@@ -223,7 +223,7 @@ describe("the pure decider — every clause firing and not firing", () => {
     ).toBe("void");
 
     const missingControl = attestationOf(s, {
-      tests: CONTROL_TESTS.slice(1).map((fullName) => ({ file: "tests/cost-meter.test.ts", fullName, status: "passed" })),
+      tests: CONTROL_TESTS.slice(1).map(({ file, fullName }) => ({ file, fullName, status: "passed" })),
     });
     expect(
       decideAudit(factsOf({ clause6: { attestation: missingControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
@@ -231,8 +231,8 @@ describe("the pure decider — every clause firing and not firing", () => {
     ).toMatch(/required control absent/);
 
     const failedControl = attestationOf(s, {
-      tests: CONTROL_TESTS.map((fullName, i) => ({
-        file: "tests/cost-meter.test.ts",
+      tests: CONTROL_TESTS.map(({ file, fullName }, i) => ({
+        file,
         fullName,
         status: i === 0 ? "failed" : "passed",
       })),
@@ -241,6 +241,33 @@ describe("the pure decider — every clause firing and not firing", () => {
       decideAudit(factsOf({ clause6: { attestation: failedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
         .reasons.join(" ")
     ).toMatch(/required control not passing/);
+
+    // R23: THE TITLE IS NOT THE CONTROL. A vitest fullName is not unique
+    // across files, so a control's NAME could satisfy the clause from a
+    // trivial test in another file — or from two tests, neither identified.
+    const movedControl = attestationOf(s, {
+      tests: CONTROL_TESTS.map(({ file, fullName }, i) => ({
+        file: i === 0 ? "tests/somewhere-else.test.ts" : file,
+        fullName,
+        status: "passed",
+      })),
+    });
+    expect(
+      decideAudit(factsOf({ clause6: { attestation: movedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
+        .reasons.join(" ")
+    ).toMatch(/attested in tests\/somewhere-else\.test\.ts, not in tests\/cost-meter\.test\.ts/);
+
+    const duplicatedControl = attestationOf(s, {
+      tests: [
+        ...CONTROL_TESTS.map(({ file, fullName }) => ({ file, fullName, status: "passed" })),
+        { file: CONTROL_TESTS[0]!.file, fullName: CONTROL_TESTS[0]!.fullName, status: "passed" },
+      ],
+    });
+    expect(
+      decideAudit(
+        factsOf({ clause6: { attestation: duplicatedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } })
+      ).reasons.join(" ")
+    ).toMatch(/2 tests in tests\/cost-meter\.test\.ts carry the control's fullName/);
 
     expect(
       decideAudit(

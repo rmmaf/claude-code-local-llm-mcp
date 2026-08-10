@@ -36,6 +36,15 @@ export function priorIntroductionRefusals(
 ): string[];
 
 /**
+ * `open-b`'s preconditions, which are the ACT's: run 2's id must be a safe
+ * path segment, its manifest path unborn at `expectedHead`, and the register
+ * must carry no registration row for it. `casCommit` stages with
+ * `update-index --add`, so a colliding id would replace another run's
+ * committed manifest and append a second row for that id.
+ */
+export function openBRefusals(repoRoot: string, expectedHead: string, run2Id: unknown): string[];
+
+/**
  * The registration act as a compare-and-swap at the branch ref. New bytes
  * become blobs, lie into a TEMPORARY index over expectedHead's tree, commit
  * with `-p expectedHead`, and install only if the ref still points there.

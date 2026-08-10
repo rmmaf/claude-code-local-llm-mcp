@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R22 (post-implementation adversarial rounds) are ADJUDICATED — twenty-eight
+R8–R23 (post-implementation adversarial rounds) are ADJUDICATED — thirty
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -39,10 +39,17 @@ grammar in both copies (case stays FOLDED: that spelling is lawful, these are
 not); and the create-only seal became create-only by its WRITE (`wx`).**
 **R22: a manifest ALREADY in history can never satisfy "the same command", so
 the act now asks before minting the irreversible row; and a committed clean
-audit no longer counts forever — it must be an ANCESTOR of HEAD whose diff
-touches only `evidence/**`, with its evidence-borne inputs RE-HASHED. Writing
-that control found a third: the artifact recorded the prereg CONSTANTS, not
-the path it actually read.**
+audit no longer counts forever — ANCESTOR of HEAD, diff confined to
+`evidence/**`, evidence-borne inputs RE-HASHED. That control found a third:
+the artifact recorded the prereg CONSTANTS, not the path it read.** **R23:
+`open-b` is a registration and skipped the act's preconditions (a colliding
+id would REPLACE another run's manifest); and a clause-6 control was
+identified by TITLE alone — now (file, fullName), exactly one.**
+
+**FOR THE USER, BEFORE THE SEAL:** a control gutted BEFORE its attestation is
+invisible to the audit. Closing it means naming the conformance files in
+clause 5's pinned set — a REGISTERED reading of frozen text, so it needs a
+new pre-data amendment or it stays a recorded residual. FINDINGS R23 has it.
 PR to main is open — merge is the user's act.
 
 ## Still blocking a run

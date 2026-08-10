@@ -1737,6 +1737,52 @@ the attestation it judged was edited. The binding control also proves the
 refusal is NOT sticky: restore the bytes and the audit counts again, which is
 what makes it a binding rather than a tripwire.
 
+### SIXTEENTH POST-IMPLEMENTATION ROUND (R23) — adjudicated 2026-08-10
+
+Two high findings: one command that skipped the act's preconditions, and one
+identity that was a string when it needed to be a pair.
+
+- **R23#1 — `open-b` is a REGISTRATION and did not check like one.** It
+  derives `evidence/<run2Id>.b12.tasks.json` from the runId inside the sealed
+  manifest B and hands it to the same CAS — and `casCommit` stages with
+  `update-index --add`, which REPLACES the blob at an existing path. A
+  colliding id would overwrite another run's committed manifest AND append a
+  second registration row for that id: prior evidence corrupted, and
+  `registrationGuard` refusing both runs over an ambiguous pair. R22 had just
+  given `register` the unborn-path check; run 2 never got it. New
+  `openBRefusals` applies the same preconditions plus the register's own
+  duplicate-row scan, and re-checks the id's GRAMMAR at the point of use —
+  the string becomes a path here, and a check passed at seal time is not a
+  reason to skip the one where it is interpolated.
+
+- **R23#2 — a control was identified by its TITLE.** Clause 6 found each
+  required control with `att.tests.find(x => x.fullName === title)`: no file,
+  no uniqueness. A vitest fullName is not unique across files, so the NAME
+  could satisfy the clause from a trivial test anywhere — the control gone,
+  the audit clean. This repository had already decided the question once: the
+  gate oracle keys its four Windows failures by `{file, fullName}` for
+  exactly this reason. `CONTROL_TESTS` is now (file, fullName) pairs, matched
+  by both, requiring EXACTLY ONE — a duplicated title cannot say which one
+  passed, and a moved one is named as moved. All six live in
+  `tests/cost-meter.test.ts`; the file is a pin of what IS, like the titles.
+
+**The residual is named, not closed, and it is the user's to decide before
+the seal.** A control gutted BEFORE the attestation is invisible to this
+audit: the attestation honestly describes the gutted tree, and no drift
+exists after it. What would catch it is clause 5's pinned-path set — and the
+conformance test files are not in it. Codex's alternative was to add them.
+DECLINED here on the ground that `PINNED_PATHS` is a REGISTERED READING of
+frozen text (recorded in this file: `src/cost/`, `src/telemetry.ts`, the
+emission wrapper, `scripts/b12-run.mjs`), and widening it post-hoc would mint
+a new voiding condition — precisely what the O-bracket and the VOID-21 hash
+were refused for. The honest options are (a) leave it, with the residual on
+the record, or (b) a NEW pre-data amendment naming the conformance files as
+pinned. **This belongs on the pre-seal decision list.**
+
+**Both controls fire.** With `openBRefusals` neutered, a colliding id yields
+no refusal at all; with the file dropped from the control match, a control
+attested from `tests/somewhere-else.test.ts` satisfies the clause.
+
 ---
 
 ## CLOSED

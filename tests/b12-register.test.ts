@@ -154,6 +154,37 @@ describe("runIdMismatch — one identity in three places", () => {
   });
 });
 
+describe("openBRefusals — run 2 is a registration, and owes the act's preconditions", () => {
+  it("refuses a colliding manifest path, an id already registered, and an unsafe segment", async () => {
+    // R23#1: `open-b` derived `evidence/<run2Id>.b12.tasks.json` from the
+    // sealed blob and handed it straight to the CAS — and `casCommit` stages
+    // with `update-index --add`, which REPLACES the blob at an existing path.
+    // A colliding id would overwrite another run's committed manifest and
+    // append a SECOND registration row for that id.
+    const { openBRefusals } = await import("../scripts/b12-register.mjs");
+    const root = tempRoot();
+    initRepo(root);
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    await fs.writeFile(path.join(root, "evidence", "run-old.b12.tasks.json"), `{"runId":"run-old"}\n`, "utf8");
+    await fs.writeFile(
+      path.join(root, "MEASUREMENTS.jsonl"),
+      `{"metric":"prior"}\n{"b12_registration":true,"run_id":"run-old"}\n`,
+      "utf8"
+    );
+    const head = commitAll(root, "an earlier run, registered");
+
+    const collision = openBRefusals(root, head, "run-old");
+    expect(collision.join(" ")).toMatch(/was already introduced by/);
+    expect(collision.join(" ")).toMatch(/already carries a registration row/);
+    // The id is interpolated into a PATH here, so the grammar applies at the
+    // point of use, not only at seal time.
+    expect(openBRefusals(root, head, "../../escape").join(" ")).toMatch(/not a safe path segment/);
+    expect(openBRefusals(root, head, 7).join(" ")).toMatch(/not a safe path segment/);
+    // …and a genuinely fresh run 2 passes, so the guard is not a wall.
+    expect(openBRefusals(root, head, "run-r2")).toEqual([]);
+  });
+});
+
 describe("checkCore — the pure red reasons, firing and not firing", () => {
   it("is GREEN on the generated pair with a disjoint five-task pilot", async () => {
     const { checkCore } = await import("../scripts/b12-register.mjs");

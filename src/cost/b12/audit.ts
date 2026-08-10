@@ -55,23 +55,52 @@ export const PINNED_PATHS = ["src/cost/", "src/telemetry.ts", "scripts/b12-run.m
  * The six negative controls `voidConditions` 6 requires SHOWN FIRING, by the
  * exact vitest fullName the attestation records. Copied AFTER the tests
  * existed — a registry written first would have been a wish, not a pin.
+ *
+ * A CONTROL IS IDENTIFIED BY (file, fullName), never by title alone (R23).
+ * A vitest fullName is not unique across files, and this repository already
+ * decided that question once: the gate oracle keys its four Windows failures
+ * by `{file, fullName}` for exactly this reason. Matching on the title alone
+ * let a control's NAME satisfy the clause from anywhere — including a
+ * trivial test in another file — while the control itself was gone. The
+ * clause names the suite as two files; a test outside them is not in the
+ * conformance suite at all, and a duplicated title cannot say which one
+ * passed. All six live in `tests/cost-meter.test.ts` today; the pair is a
+ * pin of what IS, like the titles beside it.
  */
-export const CONTROL_TESTS: readonly string[] = [
+export const CONTROL_TESTS: readonly { file: string; fullName: string }[] = [
   // 1. a failed repair row crediting zero units — written the day this
   //    registry was (no prior test showed it; the near-miss at the
   //    turn-collapse control credits zero for a different reason).
-  "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+  {
+    file: "tests/cost-meter.test.ts",
+    fullName: "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+  },
   // 2. a byte-negative row carried signed
-  "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+  {
+    file: "tests/cost-meter.test.ts",
+    fullName: "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+  },
   // 3. an unmatchable wouldHaveAdded returning null and not 0 — the null is
   //    observable through the `unsized` channel, never summed as zero.
-  "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+  {
+    file: "tests/cost-meter.test.ts",
+    fullName: "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+  },
   // 4. a two-worktree fixture where a resumed session returns inherited > 0
-  "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+  {
+    file: "tests/cost-meter.test.ts",
+    fullName: "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+  },
   // 5. a per-session scoring invocation REFUSING where the full-set invocation credits
-  "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+  {
+    file: "tests/cost-meter.test.ts",
+    fullName: "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+  },
   // 6. a run whose snapshot covered fewer slugs than it wrote to being rejected
-  "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+  {
+    file: "tests/cost-meter.test.ts",
+    fullName: "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+  },
 ];
 
 /** The two files the frozen clause NAMES as the conformance suite. */
@@ -358,10 +387,24 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
       }
     }
     if (Array.isArray(att.tests)) {
-      for (const title of CONTROL_TESTS) {
-        const t = att.tests.find((x) => x?.fullName === title);
-        if (t === undefined) reasons.push(`clause 6: required control absent from the attestation: ${title}`);
-        else if (t.status !== "passed") reasons.push(`clause 6: required control not passing (${String(t.status)}): ${title}`);
+      for (const control of CONTROL_TESTS) {
+        // (file, fullName) — a title is not an identity, and the clause names
+        // the files it means (R23).
+        const matches = att.tests.filter((x) => x?.fullName === control.fullName && x?.file === control.file);
+        if (matches.length === 0) {
+          const elsewhere = att.tests.filter((x) => x?.fullName === control.fullName);
+          reasons.push(
+            elsewhere.length > 0
+              ? `clause 6: the control's title is attested in ${elsewhere.map((x) => String(x.file)).join(", ")}, not in ${control.file} — a control that moved is a different test: ${control.fullName}`
+              : `clause 6: required control absent from the attestation: ${control.fullName}`
+          );
+        } else if (matches.length > 1) {
+          reasons.push(
+            `clause 6: ${matches.length} tests in ${control.file} carry the control's fullName — a duplicated title cannot say which one passed: ${control.fullName}`
+          );
+        } else if (matches[0]!.status !== "passed") {
+          reasons.push(`clause 6: required control not passing (${String(matches[0]!.status)}): ${control.fullName}`);
+        }
       }
     }
     if (facts.clause6.subjectIsAncestor === null) {
@@ -429,9 +472,12 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     // COMMITTED bytes, and a malformed attestation must still produce the
     // void artifact that reports it, never a crash instead of a verdict.
     "clause6.controls": joined(
-      CONTROL_TESTS.map((title) => {
-        const t = Array.isArray(att?.tests) ? att.tests.find((x) => x?.fullName === title) : undefined;
-        return `${title}=${t === undefined ? "absent" : String(t.status)}`;
+      CONTROL_TESTS.map((control) => {
+        const matches = Array.isArray(att?.tests)
+          ? att.tests.filter((x) => x?.fullName === control.fullName && x?.file === control.file)
+          : [];
+        const status = matches.length === 0 ? "absent" : matches.length > 1 ? `ambiguous(${matches.length})` : String(matches[0]!.status);
+        return `${control.file}::${control.fullName}=${status}`;
       })
     ),
     "clause6.files": joined(

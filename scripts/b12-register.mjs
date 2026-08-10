@@ -199,6 +199,46 @@ export function priorIntroductionRefusals(repoRoot, atCommit, rels) {
 }
 
 /**
+ * RUN 2 IS A REGISTRATION, so `open-b` owes the act's own preconditions
+ * (R23). It derives `evidence/<run2Id>.b12.tasks.json` from a runId read out
+ * of the sealed blob and hands it to the same CAS — and `casCommit` stages
+ * with `update-index --add`, which REPLACES the blob at an existing path. A
+ * colliding id would therefore overwrite another run's committed manifest AND
+ * append a second registration row for that id: prior evidence corrupted, and
+ * `registrationGuard` refusing both runs over an ambiguous pair.
+ *
+ * The id also becomes a PATH here, so it is held to the manifest validator's
+ * grammar at the point of use — a check passed at seal time is not a reason
+ * to skip the one where the string is interpolated.
+ */
+export function openBRefusals(repoRoot, expectedHead, run2Id) {
+  const red = [];
+  if (typeof run2Id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(run2Id)) {
+    return [`manifest B's runId ${JSON.stringify(run2Id)} is not a safe path segment — it would name evidence/<runId>/… on disk`];
+  }
+  red.push(...priorIntroductionRefusals(repoRoot, expectedHead, [`evidence/${run2Id}.b12.tasks.json`]));
+  const measurements = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
+  if (measurements.code !== 0) {
+    red.push("expectedHead carries no MEASUREMENTS.jsonl — the append-only register must exist before an append");
+    return red;
+  }
+  for (const line of measurements.out.split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      const r = JSON.parse(line);
+      if (r?.b12_registration === true && r?.run_id === run2Id) {
+        red.push(
+          `${run2Id} already carries a registration row — a second one makes the pair ambiguous, and every observation of that run refuses over "N registration row(s)"`
+        );
+      }
+    } catch {
+      // A corrupt row is the scorer's finding; this guard speaks about ids.
+    }
+  }
+  return red;
+}
+
+/**
  * THE CAS COMMIT. `candidates` are the NEW bytes, each read or generated
  * exactly once by the caller; everything else in the tree rides through from
  * `expectedHead` untouched. Returns without side effects on ANY failure
@@ -821,6 +861,9 @@ if (isMain) {
     }
     const run2Id = manifestB.runId;
     if (typeof run2Id !== "string" || run2Id === runId) fail("manifest B names no distinct runId for run 2");
+    const run2Rel = `evidence/${run2Id}.b12.tasks.json`;
+    const openBRed = openBRefusals(repoRoot, expectedHead, run2Id);
+    if (openBRed.length > 0) fail(openBRed.join("; "));
     const oldMeasurements = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
     if (oldMeasurements.code !== 0) fail("expectedHead carries no MEASUREMENTS.jsonl");
     let measurementsDisk = null;
@@ -845,7 +888,7 @@ if (isMain) {
       message: `b12 registration: ${run2Id} (manifest B of ${runId}, opened on 'open')`,
       refOverride: expectedRef,
       candidates: [
-        { path: `evidence/${run2Id}.b12.tasks.json`, bytes: sealed.out },
+        { path: run2Rel, bytes: sealed.out },
         { path: "MEASUREMENTS.jsonl", bytes: oldMeasurements.out + row, diskBefore: measurementsDisk },
       ],
     });
