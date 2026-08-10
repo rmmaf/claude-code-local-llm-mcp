@@ -138,10 +138,19 @@ export function checkCore(manifestA, manifestB, pilot) {
  * most of all. Drifted paths are preserved and reported as a
  * post-registration conflict.
  */
-export function casCommit(repoRoot, { candidates, message, expectedHeadOverride = null }) {
+export function casCommit(repoRoot, { candidates, message, expectedHeadOverride = null, refOverride = null }) {
   const refProbe = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
   if (refProbe.code !== 0) return { ok: false, why: "HEAD is detached — a registration needs a branch to install on" };
   const ref = refProbe.out.trim();
+  // The BRANCH is part of the captured state: the SHA-guarded swap alone
+  // would install on whatever branch HEAD switched to mid-act (two branches
+  // can share one commit), and the sync would mutate that branch's checkout.
+  if (refOverride !== null && ref !== refOverride) {
+    return {
+      ok: false,
+      why: `HEAD moved from ${refOverride} to ${ref} during the act — the validated branch is not the one checked out; NOTHING was registered`,
+    };
+  }
   const headProbe = git(repoRoot, ["rev-parse", "HEAD"]);
   if (headProbe.code !== 0) return { ok: false, why: "HEAD does not resolve" };
   const expectedHead = expectedHeadOverride ?? headProbe.out.trim();
@@ -350,7 +359,12 @@ async function runCheck(repoRoot, runId) {
  */
 export async function registerRun(repoRoot, runId, opts = {}) {
   const gate = opts.gate ?? priorRunsGate;
-  // CAPTURE — before any validation.
+  // CAPTURE — before any validation: the commit AND the branch, because two
+  // branches can share one commit and the swap must land on the one that was
+  // validated.
+  const refCapture = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+  if (refCapture.code !== 0) return { ok: false, red: ["HEAD is detached — a registration needs a branch to install on"] };
+  const expectedRef = refCapture.out.trim();
   const head = git(repoRoot, ["rev-parse", "HEAD"]);
   if (head.code !== 0) return { ok: false, red: ["HEAD does not resolve"] };
   const expectedHead = head.out.trim();
@@ -446,6 +460,7 @@ export async function registerRun(repoRoot, runId, opts = {}) {
     }) + "\n";
   return casCommit(repoRoot, {
     expectedHeadOverride: expectedHead,
+    refOverride: expectedRef,
     message: `b12 registration: ${runId}`,
     candidates: [
       { path: aRel, bytes: aBytes, diskBefore: aBytes },
@@ -494,9 +509,12 @@ if (isMain) {
     process.stdout.write(`registered: ${result.commit}\n(push is the operator's act; the debt is the run itself)\n`);
   } else if (cmd === "open-b") {
     if (!runId) fail("usage: node scripts/b12-register.mjs open-b <runId>");
-    // CAPTURE FIRST — every input below is read at `expectedHead`, and a
-    // commit landing after this line fails the CAS instead of becoming a
-    // baseline whose committed verdict nobody re-read.
+    // CAPTURE FIRST — commit AND branch: every input below is read at
+    // `expectedHead`, a commit landing after this line fails the CAS, and a
+    // branch switch fails the ref check instead of landing elsewhere.
+    const refCapture = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (refCapture.code !== 0) fail("HEAD is detached — a registration needs a branch to install on");
+    const expectedRef = refCapture.out.trim();
     const head = git(repoRoot, ["rev-parse", "HEAD"]);
     if (head.code !== 0) fail("HEAD does not resolve");
     const expectedHead = head.out.trim();
@@ -551,6 +569,7 @@ if (isMain) {
     const result = casCommit(repoRoot, {
       expectedHeadOverride: expectedHead,
       message: `b12 registration: ${run2Id} (manifest B of ${runId}, opened on 'open')`,
+      refOverride: expectedRef,
       candidates: [
         { path: `evidence/${run2Id}.b12.tasks.json`, bytes: sealed.out },
         { path: "MEASUREMENTS.jsonl", bytes: oldMeasurements.out + row, diskBefore: measurementsDisk },

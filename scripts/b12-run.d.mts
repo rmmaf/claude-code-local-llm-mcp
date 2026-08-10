@@ -231,6 +231,14 @@ export function committedEvidenceCheck(declaredPath: string): {
 export function committedOrderViolation(manifest: unknown, taskId: string, runlogText: string): string | null;
 
 /**
+ * Artifact 6's barrier at the next task's START: the disk runlog must be
+ * byte-identical to HEAD's committed copy (null = absent). A row appended but
+ * not yet committed is not an ordering predecessor; both directions refuse.
+ * Pure.
+ */
+export function runlogBarrierViolation(diskText: string | null, headText: string | null): string | null;
+
+/**
  * Invalidity reasons for pre/post instruction-hash drift — every component
  * compared (CLAUDE.md, memory, settings, settings.local, passed MCP config,
  * policy blob), each with its frozen-text citation. Pure.

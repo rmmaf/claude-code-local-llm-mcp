@@ -17,12 +17,13 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R10 (post-implementation adversarial rounds) are ADJUDICATED — six high
-findings, all confirmed, fixed with controls: the CAS worktree index and
+R8–R11 (post-implementation adversarial rounds) are ADJUDICATED — nine
+findings, all confirmed, fixed with controls: CAS worktree index +
 capture-before-validate (R8); fail-open probes made fail-closed (R9); the
-post-swap sync made CONDITIONAL on `diskBefore` snapshots, with an
-uncommitted-MEASUREMENTS refusal at capture — the one destructive defect
-(R10). PR to main is open — merge is the user's act.
+conditional post-swap sync — the one destructive defect (R10); the branch
+in the captured state (`refOverride`), artifact 6's runlog barrier
+(disk == HEAD before any observation), and case-folded scope intersection
+in both implementations (R11). PR to main is open — merge is the user's act.
 
 ## Still blocking a run
 

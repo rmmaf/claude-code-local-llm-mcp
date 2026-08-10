@@ -27,6 +27,9 @@ export function casCommit(
     candidates: Array<{ path: string; bytes: string; diskBefore?: string | null }>;
     message: string;
     expectedHeadOverride?: string | null;
+    /** The full symbolic ref captured before validation; a mismatch at swap
+     * time refuses — two branches can share one commit. */
+    refOverride?: string | null;
   }
 ):
   | { ok: true; commit: string; postFailure?: string }

@@ -23,6 +23,13 @@
  * cover alike ON PURPOSE — a grammar where one of them quietly covered less
  * would be a hole spelled with a slash.
  *
+ * SEGMENTS COMPARE CASE-FOLDED (ASCII lowercase): Windows and default macOS
+ * filesystems alias case, so `SRC/COST/` names the same tree as `src/cost/**`
+ * wearing different bytes — exact-equality comparison would admit it as
+ * non-intersecting. The DECLARED form is preserved everywhere it is shown;
+ * only the comparison folds. The protected set is ASCII, so ASCII folding is
+ * exact for what the rule guards.
+ *
  * The harness (`scripts/b12-run.mjs`) carries a SECOND implementation of this
  * rule because it must run before `dist/` exists; the two are compared
  * case-for-case by the conformance suite, which is this repository's answer
@@ -74,7 +81,7 @@ export function parseScopeEntry(raw: unknown): ParsedScope {
 }
 
 const isPrefix = (a: readonly string[], b: readonly string[]): boolean =>
-  a.length <= b.length && a.every((seg, i) => seg === b[i]);
+  a.length <= b.length && a.every((seg, i) => seg.toLowerCase() === b[i]!.toLowerCase());
 
 /** Either covers the other, or two literal files are one file. */
 export function scopesIntersect(

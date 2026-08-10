@@ -412,6 +412,31 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(redOf(result).join(" ")).toMatch(/seal-harness is the barrier/);
   });
 
+  it("REFUSES when HEAD switches to a DIFFERENT branch on the same commit — the swap lands only where it was validated", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    const originalBranch = git(root, ["symbolic-ref", "--short", "HEAD"]);
+    const result = await registerRun(root, "run-r1", {
+      gate: greenGate,
+      afterCapture: async () => {
+        // The SAME commit under a different name — the SHA-guarded swap alone
+        // would succeed and install on the wrong branch.
+        git(root, ["checkout", "-q", "-b", "impostor-branch"]);
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(whyOf(result)).toMatch(/moved from .* during the act/);
+    // Neither branch received the registration.
+    for (const branch of [originalBranch, "impostor-branch"]) {
+      const probe = spawnSync(
+        "git",
+        ["-C", root, "cat-file", "-e", `${branch}:evidence/run-r1.b12.tasks.json`],
+        { encoding: "utf8" }
+      );
+      expect(probe.status).not.toBe(0);
+    }
+  });
+
   it("refuses DIRTY validator inputs — the gate may not judge with code the act does not register", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
     const { root } = await registerFixture();

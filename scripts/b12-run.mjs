@@ -805,7 +805,10 @@ export function parseScopeEntry(raw) {
 }
 
 export function scopesIntersect(a, b) {
-  const isPrefix = (x, y) => x.length <= y.length && x.every((seg, i) => seg === y[i]);
+  // CASE-FOLDED comparison (ASCII): Windows and default macOS filesystems
+  // alias case, so `SRC/COST/` is `src/cost/**`'s tree wearing different
+  // bytes. The declared form is preserved; only the comparison folds.
+  const isPrefix = (x, y) => x.length <= y.length && x.every((seg, i) => seg.toLowerCase() === y[i].toLowerCase());
   const covers = (x, y) => x.kind !== "file" && isPrefix(x.segments, y.segments);
   if (covers(a, b) || covers(b, a)) return true;
   return a.kind === "file" && b.kind === "file" && a.segments.length === b.segments.length && isPrefix(a.segments, b.segments);
@@ -884,6 +887,36 @@ export function committedOrderViolation(manifest, taskId, runlogText) {
     }
   }
   return null;
+}
+
+/**
+ * ARTIFACT 6'S BARRIER, checked where the NEXT task starts: the runlog on
+ * disk must be byte-identical to HEAD's committed copy before any new
+ * observation spends anything. A runlog row is appended BEFORE its evidence
+ * commit (the commit includes the row), so between append and commit the row
+ * exists on disk as an apparent predecessor with nothing durable behind it —
+ * and a FAILED commit leaves it that way forever. Equality makes a row
+ * visible as an ordering predecessor only once it is committed; both
+ * directions refuse (an uncommitted suffix AND a truncated disk copy), and
+ * the refusal is the cross-process serialization — the second process stops
+ * instead of ordering itself against evidence that may never exist.
+ */
+export function runlogBarrierViolation(diskText, headText) {
+  if (diskText === null && headText === null) return null; // the first observation
+  if (diskText === headText) return null;
+  if (headText === null) {
+    return (
+      "the runlog exists on disk but HEAD carries no committed copy — a previous observation's evidence commit " +
+      "did not complete (design.artifacts 6: committed at each task's end, BEFORE the next task starts)"
+    );
+  }
+  if (diskText === null) {
+    return "HEAD carries a committed runlog but the disk copy is missing — the persisted progress record was truncated";
+  }
+  return (
+    "the runlog on disk differs from HEAD's committed copy — a previous observation's evidence commit did not " +
+    "complete or failed (design.artifacts 6's barrier holds every next task until the predecessor is committed)"
+  );
 }
 
 /**
@@ -2012,12 +2045,23 @@ async function observe(args, pilotMode = false) {
   const arm = args.arm ?? "treatment";
   if (arm !== "treatment" && arm !== "control") refuse(`--arm must be treatment or control, got ${arm}`);
 
+  // ARTIFACT 6'S BARRIER, both arms, BEFORE the order check reads the disk
+  // runlog as progress: disk and HEAD must carry the same runlog bytes, or a
+  // predecessor's evidence commit is still pending (or failed) and its row is
+  // not yet a predecessor anyone may order themselves against.
+  const runLogRel = `evidence/${manifest.runId ?? "b12-unnamed"}.b12.runlog.jsonl`;
+  const runLogPath = path.join(REPO, runLogRel);
+  {
+    const diskText = existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null;
+    const headProbe = run("git", ["-C", REPO, "show", `HEAD:${runLogRel}`]);
+    const barrier = runlogBarrierViolation(diskText, headProbe.code === 0 ? headProbe.out : null);
+    if (barrier) refuse(barrier);
+  }
   // The committed order, enforced against the persisted runlog BEFORE the
   // session is spent — see `committedOrderViolation` for the treatment-only
   // scoping and the duplicate-task adjudication it deliberately leaves to
   // scoring.
   if (arm === "treatment") {
-    const runLogPath = path.join(REPO, "evidence", `${manifest.runId ?? "b12-unnamed"}.b12.runlog.jsonl`);
     const violation = committedOrderViolation(
       manifest,
       args.task,

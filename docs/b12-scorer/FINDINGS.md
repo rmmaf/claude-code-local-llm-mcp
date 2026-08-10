@@ -1233,6 +1233,43 @@ red fires. The serialize-every-writer lock alternative was declined: the
 writers span processes and machines, and a lock nobody else honors is a
 comment — the conditional sync refuses destructively instead.
 
+### FOURTH POST-IMPLEMENTATION ROUND (R11) — adjudicated 2026-08-10
+
+Two high, one medium, all confirmed:
+
+- **R11#1 — the branch was not part of the captured state.** `casCommit`
+  resolved `symbolic-ref HEAD` at its own entry — AFTER the long
+  validation/build — so a branch switch onto the SAME commit mid-act would
+  pass the SHA-guarded swap and install the registration (and mutate the
+  checkout) on the wrong branch. `registerRun` and `open-b` now capture the
+  full symbolic ref at the capture instant and pass it as `refOverride`;
+  `casCommit` refuses a mismatch by name. The residual window between the
+  re-check and `update-ref` is acknowledged: git offers no ref-plus-symref
+  transaction, the swap still lands only on the CAPTURED ref with the
+  captured old value, and the threat is the operator's own checkout.
+- **R11#2 — a runlog row was an ordering predecessor before its commit.**
+  The row is appended BEFORE the evidence commit that carries it (the commit
+  includes the row), so between append and commit — or forever, after a
+  failed commit — the next task's order check read it as completed progress,
+  breaking artifact 6's "committed at each task's end, BEFORE the next task
+  starts". New `runlogBarrierViolation` (pure, both directions): observe now
+  refuses, for BOTH arms and before anything is spent, unless the disk
+  runlog is byte-identical to HEAD's committed copy. The refusal IS the
+  cross-process serialization — the second process stops instead of ordering
+  itself against evidence that may never exist. The per-run lock held
+  through append+commit+verify was declined: a lock spanning a multi-second
+  retrying git commit is a liveness hazard, and equality gives the same
+  guarantee refusal-shaped.
+- **R11#3 — case aliases pierced admissionRule 7.** Scope intersection
+  compared segments byte-exactly, so `SRC/COST/` was "non-intersecting"
+  while naming `src/cost/**`'s tree on the case-insensitive filesystems this
+  run actually uses (Windows box, Mac). Both implementations (scorer
+  `filescope.ts` + harness `b12-run.mjs`) now compare CASE-FOLDED (ASCII;
+  the protected set is ASCII, so the fold is exact); the declared form is
+  preserved everywhere it is shown. The registered grammar reading gains
+  this clause pre-seal. Conformance cases: the alias dir/file/doc each fire
+  in both implementations, and the agreement sweep carries the aliases.
+
 ---
 
 ## CLOSED

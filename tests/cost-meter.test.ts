@@ -2746,6 +2746,12 @@ describe("the B12 harness", () => {
       "src/*.ts",
       "src/?",
       "src",
+      // CASE ALIASES — Windows and default macOS filesystems alias case, so
+      // these name protected trees wearing different bytes.
+      "SRC/COST/",
+      "Src/Cost/inner.ts",
+      "EVIDENCE/**",
+      "premises.md",
     ];
     for (const raw of cases) {
       expect({ raw, parsed: harness.parseScopeEntry(raw) }).toEqual({ raw, parsed: scorer.parseScopeEntry(raw) });
@@ -2753,6 +2759,18 @@ describe("the B12 harness", () => {
     expect(harness.PROTECTED_SCOPES).toEqual([...scorer.PROTECTED_SCOPES]);
     const tasks = cases.map((scope, i) => ({ id: `t${i}`, fileScope: [scope] }));
     expect(harness.fileScopeViolations(tasks)).toEqual(scorer.fileScopeViolations(tasks));
+    // And the aliases FIRE, in both implementations alike: a case-folded name
+    // for the instrument set is the instrument set.
+    for (const impl of [harness, scorer]) {
+      const fired = impl.fileScopeViolations([
+        { id: "alias-dir", fileScope: ["SRC/COST/"] },
+        { id: "alias-file", fileScope: ["Src/Cost/inner.ts"] },
+        { id: "alias-doc", fileScope: ["premises.md"] },
+      ]);
+      expect(fired.join(" ")).toMatch(/alias-dir.*intersects the instrument set at src\/cost/);
+      expect(fired.join(" ")).toMatch(/alias-file.*intersects the instrument set at src\/cost/);
+      expect(fired.join(" ")).toMatch(/alias-doc.*intersects the instrument set at PREMISES\.md/);
+    }
   });
 
   it("mints a UNIQUE session id per attempt and refuses a concurrent same-task acquire — in and across processes", async () => {
@@ -3616,6 +3634,28 @@ describe("the B12 harness", () => {
       expect(committedOrderViolation(manifest, "t2", "not json\n")).toMatch(/not JSON/);
       // An empty log constrains only the first task's first run.
       expect(committedOrderViolation(manifest, "t1", "")).toBeNull();
+    });
+
+    it("holds the next task at artifact 6's barrier until the predecessor's runlog row is COMMITTED", async () => {
+      // A runlog row is appended BEFORE its evidence commit; between the two
+      // it is an apparent predecessor with nothing durable behind it — and a
+      // failed commit leaves it that way forever. The barrier: disk and HEAD
+      // must carry the SAME runlog bytes before any observation spends
+      // anything. Both directions refuse.
+      const { runlogBarrierViolation } = await load();
+      const committed = `{"taskId":"t1","arm":"treatment"}\n`;
+      // The first observation: nothing anywhere — free.
+      expect(runlogBarrierViolation(null, null)).toBeNull();
+      // Between observations: disk equals HEAD — free.
+      expect(runlogBarrierViolation(committed, committed)).toBeNull();
+      // A row appended but never committed — FIRES, naming artifact 6.
+      expect(runlogBarrierViolation(committed + `{"taskId":"t2","arm":"treatment"}\n`, committed)).toMatch(
+        /did not complete/
+      );
+      // The very first row, uncommitted (HEAD has no runlog at all) — FIRES.
+      expect(runlogBarrierViolation(committed, null)).toMatch(/HEAD carries no committed copy/);
+      // A truncated disk copy — FIRES the other direction.
+      expect(runlogBarrierViolation(null, committed)).toMatch(/truncated/);
     });
 
     it("invalidates on drift in EVERY instruction component, with its citation", async () => {
