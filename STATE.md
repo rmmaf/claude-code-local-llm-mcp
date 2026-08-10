@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R27 (post-implementation adversarial rounds) are ADJUDICATED — thirty-six
+R8–R28 (post-implementation adversarial rounds) are ADJUDICATED — thirty-seven
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -62,7 +62,10 @@ irreversible, so the install became a CAS — temp index from the captured tip,
 install: the tree is the tip's plus these paths, staged first, so the R14–R19
 saga does not repeat. Side effect worth knowing: plumbing runs NO hooks, so
 R25's pre-commit threat is closed by construction and two of its controls now
-assert that.**
+assert that. R28: that CAS built its temp index at `<root>/.git`, a FILE in a
+linked worktree — every observation here would have failed AFTER the append.
+`--absolute-git-dir`, resolved BEFORE the append; the register had discarded
+that assumption rounds ago.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The

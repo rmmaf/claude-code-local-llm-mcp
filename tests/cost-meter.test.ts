@@ -3996,6 +3996,49 @@ describe("the B12 harness", () => {
       expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
     });
 
+    it("installs from a LINKED WORKTREE, where `.git` is a file and not a directory", async () => {
+      // R28: the CAS built its temporary index at `<root>/.git/...`, which in
+      // a linked worktree is a FILE — so `read-tree` could not create it, and
+      // the failure landed AFTER the row was appended: every observation in
+      // that environment would leave an uncommitted row and hold the run at
+      // the next barrier. This repository is worked from linked worktrees,
+      // and the register had already discarded the same assumption.
+      const { root, git } = await runlogFixture();
+      const linked = path.join(root, "..", `wt-${path.basename(root)}`);
+      await git(root, "worktree", "add", "-q", "-b", "observing", linked);
+      try {
+        // `.git` really is a file here — the whole point of the test.
+        expect((await fs.stat(path.join(linked, ".git"))).isFile()).toBe(true);
+        const relDir = "evidence/run-c/obs-t2-treatment";
+        const runLogRel = "evidence/run-c.b12.runlog.jsonl";
+        await fs.mkdir(path.join(linked, relDir), { recursive: true });
+        await fs.writeFile(path.join(linked, relDir, "observation.json"), `{"taskId":"t2"}\n`, "utf8");
+        const committed = await fs.readFile(path.join(linked, runLogRel), "utf8");
+        const { commitObservationRow } = await load();
+        const result = await commitObservationRow(linked, {
+          evidenceDir: path.join(linked, "evidence"),
+          runId: "run-c",
+          runLogRel,
+          relDir,
+          written: ["observation.json"],
+          row: { runId: "run-c", taskId: "t2", arm: "treatment", sessionId: "s-t2" },
+          sessionId: "s-t2",
+          message: "evidence: run-c t2/treatment",
+          runlogAtBarrier: committed,
+          branchRef: "refs/heads/observing",
+          lockAttempts: 1,
+          lockWaitMs: 1,
+        });
+        expect(result.ok).toBe(true);
+        expect(await git(linked, "show", `refs/heads/observing:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+        expect(await git(linked, "show", `refs/heads/observing:${runLogRel}`)).toMatch(/s-t2/);
+        // The other branch never moved, and the worktree is clean.
+        expect(await git(linked, "status", "--porcelain")).toBe("");
+      } finally {
+        await git(root, "worktree", "remove", "--force", linked);
+      }
+    });
+
     it("refuses a DETACHED HEAD — evidence no branch holds is evidence the run cannot find", async () => {
       const { root, git, runLogRel, committed, call } = await runlogFixture();
       await git(root, "checkout", "-q", "--detach");

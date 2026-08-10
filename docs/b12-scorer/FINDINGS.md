@@ -1878,6 +1878,34 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTY-FIRST POST-IMPLEMENTATION ROUND (R28) — adjudicated 2026-08-10
+
+One finding, and it is the CAS from one round earlier failing in the
+environment this repository is actually worked in.
+
+- **R28#1 (high) — the temporary index was built at `<root>/.git/…`, which in
+  a linked worktree is a FILE.** `git read-tree` cannot create an index
+  inside a non-directory, so in a linked worktree every observation would
+  fail — and fail AFTER the row was appended, leaving an uncommitted row and
+  an archive in no tree, which holds the run at the next barrier until an
+  operator reconciles by hand. The register already resolves
+  `--absolute-git-dir` and has a test named "registers from a LINKED
+  WORKTREE, where `.git` is a file, not a directory"; **the observation path
+  re-derived the assumption the register had already discarded.** That is the
+  fifth time in this loop a defect lived where the repository had already
+  written down the rule.
+
+  The git directory is now resolved with `git rev-parse --absolute-git-dir`,
+  and resolved BEFORE the append — beside the tip capture, for the same
+  reason: everything fallible the install needs is asked for while a refusal
+  still costs nothing (R16's lesson, R28's occasion).
+
+**Control.** The new integration test runs the real `commitObservationRow`
+from a real `git worktree add` checkout, asserting first that `.git` there IS
+a file. With the path put back under `<root>/.git`, it fails; with the
+resolved git directory it installs, the branch carries the archive and the
+row, and the worktree is clean.
+
 ### TWENTIETH POST-IMPLEMENTATION ROUND (R27) — adjudicated 2026-08-10
 
 One finding, and it is the previous round's own fix reviewed — the third time

@@ -98,7 +98,7 @@ function git(args, cwd = REPO) {
  * because it runs inside the run's commit lock and `process.exit` would
  * strand that lock (R18). The caller refuses.
  */
-async function installEvidenceCommit(repoRoot, { relDir, relLog, message, ref, expectedTip, files }) {
+async function installEvidenceCommit(repoRoot, { relDir, relLog, message, ref, expectedTip, files, gitDir }) {
   const LOCKED = /index\.lock|Another git process|could not lock/i;
   for (let attempt = 1; ; attempt++) {
     const add = run("git", ["-C", repoRoot, "add", "--", relDir, relLog]);
@@ -115,7 +115,14 @@ async function installEvidenceCommit(repoRoot, { relDir, relLog, message, ref, e
   // The TEMPORARY index: seeded from the tip this act captured, never from
   // whatever the real index happens to hold, so an operator's unrelated
   // staged work cannot ride into the run's evidence commit.
-  const tmpIndex = path.join(repoRoot, ".git", `b12-obs-index-${process.pid}-${Date.now()}`);
+  //
+  // It lives in the git directory GIT ITSELF names (R28), not in
+  // `<root>/.git`: in a LINKED WORKTREE — which is how this repository is
+  // worked, and how the register's own test exercises the act — `.git` is a
+  // FILE, and a path under it cannot be created at all. The register already
+  // resolves `--absolute-git-dir` for exactly this reason; the observation
+  // path had re-derived the assumption the register had already discarded.
+  const tmpIndex = path.join(gitDir, `b12-obs-index-${process.pid}-${Date.now()}`);
   const withIndex = { env: { ...process.env, GIT_INDEX_FILE: tmpIndex } };
   try {
     const seed = run("git", ["-C", repoRoot, "read-tree", expectedTip], withIndex);
@@ -351,6 +358,19 @@ export async function commitObservationRow(
       return { ok: false, why: `${verifyRef} does not resolve — the evidence commit has no tip to install onto; nothing was appended` };
     }
     const expectedTip = tipProbe.out.trim();
+    // AND THE GIT DIRECTORY, resolved HERE for the same reason the tip is:
+    // everything fallible that the install needs is asked for BEFORE the row
+    // is appended, so a failure costs a refusal and not an uncommitted row
+    // the next observation's barrier would hold the run over (R16's lesson,
+    // R28's occasion).
+    const gitDirProbe = run("git", ["-C", repoRoot, "rev-parse", "--absolute-git-dir"]);
+    if (gitDirProbe.code !== 0 || gitDirProbe.out.trim() === "") {
+      return {
+        ok: false,
+        why: `git could not name this checkout's git directory — the evidence commit has nowhere to build its tree; nothing was appended`,
+      };
+    }
+    const gitDir = gitDirProbe.out.trim();
     const headProbe = run("git", ["-C", repoRoot, "show", `${verifyRef}:${runLogRel}`]);
     const headText = headProbe.code === 0 ? headProbe.out : null;
     const diskText = readRunlog();
@@ -407,6 +427,7 @@ export async function commitObservationRow(
       message,
       ref: verifyRef,
       expectedTip,
+      gitDir,
       files: [...written.map((name) => `${relDir}/${name}`), runLogRel],
     });
     if (failure) {
