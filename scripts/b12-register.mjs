@@ -7,9 +7,10 @@
  * clauses then hold everyone to.
  *
  * THE ACT IS A COMPARE-AND-SWAP, never a working-tree commit. `register`
- * captures the branch ref and `expectedHead` ONCE; every OLD input is read
- * from `<expectedHead>:<path>`; every NEW candidate (the manifests, the
- * registration row's MEASUREMENTS) is generated or read ONCE, validated,
+ * captures the branch ref, `expectedHead`, and the candidate bytes ONCE and
+ * BEFORE VALIDATION — what is validated is exactly what registers; every OLD
+ * input is read from `<expectedHead>:<path>`; every NEW candidate (the
+ * manifests, the registration row's MEASUREMENTS) is generated or read ONCE,
  * written into the object store, laid into a TEMPORARY index over
  * `expectedHead`'s tree, committed with `git commit-tree <tree> -p
  * <expectedHead>`, and installed with `git update-ref <ref> <new>
@@ -150,8 +151,13 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
   }
 
   // A TEMPORARY index over expectedHead's tree — the real index and the
-  // working tree are not consulted and not touched.
-  const tmpIndex = path.join(repoRoot, ".git", `b12-register-index-${process.pid}`);
+  // working tree are not consulted and not touched. The location comes from
+  // git itself: in a LINKED WORKTREE `.git` is a FILE pointing at the real
+  // per-worktree git dir, so `path.join(repoRoot, ".git", ...)` would be a
+  // path under a file and every read-tree would fail.
+  const gitDirProbe = git(repoRoot, ["rev-parse", "--absolute-git-dir"]);
+  if (gitDirProbe.code !== 0) return { ok: false, why: "the git dir does not resolve" };
+  const tmpIndex = path.join(gitDirProbe.out.trim(), `b12-register-index-${process.pid}`);
   const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
   const withIndex = (args, input) => {
     const r = spawnSync("git", ["-C", repoRoot, ...args], { encoding: "utf8", env, input });
@@ -258,6 +264,11 @@ async function priorRunsGate(repoRoot, runId) {
   return reasons;
 }
 
+/**
+ * The operator's PREVIEW — `check` reads the DISK, because the candidates it
+ * previews are not committed yet and iterating on them is the point. The ACT
+ * never calls this: `registerRun` validates the CAPTURED state only.
+ */
 async function runCheck(repoRoot, runId) {
   const manifestA = loadJson(path.join(repoRoot, "evidence", `${runId}.b12.tasks.json`));
   const manifestB = loadJson(path.join(repoRoot, "evidence", `${runId}.b12.manifest-B.tasks.json`));
@@ -276,6 +287,97 @@ async function runCheck(repoRoot, runId) {
   }
   red.push(...(await priorRunsGate(repoRoot, runId)));
   return red;
+}
+
+/**
+ * THE ACT. CAPTURE PRECEDES VALIDATION: `expectedHead` and the candidate
+ * bytes are taken FIRST; the check then runs over exactly those — the parsed
+ * candidate buffers, every OLD input from `<expectedHead>:<path>` — and the
+ * SAME buffers go to the CAS. A disk edit after the capture cannot change
+ * what registers (the validated bytes are what lands); a commit after the
+ * capture fails `update-ref` instead of becoming a baseline nobody checked.
+ * The prior-runs gate reads the live repo, but any head movement between the
+ * capture and the swap fails the CAS, so a gate that saw a different head
+ * refuses rather than registers.
+ *
+ * `opts.gate` and `opts.afterCapture` are the ORACLE'S seams — the CLI passes
+ * neither. `afterCapture` runs between validation and the CAS, the exact
+ * window the capture discipline closes.
+ */
+export async function registerRun(repoRoot, runId, opts = {}) {
+  const gate = opts.gate ?? priorRunsGate;
+  // CAPTURE — before any validation.
+  const head = git(repoRoot, ["rev-parse", "HEAD"]);
+  if (head.code !== 0) return { ok: false, red: ["HEAD does not resolve"] };
+  const expectedHead = head.out.trim();
+  const aRel = `evidence/${runId}.b12.tasks.json`;
+  const bRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
+  let aBytes = null;
+  let bBytes = null;
+  try {
+    aBytes = readFileSync(path.join(repoRoot, aRel), "utf8");
+  } catch {
+    // Red below — the missing candidate is a check failure, not a crash.
+  }
+  try {
+    bBytes = readFileSync(path.join(repoRoot, bRel), "utf8");
+  } catch {
+    // Red below.
+  }
+  // VALIDATE the captured state, nothing else.
+  const parse = (text) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  };
+  const red = [];
+  const manifestA = aBytes === null ? null : parse(aBytes);
+  const manifestB = bBytes === null ? null : parse(bBytes);
+  if (manifestA === null) red.push("manifest A is missing or does not parse");
+  if (manifestB === null) red.push("manifest B is missing or does not parse — sealed in the SAME act (design.artifacts 2)");
+  if (manifestA !== null && manifestB !== null) {
+    const pilotId = manifestA?.pilotRunId ?? runId;
+    const pilotRel = `evidence/${pilotId}.b12.pilot.json`;
+    const pilotProbe = git(repoRoot, ["show", `${expectedHead}:${pilotRel}`]);
+    const pilot = pilotProbe.code === 0 ? parse(pilotProbe.out) : null;
+    if (pilotProbe.code !== 0 && existsSync(path.join(repoRoot, pilotRel))) {
+      red.push("the pilot exists on disk but not at expectedHead — commit it; the act reads OLD inputs from the captured head only");
+    }
+    red.push(...checkCore(manifestA, manifestB, pilot));
+  }
+  const sealProbe = git(repoRoot, ["show", `${expectedHead}:evidence/b12-harness-seal.json`]);
+  const seal = sealProbe.code === 0 ? parse(sealProbe.out) : null;
+  const harness = git(repoRoot, ["show", `${expectedHead}:scripts/b12-run.mjs`]);
+  if (seal === null) red.push("no evidence/b12-harness-seal.json at expectedHead — seal-harness is the barrier before any registration");
+  else if (harness.code !== 0 || seal.b12RunSha256 !== sha256Text(harness.out)) {
+    red.push("the harness seal does not name expectedHead's scripts/b12-run.mjs — the harness moved after sealing");
+  }
+  const oldMeasurementsProbe = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
+  if (oldMeasurementsProbe.code !== 0) {
+    red.push("expectedHead carries no MEASUREMENTS.jsonl — the append-only register must exist before an append");
+  }
+  red.push(...(await gate(repoRoot, runId)));
+  if (red.length > 0) return { ok: false, red };
+  if (opts.afterCapture) await opts.afterCapture();
+  const row =
+    JSON.stringify({
+      ts: stamp(),
+      b12_registration: true,
+      run_id: runId,
+      manifestSha256: sha256Text(aBytes),
+      manifestBSha256: sha256Text(bBytes),
+    }) + "\n";
+  return casCommit(repoRoot, {
+    expectedHeadOverride: expectedHead,
+    message: `b12 registration: ${runId}`,
+    candidates: [
+      { path: aRel, bytes: aBytes },
+      { path: bRel, bytes: bBytes },
+      { path: "MEASUREMENTS.jsonl", bytes: oldMeasurementsProbe.out + row },
+    ],
+  });
 }
 
 const isMain = (() => {
@@ -305,50 +407,28 @@ if (isMain) {
     process.stdout.write("check: GREEN\n");
   } else if (cmd === "register") {
     if (!runId) fail("usage: node scripts/b12-register.mjs register <runId>");
-    const red = await runCheck(repoRoot, runId);
-    if (red.length > 0) {
-      for (const r of red) process.stdout.write(`  RED  ${r}\n`);
-      fail("check is red — nothing may register");
+    const result = await registerRun(repoRoot, runId);
+    if (!result.ok) {
+      if (result.red !== undefined) {
+        for (const r of result.red) process.stdout.write(`  RED  ${r}\n`);
+        fail(`${result.red.length} red item(s) — nothing may register`);
+      }
+      fail(result.why);
     }
-    // The candidates, read ONCE — the same bytes the check just validated on
-    // disk are the bytes the act installs.
-    const aRel = `evidence/${runId}.b12.tasks.json`;
-    const bRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
-    const aBytes = readFileSync(path.join(repoRoot, aRel), "utf8");
-    const bBytes = readFileSync(path.join(repoRoot, bRel), "utf8");
-    const head = git(repoRoot, ["rev-parse", "HEAD"]);
-    if (head.code !== 0) fail("HEAD does not resolve");
-    const expectedHead = head.out.trim();
-    // Re-check the prior-runs gate against the CAPTURED head — the TOCTOU the
-    // CAS closes at the ref is closed here at the inputs.
-    const oldMeasurementsProbe = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
-    if (oldMeasurementsProbe.code !== 0) fail("expectedHead carries no MEASUREMENTS.jsonl — the append-only register must exist before an append");
-    const row =
-      JSON.stringify({
-        ts: stamp(),
-        b12_registration: true,
-        run_id: runId,
-        manifestSha256: sha256Text(aBytes),
-        manifestBSha256: sha256Text(bBytes),
-      }) + "\n";
-    const result = casCommit(repoRoot, {
-      expectedHeadOverride: expectedHead,
-      message: `b12 registration: ${runId}`,
-      candidates: [
-        { path: aRel, bytes: aBytes },
-        { path: bRel, bytes: bBytes },
-        { path: "MEASUREMENTS.jsonl", bytes: oldMeasurementsProbe.out + row },
-      ],
-    });
-    if (!result.ok) fail(result.why);
     if (result.postFailure) process.stderr.write(`b12-register: WARNING — ${result.postFailure}\n`);
     process.stdout.write(`registered: ${result.commit}\n(push is the operator's act; the debt is the run itself)\n`);
   } else if (cmd === "open-b") {
     if (!runId) fail("usage: node scripts/b12-register.mjs open-b <runId>");
+    // CAPTURE FIRST — every input below is read at `expectedHead`, and a
+    // commit landing after this line fails the CAS instead of becoming a
+    // baseline whose committed verdict nobody re-read.
+    const head = git(repoRoot, ["rev-parse", "HEAD"]);
+    if (head.code !== 0) fail("HEAD does not resolve");
+    const expectedHead = head.out.trim();
     // Lawful ONLY on a committed `open` — design.artifacts 2: "opened only if
     // run 1 returns `open`".
-    const resultProbe = git(repoRoot, ["show", `HEAD:evidence/${runId}.b12.result.json`]);
-    if (resultProbe.code !== 0) fail(`HEAD carries no evidence/${runId}.b12.result.json — run 1 has no committed result`);
+    const resultProbe = git(repoRoot, ["show", `${expectedHead}:evidence/${runId}.b12.result.json`]);
+    if (resultProbe.code !== 0) fail(`expectedHead carries no evidence/${runId}.b12.result.json — run 1 has no committed result`);
     let run1;
     try {
       run1 = JSON.parse(resultProbe.out);
@@ -358,13 +438,13 @@ if (isMain) {
     if (run1.verdict !== "open") fail(`run 1's committed verdict is ${JSON.stringify(run1.verdict)} — manifest B opens only on 'open'`);
     // The SEALED B blob, byte-identical from the registration commit.
     const bRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
-    const born = git(repoRoot, ["log", "--diff-filter=A", "--format=%H", "--", bRel]);
+    const born = git(repoRoot, ["log", expectedHead, "--diff-filter=A", "--format=%H", "--", bRel]);
     const regCommit = born.code === 0 ? born.out.trim().split("\n").filter(Boolean).pop() : undefined;
-    if (regCommit === undefined) fail(`${bRel} has no introducing commit`);
+    if (regCommit === undefined) fail(`${bRel} has no introducing commit at expectedHead`);
     const sealed = git(repoRoot, ["show", `${regCommit}:${bRel}`]);
-    const atHead = git(repoRoot, ["show", `HEAD:${bRel}`]);
+    const atHead = git(repoRoot, ["show", `${expectedHead}:${bRel}`]);
     if (sealed.code !== 0 || atHead.code !== 0 || sealed.out !== atHead.out) {
-      fail("manifest B at HEAD is not byte-identical to the sealed blob — the replication drifted");
+      fail("manifest B at expectedHead is not byte-identical to the sealed blob — the replication drifted");
     }
     let manifestB;
     try {
@@ -374,8 +454,6 @@ if (isMain) {
     }
     const run2Id = manifestB.runId;
     if (typeof run2Id !== "string" || run2Id === runId) fail("manifest B names no distinct runId for run 2");
-    const head = git(repoRoot, ["rev-parse", "HEAD"]);
-    const expectedHead = head.out.trim();
     const oldMeasurements = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
     if (oldMeasurements.code !== 0) fail("expectedHead carries no MEASUREMENTS.jsonl");
     const row =

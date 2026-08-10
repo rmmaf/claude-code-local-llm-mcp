@@ -53,3 +53,21 @@ export function sealHarness(
 
 /** The anti-stale-dist gate: a fresh build, or a thrown refusal. */
 export function freshBuild(repoRoot: string, command?: string | null): void;
+
+/**
+ * The act: capture `expectedHead` and the candidate bytes FIRST, validate
+ * exactly those (old inputs from `<expectedHead>:<path>`), CAS-commit the
+ * same buffers. `gate` and `afterCapture` are the oracle's seams — the CLI
+ * passes neither; `afterCapture` runs between validation and the CAS.
+ */
+export function registerRun(
+  repoRoot: string,
+  runId: string,
+  opts?: {
+    gate?: (repoRoot: string, runId: string) => Promise<string[]>;
+    afterCapture?: () => void | Promise<void>;
+  }
+): Promise<
+  | { ok: true; commit: string; postFailure?: string }
+  | { ok: false; red?: string[]; why?: string }
+>;

@@ -44,6 +44,16 @@ function whyOf<T extends { ok: boolean }>(r: T): string {
   return (r as unknown as { why: string }).why;
 }
 
+/** Narrow a `registerRun` result to its VALIDATION-red arm, loudly. */
+function redOf<T extends { ok: boolean }>(r: T): string[] {
+  if (r.ok) throw new Error("expected a red refusal; the call succeeded");
+  const red = (r as unknown as { red?: string[] }).red;
+  if (red === undefined) {
+    throw new Error(`expected red[], got why: ${String((r as unknown as { why?: string }).why)}`);
+  }
+  return red;
+}
+
 function git(cwd: string, args: string[]): string {
   const r = spawnSync("git", args, { cwd, encoding: "utf8" });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${r.stderr ?? ""}`);
@@ -224,6 +234,151 @@ describe("casCommit — the act, atomic at the ref", () => {
       encoding: "utf8",
     });
     expect(probe.status).not.toBe(0);
+  });
+
+  it("registers from a LINKED WORKTREE, where `.git` is a file, not a directory", async () => {
+    const { casCommit } = await import("../scripts/b12-register.mjs");
+    const root = tempRoot();
+    initRepo(root);
+    await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), `{"metric":"prior"}\n`, "utf8");
+    const mainHead = commitAll(root, "the pre-existing register");
+    const wtParent = tempRoot();
+    const wt = path.join(wtParent, "wt");
+    git(root, ["worktree", "add", "-q", "-b", "register-side", wt]);
+    // The premise of the failure mode, asserted: a temp index built under
+    // `repoRoot/.git/...` would be a path under this FILE.
+    expect((await fs.stat(path.join(wt, ".git"))).isFile()).toBe(true);
+
+    const result = casCommit(wt, {
+      message: "b12 registration: run-wt",
+      candidates: [{ path: "evidence/run-wt.b12.tasks.json", bytes: `{"runId":"run-wt"}\n` }],
+    });
+    expect(result.ok).toBe(true);
+    expect(git(wt, ["rev-parse", "HEAD"])).toBe(okOf(result).commit);
+    expect(git(wt, ["show", "HEAD:evidence/run-wt.b12.tasks.json"])).toBe(`{"runId":"run-wt"}`);
+    // The act landed on the worktree's OWN branch; the main checkout's did not move.
+    expect(git(root, ["rev-parse", "HEAD"])).toBe(mainHead);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registerRun — CAPTURE PRECEDES VALIDATION. The `afterCapture` seam sits in
+// the exact window the discipline closes: between the check over the captured
+// state and the CAS. A disk mutation there must register NOTHING it wasn't;
+// a concurrent commit there must fail the swap.
+// ---------------------------------------------------------------------------
+
+describe("registerRun — the act validates the captured state, and only that", () => {
+  const HARNESS = "export const HARNESS = 1;\n";
+
+  async function registerFixture(opts: { commitPilot?: boolean; withSeal?: boolean } = {}): Promise<{
+    root: string;
+    aPath: string;
+    aBytes: string;
+    bBytes: string;
+  }> {
+    const { commitPilot = true, withSeal = true } = opts;
+    const root = tempRoot();
+    initRepo(root);
+    await fs.mkdir(path.join(root, "scripts"), { recursive: true });
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), `{"metric":"prior"}\n`, "utf8");
+    await fs.writeFile(path.join(root, "scripts", "b12-run.mjs"), HARNESS, "utf8");
+    if (commitPilot) {
+      await fs.writeFile(path.join(root, "evidence", "run-r1.b12.pilot.json"), JSON.stringify(pilotOf()) + "\n", "utf8");
+    }
+    if (withSeal) {
+      await fs.writeFile(
+        path.join(root, "evidence", "b12-harness-seal.json"),
+        JSON.stringify({
+          schema: "b12-harness-seal/1",
+          sealedAt: "2026-08-10T00:00:00Z",
+          b12RunSha256: sha(HARNESS),
+          perArmTimeoutMs: 2_700_000,
+          extraArgs: [],
+        }) + "\n",
+        "utf8"
+      );
+    }
+    commitAll(root, "register + pilot + seal + harness");
+    if (!commitPilot) {
+      // The pilot exists on DISK only — the anchored check must refuse it.
+      await fs.writeFile(path.join(root, "evidence", "run-r1.b12.pilot.json"), JSON.stringify(pilotOf()) + "\n", "utf8");
+    }
+    const aBytes = JSON.stringify(manifestOf("run-r1", "a")) + "\n";
+    const bBytes = JSON.stringify(manifestOf("run-r2", "b")) + "\n";
+    const aPath = path.join(root, "evidence", "run-r1.b12.tasks.json");
+    await fs.writeFile(aPath, aBytes, "utf8");
+    await fs.writeFile(path.join(root, "evidence", "run-r1.b12.manifest-B.tasks.json"), bBytes, "utf8");
+    return { root, aPath, aBytes, bBytes };
+  }
+
+  const greenGate = async (): Promise<string[]> => [];
+
+  it("registers the green pair in one commit the observe guard then accepts", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { registrationGuard } = await import("../scripts/b12-run.mjs");
+    const { root, aBytes, bBytes } = await registerFixture();
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(result.ok).toBe(true);
+    expect(git(root, ["rev-parse", "HEAD"])).toBe(okOf(result).commit);
+    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
+    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.manifest-B.tasks.json"])).toBe(bBytes.trimEnd());
+    expect(registrationGuard(root, "run-r1", aBytes)).toEqual([]);
+  });
+
+  it("registers the CAPTURED bytes — a disk mutation between validation and the act changes NOTHING", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root, aPath, aBytes } = await registerFixture();
+    const result = await registerRun(root, "run-r1", {
+      gate: greenGate,
+      afterCapture: async () => {
+        await fs.writeFile(aPath, "NOT JSON — mutated in the window the capture closes\n", "utf8");
+      },
+    });
+    expect(result.ok).toBe(true);
+    // The committed blob is the VALIDATED buffer, not the disk's garbage.
+    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
+  });
+
+  it("REFUSES when a commit lands between validation and the act — the CAS fails, nothing registered", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    let concurrent = "";
+    const result = await registerRun(root, "run-r1", {
+      gate: greenGate,
+      afterCapture: async () => {
+        // A SURGICAL concurrent commit — `add -A` would sweep the candidate
+        // manifests off the disk into the concurrent commit and blur the probe.
+        await fs.writeFile(path.join(root, "unrelated.txt"), "someone else committed\n", "utf8");
+        git(root, ["add", "unrelated.txt"]);
+        git(root, ["commit", "-q", "-m", "a concurrent commit — its prior-run state was never checked"]);
+        concurrent = git(root, ["rev-parse", "HEAD"]);
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(whyOf(result)).toMatch(/CAS failed/);
+    // HEAD is exactly the concurrent commit; the act installed nothing.
+    expect(git(root, ["rev-parse", "HEAD"])).toBe(concurrent);
+    const probe = spawnSync("git", ["-C", root, "cat-file", "-e", "HEAD:evidence/run-r1.b12.tasks.json"], {
+      encoding: "utf8",
+    });
+    expect(probe.status).not.toBe(0);
+    expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).not.toMatch(/b12_registration/);
+  });
+
+  it("refuses a pilot that exists on disk but was never committed — old inputs come from the captured head", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture({ commitPilot: false });
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(redOf(result).join(" ")).toMatch(/on disk but not at expectedHead/);
+  });
+
+  it("refuses with no seal at expectedHead — seal-harness is the barrier", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture({ withSeal: false });
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(redOf(result).join(" ")).toMatch(/seal-harness is the barrier/);
   });
 });
 

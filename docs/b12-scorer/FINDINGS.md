@@ -1138,6 +1138,34 @@ the record of when it was true):
   beside the new `clientTruncationCap` probe
   (`scripts/b12-truncationcap-probe-mac.sh`, voidConditions 8's measurement).
 
+### POST-IMPLEMENTATION ADVERSARIAL ROUND (R8) — adjudicated 2026-08-10
+
+Codex reviewed the full branch diff (38 files) and returned two high
+findings, BOTH confirmed against the repo and fixed with controls:
+
+- **R8#1 — the CAS was unusable from a linked worktree.** `casCommit` built
+  its temporary index at `path.join(repoRoot, ".git", ...)`, but in a linked
+  worktree `.git` is a FILE pointing at the per-worktree git dir — every
+  `read-tree` failed (fail-closed, but the register could never act from the
+  layout this repo itself uses). The index location now comes from
+  `git rev-parse --absolute-git-dir`; the control registers from a real
+  `git worktree add` checkout and asserts the premise (`.git` is a file).
+- **R8#2 — validation ran OUTSIDE the state the CAS captured.** `register`
+  validated via a disk/HEAD `runCheck`, then re-read the candidate bytes,
+  then captured `expectedHead` — so a disk edit could swap a validated
+  manifest before the read, and a commit landing before the capture became
+  the accepted baseline unchecked. The header's own promise ("captured ONCE",
+  "OLD inputs from `<expectedHead>:<path>`") was not what the code did. The
+  act is now `registerRun`: capture `expectedHead` and the candidate buffers
+  FIRST, validate exactly those (pilot, seal, harness and MEASUREMENTS read
+  from `<expectedHead>:<path>`; an on-disk-only pilot is refused by name),
+  and pass the SAME buffers to the CAS — any later ref movement fails
+  `update-ref`, so every race is fail-closed. `open-b` got the same
+  capture-first reordering. Controls sit in the exact window (`afterCapture`
+  seam, CLI never passes it): a disk mutation between validation and the act
+  registers the VALIDATED bytes; a concurrent commit fails the CAS with
+  nothing installed. `check` remains the DISK preview, documented as such.
+
 ---
 
 ## CLOSED
