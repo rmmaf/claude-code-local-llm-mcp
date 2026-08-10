@@ -136,6 +136,24 @@ const pilotOf = (): Record<string, unknown> => ({
   observations: Array.from({ length: 5 }, (_unused, i) => ({ taskId: `pilot-${i + 1}` })),
 });
 
+describe("runIdMismatch — one identity in three places", () => {
+  it("fires only on DISAGREEMENT, and leaves absence to the gaps predicate", async () => {
+    // R20. The CLI argument names the path and fills the row; `observe` looks
+    // a run up by the manifest's OWN runId. Agreement is the whole rule.
+    const { runIdMismatch } = await import("../scripts/b12-register.mjs");
+    expect(runIdMismatch("run-r1", manifestOf("run-r1", "a"))).toBeNull();
+    const disagreeing = runIdMismatch("run-r1", manifestOf("run-r9", "a"));
+    expect(disagreeing).toMatch(/ONE identity/);
+    expect(disagreeing).toMatch(/run-r9/);
+    expect(disagreeing).toMatch(/run-r1/);
+    // Absence is `manifestDeclarationGaps`' finding — saying it twice, in two
+    // voices, is how a reader learns to skim reds.
+    expect(runIdMismatch("run-r1", {})).toBeNull();
+    expect(runIdMismatch("run-r1", { runId: "" })).toBeNull();
+    expect(runIdMismatch("run-r1", null)).toBeNull();
+  });
+});
+
 describe("checkCore — the pure red reasons, firing and not firing", () => {
   it("is GREEN on the generated pair with a disjoint five-task pilot", async () => {
     const { checkCore } = await import("../scripts/b12-register.mjs");
@@ -325,6 +343,31 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.manifest-B.tasks.json"])).toBe(bBytes.trimEnd());
     expect(registrationGuard(root, "run-r1", aBytes)).toEqual([]);
+  });
+
+  it("REFUSES a manifest whose OWN runId is not the one being registered — and moves nothing", async () => {
+    // R20: the act writes `evidence/<runId>.b12.tasks.json` and a row saying
+    // `run_id: <runId>`, both from the CLI argument, while `observe` derives
+    // its canonical path and its registration lookup from the manifest's
+    // INTERNAL id. A typo would commit a row no session can use and no result
+    // can close — and the prior-runs gate then refuses every later
+    // registration as abandoned, forever, since the register is append-only.
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root, aPath } = await registerFixture();
+    await fs.writeFile(aPath, JSON.stringify(manifestOf("run-r9", "a")) + "\n", "utf8");
+    const headBefore = git(root, ["rev-parse", "HEAD"]);
+    const measBefore = await fs.readFile(path.join(root, "MEASUREMENTS.jsonl"), "utf8");
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(result.ok).toBe(false);
+    // ONE red, and it is this one — the fixture is otherwise green.
+    expect(redOf(result)).toHaveLength(1);
+    expect(redOf(result)[0]).toMatch(/ONE identity/);
+    // HEAD, the register and the working tree are exactly as they were.
+    expect(git(root, ["rev-parse", "HEAD"])).toBe(headBefore);
+    expect(await fs.readFile(path.join(root, "MEASUREMENTS.jsonl"), "utf8")).toBe(measBefore);
+    expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).not.toMatch(/b12_registration/);
+    expect(git(root, ["status", "--porcelain", "--", "MEASUREMENTS.jsonl"])).toBe("");
+    expect(existsSync(path.join(root, "evidence", "run-r9.b12.tasks.json"))).toBe(false);
   });
 
   it("registers the CAPTURED bytes — a disk mutation between validation and the act changes NOTHING", async () => {

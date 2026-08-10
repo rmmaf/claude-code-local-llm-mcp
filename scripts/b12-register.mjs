@@ -135,6 +135,36 @@ export function checkCore(manifestA, manifestB, pilot) {
 }
 
 /**
+ * ONE IDENTITY IN THREE PLACES. `voidConditions` 1 registers a run as
+ * "evidence/<run_id>.b12.tasks.json committed AND its run_id written to
+ * MEASUREMENTS.jsonl BY THE SAME COMMAND" — so the path, the row and the
+ * manifest's own `runId` are the same string or the act registers nothing
+ * usable. The CLI argument picks the PATH and fills the ROW; `observe`
+ * derives BOTH its canonical-path check and its registration lookup from the
+ * manifest's INTERNAL `runId`. A typo therefore commits a path and a row
+ * nobody will ever look for: observe refuses the manifest as non-canonical,
+ * and the register keeps a registration row for a run that can never produce
+ * a result — after which the prior-runs gate refuses EVERY later
+ * registration as abandoned, permanently, because an append-only record is
+ * never back-filled.
+ *
+ * `open-b` already takes run 2's id FROM the sealed manifest B; this is what
+ * makes `register` agree. Syntax is `manifestDeclarationGaps`' job, so this
+ * predicate speaks only about agreement, and only when there is a string to
+ * disagree with. Pure.
+ */
+export function runIdMismatch(requestedRunId, manifestA) {
+  const internal = manifestA?.runId;
+  if (typeof internal !== "string" || internal === "") return null; // the gaps predicate owns absence
+  if (internal === requestedRunId) return null;
+  return (
+    `manifest A carries runId ${JSON.stringify(internal)} but the act was asked to register ${JSON.stringify(requestedRunId)} — ` +
+    `the path, the MEASUREMENTS row and the manifest's own id are ONE identity (voidConditions 1), and observe looks the run up ` +
+    `by the manifest's; registering the other name would commit a row no session can ever use and no result can ever close`
+  );
+}
+
+/**
  * THE CAS COMMIT. `candidates` are the NEW bytes, each read or generated
  * exactly once by the caller; everything else in the tree rides through from
  * `expectedHead` untouched. Returns without side effects on ANY failure
@@ -506,6 +536,8 @@ async function runCheck(repoRoot, runId) {
   const red = [];
   if (manifestA === null) red.push("manifest A is missing or does not parse");
   if (manifestB === null) red.push("manifest B is missing or does not parse — sealed in the SAME act (design.artifacts 2)");
+  const previewMismatch = runIdMismatch(runId, manifestA);
+  if (previewMismatch !== null) red.push(previewMismatch);
   if (manifestA !== null && manifestB !== null) red.push(...checkCore(manifestA, manifestB, pilot));
   // The seal, present and naming HEAD's harness bytes.
   const seal = loadJson(path.join(repoRoot, "evidence", "b12-harness-seal.json"));
@@ -598,6 +630,10 @@ export async function registerRun(repoRoot, runId, opts = {}) {
   const manifestB = bBytes === null ? null : parse(bBytes);
   if (manifestA === null) red.push("manifest A is missing or does not parse");
   if (manifestB === null) red.push("manifest B is missing or does not parse — sealed in the SAME act (design.artifacts 2)");
+  // The identity, before anything is built from it: the act is about to write
+  // `evidence/<runId>.b12.tasks.json` and a row saying `run_id: <runId>`.
+  const mismatch = runIdMismatch(runId, manifestA);
+  if (mismatch !== null) red.push(mismatch);
   if (manifestA !== null && manifestB !== null) {
     const pilotId = manifestA?.pilotRunId ?? runId;
     const pilotRel = `evidence/${pilotId}.b12.pilot.json`;

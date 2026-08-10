@@ -17,21 +17,23 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R19 (post-implementation adversarial rounds) are ADJUDICATED — twenty-two
+R8–R20 (post-implementation adversarial rounds) are ADJUDICATED — twenty-three
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
 surface — the post-registration sync, from disk bytes to an APPEND to an
 index installed under git's own mutex. **R16 was the worst: the real index
 stayed on `expectedHead`, so the operator's next ordinary commit UNDID the
-registration (reproduced).** **R18: the register's append is now RE-READ (an
-interleave loses no bytes and still breaks the committed-prefix invariant),
-and the runlog row + its evidence commit became ONE act under a run-wide
-lock — OVERTURNING R11's declination, whose premise (the barrier serializes)
-is false, since both processes pass it before either appends.** **R19: that
+registration (reproduced).** **R18: the register's append is now RE-READ, and
+the runlog row + its evidence commit became ONE act under a run-wide lock —
+OVERTURNING R11's declination, whose premise (the barrier serializes) is
+false, since both processes pass it before either appends.** **R19: that
 mutex is an INDEX lock — the ref is now read by NAME AND TARGET under it, the
-file writes moved INSIDE it, and the residual it cannot cover (`update-ref`,
-`reset --soft`) is written down rather than implied.**
+writes moved INSIDE it, and the residual it cannot cover is written down.**
+**R20 leaves concurrency entirely: the act took the run's IDENTITY from the
+CLI argument and never asked the manifest, so a typo would register a row no
+session can use and no result can close — and an append-only register then
+refuses every later registration as abandoned, forever.**
 PR to main is open — merge is the user's act.
 
 ## Still blocking a run

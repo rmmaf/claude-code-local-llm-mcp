@@ -12,6 +12,16 @@ export function checkCore(
 ): string[];
 
 /**
+ * The reason the requested run id and manifest A's own `runId` are not one
+ * identity, or null. The path, the MEASUREMENTS row and the manifest's id are
+ * the same string (voidConditions 1) and `observe` looks a run up by the
+ * manifest's — so a mismatch registers a row no session can use and no result
+ * can close. Absence is `manifestDeclarationGaps`' finding, not this one's.
+ * Pure.
+ */
+export function runIdMismatch(requestedRunId: string, manifestA: unknown): string | null;
+
+/**
  * The registration act as a compare-and-swap at the branch ref. New bytes
  * become blobs, lie into a TEMPORARY index over expectedHead's tree, commit
  * with `-p expectedHead`, and install only if the ref still points there.

@@ -1592,6 +1592,45 @@ seam fires `git update-ref` in the one window the mutex cannot own; the
 register file, the index and HEAD are all proved unchanged, and the failure
 names what happened. The held-lock control gained the same file assertion.
 
+### THIRTEENTH POST-IMPLEMENTATION ROUND (R20) — adjudicated 2026-08-10
+
+One high finding, and it leaves the concurrency surface entirely: **the run's
+IDENTITY was never checked against the manifest that carries it.**
+
+`registerRun` validated each manifest's `runId` SYNTAX (`manifestDeclaration
+Gaps`) and that A and B differ (`checkCore`), and then took the path
+`evidence/<cliId>.b12.tasks.json` and the row's `run_id` from the CLI
+argument — never asking whether manifest A's own `runId` was that string.
+`observe` derives BOTH its canonical-path check and its `registrationGuard`
+lookup from the manifest's INTERNAL id, so a typo registers a path and a row
+nobody will ever look for. The severity is in what happens next: the register
+is APPEND-ONLY and is never back-filled, so the bogus row sits there as a
+registered run with no committed result, and `priorRunsGate` then refuses
+EVERY later registration — "clause 1 refuses a new registration over an
+abandoned one" — permanently, with no lawful repair.
+
+`voidConditions` 1 already said it: a run is registered as
+"evidence/<run_id>.b12.tasks.json committed AND its run_id written to
+MEASUREMENTS.jsonl BY THE SAME COMMAND". One identity, three places. And the
+repo already had the right shape one function away — **`open-b` takes run 2's
+id FROM the sealed manifest B** and builds both its path and its row from
+that. New pure `runIdMismatch` makes `register` agree; both the ACT and the
+`check` preview call it, so the operator sees it before spending anything.
+
+Deliberately narrow: absence and grammar stay `manifestDeclarationGaps`'
+findings (the predicate returns null for a missing or empty id) — two voices
+saying one thing is how a reader learns to skim reds.
+
+**The control fires**: with the red suppressed, `registerRun` returns
+`ok: true` and commits run-r9's manifest under run-r1's path and row. With
+it, the refusal is the ONLY red on an otherwise green fixture, and HEAD, the
+register on disk, HEAD's register, the working tree and the would-be second
+path are all proved unchanged.
+
+This is the third finding of the eleven-round arc that lived where a rule was
+already written down and the code did something else (R13, R14#2, R16#1) —
+here the frozen text names the identity, and only the syntax was enforced.
+
 ---
 
 ## CLOSED
