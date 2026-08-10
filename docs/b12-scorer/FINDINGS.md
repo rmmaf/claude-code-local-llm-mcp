@@ -1096,6 +1096,48 @@ an aggregate is precisely what would. Encoded with teeth: `assertPilotShape`
 (`scripts/b12-run.mjs`) refuses every aggregate/bracket spelling at any depth
 on every pilot write, and the negative controls hold it there.
 
+### THE "per-task DENOMINATOR share" FORMULA — registered 2026-08-10, BEFORE the seal
+
+The frozen name (`thresholdArgument`) is "per-task DENOMINATOR share", and the
+metric's denominator is `A + S` (`aggregate.ts`'s `poolRatio`: `(S + refused −
+O) / (A + S + refused)`) — but `assemble.ts` computed `aO / Σ aO`, a share of
+A alone (the seventh adversarial round, finding 12). Adjudicated before any
+seal, never inside a run:
+
+**The registered formula: `share_t = (A_t + S_t,lo) / Σ_admitted (A + S_lo)`
+— the task's share of the metric's OWN denominator, on the DECIDING lo
+horizon** (the same horizon `aPlusSPositive` registers one field above, and
+the one the per-task recomputation in `aggregate.ts` already uses). The
+manifest's `perTaskDenominatorShareCap` (0.25 — one of the two CHOSEN
+constants artifact 1 requires, beside `pacingCacheWriteShareCeiling` 0.9)
+stays a DECLARED covariate: reported beside the share, deciding nothing — a
+live predicate here would mint a void the frozen text never wrote. Encoded
+with teeth: the unequal-S test in `tests/b12-assemble.test.ts` pins two
+observations whose A-only shares and registered shares disagree, hand-derived.
+
+### PASSE C SUPERSESSIONS — dated 2026-08-10
+
+Two 2026-08-08 shapes recorded above are superseded (the old text stays as
+the record of when it was true):
+
+- **The policy blob is no longer a live file beside a hash map.** The
+  manifest seals GIT PROVENANCE — `{repo, commit, path, sha256}` per arm —
+  and delivery reads the policy repo's object store (`git cat-file blob
+  <commit>:<path>`), so no working-tree file exists to move mid-arm at all.
+  Missing clone (the bundle-transport step, named), shallow clone,
+  unreachable commit or path, non-UTF-8 bytes and a moved hash are each their
+  own refusal; the in-base-tree shadow check retired with nothing left to
+  guard, and the pre/post instruction hash re-reads the object store (drift
+  there means the STORE moved).
+- **The calibration key's policy-blob component is DUAL** —
+  `policyBlobSha256s {treatment, control}` — because BOTH arms deliver their
+  own blob via `--append-system-prompt` inside the measured delta. The
+  committed 2026-08-08 probe artifact carries the singular pre-dual key and
+  can never calibrate a registrable manifest again; the validator refuses it
+  BY NAME, and the Mac re-probe under the sealed blobs is on the calendar
+  beside the new `clientTruncationCap` probe
+  (`scripts/b12-truncationcap-probe-mac.sh`, voidConditions 8's measurement).
+
 ---
 
 ## CLOSED

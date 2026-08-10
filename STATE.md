@@ -5,52 +5,45 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**F23 SHIPPED — THE ARTIFACT CARRIES BOTH BRACKETS, through a seven-round
-adversarial plan gate (R1–R4 unsound; R5 sound-with-changes; R6/R7 unsound on
-the consolidation, ~66 findings adjudicated).** `uncappedBracket { rLo, rHi }`
-is summed from rows priced WHOLE: `unitsUncapped`/`unitsLoUncapped` on the
-credited ledger row → `sLoUncapped`/`sHiUncapped` in the same credited branch
-→ the four-form `PricedForm` selector; jackknife/strata/hold/deliveries keep
-`"lo" | "hi"` (compile-time refusal); `reinstate` zeroes all four sums,
-`withoutLargestRow` subtracts all four ranking capped. Clause 8 is a LIVE
-predicate — fires iff `!(Number.isFinite(cap) && cap > 0)` or any of the four
-bounds non-finite, on the constructed result AND on the real serializer's
-bytes (tests). Default assemble oracle: ZERO fired checks; the default void is
-the arithmetic's clause 3. `rates.json` restored byte-identical to `3541625`.
-Gate baseline AMENDED: 4 stable Windows failures + 3 KNOWN-FLAKY
-`b12-archive` hostile-disk tests (full-suite-only, pass solo, pre-existing on
-main) — identity by `{file, fullName}` set, never count.
+**PASSE C SHIPPED — the instrument's operator surface exists end to end** on
+`claude/b12-f23-audit-register`: the `pilot` subcommand (the "No units"
+reading registered); `b12-register.mjs` check/register/open-b/seal-harness
+(the act as a CAS transaction, create-only seal, cardinalities 30/5/6);
+admissionRule 7's terminal-marker-first grammar over ALL tasks, both
+implementations compared; the observe registration guard (same introducing
+commit, MEASUREMENTS by byte prefix); sessionId nonce+lock + snapshot
+identity stamps end to end; policy blobs as GIT PROVENANCE — the manifest
+seals `{repo, commit, path, sha256}` per arm, delivery reads the object
+store; the calibration key gone DUAL (`policyBlobSha256s
+{treatment, control}` — the committed 2026-08-08 probe is pre-dual and
+refused by name); the hardened Mac probes (installedchars extended, NEW
+`b12-truncationcap-probe-mac.sh`); `b12-author.mjs` — one spec, one sibling,
+five named checks with its own eight-test wave; the R7#12 share formula
+registered: `(A_t + S_t,lo) / Σ(A + S_lo)`, covariate, deciding nothing.
+Gate oracle held at every chunk: STABLE_4 by `{file, fullName}` +
+the fs/git-heavy STACK_TRACE_ERROR flake CLASS (solo-green absorption only).
 
 ## Next action
 
-**Passe C — the operator tooling**: `pilot` subcommand (the "No units"
-adjudication registered); `b12-register.mjs` check/register/open-b/
-seal-harness (CAS with new blobs by object id, cardinalities 30/5/6);
-admissionRule 7 over ALL tasks with the terminal-marker-first grammar;
-b12-author.mjs + its own test wave; the hardened Mac probes; policy blobs as
-a git repo + bundle transport; the observe registration guard (MEASUREMENTS
-prefix-preservation, same introducing commit); sessionId uniqueness + snapshot
-identity stamps END-TO-END (mandatory, no out-of-scope escape).
+The user triggers `/codex:adversarial-review` on the branch; adjudicate every
+finding against the frozen text; fixes + controls; gate; PR to main.
 
-**The audit computer SHIPPED** (audit.ts: pure decider + collector +
-`--attest-suite`; AUDIT_INPUT_KEYS literal, producer round-trip asserted; the
-emission wrapper extracted to src/cost/emission.ts under an 8-cell conformity
-matrix; all SIX clause-6 controls now exist — F26: the failed-repair control
-was missing entirely and no round of seven caught it).
+## Still blocking a run
 
-**Still blocking a run:** Phase-3 1/3 INCONCLUSIVE (gate-only is CUT — the
-registered rule names it for 0/3 only; only a NEW pre-data amendment can
-seal); the contract-stability ladder (and F23 GREW report.ts — re-run before
-Phase 4); the sealed-blob re-probe of `installedChars`; the platform
-amendment (runPlan froze "one Windows box"; the run is the Mac's); manifests
-unsealed (Phase 4); **VOID 21 and VOID 12 stay UNADJUDICATED — NO A/B before
-both are registered.**
+The A/B pass (scorer + VOID 21 and VOID 12 adjudications — **NO A/B before
+both are registered**); the 65-sibling corpus (b12-author compresses it); the
+Mac trips: policy-repo bundle transport, re-probe of `installedChars` under
+the sealed DUAL blobs, the cap probe run, formal preflight, pilot; the
+platform amendment (runPlan froze "one Windows box"; the run is the Mac's —
+pre-data, after the exploratory cert, before the formal preflight); the
+Phase-3 1/3 amendment (gate-only is CUT; only a NEW pre-data amendment
+seals); contract-stability re-run (F23 grew report.ts); then seal-harness →
+register (CAS) → the 20–26 supervised sessions → the clause-6 sequence →
+verdict → A/B.
 
 ## Do not redo
 
 - The O-bracket is DECLINED and so are its cousins: no control-arm
-  `installedChars`, no minted VOID-21 hash, no minted F25 disposition, no
-  minted verdict-precedence RULE — conventions are REGISTERED and labelled.
-- Never back-fill an append-only record; three phase-3 run ids stay row-less
-  in `MEASUREMENTS.jsonl` by design.
+  `installedChars`, no minted VOID-21 hash, no minted verdict-precedence RULE.
+- Never back-fill an append-only record; three phase-3 run ids stay row-less.
 - `tests/fixtures/b12-run/` is TEST MATERIAL, never evidence.

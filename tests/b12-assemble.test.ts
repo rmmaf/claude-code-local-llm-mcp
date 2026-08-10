@@ -105,6 +105,60 @@ describe("the default archive — one coherent value, and what fires on it", () 
     expect(out.result.admitted).toBe(1);
   });
 
+  it("perTaskDenominatorShare is the share of the METRIC'S denominator — A + S_lo, never A alone", () => {
+    // The seventh round (R7#12): the frozen name is "per-task DENOMINATOR
+    // share" and the metric's denominator is A + S — but this computed
+    // aO / ΣaO. Two observations with EQUAL A and UNEQUAL S expose the
+    // difference: A-only says 0.5 and 0.5; the registered formula
+    // (A_t + S_t,lo) / Σ(A + S_lo), deciding lo horizon, does not. A
+    // covariate — reported beside the manifest's cap constant, deciding
+    // nothing.
+    const id = "aaaaaaaa-1111-2222-3333-444444444444";
+    const out = assemble(
+      archiveOf({
+        tasks: [taskOf("t1"), taskOf("t2")],
+        observations: [
+          obsOf("t1", {
+            records: [
+              billed("rq-t1", "sess-t1-1", 0, {
+                write1h: 1_000,
+                content: [{ type: "tool_use", id: "tu-t1", name: "mcp__local-coder__gate" }],
+              }),
+              toolResultRec("sess-t1-1", "tu-t1", 500, {
+                content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }],
+              }),
+              // The saving is priced against the request FOLLOWING the call —
+              // without one, the row cannot credit and S stays 0.
+              billed("rq-t1b", "sess-t1-1", 1_000, { write1h: 100 }),
+            ],
+            telemetry: [telemetryRow(600, { invocation_id: id })],
+            record: { originatedRequestIds: ["rq-t1", "rq-t1b"] },
+          }),
+          obsOf("t2"),
+        ],
+      })
+    );
+    const cf1 = cfOf(out, "t1")!;
+    const cf2 = cfOf(out, "t2")!;
+    // The premise, asserted rather than assumed: t1 credits one collapsed
+    // gate call, t2 credits nothing — unequal S parcels.
+    expect(cf1.disposition).toBe("scored");
+    expect(cf2.disposition).toBe("scored");
+    expect(cf1.sLo).toBeGreaterThan(0);
+    expect(cf2.sLo).toBe(0);
+    // Hand-derived: sLo_1 = (5,000 − 1,000 saved chars) / 3.7 × 2.0 (1h lo).
+    const s1 = (4_000 / 3.7) * 2.0;
+    expect(cf1.sLo).toBeCloseTo(s1, 9);
+    const denom = cf1.aO + s1 + cf2.aO;
+    expect(cf1.perTaskDenominatorShare).toBeCloseTo((cf1.aO + s1) / denom, 12);
+    expect(cf2.perTaskDenominatorShare).toBeCloseTo(cf2.aO / denom, 12);
+    // The A-only formula would put t1's share at aO/(ΣaO); the registered one
+    // shifts the S-heavy task's share up, and the shares still sum to 1.
+    const aOnlyShare = cf1.aO / (cf1.aO + cf2.aO);
+    expect(cf1.perTaskDenominatorShare!).toBeGreaterThan(aOnlyShare + 0.05);
+    expect(cf1.perTaskDenominatorShare! + cf2.perTaskDenominatorShare!).toBeCloseTo(1, 12);
+  });
+
   it("the registered conventions are labelled on the artifact, not buried", () => {
     const out = assemble(archiveOf());
     expect(out.result.dispositionPrecedence).toMatch(/REGISTERED CONVENTION/);

@@ -1009,6 +1009,10 @@ export interface CounterfactualObservation {
   subagentShare: Evaluable<SubagentShare>;
   requestsPerSegment: Array<{ thread: string; segment: number; requests: number }>;
   rateKeys: string[];
+  /** `(A_t + S_t,lo) / Σ_admitted (A + S_lo)` — the task's share of the
+   * metric's OWN denominator, deciding lo horizon (the registered R7#12
+   * formula; FINDINGS.md). A covariate beside the manifest's cap constant,
+   * reported and deciding nothing. Null on a non-admitted observation. */
   perTaskDenominatorShare: number | null;
   binaryVersion: string | null;
   binarySha256: string | null;

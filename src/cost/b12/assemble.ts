@@ -454,10 +454,16 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     firedChecks.length > 0 ? `${firedChecks[0]!.clause}: ${firedChecks[0]!.detail}` : base.voidClause;
 
   // ---- artifact 7 ----------------------------------------------------------
-  const admittedSumA = admitted.reduce((sum, t) => sum + t.aO, 0);
+  // The share's denominator is the METRIC'S denominator — Σ(A + S), because
+  // the frozen name is "per-task DENOMINATOR share" and the ratio's
+  // denominator is A + S (aggregate.ts's poolRatio), not A alone (the
+  // seventh adversarial round caught this computing aO / ΣaO). Horizon: the
+  // DECIDING lo horizon, the same convention `aPlusSPositive` registers one
+  // field above and the per-task recomputation already uses.
+  const admittedSumAPlusSLo = admitted.reduce((sum, t) => sum + t.aO + t.sLo, 0);
   const counterfactualObservations = assessed
     .filter((a) => a.terms !== null)
-    .map((a) => counterfactualOf(a, admitted.includes(a.terms!), admittedSumA));
+    .map((a) => counterfactualOf(a, admitted.includes(a.terms!), admittedSumAPlusSLo));
 
   // not_started: lawful, and reported with its disposition (`admissionRule` 2).
   // These are manifest entries with NO observation — they never had terms, so
@@ -796,7 +802,7 @@ function requestsPerSegment(
 }
 
 /** Artifact 7's per-observation entry, from what was already computed. */
-function counterfactualOf(a: Assessed, isAdmitted: boolean, admittedSumA: number): CounterfactualObservation {
+function counterfactualOf(a: Assessed, isAdmitted: boolean, admittedSumAPlusSLo: number): CounterfactualObservation {
   const terms = a.terms!;
   const record = a.obs.record;
   const classes = ["ambiguous", "unverifiable", "excludedForeign", "unmatched"] as const;
@@ -820,8 +826,13 @@ function counterfactualOf(a: Assessed, isAdmitted: boolean, admittedSumA: number
     subagentShare: terms.subagentShare,
     requestsPerSegment: a.requestsPerSegment,
     rateKeys: terms.rateKeys,
+    // REGISTERED FORMULA (FINDINGS.md, R7#12): share_t = (A_t + S_t,lo) /
+    // Σ_admitted (A + S_lo) — the task's share of the metric's OWN
+    // denominator on the deciding lo horizon. A COVARIATE: reported beside
+    // the manifest's perTaskDenominatorShareCap, deciding nothing — a live
+    // predicate here would mint a void the frozen text never wrote.
     perTaskDenominatorShare:
-      isAdmitted && admittedSumA > 0 ? terms.aO / admittedSumA : null,
+      isAdmitted && admittedSumAPlusSLo > 0 ? (terms.aO + terms.sLo) / admittedSumAPlusSLo : null,
     binaryVersion: record?.binaryVersion ?? null,
     binarySha256: record?.binarySha256 ?? null,
     baseCommit: record?.baseCommit ?? null,
