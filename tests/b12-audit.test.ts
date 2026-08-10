@@ -19,12 +19,14 @@ import {
   AUDIT_INPUT_KEYS,
   AuditRefused,
   attestationFromVitest,
+  attestationProblems,
   auditInputs,
   buildAuditArtifact,
   collectAuditFacts,
   CONFORMANCE_FILES,
   CONTROL_TESTS,
   decideAudit,
+  suiteRunRefusal,
   workingTreeDirtOutsideEvidence,
   type AuditFacts,
   type Git,
@@ -292,6 +294,95 @@ describe("attestationFromVitest — the reporter payload, narrowed", () => {
     const att = attestationFromVitest("replay-01", "s".repeat(40), at(0), payload);
     expect(att.files).toEqual([{ file: "tests/cost-meter.test.ts", total: 3, passed: 1, failed: 1, skipped: 1 }]);
     expect(att.tests.map((t) => t.status)).toEqual(["passed", "failed", "skipped"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R12: the suite command's own verdict, and the attestation's runtime shape.
+// A passing REPORT is not a passing RUN, and committed bytes are not what the
+// types promise.
+// ---------------------------------------------------------------------------
+
+describe("the suite command's verdict — a passing report is not a passing run", () => {
+  const payload = JSON.stringify({
+    testResults: [
+      { name: "C:\\repo\\tests\\cost-meter.test.ts", assertionResults: [{ fullName: "a b", status: "passed" }] },
+    ],
+  });
+
+  it("REFUSES a non-zero exit even when every reported test passed", () => {
+    const { refusal, jsonLine } = suiteRunRefusal({ status: 1, signal: null, stdout: payload });
+    expect(jsonLine).toBeNull();
+    expect(refusal).toMatch(/exited 1 .*may not produce a PASSING attestation/);
+  });
+
+  it("REFUSES a signalled run, a runner that never answered, and a report-less stdout", () => {
+    expect(suiteRunRefusal({ status: null, signal: "SIGKILL", stdout: payload }).refusal).toMatch(/killed by SIGKILL/);
+    expect(suiteRunRefusal({ error: new Error("ENOENT"), status: null, signal: null, stdout: "" }).refusal).toMatch(
+      /did not answer/
+    );
+    expect(suiteRunRefusal({ status: 0, signal: null, stdout: "no json here\n" }).refusal).toMatch(/no JSON payload/);
+  });
+
+  it("passes the payload through on a clean exit — the only door to an attestation", () => {
+    const { refusal, jsonLine } = suiteRunRefusal({ status: 0, signal: null, stdout: `noise\n${payload}\n` });
+    expect(refusal).toBeNull();
+    expect(jsonLine).toBe(payload);
+  });
+});
+
+describe("the attestation's runtime shape — committed bytes are not the type", () => {
+  it("VOIDS a counter-less file entry that once satisfied the full-suite check", () => {
+    // `{file}` alone: `undefined > 0` twice false, `undefined !== undefined`
+    // false — the exact bypass, with every control marked passed.
+    const att = attestationOf("s".repeat(40), {
+      files: CONFORMANCE_FILES.map((file) => ({ file })) as SuiteAttestation["files"],
+    });
+    expect(attestationProblems(att).join(" ")).toMatch(/counters are not all non-negative integers/);
+    const { verdict, reasons } = decideAudit(factsOf({ clause6: { ...factsOf().clause6, attestation: att } }));
+    expect(verdict).toBe("void");
+    expect(reasons.join(" ")).toMatch(/clause 6: tests\/cost-meter\.test\.ts: the attestation's counters/);
+  });
+
+  it("VOIDS zero-test files, counters that do not add up, duplicates, and non-integers", () => {
+    const withFiles = (files: unknown): SuiteAttestation =>
+      attestationOf("s".repeat(40), { files: files as SuiteAttestation["files"] });
+    const base = { total: 10, passed: 10, failed: 0, skipped: 0 };
+    expect(
+      attestationProblems(withFiles(CONFORMANCE_FILES.map((file) => ({ ...base, file, total: 0, passed: 0 })))).join(" ")
+    ).toMatch(/counts ZERO tests/);
+    expect(
+      attestationProblems(withFiles(CONFORMANCE_FILES.map((file) => ({ ...base, file, passed: 9 })))).join(" ")
+    ).toMatch(/do not add up \(9\+0\+0 != 10\)/);
+    expect(
+      attestationProblems(withFiles([...CONFORMANCE_FILES, CONFORMANCE_FILES[0]!].map((file) => ({ ...base, file })))).join(" ")
+    ).toMatch(/appears 2 times/);
+    expect(
+      attestationProblems(withFiles(CONFORMANCE_FILES.map((file) => ({ ...base, file, passed: 9.5, total: 9.5 })))).join(" ")
+    ).toMatch(/not all non-negative integers/);
+    expect(
+      attestationProblems(withFiles(CONFORMANCE_FILES.map((file) => ({ ...base, file, failed: -1, total: 9 })))).join(" ")
+    ).toMatch(/not all non-negative integers/);
+  });
+
+  it("VOIDS a non-array files/tests instead of crashing — the artifact still reports", () => {
+    const broken = attestationOf("s".repeat(40), {
+      files: "not an array" as unknown as SuiteAttestation["files"],
+      tests: "neither" as unknown as SuiteAttestation["tests"],
+    });
+    const facts = factsOf({ clause6: { ...factsOf().clause6, attestation: broken } });
+    const { verdict, reasons } = decideAudit(facts);
+    expect(verdict).toBe("void");
+    expect(reasons.join(" ")).toMatch(/`files` is not an array/);
+    expect(reasons.join(" ")).toMatch(/`tests` is not an array/);
+    // And the canonical inputs still serialize — a void needs its artifact.
+    const { artifact } = buildAuditArtifact(facts);
+    expect(artifact.verdict).toBe("void");
+    expect(artifact.inputs["clause6.files"]).toMatch(/absent/);
+  });
+
+  it("stays SILENT on the well-formed attestation the e2e writes", () => {
+    expect(attestationProblems(attestationOf("s".repeat(40)))).toEqual([]);
   });
 });
 

@@ -1270,6 +1270,42 @@ Two high, one medium, all confirmed:
   this clause pre-seal. Conformance cases: the alias dir/file/doc each fire
   in both implementations, and the agreement sweep carries the aliases.
 
+### FIFTH POST-IMPLEMENTATION ROUND (R12) — adjudicated 2026-08-10
+
+Two high findings, both confirmed, both inside clause 6 — the clause whose
+whole job is to prove the conformance suite ran:
+
+- **R12#1 — a passing REPORT was taken for a passing RUN.** `--attest-suite`
+  checked only `run.error`; `run.status` and `run.signal` were never read, so
+  vitest exiting non-zero on an unhandled rejection, a teardown failure or a
+  runner-level error — while its JSON still said every test passed — wrote a
+  passing attestation, and the audit then read it as clause 6 satisfied. New
+  pure `suiteRunRefusal` refuses on error, signal, non-zero status, and a
+  report-less stdout, in that order; the CLI's only door to
+  `attestationFromVitest` is its `jsonLine`. **This does not contradict the
+  R6#4 reading** that global vitest exit 0 is neither required nor reachable
+  on the Windows baseline: the attestation invokes ONLY the two named
+  conformance files, and the baseline's four known failures live in other
+  files, so exit 0 is both required and reachable HERE.
+- **R12#2 — malformed counters walked past the full-suite check.** The
+  decider assumed numbers over bytes it re-read from a commit: a file entry
+  of `{ "file": "tests/cost-meter.test.ts" }` satisfied
+  `f.failed > 0 || f.skipped > 0 || f.passed !== f.total` — `undefined > 0`
+  is false twice and `undefined !== undefined` is false — so a
+  schema-drifted or hand-edited attestation with the six control names
+  marked passed certified a suite never shown to run. New pure
+  `attestationProblems` validates the committed shape: one entry per named
+  file, all four counters non-negative safe integers, `total > 0`,
+  `passed + failed + skipped === total`, and `{file, fullName, status}`
+  strings in `tests`. A malformed attestation is a VOID, not a refusal —
+  git answered, the bytes are committed, and their inadequacy is the run's
+  real state; so `auditInputs` gained `Array.isArray` guards to keep
+  producing the artifact that REPORTS the void instead of crashing before
+  it. Controls: the counter-less bypass, zero-test files, non-adding
+  counters, duplicate entries, non-integer and negative counters, non-array
+  `files`/`tests` (verdict void AND the artifact still serializes), and
+  silence on the well-formed attestation the e2e writes.
+
 ---
 
 ## CLOSED

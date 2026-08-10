@@ -183,6 +183,90 @@ export interface SuiteAttestation {
 // The pure decider.
 // ---------------------------------------------------------------------------
 
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * THE ATTESTATION'S SHAPE, VALIDATED AT RUNTIME. The committed JSON is
+ * evidence written by an earlier invocation and re-read here; the collector
+ * checks only that it is the schema at all, and TypeScript's types say
+ * nothing about bytes on disk. Without this, `{ "file": "tests/…" }` with no
+ * counters SATISFIED the full-suite check: `undefined > 0` is false twice,
+ * and `undefined !== undefined` is false — a malformed or schema-drifted
+ * attestation certified a suite that was never shown to run.
+ *
+ * A malformed attestation is a VOID, not a refusal: git answered, the bytes
+ * are committed, and their inadequacy is the run's real state.
+ */
+export function attestationProblems(att: SuiteAttestation): string[] {
+  const problems: string[] = [];
+  if (!Array.isArray(att.files)) {
+    problems.push("the attestation's `files` is not an array — no per-file counter can be read");
+  } else {
+    for (const file of CONFORMANCE_FILES) {
+      const n = att.files.filter((f) => f?.file === file).length;
+      if (n > 1) problems.push(`${file} appears ${n} times in the attestation — one entry per named file, or the counters are ambiguous`);
+    }
+    for (const f of att.files) {
+      const name = typeof f?.file === "string" ? f.file : JSON.stringify(f?.file);
+      if (typeof f?.file !== "string" || f.file === "") {
+        problems.push("an attestation file entry carries no file name");
+        continue;
+      }
+      if (!isCount(f.total) || !isCount(f.passed) || !isCount(f.failed) || !isCount(f.skipped)) {
+        problems.push(`${name}: the attestation's counters are not all non-negative integers (total/passed/failed/skipped)`);
+        continue;
+      }
+      if (f.total === 0) problems.push(`${name}: the attestation counts ZERO tests — an empty file proves nothing about the suite`);
+      if (f.passed + f.failed + f.skipped !== f.total) {
+        problems.push(`${name}: the attestation's counters do not add up (${f.passed}+${f.failed}+${f.skipped} != ${f.total})`);
+      }
+    }
+  }
+  if (!Array.isArray(att.tests)) {
+    problems.push("the attestation's `tests` is not an array — no control can be shown passing");
+  } else {
+    for (const t of att.tests) {
+      if (typeof t?.fullName !== "string" || typeof t?.status !== "string" || typeof t?.file !== "string") {
+        problems.push("an attestation test row is not {file, fullName, status} strings");
+        break; // One sentence is enough; the shape is wrong wholesale.
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * THE SUITE COMMAND'S OWN VERDICT, before any report is believed. A report
+ * saying every test passed does NOT make the run a pass: vitest exits
+ * non-zero on unhandled rejections, teardown failures and runner-level
+ * errors, and a signalled process may have died mid-file. Pure so the oracle
+ * can hand it a perfect payload beside a failing exit.
+ */
+export function suiteRunRefusal(run: {
+  error?: unknown;
+  status: number | null;
+  signal: string | null;
+  stdout: string | null;
+}): { refusal: string; jsonLine: null } | { refusal: null; jsonLine: string } {
+  if (run.error !== undefined && run.error !== null) {
+    return { refusal: `vitest did not answer: ${String(run.error)}`, jsonLine: null };
+  }
+  if (run.signal !== null && run.signal !== undefined) {
+    return { refusal: `vitest was killed by ${run.signal} — a signalled suite attests nothing, whatever it printed first`, jsonLine: null };
+  }
+  if (run.status !== 0) {
+    return {
+      refusal: `vitest exited ${String(run.status)} — a non-zero suite command may not produce a PASSING attestation, whatever its report says`,
+      jsonLine: null,
+    };
+  }
+  const jsonLine = (run.stdout ?? "").split("\n").find((l) => l.trimStart().startsWith("{"));
+  if (jsonLine === undefined) {
+    return { refusal: "vitest produced no JSON payload — the suite cannot be attested", jsonLine: null };
+  }
+  return { refusal: null, jsonLine };
+}
+
 export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; reasons: string[] } {
   const reasons: string[] = [];
 
@@ -242,20 +326,32 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
     if (att.runId !== facts.runId) {
       reasons.push(`clause 6: the attestation names run ${att.runId}, not ${facts.runId}`);
     }
-    for (const file of CONFORMANCE_FILES) {
-      const f = att.files.find((x) => x.file === file);
-      if (f === undefined) {
-        reasons.push(`clause 6: the attestation does not cover ${file} — the clause names it as the conformance suite`);
-      } else if (f.failed > 0 || f.skipped > 0 || f.passed !== f.total) {
-        reasons.push(
-          `clause 6: ${file} is not FULLY passing (${f.passed}/${f.total} passed, ${f.failed} failed, ${f.skipped} skipped) — per-control results alone are not the clause`
-        );
+    // THE SHAPE FIRST — committed bytes are not what the types promise, and a
+    // counter-less entry once satisfied the full-suite check by comparing
+    // undefined to undefined.
+    for (const p of attestationProblems(att)) reasons.push(`clause 6: ${p}`);
+    if (Array.isArray(att.files)) {
+      for (const file of CONFORMANCE_FILES) {
+        const f = att.files.find((x) => x?.file === file);
+        if (f === undefined) {
+          reasons.push(`clause 6: the attestation does not cover ${file} — the clause names it as the conformance suite`);
+        } else if (isCount(f.total) && isCount(f.passed) && isCount(f.failed) && isCount(f.skipped)) {
+          if (f.failed > 0 || f.skipped > 0 || f.passed !== f.total) {
+            reasons.push(
+              `clause 6: ${file} is not FULLY passing (${f.passed}/${f.total} passed, ${f.failed} failed, ${f.skipped} skipped) — per-control results alone are not the clause`
+            );
+          }
+        }
+        // Non-numeric counters already spoke through attestationProblems —
+        // one defect, one sentence.
       }
     }
-    for (const title of CONTROL_TESTS) {
-      const t = att.tests.find((x) => x.fullName === title);
-      if (t === undefined) reasons.push(`clause 6: required control absent from the attestation: ${title}`);
-      else if (t.status !== "passed") reasons.push(`clause 6: required control not passing (${t.status}): ${title}`);
+    if (Array.isArray(att.tests)) {
+      for (const title of CONTROL_TESTS) {
+        const t = att.tests.find((x) => x?.fullName === title);
+        if (t === undefined) reasons.push(`clause 6: required control absent from the attestation: ${title}`);
+        else if (t.status !== "passed") reasons.push(`clause 6: required control not passing (${String(t.status)}): ${title}`);
+      }
     }
     if (facts.clause6.subjectIsAncestor === null) {
       reasons.push("clause 6: the attestation's subjectCommit cannot be related to HEAD");
@@ -314,18 +410,21 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     "clause6.attestationPath": `evidence/${facts.runId}.b12.suite.json`,
     "clause6.attestationSha256": orNone(facts.clause6.attestationSha256),
     "clause6.subjectCommit": orNone(att?.subjectCommit ?? null),
+    // The `Array.isArray` guards are not defensive habit: these read
+    // COMMITTED bytes, and a malformed attestation must still produce the
+    // void artifact that reports it, never a crash instead of a verdict.
     "clause6.controls": joined(
       CONTROL_TESTS.map((title) => {
-        const t = att?.tests.find((x) => x.fullName === title);
-        return `${title}=${t === undefined ? "absent" : t.status}`;
+        const t = Array.isArray(att?.tests) ? att.tests.find((x) => x?.fullName === title) : undefined;
+        return `${title}=${t === undefined ? "absent" : String(t.status)}`;
       })
     ),
     "clause6.files": joined(
       CONFORMANCE_FILES.map((file) => {
-        const f = att?.files.find((x) => x.file === file);
+        const f = Array.isArray(att?.files) ? att.files.find((x) => x?.file === file) : undefined;
         return f === undefined
           ? `${file} absent`
-          : `${file} total=${f.total} passed=${f.passed} failed=${f.failed} skipped=${f.skipped}`;
+          : `${file} total=${String(f.total)} passed=${String(f.passed)} failed=${String(f.failed)} skipped=${String(f.skipped)}`;
       })
     ),
     "tool.srcSha256": orNone(facts.toolSrcSha256),
@@ -759,11 +858,11 @@ if (isMain) {
         ["vitest", "run", ...CONFORMANCE_FILES, "--reporter=json"],
         { cwd: repoRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, shell: process.platform === "win32" }
       );
-      if (run.error !== undefined) throw new AuditRefused(`vitest did not answer: ${String(run.error)}`);
-      const jsonLine = (run.stdout ?? "").split("\n").find((l) => l.trimStart().startsWith("{"));
-      if (jsonLine === undefined) {
-        throw new AuditRefused("vitest produced no JSON payload — the suite cannot be attested");
-      }
+      // The COMMAND's verdict before the report's: only the two named files
+      // run here, and the Windows baseline's four failures live in others —
+      // so exit 0 is both required and reachable.
+      const { refusal, jsonLine } = suiteRunRefusal(run);
+      if (refusal !== null) throw new AuditRefused(refusal);
       const attestation = attestationFromVitest(
         runId,
         head.out.trim(),
