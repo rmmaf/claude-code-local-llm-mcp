@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R32 (post-implementation adversarial rounds) are ADJUDICATED — forty-three
+R8–R33 (post-implementation adversarial rounds) are ADJUDICATED — forty-four
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -87,6 +87,11 @@ threw INSIDE a broad catch, so a git that could not answer was relabelled "the
 counterfactual does not parse" and published as a VOID — a refusal is
 retryable and writes nothing; a VOID kills a run of paid sessions
 (REPRODUCED). The catch is now the counterfactual's parse and nothing else.**
+**R33: acceptance runs in the arm's OWN worktree, so its gate/repair rows were
+archived as the arm's telemetry — the tree had `endCommit` before and
+`endPorcelain` after, the log had no line at all, and scopeTelemetry's ±60s
+window admits them (REPRODUCED at the scorer). The boundary is now the log's
+byte size taken before acceptance; the rows past it are REPORTED, not scored.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The

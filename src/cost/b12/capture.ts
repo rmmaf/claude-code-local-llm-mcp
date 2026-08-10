@@ -38,7 +38,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import { readTelemetry, TELEMETRY_REL_PATH, type TelemetryRecord } from "../../telemetry.js";
+import { parseTelemetryText, TELEMETRY_REL_PATH, type TelemetryRecord } from "../../telemetry.js";
 import { isLocalToolResult, lineagesOf } from "../report.js";
 import { readTranscript, type RawRecord, type Transcript } from "../transcript.js";
 
@@ -176,16 +176,39 @@ export interface ObservationArchive {
   slugsSearched: string[];
   transcriptsSearched: number;
   /**
-   * The task window's telemetry rows, VERBATIM and unclassified.
+   * The ARM's telemetry rows, VERBATIM and unclassified.
    *
-   * The whole worktree log, not a time slice of it: a fresh `git worktree add`
-   * starts with no `telemetry.jsonl` — it is gitignored, and `rates.json` is the
-   * only tracked file under that directory — so every row present at the task's
-   * end was written by this observation. That does NOT remove `scopeTelemetry`'s
-   * ±60,000 ms window, which `admissionRule` 5 fixes by hand and which still
-   * runs at scoring time over whatever array the assembler builds.
+   * A fresh `git worktree add` starts with no `telemetry.jsonl` — it is
+   * gitignored, and `rates.json` is the only tracked file under that directory
+   * — so every row here was written inside this worktree. That used to be the
+   * whole argument, and it had a hole (R33): the ACCEPTANCE COMMAND runs in
+   * the same tree, after the arm and before this capture, so a `npm test` that
+   * reaches gate or repair appends rows that the worktree argument admits and
+   * the measured session never wrote.
+   *
+   * `scopeTelemetry` does not save this. Its ±60,000 ms window — which
+   * `admissionRule` 5 fixes by hand — admits any row NEAR the session's
+   * requests whether or not the transcript names its `invocation_id`, and
+   * acceptance runs seconds after the arm. So the boundary is drawn HERE, at
+   * the byte offset the harness reads before acceptance starts, and the rows
+   * past it are archived beside this array instead of inside it.
    */
   telemetry: TelemetryRecord[];
+  /**
+   * The rows the ACCEPTANCE COMMAND wrote — REPORTED, DECIDING NOTHING.
+   *
+   * Not discarded: acceptance running the tool under measurement is a fact
+   * about the observation worth having on the record, and the same doctrine
+   * that keeps `endPorcelain` keeps these. Nothing scores them.
+   */
+  telemetryAfterAcceptance: TelemetryRecord[];
+  /**
+   * Where the split was made: the log's size in bytes at the moment acceptance
+   * began, or `null` when the harness did not take it (no acceptance command,
+   * or a caller that predates the boundary). `null` means "no split", and the
+   * whole log is the arm's — the pre-R33 reading, said out loud.
+   */
+  telemetryBoundaryBytes: number | null;
   /**
    * Where the rows were found, and whether that was where the harness expected.
    *
@@ -243,6 +266,27 @@ export interface CaptureInput {
   /** `git status --porcelain` output from the worktree, already taken. */
   porcelain: string;
   declaredFileScope?: string[] | null;
+  /**
+   * The telemetry log's size in bytes THE MOMENT BEFORE the acceptance command
+   * ran — see `telemetryBoundaryBytes`. Omitted or null means no split.
+   */
+  telemetryBytesAtAcceptance?: number | null;
+}
+
+/**
+ * The boundary probe, taken by the harness immediately before acceptance.
+ *
+ * It lives here so the log's location is known in ONE place: a second spelling
+ * of `.local-coder/telemetry.jsonl` in the harness is how the boundary would
+ * come to be measured against a file nobody writes. A missing log is 0 — the
+ * fresh-worktree case, where the arm called no local tool.
+ */
+export async function telemetryBytesIn(treeDir: string): Promise<number> {
+  try {
+    return (await fs.stat(path.join(treeDir, TELEMETRY_REL_PATH))).size;
+  } catch {
+    return 0;
+  }
 }
 
 async function sha256Of(file: string): Promise<string> {
@@ -379,12 +423,24 @@ export async function captureObservation(input: CaptureInput): Promise<Observati
 
   const telemetryPath = path.join(input.treeDir, TELEMETRY_REL_PATH);
   let telemetryFound = true;
+  let raw = Buffer.alloc(0);
   try {
-    await fs.stat(telemetryPath);
+    raw = await fs.readFile(telemetryPath);
   } catch {
     telemetryFound = false;
   }
-  const telemetry = await readTelemetry(input.treeDir);
+  const boundary = input.telemetryBytesAtAcceptance ?? null;
+  // A cut that lands MID-LINE gives the partial row to the ARM. The stat can
+  // fall between an append's open and its bytes, and a row being written when
+  // acceptance starts was started by the arm; splitting it would destroy the
+  // row on both sides instead of attributing it.
+  let cut = boundary === null ? raw.length : Math.min(Math.max(boundary, 0), raw.length);
+  if (cut > 0 && cut < raw.length && raw[cut - 1] !== 0x0a) {
+    const nl = raw.indexOf(0x0a, cut);
+    cut = nl === -1 ? raw.length : nl + 1;
+  }
+  const telemetry = parseTelemetryText(raw.subarray(0, cut).toString("utf8"));
+  const telemetryAfterAcceptance = parseTelemetryText(raw.subarray(cut).toString("utf8"));
 
   const sourcePaths = await filesUnder(input.treeDir, (name) => name === ".git");
   const sourceFiles: HashedFile[] = [];
@@ -405,6 +461,8 @@ export async function captureObservation(input: CaptureInput): Promise<Observati
     slugsSearched: input.slugDirs.map((d) => path.basename(d)).sort(),
     transcriptsSearched: files.length,
     telemetry,
+    telemetryAfterAcceptance,
+    telemetryBoundaryBytes: boundary,
     telemetryPath,
     telemetryFound,
     invocationIds: [...invocationIds].sort(),

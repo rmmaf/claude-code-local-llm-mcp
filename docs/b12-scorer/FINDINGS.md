@@ -1878,6 +1878,57 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTY-SIXTH POST-IMPLEMENTATION ROUND (R33) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED at the scorer — a measurement boundary
+the tree already had and the log did not.
+
+- **R33#1 (high) — the acceptance command's telemetry was archived as the
+  arm's.** Acceptance runs in the arm's own throwaway worktree, AFTER the arm
+  and BEFORE the capture. `captureObservation` read the whole
+  `.local-coder/telemetry.jsonl`, so an acceptance command that reaches gate
+  or repair — directly, or through the very `npm test` the task declares —
+  appends rows that land inside `archive.telemetry`.
+
+  The old justification is quoted in the field's own doc: a fresh
+  `git worktree add` starts with no log, "so every row present at the task's
+  end was written by this observation". True about the WORKTREE, false about
+  the measured SESSION — and the harness had already drawn this exact
+  distinction for the tree, reading `endCommit` BEFORE acceptance and
+  `endPorcelain` after precisely so "did the arm commit its work" and "did
+  acceptance write into the tree" stay different questions. The log had no
+  such line.
+
+  **`scopeTelemetry` does not save it, and the test proves that rather than
+  assuming it.** Its ±60,000 ms window admits any row near the session's
+  requests whether or not the transcript names the row's `invocation_id` — and
+  the header explains why that branch has to exist (a long `repair` can finish
+  after the last billed request). Acceptance rows are always seconds away and
+  are never named. Reproduced: over the unsplit log `scopeTelemetry` returns
+  both ids; over the archived arm rows it returns one.
+
+  The boundary is now the log's SIZE IN BYTES taken the moment before
+  acceptance starts — `endCommit`'s timing, applied to the log. Rows past it
+  are archived as `telemetryAfterAcceptance`, REPORTED and deciding nothing:
+  acceptance running the tool under measurement is a fact worth keeping, and
+  deleting evidence to fix an attribution bug would be the wrong trade. A cut
+  landing mid-line gives the partial row to the ARM (a row being written when
+  acceptance starts was started by the arm), and an absent boundary means NO
+  split — the pre-R33 reading, said out loud rather than defaulted into.
+
+  Codex also suggested filtering the archive to invocation ids proven to
+  belong to the session. **Declined, with the reason:** that is the branch
+  `scopeTelemetry` deliberately does not stand on. Ids skip the window because
+  the join is exact for them; the window exists for the arm's OWN rows the
+  transcript never named. Filtering to ids would drop real arm work — a
+  boundary in time is the right instrument, and it is the one the harness
+  already uses next door.
+
+  **Operational note, not a defect:** `capture.ts` changing moves
+  `dist/cost/b12/capture.js`'s sha, which `loadCapture` refuses against a
+  manifest's `pinned.captureSha256`. Nothing is sealed yet; re-pinning is part
+  of the seal step already on the calendar.
+
 ### TWENTY-FIFTH POST-IMPLEMENTATION ROUND (R32) — adjudicated 2026-08-10
 
 One finding, confirmed and REPRODUCED — and it inverts the two outcomes that

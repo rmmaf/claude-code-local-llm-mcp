@@ -2849,6 +2849,15 @@ async function observe(args, pilotMode = false) {
   const stillDirty = run("git", ["-C", treeDir, "status", "--porcelain"]).out.trim();
   if (stillDirty) refuse(`worktree still dirty after the end-state commit: ${stillDirty.slice(0, 200)}`);
 
+  // THE TELEMETRY BOUNDARY, TAKEN HERE FOR THE SAME REASON `endCommit` IS
+  // (R33). Acceptance runs in the arm's own worktree, so an `npm test` that
+  // reaches gate or repair appends rows to the very log the capture reads —
+  // and `scopeTelemetry`'s ±60,000 ms window admits rows near the session
+  // whether or not the transcript names their invocation_id, which acceptance
+  // rows, written seconds later, always are. The tree already had its
+  // boundary (`endCommit` before, `endPorcelain` after); the log had none.
+  const telemetryBytesAtAcceptance = await capture.module.telemetryBytesIn(treeDir);
+
   // The acceptance predicate decides whether this is a TASK or an ATTEMPT.
   // Without it the numerator is earned at a verification step and the
   // denominator is croppable by quitting, so every fraction rises by giving up.
@@ -2945,6 +2954,7 @@ async function observe(args, pilotMode = false) {
     slugDirs: projectSlugDirs(),
     porcelain: endPorcelain,
     declaredFileScope: task.fileScope ?? null,
+    telemetryBytesAtAcceptance,
   });
 
   // AN EMPTY LINEAGE BESIDE ORIGINATED IDS IS A CONTRADICTION, AND IT IS THE

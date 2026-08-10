@@ -77,6 +77,15 @@ export async function readTelemetry(root: string): Promise<TelemetryRecord[]> {
   } catch {
     return [];
   }
+  return parseTelemetryText(text);
+}
+
+/**
+ * The line parser `readTelemetry` stands on, exported so a caller that has
+ * already read the bytes — the B12 capture splits them at the acceptance
+ * boundary — parses them by exactly the same rule.
+ */
+export function parseTelemetryText(text: string): TelemetryRecord[] {
   const out: TelemetryRecord[] = [];
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;

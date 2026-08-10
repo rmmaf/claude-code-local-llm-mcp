@@ -31,8 +31,9 @@ import {
   reduceFile,
   reduceRecord,
 } from "../src/cost/b12/capture.js";
+import { scopeTelemetry } from "../src/cost/report.js";
 import { readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
-import type { Transcript } from "../src/cost/transcript.js";
+import { readTranscript, type Transcript } from "../src/cost/transcript.js";
 import { makeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
@@ -261,6 +262,121 @@ describe("captureObservation — the only filesystem surface", () => {
     // first hop of the join is the tool name (`isLocalToolResult`).
     expect(archive.invocationIds).toEqual(["11111111-2222-4333-8444-555555555555"]);
     expect(archive.dirtyAtCapture).toBe(false);
+  });
+
+  it("the ACCEPTANCE COMMAND's telemetry is not the arm's, and the ±60s window does not save us", async () => {
+    // R33. Acceptance runs in the arm's own worktree, between the arm and this
+    // capture, so a `npm test` that reaches gate or repair appends rows to the
+    // very log the capture reads. The old argument for reading the whole log —
+    // a fresh worktree starts empty, so every row is this observation's — is
+    // true about the WORKTREE and false about the measured SESSION.
+    //
+    // `scopeTelemetry` cannot rescue it, and this test proves that rather than
+    // assuming it: the window admits any row within ±60,000 ms of the
+    // session's requests whether or not the transcript names its
+    // invocation_id, and acceptance rows are always seconds away.
+    const ARM = "11111111-2222-4333-8444-555555555555";
+    const ACC = "22222222-3333-4444-8555-666666666666";
+    const armRow = { ts: "2026-08-07T10:00:01.000Z", tool: "gate", invocation_id: ARM, bytes_raw: 40 };
+    const accRow = { ts: "2026-08-07T10:00:05.000Z", tool: "gate", invocation_id: ACC, bytes_raw: 999 };
+    const { treeDir, slugDir } = await tree(
+      { [TELEMETRY_REL_PATH]: jsonl(armRow) },
+      {
+        "own.jsonl": jsonl(
+          line({
+            sessionId: "s-own",
+            requestId: "r-1",
+            uuid: "u-1",
+            message: {
+              model: "claude-opus-5",
+              usage: { input_tokens: 10 },
+              content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+            },
+          }),
+          {
+            type: "user",
+            uuid: "u-2",
+            sessionId: "s-own",
+            timestamp: "2026-08-07T10:00:02.000Z",
+            message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+            toolUseResult: { invocation_id: ARM, tool: "mcp__local-coder__gate" },
+          }
+        ),
+      }
+    );
+
+    // The boundary the harness takes the moment BEFORE acceptance…
+    const telemetryBytesAtAcceptance = (await fs.stat(path.join(treeDir, TELEMETRY_REL_PATH))).size;
+    // …and then acceptance runs the tool under measurement.
+    await fs.appendFile(path.join(treeDir, TELEMETRY_REL_PATH), JSON.stringify(accRow) + "\n", "utf8");
+
+    const archive = await captureObservation({
+      taskId: "t-01",
+      arm: "treatment",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+      telemetryBytesAtAcceptance,
+    });
+
+    // The substantive claim FIRST, so a regression names the defect and not
+    // the bookkeeping field beside it.
+    expect(archive.telemetry.map((r) => r.invocation_id)).toEqual([ARM]);
+    // Kept, not deleted — acceptance running the measured tool is a fact.
+    expect(archive.telemetryAfterAcceptance.map((r) => r.invocation_id)).toEqual([ACC]);
+    expect(archive.telemetryBoundaryBytes).toBe(telemetryBytesAtAcceptance);
+
+    // THE DAMAGE, AT THE SCORER. Over the unsplit log the window admits the
+    // acceptance row — 4 seconds from the session's only request, and its id
+    // is nowhere in the transcript. Over the archived arm rows it cannot.
+    const transcript = await readTranscript(path.join(slugDir, "own.jsonl"));
+    const unsplit = await readTelemetry(treeDir);
+    expect(scopeTelemetry(transcript, unsplit).map((r) => r.invocation_id)).toEqual([ARM, ACC]);
+    expect(scopeTelemetry(transcript, archive.telemetry).map((r) => r.invocation_id)).toEqual([ARM]);
+  });
+
+  it("without a boundary the whole log is the arm's — the pre-R33 reading, said out loud", async () => {
+    // `telemetryBytesAtAcceptance` omitted means NO SPLIT, not an empty arm.
+    // A caller with no acceptance command must keep every row it captured.
+    const rows = jsonl(
+      { ts: "2026-08-07T10:00:01.000Z", tool: "gate", bytes_raw: 1 },
+      { ts: "2026-08-07T10:00:02.000Z", tool: "repair", bytes_raw: 2 }
+    );
+    const { treeDir, slugDir } = await tree({ [TELEMETRY_REL_PATH]: rows }, { "own.jsonl": jsonl(line({ sessionId: "s-own" })) });
+    const archive = await captureObservation({
+      taskId: "t-01",
+      arm: "control",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+    });
+    expect(archive.telemetryBoundaryBytes).toBeNull();
+    expect(archive.telemetry).toHaveLength(2);
+    expect(archive.telemetryAfterAcceptance).toEqual([]);
+  });
+
+  it("a boundary landing MID-LINE gives the partial row to the arm, not to acceptance", async () => {
+    // The stat can fall between an append's open and its bytes. Splitting the
+    // row there would destroy it on both sides; a row being written when
+    // acceptance starts was started by the arm.
+    const armRow = { ts: "2026-08-07T10:00:01.000Z", tool: "gate", bytes_raw: 40 };
+    const accRow = { ts: "2026-08-07T10:00:05.000Z", tool: "repair", bytes_raw: 999 };
+    const text = jsonl(armRow, accRow);
+    const { treeDir, slugDir } = await tree({ [TELEMETRY_REL_PATH]: text }, { "own.jsonl": jsonl(line({ sessionId: "s-own" })) });
+    const archive = await captureObservation({
+      taskId: "t-01",
+      arm: "treatment",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+      // Ten bytes into the arm's own line.
+      telemetryBytesAtAcceptance: 10,
+    });
+    expect(archive.telemetry.map((r) => r.tool)).toEqual(["gate"]);
+    expect(archive.telemetryAfterAcceptance.map((r) => r.tool)).toEqual(["repair"]);
   });
 
   it("THE ARCHIVED telemetry.jsonl ROUND-TRIPS THROUGH readTelemetry IN ORDER", async () => {
