@@ -1,0 +1,39 @@
+{
+  "document": "b12-amendment-conformance-paths",
+  "schema": "b12-amendment/1",
+  "type": "pre-data amendment",
+  "written": "2026-08-10",
+  "headAtWriting": "216e025a99d4669aa3e3dc772a6247e6a292ef8c",
+  "amends": {
+    "artifact": "evidence/2026-08-05-b12-preregistration.json",
+    "clause": "design.voidConditions 5",
+    "editsTheFrozenArtifact": false,
+    "frozenTextVerbatim": "VOID if src/cost/**, src/telemetry.ts, gate's or repair's telemetry emission, or scripts/b12-run.mjs changed after the first scored observation without every existing evidence/ artifact for the run being re-emitted from the archive. Before the first scored observation these are free — there is no answer to tune toward until a residual exists."
+  },
+  "scope": "PROSPECTIVE. This amendment governs every B12 run whose FIRST SCORED OBSERVATION is committed after the commit that introduces this artifact. It governs no earlier run and may not be applied retroactively.",
+  "addedPaths": ["tests/cost-meter.test.ts", "tests/session-token-walk.test.ts"],
+  "effect": "For a governed run, the two conformance files join the path set of voidConditions 5. A commit touching either of them after that run's first scored observation makes the run VOID unless every existing evidence/ artifact for the run is re-emitted from the archive — exactly the escape clause 5 already carries. Before the first scored observation these paths remain FREE, exactly as clause 5 already provides for the paths it names.",
+  "reason": "voidConditions 6 already forbids counting a gutted control: a test that keeps its name and loses its assertions is not SHOWN FIRING, however green it reports. What was missing was never the rule — it was the PROOF. The audit computer verifies that each control is present exactly once by (file, fullName) and passed, which establishes identity and runner status, not firing. A control emptied after the run's first scored observation and before the suite attestation therefore passes every mechanical check: the attestation honestly describes the gutted tree, and no drift exists after it. That interval is the only one in which such an edit could be outcome-aware, and it is the interval this amendment closes.",
+  "whatItDoesNotClose": [
+    "A control gutted BEFORE the run's first scored observation. Clause 5's own clock leaves these paths free until then, and this amendment does not move that clock.",
+    "Whether a changed control became weaker or stronger. Byte identity is a fence, not a proof of firing: an edit may strengthen a control, and unchanged bytes may stop proving anything if a helper or fixture beside them moved.",
+    "An actor able to rewrite published history or fabricate the suite attestation. Against that actor no repository-local hash is a trust boundary; this amendment protects against ordinary drift, mistakes and outcome-aware mid-run edits inside an append-only history."
+  ],
+  "doesNotChange": [
+    "the frozen pre-registration artifact, which is NOT edited — its sha256 pin stands",
+    "voidConditions 6, whose requirement that each negative control be SHOWN FIRING is semantic and unchanged by this amendment",
+    "the clock of voidConditions 5 — the first scored observation — and its re-emission escape",
+    "the outcome, the 30%/15% bands, the unit definition, the admission rule, the metric arithmetic, the acceptance predicates, the two sealed manifests",
+    "any other clause, threshold, precedence rule or voiding condition"
+  ],
+  "stateAtWriting": {
+    "scoredObservations": 0,
+    "registeredRuns": 0,
+    "primaryRunStarted": false,
+    "note": "Written before the harness seal and before any registration, so no B12 residual exists to select against. It is nevertheless POST-FREEZE and must always be described as such: a governed run is governed by the 2026-08-05 pre-registration PLUS this artifact, never by the pre-registration alone."
+  },
+  "enforcedBy": "src/cost/b12/audit.ts — clause 5's pinned set is widened when this artifact's INTRODUCING commit is an ancestor of the freeze anchor's commit. The audit artifact records the EFFECTIVE pinned set, this artifact's path, its introducing commit, its sha256 and whether it governed, so a reader can always tell which regime produced the verdict.",
+  "reportedBesideIt": "The audit artifact also records the sha256 of both conformance files at the registration commit and at the attestation's subjectCommit. Those hashes are REPORTED, DECIDING NOTHING — they make earlier drift conspicuous, including drift this amendment's clock does not reach, and they may never be invoked to void or rescue a run.",
+  "adjudication": "docs/b12-scorer/FINDINGS.md — R23's residual, closed 2026-08-10",
+  "separateOnPurpose": "Committed alone. The platform amendment and the Phase-3 adjudication are distinct pre-data amendments and must not be folded into this one, nor it into them."
+}
