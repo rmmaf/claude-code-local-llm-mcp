@@ -67,11 +67,18 @@ export function casCommit(
 /**
  * The seal — `evidence/b12-harness-seal.json`, CREATE-ONLY on disk AND in
  * history, refusing a manifest without explicit `perArmTimeoutMs`/`extraArgs`
- * and a harness whose disk bytes differ from HEAD's.
+ * and a harness whose disk bytes differ from HEAD's. The create-only property
+ * belongs to the WRITE (`wx`, O_EXCL), not to the existence check that names
+ * the refusal early: a second invocation crossing the gap between them is
+ * refused by the filesystem, never by having been noticed.
+ *
+ * `onBeforeWrite` is the oracle's seam over exactly that gap; the CLI never
+ * passes it.
  */
 export function sealHarness(
   repoRoot: string,
-  manifestPath: string
+  manifestPath: string,
+  opts?: { onBeforeWrite?: ((sealAbsolutePath: string) => void) | null }
 ):
   | {
       ok: true;

@@ -2868,6 +2868,17 @@ describe("the B12 harness", () => {
       "Src/Cost/inner.ts",
       "EVIDENCE/**",
       "premises.md",
+      // WINDOWS PATH ALIASES (R21) — Win32 strips a component's trailing dots
+      // and spaces, `:` names an NTFS stream, `NAME~1` is an 8.3 short name.
+      // Each of these OPENS a protected path while comparing unequal to it,
+      // so the grammar refuses them rather than the comparison folding them.
+      "src/cost./**",
+      "src/cost /**",
+      "STATE.md.",
+      "STATE.md ",
+      "evidence./",
+      "STATE.md::$DATA",
+      "scripts/SESSIO~1.MJS",
     ];
     for (const raw of cases) {
       expect({ raw, parsed: harness.parseScopeEntry(raw) }).toEqual({ raw, parsed: scorer.parseScopeEntry(raw) });
@@ -2886,6 +2897,26 @@ describe("the B12 harness", () => {
       expect(fired.join(" ")).toMatch(/alias-dir.*intersects the instrument set at src\/cost/);
       expect(fired.join(" ")).toMatch(/alias-file.*intersects the instrument set at src\/cost/);
       expect(fired.join(" ")).toMatch(/alias-doc.*intersects the instrument set at PREMISES\.md/);
+      // R21: the Windows aliases are REFUSED BY THE GRAMMAR, in both copies —
+      // `src/cost./**` opens `src/cost` on Windows (reproduced with
+      // `Get-Item`) and compares unequal to it, so admitting it as
+      // "non-intersecting" would hand a task the scoring instrument.
+      const aliased = impl.fileScopeViolations([
+        { id: "trailing-dot", fileScope: ["src/cost./**"] },
+        { id: "trailing-space", fileScope: ["src/cost /**"] },
+        { id: "doc-dot", fileScope: ["STATE.md."] },
+        { id: "stream", fileScope: ["STATE.md::$DATA"] },
+        { id: "short-name", fileScope: ["scripts/SESSIO~1.MJS"] },
+      ]);
+      expect(aliased.join(" ")).toMatch(/trailing-dot.*dot or space/);
+      expect(aliased.join(" ")).toMatch(/trailing-space.*dot or space/);
+      expect(aliased.join(" ")).toMatch(/doc-dot.*dot or space/);
+      expect(aliased.join(" ")).toMatch(/stream.*colon in a segment/);
+      expect(aliased.join(" ")).toMatch(/short-name.*8\.3 short-name/);
+      expect(aliased).toHaveLength(5);
+      // …and the lawful spellings of the same names still pass the grammar,
+      // so the refusal is aimed at the alias and not at the dot.
+      expect(impl.fileScopeViolations([{ id: "ok", fileScope: ["src/tools/", "docs/notes.md", "a.b.c/d.e"] }])).toEqual([]);
     }
   });
 

@@ -460,9 +460,14 @@ export function casCommit(
  * pin that moves. A new seal means abandoning the prior registration or a new
  * content-addressed artifact; this command refuses the overwrite either way.
  */
-export function sealHarness(repoRoot, manifestPath) {
+export function sealHarness(repoRoot, manifestPath, opts = {}) {
   const sealRel = "evidence/b12-harness-seal.json";
   const sealAbs = path.join(repoRoot, sealRel);
+  // The early read is a COURTESY — it names the refusal before the work. The
+  // guarantee is the exclusive create at the end (R21): between this check
+  // and that write sit a git call, a parse and four validations, and a second
+  // invocation crossing that gap used to win too, silently replacing a seal
+  // an operator believed was frozen.
   if (existsSync(sealAbs)) return { ok: false, why: `${sealRel} already exists on disk — the seal is create-only` };
   const born = git(repoRoot, ["log", "--diff-filter=A", "--format=%H", "--", sealRel]);
   if (born.code === 0 && born.out.trim() !== "") {
@@ -495,7 +500,21 @@ export function sealHarness(repoRoot, manifestPath) {
     perArmTimeoutMs: pinned.perArmTimeoutMs,
     extraArgs: pinned.extraArgs,
   };
-  writeFileSync(sealAbs, JSON.stringify(seal, null, 2) + "\n", "utf8");
+  // The oracle's seam: the window a second invocation owns. The CLI never
+  // passes it.
+  if (opts.onBeforeWrite) opts.onBeforeWrite(sealAbs);
+  // CREATE-ONLY IS THE WRITE'S OWN PROPERTY, not a conclusion drawn earlier:
+  // `wx` is O_EXCL, so exactly one of two racing invocations creates the file
+  // and the other is told what happened. Nothing that already exists is
+  // overwritten, whatever the check above concluded a moment ago.
+  try {
+    writeFileSync(sealAbs, JSON.stringify(seal, null, 2) + "\n", { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      return { ok: false, why: `${sealRel} appeared while this seal was being built — the seal is create-only; the bytes on disk are another invocation's` };
+    }
+    return { ok: false, why: `${sealRel} could not be created: ${String(error)}` };
+  }
   return { ok: true, path: sealRel, seal };
 }
 

@@ -955,6 +955,14 @@ export function parseScopeEntry(raw) {
   for (const seg of segments) {
     if (seg === "") return { ok: false, error: `empty segment: ${raw}` };
     if (seg === "." || seg === "..") return { ok: false, error: `dot segment: ${raw}` };
+    // WINDOWS ALIASES — REFUSED, not folded. Win32 strips TRAILING dots and
+    // spaces from a component, so `src/cost./**` opens `src/cost` while
+    // comparing unequal to it; `:` names an NTFS stream or a drive-relative
+    // path; `NAME~1.EXT` is the 8.3 short name of a long one. Case is folded
+    // because a case-shifted path is lawful; these are degenerate spellings.
+    if (/[. ]$/.test(seg)) return { ok: false, error: `segment ends in a dot or space, which Windows strips: ${raw}` };
+    if (seg.includes(":")) return { ok: false, error: `colon in a segment (NTFS stream or drive-relative): ${raw}` };
+    if (/~[0-9]/.test(seg)) return { ok: false, error: `8.3 short-name alias shape: ${raw}` };
     if (/[*?[\]{}]/.test(seg)) return { ok: false, error: `glob outside a trailing /**: ${raw}` };
   }
   return { ok: true, kind, segments };

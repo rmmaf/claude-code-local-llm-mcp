@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R20 (post-implementation adversarial rounds) are ADJUDICATED — twenty-three
+R8–R21 (post-implementation adversarial rounds) are ADJUDICATED — twenty-five
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -32,8 +32,12 @@ mutex is an INDEX lock — the ref is now read by NAME AND TARGET under it, the
 writes moved INSIDE it, and the residual it cannot cover is written down.**
 **R20 leaves concurrency entirely: the act took the run's IDENTITY from the
 CLI argument and never asked the manifest, so a typo would register a row no
-session can use and no result can close — and an append-only register then
-refuses every later registration as abandoned, forever.**
+session can use and no result can close.** **R21: `src/cost./**` OPENS
+`src/cost` on Windows and compared unequal to it — trailing dots/spaces,
+colons and the 8.3 `NAME~1` shape are now REFUSED by admissionRule 7's
+grammar in both copies (case stays FOLDED: that spelling is lawful, these are
+not); and the create-only seal became create-only by its WRITE (`wx`), not by
+a check taken six validations earlier.**
 PR to main is open — merge is the user's act.
 
 ## Still blocking a run

@@ -10,7 +10,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, promises as fs } from "node:fs";
+import { appendFileSync, existsSync, promises as fs, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -718,6 +718,30 @@ describe("seal-harness — create-only, explicit budgets, committed bytes", () =
     commitAll(root, "the seal");
     await fs.rm(path.join(root, "evidence", "b12-harness-seal.json"));
     expect(whyOf(sealHarness(root, manifestPath))).toMatch(/exists in history/);
+  });
+
+  it("never OVERWRITES a seal that appeared while this one was being built", async () => {
+    // R21#2: the existence check and the write sat either side of a git call,
+    // a parse and four validations. Two invocations crossing that gap both
+    // saw an absent path and both reported success — the later one silently
+    // replacing a seal an operator believed was frozen, and with it the
+    // timeout and extraArgs the registration would be checked against.
+    // Create-only is now the WRITE's own property: `wx` is O_EXCL.
+    const { sealHarness } = await import("../scripts/b12-register.mjs");
+    const { root, manifestPath } = await sealFixture();
+    const sealAbs = path.join(root, "evidence", "b12-harness-seal.json");
+    const theirs = `{"schema":"b12-harness-seal/1","sealedAt":"2026-08-10T00:00:00Z","b12RunSha256":"the other invocation's"}\n`;
+    const result = sealHarness(root, manifestPath, {
+      // The other invocation, landing in the window this one used to own.
+      onBeforeWrite: () => {
+        writeFileSync(sealAbs, theirs, "utf8");
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(whyOf(result)).toMatch(/appeared while this seal was being built/);
+    expect(whyOf(result)).toMatch(/create-only/);
+    // The winner's bytes are exactly as the winner left them.
+    expect(await fs.readFile(sealAbs, "utf8")).toBe(theirs);
   });
 
   it("refuses a manifest with no explicit budget declarations, and uncommitted harness bytes", async () => {

@@ -1631,6 +1631,54 @@ This is the third finding of the eleven-round arc that lived where a rule was
 already written down and the code did something else (R13, R14#2, R16#1) —
 here the frozen text names the identity, and only the syntax was enforced.
 
+### FOURTEENTH POST-IMPLEMENTATION ROUND (R21) — adjudicated 2026-08-10
+
+Two findings, both confirmed: a filesystem alias the scope grammar did not
+model, and a create-only rule that was a conclusion rather than a property.
+
+- **R21#1 (high) — Windows path aliases walked past admissionRule 7.** The
+  grammar accepted a segment ending in a dot or a space, and intersection
+  compares segments. Win32 STRIPS trailing dots and spaces from a path
+  component, so `src/cost./**` opens the real `src/cost` tree — Codex
+  reproduced it with `Get-Item` — while comparing unequal to `src/cost/**`
+  and therefore reading as NON-intersecting. `STATE.md.` does the same to a
+  governance document. Adjudicating past what was reported: the same family
+  contains `:` (`STATE.md::$DATA` is an NTFS data stream of the protected
+  file, and the drive check only looked at position 0) and the 8.3 short
+  name `NAME~1.EXT` — which two protected entries actually have, since
+  `DECISIONS.md` and `session-token-walk.mjs` are both long names. All
+  three shapes are now REFUSED BY THE GRAMMAR in both implementations.
+
+  **Refused, not folded, and the difference is the argument.** R11#3 folded
+  CASE because `SRC/COST/` is a lawful way to write the path — refusing it
+  would refuse honest declarations. Nothing honest ends a path component in
+  a dot or a space, hides a colon in it, or spells a name in 8.3. A refusal
+  is total, needs no second mechanism inside the comparison, and gives the
+  two copies one less thing to agree about. The lawful spellings that merely
+  CONTAIN dots (`docs/notes.md`, `a.b.c/d.e`) are asserted still green, so
+  the rule is aimed at the alias rather than at the character.
+
+  Known residual, named rather than implied: 8.3 aliasing is detected by
+  SHAPE (`~` followed by a digit), because whether a volume even generates
+  short names is a per-volume setting no string can answer.
+
+- **R21#2 (medium) — the create-only seal was create-only by conclusion.**
+  `sealHarness` called `existsSync`, then made a git call, parsed a
+  manifest, ran four validations, and only then wrote — without an exclusive
+  flag. Two invocations crossing that gap both saw an absent path and both
+  reported success, the later silently replacing a seal an operator believed
+  was frozen, and with it the `perArmTimeoutMs` and `extraArgs` the
+  registration is checked against. The write is now `wx` (O_EXCL) and
+  `EEXIST` is a refusal in its own words; the early check stays as what it
+  always was — a courtesy that names the refusal before the work.
+
+**Both controls fire.** With the three grammar rules removed from BOTH
+copies, `fileScopeViolations` returns EMPTY for all five aliases — the
+instrument set admitted as non-intersecting, which is the defect. With the
+`wx` removed, the seal returns `ok: true` and the other invocation's bytes
+are gone. The twin-agreement sweep carries the new cases, so the harness copy
+cannot drift away from the scorer's.
+
 ---
 
 ## CLOSED

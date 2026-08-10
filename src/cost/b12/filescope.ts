@@ -30,6 +30,14 @@
  * only the comparison folds. The protected set is ASCII, so ASCII folding is
  * exact for what the rule guards.
  *
+ * THE OTHER WINDOWS ALIASES ARE REFUSED RATHER THAN FOLDED — trailing dots
+ * and spaces (stripped by Win32, so `src/cost./**` opens `src/cost`), colons
+ * (NTFS streams, drive-relative paths) and the `NAME~1` 8.3 shape. Case gets
+ * folded because a case-shifted path is a lawful way to write it; these are
+ * degenerate spellings no honest declaration uses, and a refusal is total
+ * where a second folding rule would be one more thing for the two
+ * implementations to agree about.
+ *
  * The harness (`scripts/b12-run.mjs`) carries a SECOND implementation of this
  * rule because it must run before `dist/` exists; the two are compared
  * case-for-case by the conformance suite, which is this repository's answer
@@ -75,6 +83,18 @@ export function parseScopeEntry(raw: unknown): ParsedScope {
   for (const seg of segments) {
     if (seg === "") return { ok: false, error: `empty segment: ${raw}` };
     if (seg === "." || seg === "..") return { ok: false, error: `dot segment: ${raw}` };
+    // WINDOWS ALIASES — REFUSED, not folded. Win32 strips TRAILING dots and
+    // spaces from a path component, so `src/cost./**` opens `src/cost` while
+    // comparing unequal to it; `:` names an NTFS data stream (`STATE.md::
+    // $DATA`) or a drive-relative path; and `NAME~1.EXT` is the 8.3 short
+    // name of a long one — `DECISIONS.md` and `session-token-walk.mjs` both
+    // have one. Case is FOLDED because `SRC/COST/` is a lawful way to write
+    // the path; these are not — no honest declaration ends a component in a
+    // dot or a space — so refusing is total, and needs no second mechanism
+    // in the comparison for the two implementations to keep agreeing.
+    if (/[. ]$/.test(seg)) return { ok: false, error: `segment ends in a dot or space, which Windows strips: ${raw}` };
+    if (seg.includes(":")) return { ok: false, error: `colon in a segment (NTFS stream or drive-relative): ${raw}` };
+    if (/~[0-9]/.test(seg)) return { ok: false, error: `8.3 short-name alias shape: ${raw}` };
     if (/[*?[\]{}]/.test(seg)) return { ok: false, error: `glob outside a trailing /**: ${raw}` };
   }
   return { ok: true, kind, segments };
