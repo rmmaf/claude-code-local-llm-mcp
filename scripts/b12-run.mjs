@@ -271,7 +271,13 @@ export async function commitObservationRow(
     // `design.artifacts` 10: the `ts` is read from the clock in the same
     // command that writes the row — and read HERE, not before the wait for
     // the lock, so it stamps the write rather than the intention.
-    appendFileSync(runLogPath, JSON.stringify({ ts: stamp(), ...row }) + "\n", "utf8");
+    const appended = JSON.stringify({ ts: stamp(), ...row }) + "\n";
+    appendFileSync(runLogPath, appended, "utf8");
+    // What the runlog MUST read afterwards, on disk and in HEAD alike: the
+    // bytes the barrier accepted, plus this one row. Held here so the
+    // postcondition below compares against a value fixed BEFORE the commit
+    // rather than against whatever the commit left behind.
+    const expectedRunlog = (runlogAtBarrier ?? "") + appended;
     const failure = await gitCommitEvidenceRetrying(repoRoot, relDir, runLogRel, message);
     if (failure) {
       return {
@@ -302,6 +308,52 @@ export async function commitObservationRow(
       if (inHead.out.trim() !== onDisk.out.trim()) {
         return { ok: false, why: `HEAD carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.out.trim().slice(0, 12)}` };
       }
+    }
+    // AND THE ROW ITSELF, WHICH THE LOOP ABOVE COULD NOT REACH (R25).
+    //
+    // `written` holds the per-observation artifacts; the runlog is the OTHER
+    // path this commit names, and nothing verified it. The very hook the
+    // comment above accounts for can drop or rewrite the runlog entry in the
+    // index while leaving `observation.json` staged: the add succeeds, the
+    // staged wall passes (it looks under `relDir`), the commit succeeds, every
+    // blob above matches — and HEAD holds an observation with NO ORDERING ROW,
+    // while the disk copy carries one. The caller would then release the
+    // session lock and report success, and the next observation's barrier
+    // would refuse a run that believes it is fine. "The row and its evidence
+    // as ONE act" has to be provable of the row too, or it is a claim about
+    // half the act.
+    //
+    // Two comparisons, because they fail differently: disk against the bytes
+    // the barrier accepted PLUS this one row (a hook that rewrote the working
+    // copy), and HEAD's blob against disk (a hook that rewrote only the
+    // index). Together they say HEAD carries exactly the predecessor bytes and
+    // exactly this session's row — stronger than counting the sessionId, and
+    // the same function of the same bytes on both sides.
+    const diskAfter = readRunlog();
+    if (diskAfter !== expectedRunlog) {
+      return {
+        ok: false,
+        why:
+          `the runlog on disk is not the bytes this observation appended — ${diskAfter === null ? "the file is gone" : "it was rewritten"} ` +
+          `between the append and the commit's verification, so the committed row cannot be attributed to this act`,
+      };
+    }
+    const runlogOnDisk = run("git", ["-C", repoRoot, "hash-object", "--", runLogPath]);
+    if (runlogOnDisk.code !== 0) return { ok: false, why: `hash-object failed for ${runLogRel}` };
+    const runlogInHead = run("git", ["-C", repoRoot, "rev-parse", `HEAD:${runLogRel}`]);
+    if (runlogInHead.code !== 0) {
+      return {
+        ok: false,
+        why: `HEAD does not carry ${runLogRel} after the commit — the evidence committed WITHOUT its ordering row (design.artifacts 6)`,
+      };
+    }
+    if (runlogInHead.out.trim() !== runlogOnDisk.out.trim()) {
+      return {
+        ok: false,
+        why:
+          `HEAD carries a different ${runLogRel}: ${runlogInHead.out.trim().slice(0, 12)} != ${runlogOnDisk.out.trim().slice(0, 12)} — ` +
+          `the evidence committed without this observation's row, or with a rewritten one (design.artifacts 6)`,
+      };
     }
     return { ok: true };
   } finally {

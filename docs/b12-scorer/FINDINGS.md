@@ -1831,6 +1831,52 @@ the archive audited. With it, the refusal names what moved ("1 added") and
 UN-refuses when the file is removed again. On the attestation: the producer
 records the lockfile sha, and an attestation without one is a problem.
 
+### EIGHTEENTH POST-IMPLEMENTATION ROUND (R25) — adjudicated 2026-08-10
+
+One finding, and it is R18's own fix reviewed: the act that made the row and
+its evidence ONE act proved only half of it.
+
+- **R25#1 (high) — a successful commit did not prove the ROW reached HEAD.**
+  `commitObservationRow` verifies, blob by blob, that HEAD carries every file
+  in `written` — the per-observation artifacts. The runlog is the OTHER path
+  the same commit names, and NOTHING checked it. The threat model is not
+  hypothetical here; it is the one this function already writes down for the
+  archive: an index-mutating `pre-commit` hook. Pointed at the row, it drops
+  or rewrites the runlog entry while `observation.json` stays staged — the
+  `git add` succeeds, the staged-emptiness wall passes (it looks under the
+  observation directory), the commit succeeds, every archive blob matches,
+  the act returns `ok: true`, the caller releases the session lock and prints
+  success. HEAD then holds an observation with NO ordering row while the disk
+  copy carries one, so the run believes it is fine and the NEXT observation's
+  barrier refuses — a state only an operator can reconcile by hand.
+
+  Two comparisons close it, because they fail differently. The disk copy must
+  equal the bytes the barrier accepted PLUS this observation's single row —
+  a value fixed BEFORE the commit, so a hook that rewrote the working copy is
+  caught (and `git commit -- <paths>` takes the working tree's content, so
+  that hook decides what lands). And HEAD's runlog blob must equal the disk
+  copy — `git hash-object` and `git rev-parse HEAD:<path>` being the same
+  function of the same bytes, as in the artifact loop above it. Together they
+  say HEAD carries exactly the predecessor's bytes and exactly this session's
+  row: stronger than counting the sessionId, which a rewritten row could
+  still satisfy.
+
+**Controls.** All three fire. With the postcondition suppressed and a hook
+that resets the runlog index entry to HEAD's blob, the act returns `ok: true`
+with the archive committed and the row gone; same with a hook that removes
+the path outright; same with a hook that appends a foreign row to the working
+copy. Restored, each refuses by its own name — "HEAD carries a different …
+runlog", "HEAD does not carry … runlog", "not the bytes this observation
+appended" — and the run's commit lock is released in every case.
+
+**One observation, recorded rather than absorbed.** The registered
+KNOWN_FLAKY class says those three fs/git-heavy files fail only in the FULL
+suite. In this round one SOLO run of `tests/b12-register.test.ts` failed 1/29
+(the message was not captured before the process exited) and four consecutive
+solo runs on the same bytes were 29/29. The class is not being widened on one
+uncaptured line; it is written down so the next occurrence is the second, not
+the first.
+
 ---
 
 ## CLOSED

@@ -3923,6 +3923,69 @@ describe("the B12 harness", () => {
       expect(existsSync(held.lockDir)).toBe(false);
     });
 
+    // R25: the postcondition verified `written` — the per-observation
+    // artifacts — and the runlog is the OTHER path the same commit names. The
+    // threat model is the one the code already writes down for the archive: an
+    // index-mutating `pre-commit` hook. Pointed at the row, it produced a
+    // commit with every archive blob matching, a green result, a released
+    // session lock — and HEAD holding an observation with no ordering row.
+    const hookThatMutatesTheIndex = async (root: string, body: string) => {
+      const hooks = path.join(root, ".git", "hooks");
+      await fs.mkdir(hooks, { recursive: true });
+      await fs.writeFile(path.join(hooks, "pre-commit"), `#!/bin/sh\n${body}\nexit 0\n`, { encoding: "utf8", mode: 0o755 });
+    };
+
+    it("refuses when the commit landed the archive with the row REWRITTEN out of it", async () => {
+      const { root, git, runLogRel, relDir, committed, call } = await runlogFixture();
+      // The hook resets the runlog entry to HEAD's blob and leaves the
+      // observation staged: the add succeeds, the staged wall (which looks
+      // under the obs dir) passes, the commit succeeds, every archive blob
+      // matches. Only the row is gone.
+      await hookThatMutatesTheIndex(
+        root,
+        `blob=$(git rev-parse HEAD:${runLogRel})\ngit update-index --cacheinfo 100644,$blob,${runLogRel}`
+      );
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/HEAD carries a different .*runlog/);
+      expect(result.ok === false && result.why).toMatch(/design\.artifacts 6/);
+      // The commit HAPPENED and the archive is in it — that is the whole
+      // point: the old postcondition called this act successful.
+      expect(await git(root, "show", `HEAD:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(await git(root, "show", `HEAD:${runLogRel}`)).toBe(committed.trimEnd());
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("refuses when the commit landed the archive with the runlog REMOVED", async () => {
+      const { root, git, runLogRel, relDir, call } = await runlogFixture();
+      await hookThatMutatesTheIndex(root, `git update-index --force-remove ${runLogRel}`);
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/HEAD does not carry .*runlog/);
+      expect(await git(root, "show", `HEAD:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("refuses when the working copy of the runlog is not the bytes this observation appended", async () => {
+      // The other half of the pair: a hook (or anything else) that rewrites the
+      // WORKING TREE rather than the index. `git commit -- <paths>` takes the
+      // working tree's content, so this decides what gets committed — and the
+      // row that lands is then not the row this act appended.
+      const { root, git, runLogRel, call } = await runlogFixture();
+      const foreign = `{"ts":"2026-08-10T00:03:00Z","runId":"run-c","taskId":"t9","arm":"treatment","sessionId":"s-t9"}`;
+      await hookThatMutatesTheIndex(root, `echo '${foreign}' >> ${runLogRel}`);
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/not the bytes this observation appended/);
+      expect(result.ok === false && result.why).toMatch(/rewritten/);
+      // Our row did commit; the disk copy is no longer what we appended, which
+      // is exactly the state the next observation's barrier must not inherit
+      // as if this act had succeeded.
+      expect(await git(root, "show", `HEAD:${runLogRel}`)).toMatch(/s-t2/);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toMatch(/s-t9/);
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
     it("invalidates on drift in EVERY instruction component, with its citation", async () => {
       // The fourth round's second finding: settings/settings.local/MCP-config/
       // policy-blob drift was RECORDED but did not invalidate. An arm carrying

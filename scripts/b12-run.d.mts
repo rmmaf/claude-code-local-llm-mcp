@@ -254,7 +254,9 @@ export function acquireRunlogLock(
  * equality against what the barrier saw when this observation STARTED (a
  * different value means another observation ran inside this one, which
  * artifact 6 forbids), the sessionId bijection, the O_APPEND row, the
- * bounded retrying commit, and the blob-by-blob verify against HEAD.
+ * bounded retrying commit, and the blob-by-blob verify against HEAD — the
+ * artifacts AND the runlog, whose committed bytes must be exactly what the
+ * barrier accepted plus this observation's single row.
  *
  * Returns its reason instead of refusing — a `process.exit` inside would
  * strand the lock for the whole run. `row` is written with a `ts` stamped at
