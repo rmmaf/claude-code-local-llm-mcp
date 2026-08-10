@@ -239,6 +239,45 @@ export function committedOrderViolation(manifest: unknown, taskId: string, runlo
 export function runlogBarrierViolation(diskText: string | null, headText: string | null): string | null;
 
 /**
+ * One RUN-WIDE `mkdir` claim, held only across [re-check, append, commit,
+ * verify]. The session lock is keyed by (runId, taskId, arm) and so lets two
+ * observations of different tasks interleave; this one does not.
+ */
+export function acquireRunlogLock(
+  evidenceDir: string,
+  runId: string
+): { ok: boolean; lockDir: string; release: () => void };
+
+/**
+ * The runlog row and the evidence commit that carries it, as ONE act under
+ * the run's commit lock: the barrier re-checked inside the mutex, byte
+ * equality against what the barrier saw when this observation STARTED (a
+ * different value means another observation ran inside this one, which
+ * artifact 6 forbids), the sessionId bijection, the O_APPEND row, the
+ * bounded retrying commit, and the blob-by-blob verify against HEAD.
+ *
+ * Returns its reason instead of refusing — a `process.exit` inside would
+ * strand the lock for the whole run. `row` is written with a `ts` stamped at
+ * the append, not at the call.
+ */
+export function commitObservationRow(
+  repoRoot: string,
+  input: {
+    evidenceDir: string;
+    runId: string;
+    runLogRel: string;
+    relDir: string;
+    written: string[];
+    row: Record<string, unknown>;
+    sessionId: string;
+    message: string;
+    runlogAtBarrier: string | null;
+    lockAttempts?: number;
+    lockWaitMs?: number;
+  }
+): Promise<{ ok: true } | { ok: false; why: string }>;
+
+/**
  * Invalidity reasons for pre/post instruction-hash drift — every component
  * compared (CLAUDE.md, memory, settings, settings.local, passed MCP config,
  * policy blob), each with its frozen-text citation. Pure.

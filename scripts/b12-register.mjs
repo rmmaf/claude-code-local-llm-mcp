@@ -150,7 +150,7 @@ export function checkCore(manifestA, manifestB, pilot) {
  * most of all. Drifted paths are preserved and reported as a
  * post-registration conflict.
  */
-export function casCommit(repoRoot, { candidates, message, expectedHeadOverride = null, refOverride = null }) {
+export function casCommit(repoRoot, { candidates, message, expectedHeadOverride = null, refOverride = null, onSyncEntry = null }) {
   const refProbe = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
   if (refProbe.code !== 0) return { ok: false, why: "HEAD is detached — a registration needs a branch to install on" };
   const ref = refProbe.out.trim();
@@ -313,9 +313,13 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
         }
       }
     }
+    const interleaved = [];
     for (const e of entries) {
       const abs = path.join(repoRoot, e.path);
       const now = readDisk(e.path);
+      // The oracle's seam: the ONLY way to land a concurrent write inside the
+      // read→write window this loop is judged on. The CLI never passes it.
+      if (onSyncEntry) onSyncEntry(e);
       if (now === e.bytes) continue; // already carries the registered bytes
       if (now === null && e.diskBefore === null) {
         try {
@@ -333,7 +337,20 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
           appendFileSync(abs, e.bytes.slice(e.diskBefore.length), "utf8");
         } catch (error) {
           conflicted.push(`${e.path} (append failed: ${String(error)})`);
+          continue;
         }
+        // AN APPEND CANNOT OVERWRITE, BUT IT CANNOT RESERVE EITHER. The read
+        // above and this write are two operations, and a writer that landed
+        // between them puts its bytes FIRST: the file becomes
+        // `old + theirs + ours` while the commit carries `old + ours`. No
+        // bytes are lost — and the check above cannot see it, because it ran
+        // before the interleave existed. What breaks is the invariant every
+        // later `observe` enforces: the working copy must preserve the
+        // COMMITTED register as a byte PREFIX. Only a re-read finds it, and
+        // reporting is the whole remedy — rewriting a file to hoist our row
+        // over bytes nobody validated is the destruction R15 removed.
+        const after = readDisk(e.path);
+        if (after === null || !after.startsWith(e.bytes)) interleaved.push(e.path);
         continue;
       }
       conflicted.push(e.path);
@@ -341,6 +358,13 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
     if (conflicted.length > 0) {
       post.push(
         `NOT synced (the local copy moved during the act, or the change was not an append): ${conflicted.join(", ")} — the registered bytes live in ${newCommit.slice(0, 12)}; reconcile the local copies by hand`
+      );
+    }
+    if (interleaved.length > 0) {
+      post.push(
+        `appended, but a CONCURRENT WRITE interleaved ahead of it in: ${interleaved.join(", ")} — no bytes were lost, ` +
+          `but the local copy no longer preserves ${newCommit.slice(0, 12)}'s bytes as a PREFIX, which every later observe refuses; ` +
+          `rewrite the file BY HAND as the committed bytes followed by the foreign suffix`
       );
     }
     if (post.length > 0) {

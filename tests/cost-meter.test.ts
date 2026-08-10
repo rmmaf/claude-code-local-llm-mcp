@@ -3774,6 +3774,124 @@ describe("the B12 harness", () => {
       expect(runlogBarrierViolation(null, committed)).toMatch(/truncated/);
     });
 
+    // R18's second finding, and the reason R11's declined per-run lock came
+    // back: the barrier above is checked when an observation STARTS, minutes
+    // before its row exists, so two observations both pass it before either
+    // appends. Then `git commit -- <dir> <runlog>` takes the runlog's WHOLE
+    // content — one process's commit carries the other's ROW WITHOUT ITS
+    // ARCHIVE. These three run the real function against a real repository.
+    const runlogFixture = async () => {
+      const sh = promisify(execFile);
+      const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+      const root = tempRoot();
+      await git(root, "init", "-q");
+      await git(root, "config", "user.name", "runlog-oracle");
+      await git(root, "config", "user.email", "runlog@example.invalid");
+      await git(root, "config", "core.autocrlf", "false");
+      await git(root, "config", "commit.gpgsign", "false");
+      const runLogRel = "evidence/run-c.b12.runlog.jsonl";
+      const relDir = "evidence/run-c/obs-t2-treatment";
+      const committed = `{"ts":"2026-08-10T00:00:00Z","runId":"run-c","taskId":"t1","arm":"treatment","sessionId":"s-t1"}\n`;
+      await fs.mkdir(path.join(root, relDir), { recursive: true });
+      await fs.writeFile(path.join(root, runLogRel), committed, "utf8");
+      await fs.writeFile(path.join(root, relDir, "observation.json"), `{"taskId":"t2"}\n`, "utf8");
+      await git(root, "add", "--", runLogRel);
+      await git(root, "commit", "-q", "-m", "t1's evidence");
+      const call = async (over: Record<string, unknown> = {}) => {
+        const { commitObservationRow } = await load();
+        return commitObservationRow(root, {
+          evidenceDir: path.join(root, "evidence"),
+          runId: "run-c",
+          runLogRel,
+          relDir,
+          written: ["observation.json"],
+          row: { runId: "run-c", taskId: "t2", arm: "treatment", sessionId: "s-t2" },
+          sessionId: "s-t2",
+          message: "evidence: run-c t2/treatment",
+          runlogAtBarrier: committed,
+          lockAttempts: 1,
+          lockWaitMs: 1,
+          ...over,
+        });
+      };
+      return { root, git, runLogRel, relDir, committed, call };
+    };
+
+    it("commits the row and its archive as ONE act, then releases the run's lock", async () => {
+      const { root, git, runLogRel, relDir, committed, call } = await runlogFixture();
+      const result = await call();
+      expect(result.ok).toBe(true);
+      // The row is in HEAD, after the predecessor's, and the archive with it.
+      const head = await git(root, "show", `HEAD:${runLogRel}`);
+      expect(head.startsWith(committed.trimEnd())).toBe(true);
+      expect(head).toMatch(/"sessionId":"s-t2"/);
+      expect(await git(root, "show", `HEAD:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      // The `ts` is stamped at the write, not passed in.
+      expect(JSON.parse(head.split("\n")[1]!).ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      // The lock is a claim held across the act, not a file left behind.
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("refuses a FOREIGN uncommitted row instead of committing it without its evidence", async () => {
+      // The exact interleave: the other observation appended and has not yet
+      // committed. The old inline code appended ours and ran `git commit --
+      // <our dir> <runlog>`, which carried THEIR row with only OUR archive —
+      // and if they then died, HEAD held a row with nothing behind it forever.
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      const head0 = await git(root, "rev-parse", "HEAD");
+      const foreign = `{"ts":"2026-08-10T00:01:00Z","runId":"run-c","taskId":"t3","arm":"treatment","sessionId":"s-t3"}\n`;
+      await fs.appendFile(path.join(root, runLogRel), foreign, "utf8");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/re-checked under this run's commit lock/);
+      // NOTHING moved: no commit, no row of ours, and their line untouched.
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await git(root, "show", `HEAD:${runLogRel}`)).toBe(committed.trimEnd());
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed + foreign);
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("refuses when another observation ran INSIDE this one — the window the barrier cannot see", async () => {
+      // Disk and HEAD agree again, so the barrier is silent: the other
+      // observation started AND committed while this one was in flight. That
+      // is what artifact 6 forbids, and byte-equality with what the barrier
+      // saw at the start is the only thing that can tell.
+      const { root, git, runLogRel, call } = await runlogFixture();
+      await fs.appendFile(
+        path.join(root, runLogRel),
+        `{"ts":"2026-08-10T00:02:00Z","runId":"run-c","taskId":"t4","arm":"treatment","sessionId":"s-t4"}\n`,
+        "utf8"
+      );
+      await git(root, "add", "--", runLogRel);
+      await git(root, "commit", "-q", "-m", "t4's evidence, committed inside ours");
+      const head0 = await git(root, "rev-parse", "HEAD");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/ran inside this one/);
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).not.toMatch(/s-t2/);
+    });
+
+    it("writes NOTHING while another observation holds the run's commit lock", async () => {
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      const { acquireRunlogLock } = await load();
+      const held = acquireRunlogLock(path.join(root, "evidence"), "run-c");
+      expect(held.ok).toBe(true);
+      // The same claim, twice — `mkdir` is the mutual exclusion.
+      expect(acquireRunlogLock(path.join(root, "evidence"), "run-c").ok).toBe(false);
+      const head0 = await git(root, "rev-parse", "HEAD");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/commit lock/);
+      expect(result.ok === false && result.why).toMatch(/no live process/);
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed);
+      // The waiter did not steal it.
+      expect(existsSync(held.lockDir)).toBe(true);
+      held.release();
+      expect(existsSync(held.lockDir)).toBe(false);
+    });
+
     it("invalidates on drift in EVERY instruction component, with its citation", async () => {
       // The fourth round's second finding: settings/settings.local/MCP-config/
       // policy-blob drift was RECORDED but did not invalidate. An arm carrying

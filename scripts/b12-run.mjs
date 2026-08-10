@@ -71,23 +71,28 @@ function git(args, cwd = REPO) {
  * `.git/index.lock`. Git's own lock already prevents corruption; what it
  * hands the loser is a visible failure — so the loser RETRIES, bounded,
  * instead of refusing an observation that already paid for its session. Any
- * failure that is not lock contention still refuses immediately, and the
+ * failure that is not lock contention gives up immediately, and the
  * staged-emptiness wall inside the loop is the same wall as before.
+ *
+ * It RETURNS the reason (null = committed) rather than calling `refuse`,
+ * because it now runs inside the run's commit lock and `process.exit` would
+ * strand that lock (R18). The caller refuses.
  */
-async function gitCommitEvidenceRetrying(relDir, relLog, message) {
+async function gitCommitEvidenceRetrying(repoRoot, relDir, relLog, message) {
   const LOCKED = /index\.lock|Another git process|could not lock/i;
   for (let attempt = 1; ; attempt++) {
-    const add = run("git", ["-C", REPO, "add", "--", relDir, relLog]);
+    const add = run("git", ["-C", repoRoot, "add", "--", relDir, relLog]);
     if (add.code === 0) {
-      const staged = git(["diff", "--cached", "--name-only", "--", relDir]);
-      if (staged.trim() === "") refuse(`nothing staged under ${relDir} — the archive did not reach the index`);
-      const commit = run("git", ["-C", REPO, "commit", "-m", message, "--", relDir, relLog]);
-      if (commit.code === 0) return;
+      const staged = run("git", ["-C", repoRoot, "diff", "--cached", "--name-only", "--", relDir]);
+      if (staged.code !== 0) return `git diff --cached failed: ${(staged.err.trim() || staged.out.trim()).slice(0, 300)}`;
+      if (staged.out.trim() === "") return `nothing staged under ${relDir} — the archive did not reach the index`;
+      const commit = run("git", ["-C", repoRoot, "commit", "-m", message, "--", relDir, relLog]);
+      if (commit.code === 0) return null;
       if (!LOCKED.test(`${commit.err}\n${commit.out}`) || attempt >= 5) {
-        refuse(`git commit failed after ${attempt} attempt(s): ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}`);
+        return `git commit failed after ${attempt} attempt(s): ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}`;
       }
     } else if (!LOCKED.test(`${add.err}\n${add.out}`) || attempt >= 5) {
-      refuse(`git add failed after ${attempt} attempt(s): ${(add.err.trim() || add.out.trim()).slice(0, 300)}`);
+      return `git add failed after ${attempt} attempt(s): ${(add.err.trim() || add.out.trim()).slice(0, 300)}`;
     }
     await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
   }
@@ -151,6 +156,157 @@ export function acquireSessionLock(evidenceDir, runId, taskId, arm) {
       }
     },
   };
+}
+
+/**
+ * ONE RUN-WIDE claim, held only across [re-check, append, commit, verify] —
+ * `mkdir` again, the same atomic primitive as the session lock and the obs
+ * dir. The session lock cannot do this job: it is keyed by (runId, taskId,
+ * arm), so two observations of DIFFERENT tasks hold different locks and
+ * interleave freely, which is exactly the case R18 found.
+ */
+export function acquireRunlogLock(evidenceDir, runId) {
+  const lockDir = path.join(evidenceDir, `.runlog-lock-${runId}`);
+  try {
+    mkdirSync(lockDir);
+  } catch (error) {
+    if (error?.code === "EEXIST") return { ok: false, lockDir, release: () => {} };
+    throw error;
+  }
+  return {
+    ok: true,
+    lockDir,
+    release: () => {
+      try {
+        rmdirSync(lockDir);
+      } catch {
+        // Same doctrine as the session lock: released is released.
+      }
+    },
+  };
+}
+
+/**
+ * THE ROW AND ITS EVIDENCE, AS ONE ACT (R18's second finding).
+ *
+ * The row is appended to a SHARED file and the commit that carries it names
+ * that file, so `git commit -- <dir> <runlog>` takes the runlog's WHOLE
+ * current content. Two observations in flight together therefore had this
+ * shape: A appends, B appends, A commits — and A's commit carries B's ROW
+ * WITHOUT B'S ARCHIVE. If B then dies, HEAD holds a row with nothing durable
+ * behind it forever, which is the runlog↔evidence bijection the audit's
+ * clause-5 anchor joins on.
+ *
+ * R11 declined exactly this lock, reasoning that the barrier's equality gives
+ * the same guarantee "refusal-shaped". That premise was false and R18 named
+ * it: the barrier is checked at the START of an observation, minutes before
+ * the row exists, so BOTH processes pass it before EITHER appends. Equality
+ * serializes only a process that starts after another has appended. The
+ * liveness objection survives and is answered by the shape rather than the
+ * decision — the lock spans seconds (a bounded, retrying commit), never the
+ * session, and waiting for it is bounded too, with the path named on refusal.
+ *
+ * Everything fallible inside RETURNS its reason: a `process.exit` in here
+ * would strand the lock for the whole run.
+ */
+export async function commitObservationRow(
+  repoRoot,
+  { evidenceDir, runId, runLogRel, relDir, written, row, sessionId, message, runlogAtBarrier, lockAttempts = 20, lockWaitMs = 250 }
+) {
+  const runLogPath = path.join(repoRoot, runLogRel);
+  const readRunlog = () => (existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null);
+  let lock = acquireRunlogLock(evidenceDir, runId);
+  for (let attempt = 1; !lock.ok && attempt < lockAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, lockWaitMs));
+    lock = acquireRunlogLock(evidenceDir, runId);
+  }
+  if (!lock.ok) {
+    return {
+      ok: false,
+      why:
+        `another observation holds this run's commit lock (${lock.lockDir}) and did not release it — its row and evidence ` +
+        `commit as one act; remove the lock only after confirming no live process`,
+    };
+  }
+  try {
+    const headProbe = run("git", ["-C", repoRoot, "show", `HEAD:${runLogRel}`]);
+    const headText = headProbe.code === 0 ? headProbe.out : null;
+    const diskText = readRunlog();
+    // THE BARRIER AGAIN, now inside the mutex: an uncommitted row belonging to
+    // another observation would be swept into OUR commit without its archive.
+    const barrier = runlogBarrierViolation(diskText, headText);
+    if (barrier) return { ok: false, why: `${barrier} — re-checked under this run's commit lock, before any row was appended` };
+    // AND STRICTER THAN THE BARRIER: byte-equality with what the barrier saw
+    // when this observation STARTED. Disk and HEAD agreeing again would also
+    // describe another observation that began and finished inside this one —
+    // legal-looking bytes, and precisely what artifact 6 ("committed at each
+    // task's END, BEFORE THE NEXT TASK STARTS") forbids. Nothing else writes
+    // this file, so a difference has exactly one cause.
+    if (diskText !== runlogAtBarrier) {
+      return {
+        ok: false,
+        why:
+          `the runlog changed while this observation was in flight — another observation ran inside this one, which ` +
+          `design.artifacts 6 forbids (committed at each task's END, BEFORE the next task starts); nothing was appended`,
+      };
+    }
+    // THE BIJECTION HALF: a sessionId may appear in the runlog ONCE. The nonce
+    // makes a collision astronomically unlikely; asserting it makes a collision
+    // — or a copied row — a refusal instead of a silently ambiguous join in the
+    // audit's clause-5 anchor.
+    for (const line of (diskText ?? "").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        if (JSON.parse(line).sessionId === sessionId) {
+          return { ok: false, why: `sessionId ${sessionId} already appears in the runlog — the (runId, taskId, arm, attempt) ↔ sessionId bijection would break` };
+        }
+      } catch {
+        // A corrupt line is the scorer's finding, not this guard's.
+      }
+    }
+    // APPEND, never read-concat-write: the old shape lost rows under two
+    // concurrent observes (both read, both write, one row gone) — and a missing
+    // row is what the scorer's replay now refuses the whole order over. A
+    // single-line O_APPEND write is the atomic unit the log was designed around.
+    // `design.artifacts` 10: the `ts` is read from the clock in the same
+    // command that writes the row — and read HERE, not before the wait for
+    // the lock, so it stamps the write rather than the intention.
+    appendFileSync(runLogPath, JSON.stringify({ ts: stamp(), ...row }) + "\n", "utf8");
+    const failure = await gitCommitEvidenceRetrying(repoRoot, relDir, runLogRel, message);
+    if (failure) {
+      return {
+        ok: false,
+        why: `${failure} — the row is on disk UNCOMMITTED and the archive is not in HEAD; the next observation's barrier will refuse until an operator reconciles both`,
+      };
+    }
+    // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
+    //
+    // It asked `git ls-tree` whether ANYTHING sat under the directory. An
+    // index-mutating `pre-commit` hook can drop `archive.json` while leaving
+    // `observation.json` staged: the add succeeds, the staged check succeeds
+    // because files are staged, the commit succeeds with what is left, and
+    // `ls-tree` succeeds because something is there. The archive is not committed
+    // and every guard is green. A `post-commit` hook that moves `HEAD` back to an
+    // older commit containing an older copy of the directory passes it too.
+    //
+    // So each file is compared BY BLOB HASH against what `HEAD` now carries.
+    // `git hash-object` on the file and `git rev-parse HEAD:<path>` on the tree
+    // are the same function of the same bytes, so equality is exact rather than
+    // circumstantial, and a stale `HEAD` fails on content instead of on presence.
+    for (const name of written) {
+      const rel = `${relDir}/${name}`;
+      const onDisk = run("git", ["-C", repoRoot, "hash-object", "--", path.join(repoRoot, relDir, name)]);
+      if (onDisk.code !== 0) return { ok: false, why: `hash-object failed for ${rel}` };
+      const inHead = run("git", ["-C", repoRoot, "rev-parse", `HEAD:${rel}`]);
+      if (inHead.code !== 0) return { ok: false, why: `HEAD does not carry ${rel} after the commit` };
+      if (inHead.out.trim() !== onDisk.out.trim()) {
+        return { ok: false, why: `HEAD carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.out.trim().slice(0, 12)}` };
+      }
+    }
+    return { ok: true };
+  } finally {
+    lock.release();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2051,10 +2207,13 @@ async function observe(args, pilotMode = false) {
   // not yet a predecessor anyone may order themselves against.
   const runLogRel = `evidence/${manifest.runId ?? "b12-unnamed"}.b12.runlog.jsonl`;
   const runLogPath = path.join(REPO, runLogRel);
+  // KEPT, not just checked: the bytes the barrier accepted here are compared
+  // again under the run's commit lock at the end. Anything else having written
+  // this file in between is another observation that ran INSIDE this one.
+  const runlogAtBarrier = existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null;
   {
-    const diskText = existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null;
     const headProbe = run("git", ["-C", REPO, "show", `HEAD:${runLogRel}`]);
-    const barrier = runlogBarrierViolation(diskText, headProbe.code === 0 ? headProbe.out : null);
+    const barrier = runlogBarrierViolation(runlogAtBarrier, headProbe.code === 0 ? headProbe.out : null);
     if (barrier) refuse(barrier);
   }
   // The committed order, enforced against the persisted runlog BEFORE the
@@ -2648,33 +2807,27 @@ async function observe(args, pilotMode = false) {
     archive.telemetry.map((row) => JSON.stringify(row)).join("\n") + (archive.telemetry.length > 0 ? "\n" : "")
   );
 
-  // A machine-written row per observation, `design.artifacts` 10: "whose `ts` is
-  // read from the system clock in the same command that writes it".
-  // APPEND, never read-concat-write: the old shape lost rows under two
-  // concurrent observes (both read, both write, one row gone) — and a missing
-  // row is what the scorer's replay now refuses the whole order over. A
-  // single-line O_APPEND write is the atomic unit the log was designed around.
-  const runLog = path.join(REPO, "evidence", `${runId}.b12.runlog.jsonl`);
-  // THE BIJECTION HALF: a sessionId may appear in the runlog ONCE. The nonce
-  // makes a collision astronomically unlikely; asserting it makes a collision
-  // — or a copied row — a refusal instead of a silently ambiguous join in the
-  // audit's clause-5 anchor.
-  if (existsSync(runLog)) {
-    for (const line of readFileSync(runLog, "utf8").split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        if (JSON.parse(line).sessionId === sessionId) {
-          refuse(`sessionId ${sessionId} already appears in the runlog — the (runId, taskId, arm, attempt) ↔ sessionId bijection would break`);
-        }
-      } catch {
-        // A corrupt line is the scorer's finding, not this guard's.
-      }
-    }
-  }
-  appendFileSync(
-    runLog,
-    JSON.stringify({
-      ts: stamp(),
+  // THE ROW AND ITS COMMIT, AS ONE ACT — `design.artifacts` 10 ("whose `ts` is
+  // read from the system clock in the same command that writes it") and
+  // artifact 6's barrier ("committed at each task's END, BEFORE THE NEXT TASK
+  // STARTS") are one critical section, held under this run's commit lock. It
+  // is enforced HERE rather than left to a driver: a driver could lawfully
+  // commit between calls, but then the timing obligation is checked by
+  // nothing, which is the shape of every guard this project has had to delete.
+  //
+  // Everything the old inline code refused on now comes back as a reason, so
+  // the lock is released before this process exits.
+  const relDir = path.relative(REPO, dir).split(path.sep).join("/");
+  const rowCommit = await commitObservationRow(REPO, {
+    evidenceDir: path.join(REPO, "evidence"),
+    runId,
+    runLogRel,
+    relDir,
+    written,
+    sessionId,
+    runlogAtBarrier,
+    message: `evidence: ${runId} ${task.id}/${arm}`,
+    row: {
       runId,
       taskId: task.id,
       arm,
@@ -2683,50 +2836,13 @@ async function observe(args, pilotMode = false) {
       valid: observation.valid,
       accepted: observation.accepted,
       originated: originated.length,
-    }) + "\n",
-    "utf8"
-  );
-  // The contested resource is the runlog; with the row appended the in-flight
-  // claim has done its work.
+    },
+  });
+  if (!rowCommit.ok) refuse(rowCommit.why);
+  // The row and its evidence are in HEAD; only now has the in-flight claim
+  // done its work. (It used to be released right after the append — which
+  // handed the next attempt a window where the commit had not happened yet.)
   sessionLock.release();
-
-  // THE COMMIT BARRIER. `design.artifacts` 6 says "committed at each task's END,
-  // BEFORE THE NEXT TASK STARTS", and the same inventory keys a VOID to a commit
-  // DATE on artifact 1 — a word that is unintelligible about a mere file write.
-  //
-  // Enforced HERE rather than left to a driver. A driver could lawfully commit
-  // between calls, but then the timing obligation is checked by nothing, which
-  // is the shape of every guard this project has had to delete. The verify step
-  // after it is the same rule: a `git commit` that silently committed nothing
-  // (an empty diff, a path outside the repo, a gitignore rule nobody expected)
-  // would leave the archive uncommitted and the run looking clean.
-  const relDir = path.relative(REPO, dir).split(path.sep).join("/");
-  const relLog = path.relative(REPO, runLog).split(path.sep).join("/");
-  await gitCommitEvidenceRetrying(relDir, relLog, `evidence: ${runId} ${task.id}/${arm}`);
-
-  // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
-  //
-  // It asked `git ls-tree` whether ANYTHING sat under the directory. An
-  // index-mutating `pre-commit` hook can drop `archive.json` while leaving
-  // `observation.json` staged: the add succeeds, the staged check succeeds
-  // because files are staged, the commit succeeds with what is left, and
-  // `ls-tree` succeeds because something is there. The archive is not committed
-  // and every guard is green. A `post-commit` hook that moves `HEAD` back to an
-  // older commit containing an older copy of the directory passes it too.
-  //
-  // So each file is compared BY BLOB HASH against what `HEAD` now carries.
-  // `git hash-object` on the file and `git rev-parse HEAD:<path>` on the tree
-  // are the same function of the same bytes, so equality is exact rather than
-  // circumstantial, and a stale `HEAD` fails on content instead of on presence.
-  for (const name of written) {
-    const rel = `${relDir}/${name}`;
-    const onDisk = git(["hash-object", "--", path.join(dir, name)]);
-    const inHead = run("git", ["-C", REPO, "rev-parse", `HEAD:${rel}`]);
-    if (inHead.code !== 0) refuse(`HEAD does not carry ${rel} after the commit`);
-    if (inHead.out.trim() !== onDisk) {
-      refuse(`HEAD carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.slice(0, 12)}`);
-    }
-  }
 
   process.stdout.write(
     `  ${observation.valid ? "ok  " : "INVALID"}  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  ` +

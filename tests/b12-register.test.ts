@@ -10,7 +10,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, promises as fs } from "node:fs";
+import { appendFileSync, existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -454,6 +454,46 @@ describe("registerRun — the act validates the captured state, and only that", 
     // The drifted register is reported rather than rewritten.
     expect(okOf(result).postFailure).toMatch(/MEASUREMENTS\.jsonl/);
     expect(onDisk.endsWith(`{"metric":"concurrent-append"}\n`)).toBe(true);
+  });
+
+  it("RE-READS after the append — a write that lands inside the read→write window is reported, not called clean", async () => {
+    // R18#1. The append itself cannot overwrite, but the check that licenses
+    // it ("the disk still holds what I captured") and the write are two
+    // operations. A writer that lands between them puts its bytes FIRST, so
+    // the file becomes old + theirs + ours while the commit carries
+    // old + ours: nothing is lost, and yet the working copy no longer
+    // preserves the COMMITTED register as a prefix — which is exactly what
+    // every later `observe` refuses. Only a re-read can see it.
+    const { casCommit } = await import("../scripts/b12-register.mjs");
+    const root = tempRoot();
+    initRepo(root);
+    const measPath = path.join(root, "MEASUREMENTS.jsonl");
+    const old = `{"metric":"prior"}\n`;
+    await fs.writeFile(measPath, old, "utf8");
+    commitAll(root, "the pre-existing register");
+    const row = `{"b12_registration":true,"run_id":"run-w"}\n`;
+    const foreign = `{"metric":"landed-mid-window"}\n`;
+    const result = casCommit(root, {
+      message: "b12 registration: run-w",
+      candidates: [{ path: "MEASUREMENTS.jsonl", bytes: old + row, diskBefore: old }],
+      // The seam fires AFTER the entry's disk copy is read and BEFORE the
+      // append — the window the old code had no way to observe.
+      onSyncEntry: (entry) => {
+        if (entry.path === "MEASUREMENTS.jsonl") appendFileSync(measPath, foreign, "utf8");
+      },
+    });
+    expect(result.ok).toBe(true);
+    // The registration is exact: HEAD carries the captured bytes, not the interleave.
+    expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).toBe((old + row).trimEnd());
+    const onDisk = await fs.readFile(measPath, "utf8");
+    // NO BYTES WERE LOST — both lines are there, ours last.
+    expect(onDisk).toBe(old + foreign + row);
+    // But the committed bytes are no longer a PREFIX of the disk copy…
+    expect(onDisk.startsWith(old + row)).toBe(false);
+    // …and that is reported, with the repair named and nothing rewritten.
+    expect(okOf(result).postFailure).toMatch(/PREFIX/);
+    expect(okOf(result).postFailure).toMatch(/MEASUREMENTS\.jsonl/);
+    expect(okOf(result).postFailure).toMatch(/BY HAND/);
   });
 
   it("syncs NOTHING when HEAD switched branches after the swap — another checkout is not this act's to write", async () => {

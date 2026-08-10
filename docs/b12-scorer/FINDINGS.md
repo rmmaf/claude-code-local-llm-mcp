@@ -1487,6 +1487,66 @@ lock untouched, with the repair reported; the R16 control — a real
 `git add <result>; git commit` after registering — still finds both
 manifests and the row.
 
+### ELEVENTH POST-IMPLEMENTATION ROUND (R18) — adjudicated 2026-08-10
+
+Two high findings, both confirmed, and both are the same sentence about two
+different files: **a check and the write it licenses are two operations, and
+a shared file is not held between them.**
+
+- **R18#1 — the register's append was licensed by a stale read.** The sync
+  reads the disk copy, concludes it still equals `diskBefore`, and THEN
+  appends. A writer that lands between the two puts its bytes FIRST: the file
+  becomes `old + theirs + ours` while the commit carries `old + ours`. No
+  bytes are lost — R15's append guarantees that — but the working copy stops
+  preserving the COMMITTED register as a byte PREFIX, which is exactly what
+  `registrationGuard` refuses in every later `observe`, and `casCommit`
+  reported the act clean. A lock is not available here: the register's other
+  writers are hands, not processes, and the act's own capture already refuses
+  an uncommitted suffix. So the remedy is the re-read the old code never did
+  — the interleave is REPORTED, with the repair named, and nothing is
+  rewritten (hoisting our row over bytes nobody validated is the destruction
+  R15 removed). Control: a seam fires a foreign append inside the
+  read→write window; both lines survive, the committed bytes are proved NOT
+  to be a prefix, and `postFailure` names the file, the PREFIX, and the hand
+  repair.
+- **R18#2 — the runlog row and its evidence were not one act, and R11's
+  declination was the reason.** The row is appended to a SHARED file and the
+  commit that carries it names that file, so `git commit -- <dir> <runlog>`
+  takes the runlog's WHOLE content: with two observations in flight, A's
+  commit carries B's ROW WITHOUT B'S ARCHIVE, and if B then dies, HEAD holds
+  a row with nothing durable behind it — the runlog↔evidence bijection the
+  audit's clause-5 anchor joins on.
+
+  **R11 declined exactly this lock**, on the reasoning that the barrier's
+  equality "gives the same guarantee refusal-shaped". That premise was false
+  and this round named it: the barrier is checked when an observation STARTS,
+  minutes before its row exists, so BOTH processes pass it before EITHER
+  appends. Equality serializes only a process that starts after another has
+  appended. The liveness objection that motivated the declination survives
+  and is answered by the SHAPE rather than by the decision — the lock spans
+  seconds (a bounded, retrying commit), never a session, waiting for it is
+  bounded, and a held lock refuses with its path.
+
+  `commitObservationRow` is now one named act under a run-wide `mkdir` claim
+  (the session lock cannot do this job: keyed by (runId, taskId, arm), it
+  lets two observations of different tasks interleave freely). Inside: the
+  barrier again, byte-equality with what the barrier saw at the START — a
+  different value means another observation began AND finished inside this
+  one, which artifact 6 forbids and the barrier cannot see, since disk and
+  HEAD agree again — the sessionId bijection, the O_APPEND row with its `ts`
+  stamped at the write, the bounded commit, and the blob-by-blob verify.
+  Everything fallible RETURNS its reason: a `process.exit` in there would
+  strand the lock for the whole run. The session lock is now released after
+  the commit rather than after the append.
+
+  **Reproduced before it was believed**, the R16 way: with both guards
+  disabled the control's act returns `ok: true` — it commits, carrying the
+  foreign row. Controls: the foreign uncommitted row refuses and moves
+  NOTHING (HEAD, the committed blob and the disk bytes all unchanged); an
+  observation that committed inside ours refuses naming artifact 6; a held
+  lock writes nothing, is not stolen, and names the "no live process" rule;
+  and the happy path commits row and archive together and releases the lock.
+
 ---
 
 ## CLOSED

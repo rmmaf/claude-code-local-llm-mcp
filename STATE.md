@@ -17,21 +17,20 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R17 (post-implementation adversarial rounds) are ADJUDICATED — nineteen
-findings, all confirmed, fixed with controls: R8 CAS index +
-capture-before-validate; R9 fail-open probes made fail-closed; R10 the
-conditional sync; R11 the branch captured, artifact 6's runlog barrier,
-case-folded scopes; R12 clause 6's two holes; R13 a stripped snapshot stamp
-scoring; R14 the sync's index and leaked worktrees; R15 the sync became an
-APPEND and `--attest-suite` moved to a detached worktree that BUILDS before
-it tests; **R16 the worst one — the real index stayed on `expectedHead`
-after the swap, so the operator's next ordinary commit UNDID the
-registration (reproduced: manifest gone, row gone)**; R17 that fix's own
-TOCTOU, closed with git's OWN mutex (`.git/index.lock` by O_EXCL, released
-by renaming over `.git/index` — which also blocks a concurrent checkout).
-The registration surface took five rounds; each answer moved further from
-"check more carefully" toward "use the primitive that cannot race".
-PR to main is open — merge is the user's act.
+R8–R18 (post-implementation adversarial rounds) are ADJUDICATED — twenty-one
+findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
+round by round): the CAS act's capture, the fail-closed probes, clause 6's
+holes, the snapshot stamps, the attestation worktree, and — five rounds on
+one surface — the post-registration sync, from disk bytes to an APPEND to an
+index installed under git's own mutex. **R16 was the worst: the real index
+stayed on `expectedHead`, so the operator's next ordinary commit UNDID the
+registration (reproduced).** **R18 is one sentence twice — a check and the
+write it licenses are two operations: the register's append is now RE-READ
+(an interleave loses no bytes and still breaks the committed-prefix
+invariant), and the runlog row + its evidence commit became ONE act under a
+run-wide lock, OVERTURNING R11's declination, whose premise — that the
+barrier serializes — is false, because both processes pass it before either
+appends.** PR to main is open — merge is the user's act.
 
 ## Still blocking a run
 

@@ -21,7 +21,10 @@ export function checkCore(
  * when the registered bytes extend `diskBefore` (the caller's capture
  * snapshot; entry-time here when omitted), creates an absent file with the
  * exclusive `wx` flag, and otherwise leaves the local copy alone and reports
- * it. Non-destructive by construction, not by looking first.
+ * it. Non-destructive by construction, not by looking first. An append is
+ * RE-READ afterwards: a writer that interleaved between the read and the
+ * write lands ahead of the registered suffix, which loses no bytes but breaks
+ * the committed-prefix invariant `observe` enforces, so it is reported too.
  */
 export function casCommit(
   repoRoot: string,
@@ -32,6 +35,10 @@ export function casCommit(
     /** The full symbolic ref captured before validation; a mismatch at swap
      * time refuses — two branches can share one commit. */
     refOverride?: string | null;
+    /** The oracle's seam: called with each entry after its disk copy is read
+     * and before anything is written, so a test can land a concurrent write
+     * inside that window. The CLI never passes it. */
+    onSyncEntry?: ((entry: { path: string; bytes: string; diskBefore: string | null }) => void) | null;
   }
 ):
   | { ok: true; commit: string; postFailure?: string }
