@@ -65,36 +65,97 @@ function git(args, cwd = REPO) {
 }
 
 /**
- * The shared-index half of the concurrency story (the sixth diff round's
- * first finding): each observation runs in its own worktree, but the evidence
- * commit runs in THIS repository, and two concurrent observations contend on
- * `.git/index.lock`. Git's own lock already prevents corruption; what it
- * hands the loser is a visible failure — so the loser RETRIES, bounded,
- * instead of refusing an observation that already paid for its session. Any
- * failure that is not lock contention gives up immediately, and the
- * staged-emptiness wall inside the loop is the same wall as before.
+ * THE EVIDENCE COMMIT, INSTALLED AT A REF THE ACT CAPTURED (R27).
  *
- * It RETURNS the reason (null = committed) rather than calling `refuse`,
- * because it now runs inside the run's commit lock and `process.exit` would
+ * It used to be `git add` + `git commit`, which write to whatever `HEAD`
+ * names AT THAT MOMENT. R26 put a branch check before the append; R27 named
+ * the window that check cannot close — a checkout landing between the check
+ * and git's own start still moves the target, and by the time the
+ * verification says so the commit is IRREVERSIBLE, sitting on someone else's
+ * branch with the run's row inside it.
+ *
+ * So the install is a CAS, the same act the register performs: build the tree
+ * in a TEMPORARY index seeded from the captured tip, `commit-tree` onto that
+ * tip, and `update-ref <ref> <new> <expectedTip>`. Git compares and swaps the
+ * ref itself — either the branch moves from exactly the commit this act read,
+ * or nothing happens anywhere.
+ *
+ * Two things it deliberately does NOT do, both learned the hard way in the
+ * register (R14–R19): it never checks anything out, and it never installs an
+ * index over the real one. The tree it commits is `expectedTip`'s tree plus
+ * these paths — precisely what `git commit -- <paths>` produced — so staging
+ * the same paths in the REAL index beforehand leaves index, HEAD and working
+ * tree agreeing without a single destructive write. Staging first is also why
+ * a failed CAS is safe: the paths are staged and NOTHING is committed, which
+ * is the state the old failure path left too.
+ *
+ * The shared-index retry survives for the `git add` alone — two concurrent
+ * observations still contend on `.git/index.lock`, and the loser waits rather
+ * than losing a session it already paid for. Everything below the add is
+ * plumbing that never takes that lock.
+ *
+ * It RETURNS the reason (null = installed) rather than calling `refuse`,
+ * because it runs inside the run's commit lock and `process.exit` would
  * strand that lock (R18). The caller refuses.
  */
-async function gitCommitEvidenceRetrying(repoRoot, relDir, relLog, message) {
+async function installEvidenceCommit(repoRoot, { relDir, relLog, message, ref, expectedTip, files }) {
   const LOCKED = /index\.lock|Another git process|could not lock/i;
   for (let attempt = 1; ; attempt++) {
     const add = run("git", ["-C", repoRoot, "add", "--", relDir, relLog]);
-    if (add.code === 0) {
-      const staged = run("git", ["-C", repoRoot, "diff", "--cached", "--name-only", "--", relDir]);
-      if (staged.code !== 0) return `git diff --cached failed: ${(staged.err.trim() || staged.out.trim()).slice(0, 300)}`;
-      if (staged.out.trim() === "") return `nothing staged under ${relDir} — the archive did not reach the index`;
-      const commit = run("git", ["-C", repoRoot, "commit", "-m", message, "--", relDir, relLog]);
-      if (commit.code === 0) return null;
-      if (!LOCKED.test(`${commit.err}\n${commit.out}`) || attempt >= 5) {
-        return `git commit failed after ${attempt} attempt(s): ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}`;
-      }
-    } else if (!LOCKED.test(`${add.err}\n${add.out}`) || attempt >= 5) {
+    if (add.code === 0) break;
+    if (!LOCKED.test(`${add.err}\n${add.out}`) || attempt >= 5) {
       return `git add failed after ${attempt} attempt(s): ${(add.err.trim() || add.out.trim()).slice(0, 300)}`;
     }
     await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+  }
+  const staged = run("git", ["-C", repoRoot, "diff", "--cached", "--name-only", "--", relDir]);
+  if (staged.code !== 0) return `git diff --cached failed: ${(staged.err.trim() || staged.out.trim()).slice(0, 300)}`;
+  if (staged.out.trim() === "") return `nothing staged under ${relDir} — the archive did not reach the index`;
+
+  // The TEMPORARY index: seeded from the tip this act captured, never from
+  // whatever the real index happens to hold, so an operator's unrelated
+  // staged work cannot ride into the run's evidence commit.
+  const tmpIndex = path.join(repoRoot, ".git", `b12-obs-index-${process.pid}-${Date.now()}`);
+  const withIndex = { env: { ...process.env, GIT_INDEX_FILE: tmpIndex } };
+  try {
+    const seed = run("git", ["-C", repoRoot, "read-tree", expectedTip], withIndex);
+    if (seed.code !== 0) return `read-tree ${expectedTip.slice(0, 12)} failed: ${(seed.err.trim() || seed.out.trim()).slice(0, 200)}`;
+    for (const rel of files) {
+      const blob = run("git", ["-C", repoRoot, "hash-object", "-w", "--", path.join(repoRoot, rel)]);
+      if (blob.code !== 0) return `hash-object failed for ${rel}: ${(blob.err.trim() || blob.out.trim()).slice(0, 200)}`;
+      const staged2 = run(
+        "git",
+        ["-C", repoRoot, "update-index", "--add", "--cacheinfo", `100644,${blob.out.trim()},${rel}`],
+        withIndex
+      );
+      if (staged2.code !== 0) return `update-index failed for ${rel}: ${(staged2.err.trim() || staged2.out.trim()).slice(0, 200)}`;
+    }
+    const tree = run("git", ["-C", repoRoot, "write-tree"], withIndex);
+    if (tree.code !== 0) return `write-tree failed: ${(tree.err.trim() || tree.out.trim()).slice(0, 200)}`;
+    const before = run("git", ["-C", repoRoot, "rev-parse", `${expectedTip}^{tree}`]);
+    if (before.code === 0 && before.out.trim() === tree.out.trim()) {
+      return `the evidence tree equals ${expectedTip.slice(0, 12)}'s — nothing of this observation reached it`;
+    }
+    const commit = run("git", ["-C", repoRoot, "commit-tree", tree.out.trim(), "-p", expectedTip, "-m", message]);
+    if (commit.code !== 0) return `commit-tree failed: ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}`;
+    // THE ATOMIC INSTALL. A failure here means the branch moved under us and
+    // NOTHING was installed — the paths stay staged, nothing is committed,
+    // and the caller says so.
+    const install = run("git", ["-C", repoRoot, "update-ref", ref, commit.out.trim(), expectedTip]);
+    if (install.code !== 0) {
+      return (
+        `${ref} moved away from ${expectedTip.slice(0, 12)} while this observation committed — the evidence was NOT installed ` +
+        `anywhere (${(install.err.trim() || install.out.trim()).slice(0, 200)})`
+      );
+    }
+    return null;
+  } finally {
+    try {
+      rmSync(tmpIndex, { force: true });
+    } catch {
+      // A leftover temp index is inert — it is never read again, and losing
+      // the observation over the cleanup would be the wrong trade.
+    }
   }
 }
 
@@ -211,7 +272,24 @@ export function acquireRunlogLock(evidenceDir, runId) {
  */
 export async function commitObservationRow(
   repoRoot,
-  { evidenceDir, runId, runLogRel, relDir, written, row, sessionId, message, runlogAtBarrier, branchRef, lockAttempts = 20, lockWaitMs = 250 }
+  {
+    evidenceDir,
+    runId,
+    runLogRel,
+    relDir,
+    written,
+    row,
+    sessionId,
+    message,
+    runlogAtBarrier,
+    branchRef,
+    /** Test seam: fired between the append and the CAS install — the only
+     * place from which the oracle can reach the window a pre-check cannot
+     * see. The CLI never passes it. */
+    beforeInstall,
+    lockAttempts = 20,
+    lockWaitMs = 250,
+  }
 ) {
   const runLogPath = path.join(repoRoot, runLogRel);
   const readRunlog = () => (existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null);
@@ -259,7 +337,21 @@ export async function commitObservationRow(
         };
       }
     }
-    const headProbe = run("git", ["-C", repoRoot, "show", `HEAD:${runLogRel}`]);
+    // EVERY QUESTION FROM HERE IS ASKED OF THE BRANCH, NOT OF `HEAD` (R26/R27).
+    // They are the same thing only while nothing moves; the branch is where
+    // the evidence has to be either way, so the branch is what the act reads,
+    // commits onto and verifies against.
+    const verifyRef = typeof branchRef === "string" && branchRef !== "" ? branchRef : "HEAD";
+    // THE TIP THIS ACT WILL COMMIT ONTO, read HERE — with the barrier state,
+    // before anything is appended. It is the CAS's `expected`, so the install
+    // is atomic against everything that happens after this line, which is the
+    // window a pre-check cannot see (R27).
+    const tipProbe = run("git", ["-C", repoRoot, "rev-parse", verifyRef]);
+    if (tipProbe.code !== 0) {
+      return { ok: false, why: `${verifyRef} does not resolve — the evidence commit has no tip to install onto; nothing was appended` };
+    }
+    const expectedTip = tipProbe.out.trim();
+    const headProbe = run("git", ["-C", repoRoot, "show", `${verifyRef}:${runLogRel}`]);
     const headText = headProbe.code === 0 ? headProbe.out : null;
     const diskText = readRunlog();
     // THE BARRIER AGAIN, now inside the mutex: an uncommitted row belonging to
@@ -308,11 +400,19 @@ export async function commitObservationRow(
     // postcondition below compares against a value fixed BEFORE the commit
     // rather than against whatever the commit left behind.
     const expectedRunlog = (runlogAtBarrier ?? "") + appended;
-    const failure = await gitCommitEvidenceRetrying(repoRoot, relDir, runLogRel, message);
+    if (typeof beforeInstall === "function") await beforeInstall();
+    const failure = await installEvidenceCommit(repoRoot, {
+      relDir,
+      relLog: runLogRel,
+      message,
+      ref: verifyRef,
+      expectedTip,
+      files: [...written.map((name) => `${relDir}/${name}`), runLogRel],
+    });
     if (failure) {
       return {
         ok: false,
-        why: `${failure} — the row is on disk UNCOMMITTED and the archive is not in HEAD; the next observation's barrier will refuse until an operator reconciles both`,
+        why: `${failure} — the row is on disk UNCOMMITTED and the archive is not on ${verifyRef}; the next observation's barrier will refuse until an operator reconciles both`,
       };
     }
     // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
@@ -329,11 +429,6 @@ export async function commitObservationRow(
     // `git hash-object` on the file and `git rev-parse HEAD:<path>` on the tree
     // are the same function of the same bytes, so equality is exact rather than
     // circumstantial, and a stale `HEAD` fails on content instead of on presence.
-    // VERIFIED AGAINST THE BRANCH, NOT AGAINST `HEAD` (R26). They are the same
-    // thing only while nothing moved — and if something did move after the
-    // commit, the branch is still where the evidence has to be, so the branch
-    // is what the claim is about.
-    const verifyRef = typeof branchRef === "string" && branchRef !== "" ? branchRef : "HEAD";
     for (const name of written) {
       const rel = `${relDir}/${name}`;
       const onDisk = run("git", ["-C", repoRoot, "hash-object", "--", path.join(repoRoot, relDir, name)]);

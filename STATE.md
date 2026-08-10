@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R26 (post-implementation adversarial rounds) are ADJUDICATED — thirty-five
+R8–R27 (post-implementation adversarial rounds) are ADJUDICATED — thirty-six
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -56,7 +56,13 @@ emission RE-DERIVES the judgement, every input equal except `head` (the one
 R22 named). And the evidence commit went wherever HEAD pointed: a checkout
 mid-observation put a paid observation on another branch with the act
 reporting success — the branch is now captured at the barrier and every
-verification reads IT, not HEAD.**
+verification reads IT, not HEAD. **R27: that check was TOCTOU and the damage
+irreversible, so the install became a CAS — temp index from the captured tip,
+`commit-tree`, `update-ref <ref> <new> <expectedTip>`. No checkout, no index
+install: the tree is the tip's plus these paths, staged first, so the R14–R19
+saga does not repeat. Side effect worth knowing: plumbing runs NO hooks, so
+R25's pre-commit threat is closed by construction and two of its controls now
+assert that.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The

@@ -253,8 +253,9 @@ export function acquireRunlogLock(
  * the run's commit lock: the barrier re-checked inside the mutex, byte
  * equality against what the barrier saw when this observation STARTED (a
  * different value means another observation ran inside this one, which
- * artifact 6 forbids), the sessionId bijection, the O_APPEND row, the
- * bounded retrying commit, and the blob-by-blob verify against HEAD — the
+ * artifact 6 forbids), the sessionId bijection, the O_APPEND row, the CAS
+ * install (`commit-tree` onto the tip this act read, `update-ref <ref> <new>
+ * <expectedTip>`), and the blob-by-blob verify against THAT REF — the
  * artifacts AND the runlog, whose committed bytes must be exactly what the
  * barrier accepted plus this observation's single row.
  *
@@ -281,6 +282,8 @@ export function commitObservationRow(
      * that landed elsewhere is a paid observation the run cannot find.
      */
     branchRef?: string;
+    /** Test seam: fired between the append and the CAS install. */
+    beforeInstall?: () => Promise<void> | void;
     lockAttempts?: number;
     lockWaitMs?: number;
   }

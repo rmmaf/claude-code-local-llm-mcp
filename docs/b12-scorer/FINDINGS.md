@@ -1878,6 +1878,57 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTIETH POST-IMPLEMENTATION ROUND (R27) — adjudicated 2026-08-10
+
+One finding, and it is the previous round's own fix reviewed — the third time
+in this loop that a repair turned out to be half of one.
+
+- **R27#1 (high) — the branch check was TOCTOU, and the damage was
+  irreversible.** R26 made the act refuse when HEAD no longer named the
+  captured branch. But the check is one process reading a file and `git
+  commit` is another process reading it again: a checkout landing in between
+  still moved the target, and by the time the ref-based verification said so,
+  **the commit already existed on someone else's branch with the run's row
+  inside it.** A refusal that arrives after an irreversible write is a report,
+  not a guard.
+
+  The install is now the same act the register performs: the tree is built in
+  a TEMPORARY index seeded from the tip this act read (so an operator's
+  unrelated staged work cannot ride in), `commit-tree` parents it on that tip,
+  and `update-ref <ref> <new> <expectedTip>` compares and swaps. Git decides:
+  either the branch moves from exactly the commit this act read its barrier
+  against, or nothing happens anywhere. The tip is captured WITH the barrier
+  bytes, before the append — not re-read at the last instant, which would
+  reintroduce the same window one line lower.
+
+  **What it deliberately does not do, and why the R14–R19 saga does not
+  repeat here:** it never checks anything out, and it never installs an index
+  over the real one. The tree it commits is `expectedTip`'s tree plus these
+  paths — exactly what `git commit -- <paths>` produced — so staging the same
+  paths in the real index BEFORE the swap leaves index, HEAD and working tree
+  agreeing with no destructive write. Staging first is also what makes a
+  failed CAS safe: the paths are staged, nothing is committed, and that is
+  the state the old failure path left too.
+
+  **A threat closed by construction, and the tests changed to say so.** The
+  install no longer runs `git commit`, so `pre-commit` hooks never fire on the
+  evidence commit — the exact mechanism R25's controls used. Two of those
+  controls now assert the opposite and stronger fact: with the hook that used
+  to drop the row still installed, the act SUCCEEDS and the row lands with its
+  archive. R25's postcondition stays and is reached through the seam instead:
+  anything rewriting the runlog between the append and the install still
+  refuses by name.
+
+**Controls.** With the install made to follow the mutable branch (a fresh tip
+read at install time — the shape R26 shipped), a ref that moved between the
+append and the install lands `ok: true` and the evidence stacks on top of the
+intruder's commit. Restored, the same race refuses with "moved away from …
+NOT installed anywhere", the branch carries only the intruder's commit, and
+`ls-tree` shows the observation directory reached no tree at all. Separately,
+the R16 lesson is re-proved for this path: after a successful act `git status`
+is empty and the operator's next ordinary commit leaves the archive and the
+row exactly where they are.
+
 ### NINETEENTH POST-IMPLEMENTATION ROUND (R26) — adjudicated 2026-08-10
 
 Two high findings. The first is the whole clause 4–6 apparatus reviewed at

@@ -3945,6 +3945,57 @@ describe("the B12 harness", () => {
       expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
     });
 
+    it("installs the evidence at the CAPTURED ref, and a branch that moved first gets NOTHING", async () => {
+      // R27: R26's check is TOCTOU — `git commit` follows HEAD at ITS moment,
+      // so a checkout landing after the check still moved the target, and the
+      // commit was irreversible by the time the verification said so. The
+      // install is now `commit-tree` onto the captured tip plus `update-ref
+      // <ref> <new> <expectedTip>`: git compares and swaps, so either the
+      // branch moves from exactly the commit this act read, or nothing
+      // happens anywhere. Moving the branch BEFORE the install is how the
+      // oracle reaches the window the check cannot see.
+      const { root, git, runLogRel, relDir, committed, call, branchRef } = await runlogFixture();
+      const foreign = `{"ts":"2026-08-10T00:04:00Z","runId":"run-c","taskId":"t8","arm":"treatment","sessionId":"s-t8"}\n`;
+      const result = await call({
+        // The seam fires between the append and the install — the exact gap.
+        beforeInstall: async () => {
+          await fs.writeFile(path.join(root, "unrelated.txt"), "someone else's commit\n", "utf8");
+          await git(root, "add", "--", "unrelated.txt");
+          await git(root, "commit", "-q", "-m", "the branch moved under the act");
+        },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/moved away from/);
+      expect(result.ok === false && result.why).toMatch(/NOT installed anywhere/);
+      // The branch carries the intruder's commit and NOT ours: no evidence
+      // commit exists on any ref.
+      expect(await git(root, "log", "--format=%s", "-1")).toBe("the branch moved under the act");
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toBe(committed.trimEnd());
+      expect(foreign).toMatch(/s-t8/); // (the row this act would have carried)
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+      // And the archive never reached any tree.
+      const inTree = await git(root, "ls-tree", "-r", "--name-only", branchRef);
+      expect(inTree).not.toMatch(new RegExp(relDir.replace(/[/\\]/g, "\\$&")));
+    });
+
+    it("leaves index, HEAD and working tree agreeing — the operator's NEXT commit undoes nothing", async () => {
+      // The R16 lesson, applied to the observation: a CAS that installs a
+      // commit the real index does not know about turns the operator's next
+      // ordinary commit into a revert. Staging the same paths BEFORE the
+      // install is what keeps the three in agreement without a single
+      // destructive write.
+      const { root, git, runLogRel, relDir, call, branchRef } = await runlogFixture();
+      expect((await call()).ok).toBe(true);
+      // Nothing staged, nothing deleted, nothing untracked from the act.
+      expect(await git(root, "status", "--porcelain")).toBe("");
+      await fs.writeFile(path.join(root, "unrelated.txt"), "ordinary work\n", "utf8");
+      await git(root, "add", "--", "unrelated.txt");
+      await git(root, "commit", "-q", "-m", "the operator's next ordinary commit");
+      // The evidence and the row are STILL there afterwards.
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
+    });
+
     it("refuses a DETACHED HEAD — evidence no branch holds is evidence the run cannot find", async () => {
       const { root, git, runLogRel, committed, call } = await runlogFixture();
       await git(root, "checkout", "-q", "--detach");
@@ -3966,54 +4017,43 @@ describe("the B12 harness", () => {
       await fs.writeFile(path.join(hooks, "pre-commit"), `#!/bin/sh\n${body}\nexit 0\n`, { encoding: "utf8", mode: 0o755 });
     };
 
-    it("refuses when the commit landed the archive with the row REWRITTEN out of it", async () => {
-      const { root, git, runLogRel, relDir, committed, call } = await runlogFixture();
-      // The hook resets the runlog entry to HEAD's blob and leaves the
-      // observation staged: the add succeeds, the staged wall (which looks
-      // under the obs dir) passes, the commit succeeds, every archive blob
-      // matches. Only the row is gone.
+    it("is INERT to an index-mutating pre-commit hook — plumbing runs no hooks (R27)", async () => {
+      // R25's threat closed by construction rather than by a check. The hook
+      // below is the one that used to drop the row from the commit while
+      // leaving the observation staged; the install no longer runs `git
+      // commit`, so it never fires, and the row lands with its archive. The
+      // postcondition stays — it is now about bytes moving under the act, not
+      // about hooks — and the test below it is what proves the postcondition
+      // still fires.
+      const { root, git, runLogRel, relDir, call, branchRef } = await runlogFixture();
       await hookThatMutatesTheIndex(
         root,
-        `blob=$(git rev-parse HEAD:${runLogRel})\ngit update-index --cacheinfo 100644,$blob,${runLogRel}`
+        `blob=$(git rev-parse HEAD:${runLogRel})\ngit update-index --cacheinfo 100644,$blob,${runLogRel}\ngit update-index --force-remove ${relDir}/observation.json`
       );
       const result = await call();
-      expect(result.ok).toBe(false);
-      expect(result.ok === false && result.why).toMatch(/refs\/heads\/\S+ carries a different .*runlog/);
-      expect(result.ok === false && result.why).toMatch(/design\.artifacts 6/);
-      // The commit HAPPENED and the archive is in it — that is the whole
-      // point: the old postcondition called this act successful.
-      expect(await git(root, "show", `HEAD:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
-      expect(await git(root, "show", `HEAD:${runLogRel}`)).toBe(committed.trimEnd());
-      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+      expect(result.ok).toBe(true);
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
     });
 
-    it("refuses when the commit landed the archive with the runlog REMOVED", async () => {
-      const { root, git, runLogRel, relDir, call } = await runlogFixture();
-      await hookThatMutatesTheIndex(root, `git update-index --force-remove ${runLogRel}`);
-      const result = await call();
-      expect(result.ok).toBe(false);
-      // Named by the BRANCH the observation started on, not by HEAD (R26).
-      expect(result.ok === false && result.why).toMatch(/refs\/heads\/\S+ does not carry .*runlog/);
-      expect(await git(root, "show", `HEAD:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
-      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
-    });
-
-    it("refuses when the working copy of the runlog is not the bytes this observation appended", async () => {
-      // The other half of the pair: a hook (or anything else) that rewrites the
-      // WORKING TREE rather than the index. `git commit -- <paths>` takes the
-      // working tree's content, so this decides what gets committed — and the
-      // row that lands is then not the row this act appended.
-      const { root, git, runLogRel, call } = await runlogFixture();
-      const foreign = `{"ts":"2026-08-10T00:03:00Z","runId":"run-c","taskId":"t9","arm":"treatment","sessionId":"s-t9"}`;
-      await hookThatMutatesTheIndex(root, `echo '${foreign}' >> ${runLogRel}`);
-      const result = await call();
+    it("refuses when the runlog is not the bytes this observation appended", async () => {
+      // R25's postcondition, reached through the seam now that no hook can
+      // reach it: anything rewriting the runlog between the append and the
+      // install means the row that lands cannot be attributed to this act.
+      const { root, git, runLogRel, call, branchRef } = await runlogFixture();
+      const foreign = `{"ts":"2026-08-10T00:03:00Z","runId":"run-c","taskId":"t9","arm":"treatment","sessionId":"s-t9"}\n`;
+      const result = await call({
+        beforeInstall: async () => {
+          await fs.appendFile(path.join(root, runLogRel), foreign, "utf8");
+        },
+      });
       expect(result.ok).toBe(false);
       expect(result.ok === false && result.why).toMatch(/not the bytes this observation appended/);
       expect(result.ok === false && result.why).toMatch(/rewritten/);
-      // Our row did commit; the disk copy is no longer what we appended, which
+      // Our row did land; the disk copy is no longer what we appended, which
       // is exactly the state the next observation's barrier must not inherit
       // as if this act had succeeded.
-      expect(await git(root, "show", `HEAD:${runLogRel}`)).toMatch(/s-t2/);
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
       expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toMatch(/s-t9/);
       expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
     });
