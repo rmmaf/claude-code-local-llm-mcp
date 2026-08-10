@@ -16,12 +16,15 @@ export function checkCore(
  * become blobs, lie into a TEMPORARY index over expectedHead's tree, commit
  * with `-p expectedHead`, and install only if the ref still points there.
  * After a successful swap the act is DONE — `postFailure` reports a later
- * sync problem without unsaying the registration.
+ * sync problem without unsaying the registration. The post-swap sync is
+ * CONDITIONAL: a path whose disk bytes moved past `diskBefore` (the caller's
+ * capture snapshot; entry-time here when omitted) is preserved and reported,
+ * never checked out over.
  */
 export function casCommit(
   repoRoot: string,
   input: {
-    candidates: Array<{ path: string; bytes: string }>;
+    candidates: Array<{ path: string; bytes: string; diskBefore?: string | null }>;
     message: string;
     expectedHeadOverride?: string | null;
   }

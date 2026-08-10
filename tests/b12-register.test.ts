@@ -339,6 +339,37 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(result.ok).toBe(true);
     // The committed blob is the VALIDATED buffer, not the disk's garbage.
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
+    // And the sync did NOT overwrite the drifted disk copy — the mutation is
+    // preserved for reconciliation and reported, never destroyed.
+    expect(await fs.readFile(aPath, "utf8")).toMatch(/NOT JSON/);
+    expect(okOf(result).postFailure).toMatch(/NOT synced/);
+  });
+
+  it("preserves a CONCURRENT append to MEASUREMENTS — the sync never destroys bytes the act did not validate", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    const measPath = path.join(root, "MEASUREMENTS.jsonl");
+    const result = await registerRun(root, "run-r1", {
+      gate: greenGate,
+      afterCapture: async () => {
+        await fs.appendFile(measPath, `{"metric":"concurrent-append"}\n`, "utf8");
+      },
+    });
+    expect(result.ok).toBe(true);
+    // The registration row is COMMITTED…
+    expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).toMatch(/b12_registration/);
+    // …the concurrent append SURVIVES on disk, unregistered but undestroyed…
+    expect(await fs.readFile(measPath, "utf8")).toMatch(/concurrent-append/);
+    // …and the conflict is on the act's face.
+    expect(okOf(result).postFailure).toMatch(/MEASUREMENTS\.jsonl/);
+  });
+
+  it("refuses UNCOMMITTED measurements rows at capture — the register is committed before the act", async () => {
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root } = await registerFixture();
+    await fs.appendFile(path.join(root, "MEASUREMENTS.jsonl"), `{"metric":"uncommitted-suffix"}\n`, "utf8");
+    const result = await registerRun(root, "run-r1", { gate: greenGate });
+    expect(redOf(result).join(" ")).toMatch(/on disk differs from expectedHead/);
   });
 
   it("REFUSES when a commit lands between validation and the act — the CAS fails, nothing registered", async () => {

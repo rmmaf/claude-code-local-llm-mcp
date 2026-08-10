@@ -1203,6 +1203,36 @@ says fail-closed:
   declined for the same reason as R9#1 — the machine is the operator's own,
   the threat is accident, and the CAS still seals every ref race.)
 
+### THIRD POST-IMPLEMENTATION ROUND (R10) — adjudicated 2026-08-10
+
+One high finding, confirmed, and it was the instrument's one DESTRUCTIVE
+defect: the post-swap `git checkout newCommit -- <paths>` was unconditional,
+so a concurrent append to the append-only `MEASUREMENTS.jsonl` (or any disk
+edit) landing during the validation window was silently overwritten by a
+registration that then reported success. The CAS guards the REF; it never
+guarded the WORKING TREE. Codex's suggested conditional sync alone would not
+have covered a second variant found during adjudication: a LAWFUL
+uncommitted suffix already on disk at capture time equals its own snapshot
+and would still be destroyed. The fix is both halves:
+
+- `casCommit`'s sync is now CONDITIONAL — every candidate carries
+  `diskBefore` (the caller's capture-instant disk snapshot; entry-time when
+  omitted), and a path whose disk bytes moved past it is NEVER checked out:
+  preserved on disk, reported as "NOT synced (disk moved during the act)"
+  on the act's face. The registered bytes are always in the commit; only
+  the disk copy waits for hand reconciliation.
+- `registerRun` and `open-b` REFUSE at capture when disk
+  `MEASUREMENTS.jsonl` differs from `expectedHead`'s — an uncommitted
+  suffix must be committed before the act, or the registration built from
+  the committed bytes would orphan it.
+
+Controls: the concurrent append survives on disk while the registration row
+is committed and the conflict is reported; the R8 mutation control now also
+asserts the garbage is preserved, not overwritten; the uncommitted-suffix
+red fires. The serialize-every-writer lock alternative was declined: the
+writers span processes and machines, and a lock nobody else honors is a
+comment — the conditional sync refuses destructively instead.
+
 ---
 
 ## CLOSED

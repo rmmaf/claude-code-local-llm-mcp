@@ -128,6 +128,15 @@ export function checkCore(manifestA, manifestB, pilot) {
  * `expectedHead` untouched. Returns without side effects on ANY failure
  * before `update-ref`; after `update-ref` the act is DONE and the caller must
  * report later failures as post-registration.
+ *
+ * THE SYNC IS CONDITIONAL. A candidate may carry `diskBefore` — the disk
+ * bytes (or null for absent) at the CALLER'S capture instant; without it the
+ * snapshot is taken here, at entry. After the swap, a path whose disk bytes
+ * moved past that snapshot is NEVER checked out: the ref only guards against
+ * concurrent COMMITS, and an unconditional checkout would silently destroy
+ * bytes nobody validated — a concurrent append to the append-only register
+ * most of all. Drifted paths are preserved and reported as a
+ * post-registration conflict.
  */
 export function casCommit(repoRoot, { candidates, message, expectedHeadOverride = null }) {
   const refProbe = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
@@ -137,6 +146,15 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
   if (headProbe.code !== 0) return { ok: false, why: "HEAD does not resolve" };
   const expectedHead = expectedHeadOverride ?? headProbe.out.trim();
 
+  // The disk snapshot each candidate is judged against at sync time — the
+  // caller's capture instant when given, entry here otherwise.
+  const readDisk = (rel) => {
+    try {
+      return readFileSync(path.join(repoRoot, rel), "utf8");
+    } catch {
+      return null;
+    }
+  };
   // The blobs, into the object store — content-addressed, so a candidate
   // mutated between validation and here would land as DIFFERENT bytes and the
   // caller's recorded sha would disagree with the commit's.
@@ -147,7 +165,12 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
       encoding: "utf8",
     });
     if (w.status !== 0) return { ok: false, why: `hash-object failed for ${c.path}` };
-    entries.push({ path: c.path, blob: (w.stdout ?? "").trim() });
+    entries.push({
+      path: c.path,
+      blob: (w.stdout ?? "").trim(),
+      bytes: c.bytes,
+      diskBefore: c.diskBefore === undefined ? readDisk(c.path) : c.diskBefore,
+    });
   }
 
   // A TEMPORARY index over expectedHead's tree — the real index and the
@@ -179,11 +202,32 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
     if (swap.code !== 0) {
       return { ok: false, why: `the CAS failed — ${ref} moved past ${expectedHead.slice(0, 12)} while the act was being built; NOTHING was registered` };
     }
-    // REGISTERED. Sync the real index and working tree to the new commit for
-    // exactly the candidate paths; a failure here is post-registration.
-    const sync = git(repoRoot, ["checkout", newCommit, "--", ...entries.map((e) => e.path)]);
-    if (sync.code !== 0) {
-      return { ok: true, commit: newCommit, postFailure: `registered as ${newCommit.slice(0, 12)}, but the working-tree sync failed — run: git checkout ${newCommit.slice(0, 12)} -- ${entries.map((e) => e.path).join(" ")}` };
+    // REGISTERED. Sync the real index and working tree to the new commit —
+    // but ONLY for paths whose disk bytes still match the snapshot (or
+    // already match the registered bytes). A drifted path holds bytes the
+    // act never validated; destroying them would be the one irreversible
+    // step in a tool built to refuse. Failures here are post-registration.
+    const conflicted = [];
+    const toSync = [];
+    for (const e of entries) {
+      const now = readDisk(e.path);
+      if (now === e.diskBefore || now === e.bytes) toSync.push(e.path);
+      else conflicted.push(e.path);
+    }
+    const post = [];
+    if (toSync.length > 0) {
+      const sync = git(repoRoot, ["checkout", newCommit, "--", ...toSync]);
+      if (sync.code !== 0) {
+        post.push(`the working-tree sync failed — run: git checkout ${newCommit.slice(0, 12)} -- ${toSync.join(" ")}`);
+      }
+    }
+    if (conflicted.length > 0) {
+      post.push(
+        `NOT synced (disk moved during the act): ${conflicted.join(", ")} — the registered bytes live in ${newCommit.slice(0, 12)}; reconcile the disk copies by hand`
+      );
+    }
+    if (post.length > 0) {
+      return { ok: true, commit: newCommit, postFailure: `registered as ${newCommit.slice(0, 12)}, but ${post.join("; ")}` };
     }
     return { ok: true, commit: newCommit };
   } finally {
@@ -341,6 +385,16 @@ export async function registerRun(repoRoot, runId, opts = {}) {
   } catch {
     // Red below.
   }
+  // The MEASUREMENTS disk snapshot, at the SAME instant — the sync judges
+  // drift against this, and uncommitted rows already on disk are refused
+  // below (the registered blob is built from expectedHead's bytes, so an
+  // uncommitted suffix would be orphaned by the very act that succeeds).
+  let measurementsDisk = null;
+  try {
+    measurementsDisk = readFileSync(path.join(repoRoot, "MEASUREMENTS.jsonl"), "utf8");
+  } catch {
+    // Red below via the expectedHead probe.
+  }
   // VALIDATE the captured state, nothing else.
   const parse = (text) => {
     try {
@@ -374,6 +428,10 @@ export async function registerRun(repoRoot, runId, opts = {}) {
   const oldMeasurementsProbe = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
   if (oldMeasurementsProbe.code !== 0) {
     red.push("expectedHead carries no MEASUREMENTS.jsonl — the append-only register must exist before an append");
+  } else if (measurementsDisk !== oldMeasurementsProbe.out) {
+    red.push(
+      "MEASUREMENTS.jsonl on disk differs from expectedHead's — commit the append-only register before the act; an uncommitted suffix would be orphaned by the registration's own sync"
+    );
   }
   red.push(...(await gate(repoRoot, runId)));
   if (red.length > 0) return { ok: false, red };
@@ -390,9 +448,9 @@ export async function registerRun(repoRoot, runId, opts = {}) {
     expectedHeadOverride: expectedHead,
     message: `b12 registration: ${runId}`,
     candidates: [
-      { path: aRel, bytes: aBytes },
-      { path: bRel, bytes: bBytes },
-      { path: "MEASUREMENTS.jsonl", bytes: oldMeasurementsProbe.out + row },
+      { path: aRel, bytes: aBytes, diskBefore: aBytes },
+      { path: bRel, bytes: bBytes, diskBefore: bBytes },
+      { path: "MEASUREMENTS.jsonl", bytes: oldMeasurementsProbe.out + row, diskBefore: measurementsDisk },
     ],
   });
 }
@@ -473,6 +531,15 @@ if (isMain) {
     if (typeof run2Id !== "string" || run2Id === runId) fail("manifest B names no distinct runId for run 2");
     const oldMeasurements = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
     if (oldMeasurements.code !== 0) fail("expectedHead carries no MEASUREMENTS.jsonl");
+    let measurementsDisk = null;
+    try {
+      measurementsDisk = readFileSync(path.join(repoRoot, "MEASUREMENTS.jsonl"), "utf8");
+    } catch {
+      // Compared below — an unreadable register is a mismatch by definition.
+    }
+    if (measurementsDisk !== oldMeasurements.out) {
+      fail("MEASUREMENTS.jsonl on disk differs from expectedHead's — commit the append-only register before open-b; an uncommitted suffix would be orphaned by the sync");
+    }
     const row =
       JSON.stringify({
         ts: stamp(),
@@ -486,7 +553,7 @@ if (isMain) {
       message: `b12 registration: ${run2Id} (manifest B of ${runId}, opened on 'open')`,
       candidates: [
         { path: `evidence/${run2Id}.b12.tasks.json`, bytes: sealed.out },
-        { path: "MEASUREMENTS.jsonl", bytes: oldMeasurements.out + row },
+        { path: "MEASUREMENTS.jsonl", bytes: oldMeasurements.out + row, diskBefore: measurementsDisk },
       ],
     });
     if (!result.ok) fail(result.why);
