@@ -212,16 +212,49 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
       return { ok: false, why: `the CAS failed — ${ref} moved past ${expectedHead.slice(0, 12)} while the act was being built; NOTHING was registered` };
     }
     // REGISTERED. Sync the real index and working tree to the new commit —
-    // but ONLY for paths whose disk bytes still match the snapshot (or
-    // already match the registered bytes). A drifted path holds bytes the
-    // act never validated; destroying them would be the one irreversible
-    // step in a tool built to refuse. Failures here are post-registration.
+    // but `git checkout <commit> -- <paths>` writes the INDEX as well as the
+    // disk, and it writes them in whatever checkout HEAD points at NOW. So
+    // the sync re-earns both permissions:
+    //
+    //   1. THE BRANCH, again. The swap landed on the captured ref; if HEAD
+    //      moved to another branch in between, syncing would stage this
+    //      registration into a checkout nobody validated.
+    //   2. THE INDEX, per path. Disk equality alone was R10's rule, and it
+    //      missed staged bytes: a path can hold `git add`ed content that
+    //      differs from both disk and expectedHead, and the checkout would
+    //      discard it silently. A path syncs only when its index entry is
+    //      already expectedHead's blob (untouched) or the registered blob
+    //      (what we are about to install anyway).
+    //
+    // A path that fails either test keeps its bytes and is REPORTED. Failures
+    // here are post-registration: the commit exists either way.
     const conflicted = [];
     const toSync = [];
+    const refNow = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (refNow.code !== 0 || refNow.out.trim() !== ref) {
+      return {
+        ok: true,
+        commit: newCommit,
+        postFailure: `registered as ${newCommit.slice(0, 12)} on ${ref}, but HEAD is now ${refNow.code === 0 ? refNow.out.trim() : "detached"} — NOTHING was synced; run: git checkout ${ref.replace(/^refs\/heads\//, "")} && git checkout ${newCommit.slice(0, 12)} -- ${entries.map((e) => e.path).join(" ")}`,
+      };
+    }
+    const indexBlobOf = (rel) => {
+      const r = git(repoRoot, ["ls-files", "--stage", "--", rel]);
+      if (r.code !== 0) return null;
+      const m = /^\d+ ([0-9a-f]{40}) /.exec(r.out.trim());
+      return m === null ? null : m[1];
+    };
+    const headBlobOf = (rel) => {
+      const r = git(repoRoot, ["rev-parse", `${expectedHead}:${rel}`]);
+      return r.code === 0 ? r.out.trim() : null;
+    };
     for (const e of entries) {
       const now = readDisk(e.path);
-      if (now === e.diskBefore || now === e.bytes) toSync.push(e.path);
-      else conflicted.push(e.path);
+      const diskOk = now === e.diskBefore || now === e.bytes;
+      const idx = indexBlobOf(e.path);
+      const stagedOk = idx === null || idx === e.blob || idx === headBlobOf(e.path);
+      if (diskOk && stagedOk) toSync.push(e.path);
+      else conflicted.push(`${e.path}${diskOk ? " (staged bytes the act never validated)" : ""}`);
     }
     const post = [];
     if (toSync.length > 0) {
@@ -232,7 +265,7 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
     }
     if (conflicted.length > 0) {
       post.push(
-        `NOT synced (disk moved during the act): ${conflicted.join(", ")} — the registered bytes live in ${newCommit.slice(0, 12)}; reconcile the disk copies by hand`
+        `NOT synced (the working tree or index moved during the act): ${conflicted.join(", ")} — the registered bytes live in ${newCommit.slice(0, 12)}; reconcile the local copies by hand`
       );
     }
     if (post.length > 0) {

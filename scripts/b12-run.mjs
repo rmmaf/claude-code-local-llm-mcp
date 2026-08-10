@@ -2070,6 +2070,36 @@ async function observe(args, pilotMode = false) {
     if (violation) refuse(violation);
   }
 
+  // THE INSTRUCTION IS READ, NEVER RETYPED, and the check costs nothing —
+  // so it happens before anything is created. (It used to sit after the
+  // worktree, which is how a bad prompt hash left a full checkout behind.)
+  if (typeof task.prompt !== "string" || task.prompt.length === 0) refuse(`task ${task.id} carries no prompt`);
+  const promptSha = sha256Text(task.prompt);
+  if (task.promptSha256 && task.promptSha256 !== promptSha) {
+    refuse(`task ${task.id} prompt sha256 ${promptSha} != manifest ${task.promptSha256} — the text moved after sealing`);
+  }
+
+  const runId = manifest.runId ?? "b12-unnamed";
+  // THE REGISTRATION GUARD: a session may only be spent on a REGISTERED run
+  // whose registration is still coherent — the canonical path, the same-act
+  // proof, the append-only register's byte prefix. Before the lock, before
+  // the session id, and — since R14 — genuinely BEFORE ANY WORKTREE, which
+  // is what this comment always claimed while the creation sat above it.
+  // The PILOT is the one lawful exception — it runs BEFORE registration by
+  // design (artifact 4: declared not to consume the attempt cap, its tasks
+  // excluded from both sealed manifests), and writes none of the registered
+  // artifacts the guard protects.
+  if (!pilotMode) {
+    const canonicalManifest = path.join(REPO, "evidence", `${runId}.b12.tasks.json`);
+    if (path.resolve(args.manifest) !== path.resolve(canonicalManifest)) {
+      refuse(
+        `observe runs the CANONICAL manifest evidence/${runId}.b12.tasks.json, not ${args.manifest} — a session may not be spent on an unregistered copy`
+      );
+    }
+    const guardReasons = registrationGuard(REPO, runId, manifestText);
+    if (guardReasons.length > 0) refuse(`registration guard: ${guardReasons.join("; ")}`);
+  }
+
   const binary = claudeBinary();
   assertPinned(manifest, binary);
   // Every refusal BEFORE the worktree and before the session id, so a manifest
@@ -2134,43 +2164,38 @@ async function observe(args, pilotMode = false) {
   if (existsSync(treeDir)) rmSync(treeDir, { recursive: true, force: true });
   mkdirSync(path.dirname(treeDir), { recursive: true });
   git(["worktree", "add", "--detach", treeDir, task.baseCommit]);
+  // THE TREE IS OWNED FROM ITS FIRST BYTE. `refuse()` calls `process.exit`,
+  // so no `try/finally` can reach a cleanup — an exit hook is the only shape
+  // that covers EVERY refusal below (and every crash). A leaked `.b12`
+  // checkout is a full repository copy plus a live worktree registration, and
+  // a retried task would leak another; the operator would find the disk full
+  // before finding the cause. `--keep` still keeps, and a COMPLETED
+  // observation removes the tree in its own line below rather than here.
+  let observationCompleted = false;
+  process.on("exit", () => {
+    if (observationCompleted || args.keep) return;
+    try {
+      rmSync(treeDir, { recursive: true, force: true });
+    } catch {
+      // Best effort — the prune below still unregisters it.
+    }
+    spawnSync("git", ["-C", REPO, "worktree", "prune"], { encoding: "utf8" });
+  });
   const treeHash = git(["rev-parse", "HEAD"], treeDir);
   const dirty = run("git", ["-C", treeDir, "status", "--porcelain"]).out.trim();
   if (dirty) refuse(`fresh worktree is not clean: ${dirty.slice(0, 200)}`);
   const ratesSha = assertRatesFrozen(manifest, treeDir);
 
-  // The instruction is READ, never retyped. This is the whole reason the file
-  // exists: "the prompt was used verbatim" is otherwise unfalsifiable.
-  if (typeof task.prompt !== "string" || task.prompt.length === 0) refuse(`task ${task.id} carries no prompt`);
-  const promptSha = sha256Text(task.prompt);
-  if (task.promptSha256 && task.promptSha256 !== promptSha) {
-    refuse(`task ${task.id} prompt sha256 ${promptSha} != manifest ${task.promptSha256} — the text moved after sealing`);
-  }
-
-  // The lock is taken HERE — after every cheap refusal above, so a manifest
-  // that cannot run still costs nothing, and immediately before the session
-  // id exists, so no two processes can hold the same (runId, taskId, arm).
-  // A refusal PAST this point leaves the lock deliberately: something died
-  // mid-observation and the operator should look before anything re-runs.
-  const runId = manifest.runId ?? "b12-unnamed";
-  // THE REGISTRATION GUARD: a session may only be spent on a REGISTERED run
-  // whose registration is still coherent — the canonical path, the same-act
-  // proof, the append-only register's byte prefix. Before the lock, before
-  // the session id, before any worktree: a refusal here costs nothing.
-  // The PILOT is the one lawful exception — it runs BEFORE registration by
-  // design (artifact 4: declared not to consume the attempt cap, its tasks
-  // excluded from both sealed manifests), and writes none of the registered
-  // artifacts the guard protects.
-  if (!pilotMode) {
-    const canonicalManifest = path.join(REPO, "evidence", `${runId}.b12.tasks.json`);
-    if (path.resolve(args.manifest) !== path.resolve(canonicalManifest)) {
-      refuse(
-        `observe runs the CANONICAL manifest evidence/${runId}.b12.tasks.json, not ${args.manifest} — a session may not be spent on an unregistered copy`
-      );
-    }
-    const guardReasons = registrationGuard(REPO, runId, manifestText);
-    if (guardReasons.length > 0) refuse(`registration guard: ${guardReasons.join("; ")}`);
-  }
+  // The prompt hash and the registration guard ran BEFORE the worktree — a
+  // refusal there costs nothing, which is what those checks are for.
+  //
+  // The lock is taken HERE — after every cheap refusal above, and
+  // immediately before the session id exists, so no two processes can hold
+  // the same (runId, taskId, arm). A refusal PAST this point leaves the lock
+  // deliberately: something died mid-observation and the operator should
+  // look before anything re-runs. (The WORKTREE is not left behind — the
+  // exit hook above owns it — but the lock is a different claim: it says a
+  // session may have been spent, and only a human can say it was not.)
   const sessionLock = acquireSessionLock(path.join(REPO, "evidence"), runId, task.id, arm);
   if (!sessionLock.ok) {
     refuse(
@@ -2560,6 +2585,7 @@ async function observe(args, pilotMode = false) {
         `accepted ${observation.accepted}  → ${path.relative(REPO, pilotFile).split(path.sep).join("/")}\n`
     );
     if (!args.keep) git(["worktree", "remove", "--force", treeDir]);
+    observationCompleted = true; // the tree is gone (or kept on purpose)
     if (!observation.valid) {
       for (const reason of invalid) process.stderr.write(`  INVALID: ${reason}\n`);
       process.exit(1);
@@ -2680,6 +2706,7 @@ async function observe(args, pilotMode = false) {
       `  committed ${relDir}\n`
   );
   if (!args.keep) git(["worktree", "remove", "--force", treeDir]);
+  observationCompleted = true; // the tree is gone (or kept on purpose)
   if (!observation.valid) {
     for (const reason of invalid) process.stderr.write(`  INVALID: ${reason}` + String.fromCharCode(10));
     process.exit(1);

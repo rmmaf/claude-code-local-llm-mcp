@@ -1346,6 +1346,40 @@ no lawful evidence changes verdict. Controls: stripped stamp →
 `identityIntact` false END TO END (integrity failure, `admitted === 0`);
 after-snapshot stamped `before` → refused by name.
 
+### SEVENTH POST-IMPLEMENTATION ROUND (R14) — adjudicated 2026-08-10
+
+Two findings, both confirmed, both about state the act touches WITHOUT
+having validated it:
+
+- **R14#1 (high) — R10's doctrine stopped at the disk.** The conditional
+  sync compared working-tree bytes, then ran `git checkout <newCommit> --
+  <paths>`, which writes the INDEX too. Content that was `git add`ed and
+  then reverted on disk passed the disk test and was destroyed silently —
+  the same class of loss R10 closed, one layer down, and mine to have
+  missed. The ref check also happened only before `commit-tree`, so a branch
+  switch afterwards would stage the registration into a checkout nobody
+  validated (the swap itself stays correct — it names the captured ref and
+  old value). The sync now re-earns BOTH permissions: symbolic HEAD must
+  still be the captured ref, and each path's index entry must already be
+  expectedHead's blob or the registered blob. Anything else keeps its bytes
+  and is reported. Controls: staged-then-reverted bytes survive with the
+  index blob unchanged and the conflict named; a sibling branch checked out
+  on the same commit refuses.
+- **R14#2 (medium) — refusals leaked whole worktrees.** `observe` created
+  the `.b12` checkout before the prompt-hash and registration guards, and
+  `refuse()` calls `process.exit`, so no `finally` could clean up. The
+  comment above the guard had claimed "before the lock, before the session
+  id, before any worktree" while the creation sat above it — the R13
+  signature again: the prose was right and the code was not. The
+  prompt-hash check and the registration guard now genuinely precede
+  creation, and the tree is owned from its first byte by an exit hook
+  (the only shape that survives `process.exit`) that removes it and prunes
+  the registration unless `--keep` or a completed observation says
+  otherwise. The LOCK is deliberately not cleaned up: it claims a session
+  may have been spent, and only a human can say it was not. Control: a real
+  `observe` process refused on each guard, asserting `.b12` absent and
+  `git worktree list` still one line.
+
 ---
 
 ## CLOSED

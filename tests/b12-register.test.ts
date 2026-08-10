@@ -10,7 +10,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -362,6 +362,51 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(await fs.readFile(measPath, "utf8")).toMatch(/concurrent-append/);
     // …and the conflict is on the act's face.
     expect(okOf(result).postFailure).toMatch(/MEASUREMENTS\.jsonl/);
+  });
+
+  it("never checks out over STAGED bytes the act did not validate — the index is state too", async () => {
+    // R10 made the sync conditional on DISK bytes; `git checkout <c> -- <p>`
+    // writes the INDEX as well, so content that was `git add`ed and then
+    // reverted on disk passed the disk test and was destroyed silently.
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root, aPath, aBytes } = await registerFixture();
+    let stagedBlob = "";
+    const result = await registerRun(root, "run-r1", {
+      gate: greenGate,
+      afterCapture: async () => {
+        await fs.writeFile(aPath, `{"staged":"someone else's work"}\n`, "utf8");
+        git(root, ["add", "evidence/run-r1.b12.tasks.json"]);
+        stagedBlob = git(root, ["rev-parse", ":evidence/run-r1.b12.tasks.json"]);
+        // …and the disk is put back, so the DISK test alone would pass.
+        await fs.writeFile(aPath, aBytes, "utf8");
+      },
+    });
+    expect(result.ok).toBe(true);
+    // The registration stands, and the staged blob is still the index's.
+    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
+    expect(git(root, ["rev-parse", ":evidence/run-r1.b12.tasks.json"])).toBe(stagedBlob);
+    expect(okOf(result).postFailure).toMatch(/staged bytes the act never validated/);
+  });
+
+  it("syncs NOTHING when HEAD switched branches after the swap — another checkout is not this act's to write", async () => {
+    const { casCommit } = await import("../scripts/b12-register.mjs");
+    const root = tempRoot();
+    initRepo(root);
+    await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), `{"metric":"prior"}\n`, "utf8");
+    commitAll(root, "the pre-existing register");
+    const captured = git(root, ["symbolic-ref", "--quiet", "HEAD"]);
+    // A sibling branch on the SAME commit, checked out — the ref the act
+    // captured is no longer the one this working tree belongs to.
+    git(root, ["checkout", "-q", "-b", "elsewhere"]);
+    const result = casCommit(root, {
+      refOverride: captured,
+      message: "b12 registration: run-sync",
+      candidates: [{ path: "evidence/run-sync.b12.tasks.json", bytes: `{"runId":"run-sync"}\n` }],
+    });
+    // The ref guard fires BEFORE the swap here — nothing registered, nothing synced.
+    expect(result.ok).toBe(false);
+    expect(whyOf(result)).toMatch(/HEAD moved from/);
+    expect(existsSync(path.join(root, "evidence", "run-sync.b12.tasks.json"))).toBe(false);
   });
 
   it("refuses UNCOMMITTED measurements rows at capture — the register is committed before the act", async () => {

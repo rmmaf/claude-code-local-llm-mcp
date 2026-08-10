@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -2557,6 +2557,115 @@ describe("the B12 harness", () => {
     await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), `{"rewritten":true}\n`, "utf8");
     expect(registrationGuard(root, "run-g", manifestBytes).join(" ")).toMatch(/does not preserve HEAD's content as a byte prefix/);
   }, 30_000);
+
+  it("a REFUSED observation leaves no worktree behind — the tree is owned from its first byte", async () => {
+    // R14's second finding: `observe` created the `.b12` worktree BEFORE the
+    // prompt-hash and registration guards, and `refuse()` exits the process,
+    // so no `finally` could reach a cleanup. Every retry leaked a full
+    // checkout plus a live worktree registration. Both refusals below used to
+    // sit past the creation; now they precede it, and an exit hook covers
+    // whatever comes after.
+    const { execFile: ef } = await import("node:child_process");
+    const { promisify: p } = await import("node:util");
+    const { createHash: ch } = await import("node:crypto");
+    const sh = p(ef);
+    const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+
+    const harness = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const harnessSha = ch("sha256").update(await fs.readFile(harness)).digest("hex");
+    const prompt = "Fix the failing check in t1.";
+    const manifestOf = (promptSha: string): Record<string, unknown> => ({
+      runId: "run-w",
+      pinned: {
+        claudeCodeVersion: "2.1.221",
+        claudeBinarySha256: "b".repeat(64),
+        ratesSha256: "a".repeat(64),
+        clientTruncationCap: 30_000,
+        pacingCacheWriteShareCeiling: 0.9,
+        perTaskDenominatorShareCap: 0.25,
+        scoringCommand: "node dist/cost/b12/emit.js run-w",
+        b12RunSha256: harnessSha,
+        claudeMdSha256: "d".repeat(64),
+        settingsSha256s: { settings: null, settingsLocal: null },
+        installedCharsProbe: "evidence/probe.json",
+        installedCharsProbeSha256: "e".repeat(64),
+        policyBlobs: {
+          treatment: { repo: "../b12-policy", commit: "f".repeat(40), path: "treatment.md", sha256: "1".repeat(64) },
+          control: { repo: "../b12-policy", commit: "f".repeat(40), path: "control.md", sha256: "2".repeat(64) },
+        },
+        perArmTimeoutMs: 2_700_000,
+        extraArgs: [],
+      },
+      abPairs: ["t1", "t2", "t3"].map((taskId, i) => ({
+        id: `pair-${i}`,
+        taskId,
+        order: i % 2 === 0 ? "treatment-first" : "control-first",
+      })),
+      tasks: ["t1", "t2", "t3"].map((id) => ({
+        id,
+        prompt,
+        promptSha256: id === "t1" ? promptSha : ch("sha256").update(prompt, "utf8").digest("hex"),
+        baseCommit: "0".repeat(40),
+        verificationStratum: "types-only",
+        expectedSubagentStratum: "solo",
+        acceptance: ['node -e "process.exit(0)"'],
+        acceptanceExpectedExit: 0,
+        verificationCommands: ["npx tsc --noEmit"],
+        gateCategory: "types",
+        repairMaxRounds: 3,
+        fileScope: ["src/tools/"],
+      })),
+    });
+
+    const root = tempRoot();
+    await git(root, "init", "-q");
+    await git(root, "config", "user.name", "worktree-oracle");
+    await git(root, "config", "user.email", "wt@example.invalid");
+    await git(root, "config", "core.autocrlf", "false");
+    await git(root, "config", "commit.gpgsign", "false");
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const manifestRel = "evidence/run-w.b12.tasks.json";
+    const manifestAbs = path.join(root, manifestRel);
+    // A WRONG prompt hash — the manifest is otherwise complete and sealed to
+    // this very harness, so the run reaches the prompt check.
+    await fs.writeFile(manifestAbs, JSON.stringify(manifestOf("c".repeat(64)), null, 2) + "\n", "utf8");
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "the manifest, unregistered");
+
+    const observe = async (): Promise<{ code: number; stderr: string }> => {
+      try {
+        await sh(process.execPath, [harness, "observe", "--manifest", manifestRel, "--task", "t1"], { cwd: root });
+        return { code: 0, stderr: "" };
+      } catch (error) {
+        const e = error as { code?: number; stderr?: string };
+        return { code: e.code ?? -1, stderr: e.stderr ?? "" };
+      }
+    };
+    const noWorktree = async (why: string): Promise<void> => {
+      expect({ why, b12: existsSync(path.join(root, ".b12")) }).toEqual({ why, b12: false });
+      // `git worktree list` names the main checkout and nothing else.
+      expect((await git(root, "worktree", "list")).split("\n").filter(Boolean)).toHaveLength(1);
+    };
+
+    const badPrompt = await observe();
+    expect(badPrompt.code).not.toBe(0);
+    expect(badPrompt.stderr).toMatch(/prompt sha256/);
+    await noWorktree("a refused prompt hash");
+
+    // Now the hash is right and the run is simply NOT REGISTERED — the guard
+    // the comment always claimed ran "before any worktree".
+    await fs.writeFile(
+      manifestAbs,
+      JSON.stringify(manifestOf(ch("sha256").update(prompt, "utf8").digest("hex")), null, 2) + "\n",
+      "utf8"
+    );
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "the manifest, still unregistered");
+    const unregistered = await observe();
+    expect(unregistered.code).not.toBe(0);
+    expect(unregistered.stderr).toMatch(/registration guard/);
+    await noWorktree("a refused registration guard");
+  }, 60_000);
 
   describe("policy blob provenance — the seal is {repo, commit, path, sha256} and delivery reads the object store", () => {
     // CHANNEL 5 says "committed out-of-repo blob"; the previous schema sealed
