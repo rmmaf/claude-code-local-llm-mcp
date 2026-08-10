@@ -1380,6 +1380,48 @@ having validated it:
   `observe` process refused on each guard, asserting `.b12` absent and
   `git worktree list` still one line.
 
+### EIGHTH POST-IMPLEMENTATION ROUND (R15) — adjudicated 2026-08-10
+
+Two high findings, both RECURRENCES, and the recurrence is the finding:
+
+- **R15#1 — the sync stopped being a checkout.** Codex recommended removing
+  the automatic `git checkout` in R10, again in R14, and again here; twice I
+  kept it and narrowed the window instead (disk bytes, then index bytes,
+  then a re-checked ref). R15 named the residual window — the microseconds
+  between the last precondition and the write — and that sequence IS the
+  argument: `git checkout` overwrites, and no amount of looking first makes
+  an overwrite safe without a lock git does not offer. **The operation
+  changed instead of the checking.** A candidate whose disk copy already
+  equals the registered bytes needs nothing (every manifest — the bytes came
+  from that file). The one candidate that must move is the APPEND-ONLY
+  register, and it is synced with an O_APPEND write of the suffix: an append
+  ADDS, so a concurrent writer loses nothing even when it wins the race. An
+  absent file is created with the exclusive `wx` flag, which fails rather
+  than clobbers. Anything else — a drifted copy, a rewrite rather than an
+  extension — is left alone and reported. The index is never touched at all,
+  so R14's index rule became unnecessary rather than merely correct. The
+  branch is still re-checked, because appending this run's row to a register
+  the operator switched away from would write the right bytes in the wrong
+  place. Controls: staged bytes survive with the index blob unchanged; a
+  concurrent append and the registration row BOTH survive on disk.
+- **R15#2 — the attestation now runs from an immutable checkout.** R9's
+  dirty-tree guard covers the state BEFORE the suite; the suite then runs for
+  minutes, and an edit made after the check and reverted before the commit
+  leaves no drift for the audit to find. I declined the worktree in R9 on
+  the argument that a refusal is the honest primitive — true of the window it
+  covered, and irrelevant to this one. `--attest-suite` now creates a
+  detached worktree at `subjectCommit` under `.b12/` (ignored, inside the
+  repo, so node_modules resolves upward as the arm worktrees already rely
+  on), and vitest loads committed bytes or nothing.
+  **Validated by running it, not by reasoning about it** — which is how the
+  one real obstacle surfaced: `dist/` is derived and ignored, so a fresh
+  checkout has none, and six conformance tests invoke the built CLI. The
+  worktree therefore BUILDS before it tests, and that is not a workaround:
+  it makes the attested `dist/` the compilation of the attested commit,
+  closing the registered F24 `dist/` hole for this path. The real run
+  produced `subjectCommit === HEAD`, 147 + 14 tests passed with none
+  skipped, all six controls present and passing, and removed its worktree.
+
 ---
 
 ## CLOSED

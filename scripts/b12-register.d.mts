@@ -16,10 +16,12 @@ export function checkCore(
  * become blobs, lie into a TEMPORARY index over expectedHead's tree, commit
  * with `-p expectedHead`, and install only if the ref still points there.
  * After a successful swap the act is DONE — `postFailure` reports a later
- * sync problem without unsaying the registration. The post-swap sync is
- * CONDITIONAL: a path whose disk bytes moved past `diskBefore` (the caller's
- * capture snapshot; entry-time here when omitted) is preserved and reported,
- * never checked out over.
+ * sync problem without unsaying the registration. The post-swap sync never
+ * runs `git checkout` and never touches the index: it APPENDS the suffix
+ * when the registered bytes extend `diskBefore` (the caller's capture
+ * snapshot; entry-time here when omitted), creates an absent file with the
+ * exclusive `wx` flag, and otherwise leaves the local copy alone and reports
+ * it. Non-destructive by construction, not by looking first.
  */
 export function casCommit(
   repoRoot: string,

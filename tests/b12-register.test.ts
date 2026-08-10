@@ -345,7 +345,35 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(okOf(result).postFailure).toMatch(/NOT synced/);
   });
 
-  it("preserves a CONCURRENT append to MEASUREMENTS — the sync never destroys bytes the act did not validate", async () => {
+  it("never touches the INDEX — the sync is an append, so staged work is not its business", async () => {
+    // R10 conditioned the sync on disk bytes; R14 added the index; R15 found
+    // the residual TOCTOU and the operation changed instead of the checking.
+    // `git checkout` is gone: nothing here can overwrite, so bytes someone
+    // staged mid-act simply survive, with no precondition to get right.
+    const { registerRun } = await import("../scripts/b12-register.mjs");
+    const { root, aPath, aBytes } = await registerFixture();
+    let stagedBlob = "";
+    const result = await registerRun(root, "run-r1", {
+      gate: greenGate,
+      afterCapture: async () => {
+        await fs.writeFile(aPath, `{"staged":"someone else's work"}\n`, "utf8");
+        git(root, ["add", "evidence/run-r1.b12.tasks.json"]);
+        stagedBlob = git(root, ["rev-parse", ":evidence/run-r1.b12.tasks.json"]);
+        // …and the disk is put back, so a disk-only test would have synced.
+        await fs.writeFile(aPath, aBytes, "utf8");
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
+    // The staged blob is STILL the index's — the act never wrote there.
+    expect(git(root, ["rev-parse", ":evidence/run-r1.b12.tasks.json"])).toBe(stagedBlob);
+  });
+
+  it("syncs the register by APPENDING — a concurrent append is joined, never overwritten", async () => {
+    // The one candidate that needs syncing is the append-only register, and
+    // the sync writes it with O_APPEND: the concurrent line stays, ours goes
+    // after it, and nobody's bytes are lost. Compare R10, where a `checkout`
+    // erased the concurrent append and merely reported it.
     const { registerRun } = await import("../scripts/b12-register.mjs");
     const { root } = await registerFixture();
     const measPath = path.join(root, "MEASUREMENTS.jsonl");
@@ -356,36 +384,13 @@ describe("registerRun — the act validates the captured state, and only that", 
       },
     });
     expect(result.ok).toBe(true);
-    // The registration row is COMMITTED…
     expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).toMatch(/b12_registration/);
-    // …the concurrent append SURVIVES on disk, unregistered but undestroyed…
-    expect(await fs.readFile(measPath, "utf8")).toMatch(/concurrent-append/);
-    // …and the conflict is on the act's face.
+    const onDisk = await fs.readFile(measPath, "utf8");
+    // BOTH survive — the concurrent line was never at risk.
+    expect(onDisk).toMatch(/concurrent-append/);
+    // The drifted register is reported rather than rewritten.
     expect(okOf(result).postFailure).toMatch(/MEASUREMENTS\.jsonl/);
-  });
-
-  it("never checks out over STAGED bytes the act did not validate — the index is state too", async () => {
-    // R10 made the sync conditional on DISK bytes; `git checkout <c> -- <p>`
-    // writes the INDEX as well, so content that was `git add`ed and then
-    // reverted on disk passed the disk test and was destroyed silently.
-    const { registerRun } = await import("../scripts/b12-register.mjs");
-    const { root, aPath, aBytes } = await registerFixture();
-    let stagedBlob = "";
-    const result = await registerRun(root, "run-r1", {
-      gate: greenGate,
-      afterCapture: async () => {
-        await fs.writeFile(aPath, `{"staged":"someone else's work"}\n`, "utf8");
-        git(root, ["add", "evidence/run-r1.b12.tasks.json"]);
-        stagedBlob = git(root, ["rev-parse", ":evidence/run-r1.b12.tasks.json"]);
-        // …and the disk is put back, so the DISK test alone would pass.
-        await fs.writeFile(aPath, aBytes, "utf8");
-      },
-    });
-    expect(result.ok).toBe(true);
-    // The registration stands, and the staged blob is still the index's.
-    expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
-    expect(git(root, ["rev-parse", ":evidence/run-r1.b12.tasks.json"])).toBe(stagedBlob);
-    expect(okOf(result).postFailure).toMatch(/staged bytes the act never validated/);
+    expect(onDisk.endsWith(`{"metric":"concurrent-append"}\n`)).toBe(true);
   });
 
   it("syncs NOTHING when HEAD switched branches after the swap — another checkout is not this act's to write", async () => {

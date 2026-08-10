@@ -31,7 +31,7 @@
  * not-fire each one without a repository.
  */
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -853,11 +853,51 @@ if (isMain) {
           `the working tree is dirty outside evidence/ (${dirt.slice(0, 5).join(", ")}${dirt.length > 5 ? ", …" : ""}) — the suite would attest DISK code under subjectCommit's name; commit or revert first`
         );
       }
-      const run = spawnSync(
-        process.platform === "win32" ? "npx.cmd" : "npx",
-        ["vitest", "run", ...CONFORMANCE_FILES, "--reporter=json"],
-        { cwd: repoRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, shell: process.platform === "win32" }
-      );
+      // THE SUITE RUNS FROM AN IMMUTABLE CHECKOUT OF `subjectCommit`, not
+      // from the working tree. The cleanliness check above is a courtesy that
+      // fails fast; it cannot be the guarantee, because the suite runs for
+      // minutes and an edit made after the check and reverted before the
+      // commit would leave NO drift for the audit to find (R15). A detached
+      // worktree cannot be edited into the run: vitest loads committed bytes
+      // or nothing. It lives under `.b12/` — ignored, inside the repo, so
+      // node_modules resolves upward exactly as the arm worktrees already
+      // rely on.
+      const subjectCommit = head.out.trim();
+      const treeDir = path.join(repoRoot, ".b12", `attest-${process.pid}`);
+      rmSync(treeDir, { recursive: true, force: true });
+      const added = git(["worktree", "add", "--detach", treeDir, subjectCommit]);
+      if (!added.ok) {
+        throw new AuditRefused(`could not create the attestation worktree at ${treeDir} — the suite may not run over mutable bytes`);
+      }
+      // Exactly `suiteRunRefusal`'s contract — the encoding: "utf8" overload
+      // returns strings, but the generic signature does not say so.
+      let run: { error?: unknown; status: number | null; signal: string | null; stdout: string | null };
+      try {
+        // THE BUILD HAPPENS IN THE WORKTREE. `dist/` is derived and ignored,
+        // so a fresh checkout has none — and six conformance tests invoke the
+        // built CLI. Compiling here is not a workaround: it makes the
+        // attested `dist/` the compilation OF THE ATTESTED COMMIT, which is
+        // the registered `dist/` hole (F24) closed for this path.
+        const built = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"], {
+          cwd: treeDir,
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+          shell: process.platform === "win32",
+        });
+        if (built.status !== 0) {
+          throw new AuditRefused(
+            `the attestation worktree does not build (exit ${String(built.status)}) — the suite cannot attest a commit that does not compile:\n${(built.stderr || built.stdout || "").slice(0, 2000)}`
+          );
+        }
+        run = spawnSync(
+          process.platform === "win32" ? "npx.cmd" : "npx",
+          ["vitest", "run", "--root", treeDir, ...CONFORMANCE_FILES, "--reporter=json"],
+          { cwd: treeDir, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, shell: process.platform === "win32" }
+        );
+      } finally {
+        rmSync(treeDir, { recursive: true, force: true });
+        git(["worktree", "prune"]);
+      }
       // The COMMAND's verdict before the report's: only the two named files
       // run here, and the Windows baseline's four failures live in others —
       // so exit 0 is both required and reachable.
@@ -865,7 +905,7 @@ if (isMain) {
       if (refusal !== null) throw new AuditRefused(refusal);
       const attestation = attestationFromVitest(
         runId,
-        head.out.trim(),
+        subjectCommit,
         new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
         JSON.parse(jsonLine)
       );

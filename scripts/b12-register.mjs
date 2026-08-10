@@ -25,7 +25,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -211,61 +211,68 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
     if (swap.code !== 0) {
       return { ok: false, why: `the CAS failed — ${ref} moved past ${expectedHead.slice(0, 12)} while the act was being built; NOTHING was registered` };
     }
-    // REGISTERED. Sync the real index and working tree to the new commit —
-    // but `git checkout <commit> -- <paths>` writes the INDEX as well as the
-    // disk, and it writes them in whatever checkout HEAD points at NOW. So
-    // the sync re-earns both permissions:
+    // REGISTERED. THE SYNC IS NON-DESTRUCTIVE BY CONSTRUCTION — it does not
+    // run `git checkout` at all, and it never touches the index.
     //
-    //   1. THE BRANCH, again. The swap landed on the captured ref; if HEAD
-    //      moved to another branch in between, syncing would stage this
-    //      registration into a checkout nobody validated.
-    //   2. THE INDEX, per path. Disk equality alone was R10's rule, and it
-    //      missed staged bytes: a path can hold `git add`ed content that
-    //      differs from both disk and expectedHead, and the checkout would
-    //      discard it silently. A path syncs only when its index entry is
-    //      already expectedHead's blob (untouched) or the registered blob
-    //      (what we are about to install anyway).
+    // Three rounds (R10, R14, R15) found holes in a checkout-based sync, each
+    // one a narrower TOCTOU than the last: disk bytes, then index bytes, then
+    // the microseconds between the last precondition and the write. That
+    // sequence is the argument. `git checkout <commit> -- <paths>` OVERWRITES,
+    // and no amount of looking first makes an overwrite safe without a lock
+    // git does not offer. So the operation changed instead of the checking:
     //
-    // A path that fails either test keeps its bytes and is REPORTED. Failures
-    // here are post-registration: the commit exists either way.
+    //   - a candidate whose disk copy ALREADY equals the registered bytes
+    //     needs nothing (every manifest: the bytes came from that file);
+    //   - a candidate that only GREW — `bytes` extends `diskBefore`, which is
+    //     exactly the append-only register — is synced with an O_APPEND
+    //     write of the suffix. An append adds; it cannot overwrite, so a
+    //     concurrent writer loses nothing even if it wins the race;
+    //   - a candidate whose file did not exist is created with the exclusive
+    //     `wx` flag, which FAILS rather than clobbers if it appeared meanwhile;
+    //   - anything else — a drifted disk copy, a rewrite rather than an
+    //     extension — is left untouched and REPORTED.
+    //
+    // The branch is still re-checked, because appending this run's row to a
+    // register the operator switched away from would write the right bytes in
+    // the wrong place. Failures here are post-registration: the commit exists.
     const conflicted = [];
-    const toSync = [];
+    const post = [];
     const refNow = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
     if (refNow.code !== 0 || refNow.out.trim() !== ref) {
       return {
         ok: true,
         commit: newCommit,
-        postFailure: `registered as ${newCommit.slice(0, 12)} on ${ref}, but HEAD is now ${refNow.code === 0 ? refNow.out.trim() : "detached"} — NOTHING was synced; run: git checkout ${ref.replace(/^refs\/heads\//, "")} && git checkout ${newCommit.slice(0, 12)} -- ${entries.map((e) => e.path).join(" ")}`,
+        postFailure: `registered as ${newCommit.slice(0, 12)} on ${ref}, but HEAD is now ${refNow.code === 0 ? refNow.out.trim() : "detached"} — NOTHING was synced; the registered bytes live in the commit`,
       };
     }
-    const indexBlobOf = (rel) => {
-      const r = git(repoRoot, ["ls-files", "--stage", "--", rel]);
-      if (r.code !== 0) return null;
-      const m = /^\d+ ([0-9a-f]{40}) /.exec(r.out.trim());
-      return m === null ? null : m[1];
-    };
-    const headBlobOf = (rel) => {
-      const r = git(repoRoot, ["rev-parse", `${expectedHead}:${rel}`]);
-      return r.code === 0 ? r.out.trim() : null;
-    };
     for (const e of entries) {
+      const abs = path.join(repoRoot, e.path);
       const now = readDisk(e.path);
-      const diskOk = now === e.diskBefore || now === e.bytes;
-      const idx = indexBlobOf(e.path);
-      const stagedOk = idx === null || idx === e.blob || idx === headBlobOf(e.path);
-      if (diskOk && stagedOk) toSync.push(e.path);
-      else conflicted.push(`${e.path}${diskOk ? " (staged bytes the act never validated)" : ""}`);
-    }
-    const post = [];
-    if (toSync.length > 0) {
-      const sync = git(repoRoot, ["checkout", newCommit, "--", ...toSync]);
-      if (sync.code !== 0) {
-        post.push(`the working-tree sync failed — run: git checkout ${newCommit.slice(0, 12)} -- ${toSync.join(" ")}`);
+      if (now === e.bytes) continue; // already carries the registered bytes
+      if (now === null && e.diskBefore === null) {
+        try {
+          // Creating the parent directory destroys nothing; the `wx` write
+          // is what refuses to clobber a file that appeared meanwhile.
+          mkdirSync(path.dirname(abs), { recursive: true });
+          writeFileSync(abs, e.bytes, { encoding: "utf8", flag: "wx" });
+        } catch {
+          conflicted.push(`${e.path} (appeared during the act)`);
+        }
+        continue;
       }
+      if (now === e.diskBefore && e.diskBefore !== null && e.bytes.startsWith(e.diskBefore)) {
+        try {
+          appendFileSync(abs, e.bytes.slice(e.diskBefore.length), "utf8");
+        } catch (error) {
+          conflicted.push(`${e.path} (append failed: ${String(error)})`);
+        }
+        continue;
+      }
+      conflicted.push(e.path);
     }
     if (conflicted.length > 0) {
       post.push(
-        `NOT synced (the working tree or index moved during the act): ${conflicted.join(", ")} — the registered bytes live in ${newCommit.slice(0, 12)}; reconcile the local copies by hand`
+        `NOT synced (the local copy moved during the act, or the change was not an append): ${conflicted.join(", ")} — the registered bytes live in ${newCommit.slice(0, 12)}; reconcile the local copies by hand`
       );
     }
     if (post.length > 0) {

@@ -17,16 +17,19 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R14 (post-implementation adversarial rounds) are ADJUDICATED — fourteen
+R8–R15 (post-implementation adversarial rounds) are ADJUDICATED — sixteen
 findings, all confirmed, fixed with controls: CAS worktree index +
 capture-before-validate (R8); fail-open probes made fail-closed (R9); the
-conditional post-swap sync — the one destructive defect (R10); the branch in
-the captured state, artifact 6's runlog barrier, case-folded scope
-intersection (R11); clause 6's two holes — a non-zero suite exit taken for a
-pass, counter-less attestation entries (R12); a STRIPPED snapshot stamp
-scoring, `phase` compared against nothing (R13); the sync extended to the
-INDEX and re-earning its branch, and refused observations no longer leaking
-whole worktrees (R14). PR to main is open — merge is the user's act.
+conditional post-swap sync (R10); the branch in the captured state, artifact
+6's runlog barrier, case-folded scope intersection (R11); clause 6's two
+holes (R12); a STRIPPED snapshot stamp scoring, `phase` compared against
+nothing (R13); the sync extended to the INDEX, no more leaked worktrees
+(R14); and R15, where two recurrences forced the shape to change rather than
+the checks: the sync is now an APPEND (non-destructive by construction, no
+`git checkout`, index never touched), and `--attest-suite` runs the
+conformance suite from a detached worktree at `subjectCommit` that BUILDS
+before it tests — validated by a real run, not by argument.
+PR to main is open — merge is the user's act.
 
 ## Still blocking a run
 
