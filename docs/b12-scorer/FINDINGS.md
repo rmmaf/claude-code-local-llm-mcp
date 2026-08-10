@@ -1547,6 +1547,51 @@ a shared file is not held between them.**
   lock writes nothing, is not stolen, and names the "no live process" rule;
   and the happy path commits row and archive together and releases the lock.
 
+### TWELFTH POST-IMPLEMENTATION ROUND (R19) — adjudicated 2026-08-10
+
+One high finding, and it is R17's mutex read for what it actually is: **an
+INDEX lock, asked to stand for a branch lock.** Two halves, both confirmed.
+
+- **The name was checked, the target was not.** Under the lock the act
+  compared `symbolic-ref HEAD` to the captured ref and the index to
+  `expectedHead` — and never asked where the ref POINTED. `git update-ref`
+  takes no index lock, so a concurrent one can move the branch off the
+  registration while we hold the mutex, and the index we install then
+  describes a commit the branch no longer carries. `rev-parse <ref>` is now
+  read under the lock too, and a moved target syncs NOTHING.
+- **The lock was released before the file writes.** The `rename` that
+  installs the index is also what releases the mutex, so the candidate sync
+  ran unprotected: a `git checkout` could switch branches immediately after
+  it and receive this act's bytes in a working tree the act never validated.
+  The sync moved INSIDE the lock, and BEFORE the index install — the
+  ordering is the fix, since a checkout must write the index to switch.
+
+**The residual is now stated instead of implied**, which is the part worth
+keeping. `.git/index.lock` blocks everything that would move the branch AND
+touch this working tree — commit, checkout, merge, rebase, `reset
+--mixed/--hard`. It does not block the pure-ref commands (`update-ref`,
+`reset --soft`), so a deliberate plumbing command run inside the
+milliseconds we hold it stays outside the guarantee: the same residual R11
+registered for the ref-plus-symref transaction git does not offer. Codex's
+alternative — abandon the sync entirely and require an explicit
+reconciliation — was DECLINED, and the reason recorded: the register's row
+would then be missing from the working copy after every act, so the
+committed-prefix invariant would fail until a human fixed it, trading a
+millisecond-wide window for a manual step on every single registration.
+
+Also here: taking the lock now WAITS, bounded (four tries, 200/400/600ms),
+because `git status` itself takes this lock to refresh the stat cache and a
+50ms neighbour must not cost the operator a hand reconciliation. And a lock
+held by someone else no longer syncs the files either — that process may be
+a checkout moving this very tree.
+
+**The control fires**: with the target check weakened to the name alone, the
+act reports no `postFailure` at all — it installs the index and writes the
+files against a branch that no longer carries the registration. With it, a
+seam fires `git update-ref` in the one window the mutex cannot own; the
+register file, the index and HEAD are all proved unchanged, and the failure
+names what happened. The held-lock control gained the same file assertion.
+
 ---
 
 ## CLOSED

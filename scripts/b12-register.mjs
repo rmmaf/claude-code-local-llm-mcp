@@ -150,7 +150,10 @@ export function checkCore(manifestA, manifestB, pilot) {
  * most of all. Drifted paths are preserved and reported as a
  * post-registration conflict.
  */
-export function casCommit(repoRoot, { candidates, message, expectedHeadOverride = null, refOverride = null, onSyncEntry = null }) {
+export function casCommit(
+  repoRoot,
+  { candidates, message, expectedHeadOverride = null, refOverride = null, onSyncEntry = null, afterSwap = null }
+) {
   const refProbe = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
   if (refProbe.code !== 0) return { ok: false, why: "HEAD is detached — a registration needs a branch to install on" };
   const ref = refProbe.out.trim();
@@ -223,6 +226,10 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
     if (swap.code !== 0) {
       return { ok: false, why: `the CAS failed — ${ref} moved past ${expectedHead.slice(0, 12)} while the act was being built; NOTHING was registered` };
     }
+    // The oracle's second seam: the window a concurrent `git update-ref` owns —
+    // it needs no index lock, so it is the one mover this act cannot exclude.
+    // The CLI never passes it.
+    if (afterSwap) afterSwap(newCommit);
     // REGISTERED. THE SYNC IS NON-DESTRUCTIVE BY CONSTRUCTION — it does not
     // run `git checkout` at all, and it never touches the index.
     //
@@ -257,51 +264,130 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
         postFailure: `registered as ${newCommit.slice(0, 12)} on ${ref}, but HEAD is now ${refNow.code === 0 ? refNow.out.trim() : "detached"} — NOTHING was synced; the registered bytes live in the commit`,
       };
     }
-    // THE INDEX MUST FOLLOW THE BRANCH IT IS THE INDEX OF — UNDER GIT'S OWN
-    // LOCK. The act builds its tree in a TEMPORARY index and moves the
-    // checked-out branch, which leaves the REAL index describing
-    // `expectedHead`. Against the new HEAD that reads as staged DELETIONS of
-    // the manifests and a staged REVERSION of the register, so the operator's
-    // next ordinary `git add <result>; git commit` would carry them and undo
-    // the registration (reproduced: manifest gone, row gone).
+    // THE INDEX MUST FOLLOW THE BRANCH IT IS THE INDEX OF, AND THE FILE WRITES
+    // BELONG IN THE SAME HELD LOCK. The act builds its tree in a TEMPORARY
+    // index and moves the checked-out branch, which leaves the REAL index
+    // describing `expectedHead`. Against the new HEAD that reads as staged
+    // DELETIONS of the manifests and a staged REVERSION of the register, so
+    // the operator's next ordinary `git add <result>; git commit` would carry
+    // them and undo the registration (reproduced: manifest gone, row gone).
     //
-    // R16 fixed that with check-then-`read-tree`, which R17 correctly called
-    // a TOCTOU: between the check and the write, another process can stage
-    // work or switch branches, and `read-tree` would then overwrite it. The
-    // primitive that closes it is git's OWN mutex — `.git/index.lock`, taken
-    // with O_EXCL and released by RENAMING it over `.git/index`, which is
-    // exactly how every git command writes an index. Holding it also blocks a
-    // concurrent `git checkout`, so the branch re-check below cannot go stale
-    // underneath us either: one lock closes both gaps.
+    // R16 fixed that with check-then-`read-tree`, which R17 correctly called a
+    // TOCTOU. The primitive that closes it is git's OWN mutex —
+    // `.git/index.lock`, taken with O_EXCL and released by RENAMING it over
+    // `.git/index`, exactly how every git command writes an index — and R19
+    // moved the file sync INSIDE it. That ordering is the whole point: `git
+    // checkout` must write the index, so while this lock is held the branch
+    // cannot be switched underneath the writes. The sync used to run after the
+    // rename released it, which left a window where this act's bytes landed in
+    // a DIFFERENT branch's checkout.
     //
-    // And the index we install is the TEMPORARY one that built the tree — it
-    // already IS `newCommit`'s tree, so no second read-tree is needed. If the
-    // lock is held elsewhere, or the state moved before we took it, nothing
-    // is written and the repair is named (R15's doctrine: never destroy bytes
-    // nobody validated).
+    // WHAT THE LOCK DOES NOT COVER, stated rather than implied: it is the INDEX
+    // lock. `git update-ref` (and `git reset --soft`) write a ref without it,
+    // so the branch can still move while we hold it. Everything that would move
+    // it AND touch this working tree — commit, checkout, merge, rebase, reset
+    // --mixed/--hard — needs the index and is blocked. So the ref is re-read
+    // under the lock by NAME AND TARGET (R19: the name alone said nothing about
+    // where it pointed, and an index installed against a branch that moved
+    // describes the wrong commit), and the residual is a plumbing command the
+    // operator runs deliberately inside the milliseconds we hold the lock —
+    // the same residual R11 registered for the ref-plus-symref transaction git
+    // does not offer.
+    //
+    // The index we install is the TEMPORARY one that built the tree: it already
+    // IS `newCommit`'s tree, so no second read-tree exists to race. Every
+    // refusal path writes NOTHING and names its repair (R15's doctrine: never
+    // destroy bytes nobody validated).
+    const interleaved = [];
+    const syncCandidates = () => {
+      for (const e of entries) {
+        const abs = path.join(repoRoot, e.path);
+        const now = readDisk(e.path);
+        // The oracle's seam: the ONLY way to land a concurrent write inside the
+        // read→write window this loop is judged on. The CLI never passes it.
+        if (onSyncEntry) onSyncEntry(e);
+        if (now === e.bytes) continue; // already carries the registered bytes
+        if (now === null && e.diskBefore === null) {
+          try {
+            // Creating the parent directory destroys nothing; the `wx` write
+            // is what refuses to clobber a file that appeared meanwhile.
+            mkdirSync(path.dirname(abs), { recursive: true });
+            writeFileSync(abs, e.bytes, { encoding: "utf8", flag: "wx" });
+          } catch {
+            conflicted.push(`${e.path} (appeared during the act)`);
+          }
+          continue;
+        }
+        if (now === e.diskBefore && e.diskBefore !== null && e.bytes.startsWith(e.diskBefore)) {
+          try {
+            appendFileSync(abs, e.bytes.slice(e.diskBefore.length), "utf8");
+          } catch (error) {
+            conflicted.push(`${e.path} (append failed: ${String(error)})`);
+            continue;
+          }
+          // AN APPEND CANNOT OVERWRITE, BUT IT CANNOT RESERVE EITHER. The read
+          // above and this write are two operations, and a writer that landed
+          // between them puts its bytes FIRST: the file becomes
+          // `old + theirs + ours` while the commit carries `old + ours`. No
+          // bytes are lost — and the check above cannot see it, because it ran
+          // before the interleave existed. What breaks is the invariant every
+          // later `observe` enforces: the working copy must preserve the
+          // COMMITTED register as a byte PREFIX. Only a re-read finds it, and
+          // reporting is the whole remedy — rewriting a file to hoist our row
+          // over bytes nobody validated is the destruction R15 removed.
+          const after = readDisk(e.path);
+          if (after === null || !after.startsWith(e.bytes)) interleaved.push(e.path);
+          continue;
+        }
+        conflicted.push(e.path);
+      }
+    };
     const gitDir = gitDirProbe.out.trim();
     const lockPath = path.join(gitDir, "index.lock");
+    // A BOUNDED WAIT, because `git status` takes this same lock to refresh the
+    // stat cache: a neighbour holding it for 50ms must not cost the operator a
+    // hand reconciliation of the register.
+    const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
     let holdingLock = false;
-    try {
-      closeSync(openSync(lockPath, "wx")); // O_EXCL — git's own mutual exclusion
-      holdingLock = true;
-    } catch {
-      post.push(
-        `another git process holds ${path.basename(lockPath)}, so the index was left describing ${expectedHead.slice(0, 12)} — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)}`
-      );
+    for (let attempt = 1; attempt <= 4 && !holdingLock; attempt++) {
+      try {
+        closeSync(openSync(lockPath, "wx")); // O_EXCL — git's own mutual exclusion
+        holdingLock = true;
+      } catch {
+        if (attempt < 4) sleepMs(200 * attempt);
+      }
     }
-    if (holdingLock) {
+    if (!holdingLock) {
+      post.push(
+        `another git process holds ${path.basename(lockPath)} — NOTHING was synced: the index still describes ${expectedHead.slice(0, 12)}, so a plain 'git commit' next would REVERT this registration, and the local files were left untouched because that process may be moving this working tree; run: git reset --mixed ${newCommit.slice(0, 12)}, then reconcile the files against it`
+      );
+    } else {
       try {
         const refUnderLock = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
-        const indexUnderLock = git(repoRoot, ["diff-index", "--cached", "--quiet", expectedHead]);
-        if (refUnderLock.code === 0 && refUnderLock.out.trim() === ref && indexUnderLock.code === 0) {
-          copyFileSync(tmpIndex, lockPath);
-          renameSync(lockPath, path.join(gitDir, "index")); // atomic; releases the lock
-          holdingLock = false;
-        } else {
+        const targetUnderLock = git(repoRoot, ["rev-parse", ref]);
+        const branchIntact =
+          refUnderLock.code === 0 &&
+          refUnderLock.out.trim() === ref &&
+          targetUnderLock.code === 0 &&
+          targetUnderLock.out.trim() === newCommit;
+        if (!branchIntact) {
           post.push(
-            `the index carries staged work or HEAD moved, so it was left describing ${expectedHead.slice(0, 12)} — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)} (then restage)`
+            `${ref} no longer carries the registration (HEAD is ${refUnderLock.code === 0 ? refUnderLock.out.trim() : "detached"}, ${ref} is at ${targetUnderLock.code === 0 ? targetUnderLock.out.trim().slice(0, 12) : "?"}) — NOTHING was synced, because this working tree is no longer the one the act validated; the registered bytes live in ${newCommit.slice(0, 12)}`
           );
+        } else {
+          // The files FIRST, then the index — both inside the held lock, so no
+          // checkout can move the branch between them.
+          syncCandidates();
+          const indexUnderLock = git(repoRoot, ["diff-index", "--cached", "--quiet", expectedHead]);
+          if (indexUnderLock.code === 0) {
+            copyFileSync(tmpIndex, lockPath);
+            renameSync(lockPath, path.join(gitDir, "index")); // atomic; releases the lock
+            holdingLock = false;
+          } else {
+            post.push(
+              `the index carries staged work, so it was left describing ${expectedHead.slice(0, 12)} — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)} (then restage)`
+            );
+          }
         }
       } finally {
         if (holdingLock) {
@@ -312,48 +398,6 @@ export function casCommit(repoRoot, { candidates, message, expectedHeadOverride 
           }
         }
       }
-    }
-    const interleaved = [];
-    for (const e of entries) {
-      const abs = path.join(repoRoot, e.path);
-      const now = readDisk(e.path);
-      // The oracle's seam: the ONLY way to land a concurrent write inside the
-      // read→write window this loop is judged on. The CLI never passes it.
-      if (onSyncEntry) onSyncEntry(e);
-      if (now === e.bytes) continue; // already carries the registered bytes
-      if (now === null && e.diskBefore === null) {
-        try {
-          // Creating the parent directory destroys nothing; the `wx` write
-          // is what refuses to clobber a file that appeared meanwhile.
-          mkdirSync(path.dirname(abs), { recursive: true });
-          writeFileSync(abs, e.bytes, { encoding: "utf8", flag: "wx" });
-        } catch {
-          conflicted.push(`${e.path} (appeared during the act)`);
-        }
-        continue;
-      }
-      if (now === e.diskBefore && e.diskBefore !== null && e.bytes.startsWith(e.diskBefore)) {
-        try {
-          appendFileSync(abs, e.bytes.slice(e.diskBefore.length), "utf8");
-        } catch (error) {
-          conflicted.push(`${e.path} (append failed: ${String(error)})`);
-          continue;
-        }
-        // AN APPEND CANNOT OVERWRITE, BUT IT CANNOT RESERVE EITHER. The read
-        // above and this write are two operations, and a writer that landed
-        // between them puts its bytes FIRST: the file becomes
-        // `old + theirs + ours` while the commit carries `old + ours`. No
-        // bytes are lost — and the check above cannot see it, because it ran
-        // before the interleave existed. What breaks is the invariant every
-        // later `observe` enforces: the working copy must preserve the
-        // COMMITTED register as a byte PREFIX. Only a re-read finds it, and
-        // reporting is the whole remedy — rewriting a file to hoist our row
-        // over bytes nobody validated is the destruction R15 removed.
-        const after = readDisk(e.path);
-        if (after === null || !after.startsWith(e.bytes)) interleaved.push(e.path);
-        continue;
-      }
-      conflicted.push(e.path);
     }
     if (conflicted.length > 0) {
       post.push(

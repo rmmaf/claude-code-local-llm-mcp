@@ -387,9 +387,51 @@ describe("registerRun — the act validates the captured state, and only that", 
       // The index is byte-identical, and the foreign lock is still theirs.
       expect(await fs.readFile(path.join(gitDir, "index"))).toEqual(indexBefore);
       expect(await fs.readFile(lockPath, "utf8")).toBe("another git process\n");
+      // R19: the FILES are not written either. Whoever holds this lock may be
+      // a `git checkout` moving this working tree, and the sync now lives
+      // inside the lock precisely so it cannot land in someone else's branch.
+      expect(await fs.readFile(path.join(root, "MEASUREMENTS.jsonl"), "utf8")).not.toMatch(/b12_registration/);
+      expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).toMatch(/b12_registration/);
     } finally {
       await fs.rm(lockPath, { force: true });
     }
+  });
+
+  it("syncs NOTHING when the branch is moved by a command the index lock cannot exclude", async () => {
+    // R19. `.git/index.lock` blocks everything that would move the branch AND
+    // touch this working tree — commit, checkout, merge, reset --mixed/--hard.
+    // It does NOT block `git update-ref`, which writes a ref and nothing else.
+    // Checking the symbolic ref's NAME under the lock said nothing about where
+    // it pointed, so the act would install an index describing a commit the
+    // branch no longer carried. The target is now read too.
+    const { casCommit } = await import("../scripts/b12-register.mjs");
+    const root = tempRoot();
+    initRepo(root);
+    const measPath = path.join(root, "MEASUREMENTS.jsonl");
+    const old = `{"metric":"prior"}\n`;
+    await fs.writeFile(measPath, old, "utf8");
+    commitAll(root, "the pre-existing register");
+    const ref = git(root, ["symbolic-ref", "--quiet", "HEAD"]);
+    const before = git(root, ["rev-parse", "HEAD"]);
+    const gitDir = git(root, ["rev-parse", "--absolute-git-dir"]);
+    const indexBefore = await fs.readFile(path.join(gitDir, "index"));
+    const result = casCommit(root, {
+      message: "b12 registration: run-u",
+      candidates: [{ path: "MEASUREMENTS.jsonl", bytes: old + `{"b12_registration":true}\n`, diskBefore: old }],
+      // The concurrent plumbing command, in its own window: the branch keeps
+      // its NAME and loses the registration.
+      afterSwap: () => {
+        git(root, ["update-ref", ref, before]);
+      },
+    });
+    // The registration EXISTS — the commit was made and the swap succeeded.
+    expect(result.ok).toBe(true);
+    expect(git(root, ["cat-file", "-t", okOf(result).commit])).toBe("commit");
+    expect(okOf(result).postFailure).toMatch(/no longer carries the registration/);
+    // …and nothing was written into a working tree that is no longer its own.
+    expect(await fs.readFile(measPath, "utf8")).toBe(old);
+    expect(await fs.readFile(path.join(gitDir, "index"))).toEqual(indexBefore);
+    expect(git(root, ["rev-parse", "HEAD"])).toBe(before);
   });
 
   it("leaves a STAGED index alone and says the registration would be reverted", async () => {

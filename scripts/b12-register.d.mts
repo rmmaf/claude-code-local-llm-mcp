@@ -25,6 +25,12 @@ export function checkCore(
  * RE-READ afterwards: a writer that interleaved between the read and the
  * write lands ahead of the registered suffix, which loses no bytes but breaks
  * the committed-prefix invariant `observe` enforces, so it is reported too.
+ *
+ * The file writes and the index install happen INSIDE `.git/index.lock`, and
+ * the ref is re-read under it by name AND target: a checkout cannot move the
+ * branch between them, and a branch that moved anyway (only `update-ref` and
+ * `reset --soft` can, without the index) syncs NOTHING. A lock held elsewhere
+ * is waited on, bounded, then reported with its repair.
  */
 export function casCommit(
   repoRoot: string,
@@ -39,6 +45,10 @@ export function casCommit(
      * and before anything is written, so a test can land a concurrent write
      * inside that window. The CLI never passes it. */
     onSyncEntry?: ((entry: { path: string; bytes: string; diskBefore: string | null }) => void) | null;
+    /** The oracle's seam for the one mover the index lock cannot exclude:
+     * called right after a successful swap, where a concurrent `git
+     * update-ref` would land. The CLI never passes it. */
+    afterSwap?: ((newCommit: string) => void) | null;
   }
 ):
   | { ok: true; commit: string; postFailure?: string }
