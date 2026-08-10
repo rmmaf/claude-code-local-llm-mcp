@@ -1780,7 +1780,8 @@ emission wrapper, `scripts/b12-run.mjs`), and widening it post-hoc would mint
 a new voiding condition — precisely what the O-bracket and the VOID-21 hash
 were refused for. The honest options are (a) leave it, with the residual on
 the record, or (b) a NEW pre-data amendment naming the conformance files as
-pinned. **This belongs on the pre-seal decision list.**
+pinned. **This belongs on the pre-seal decision list.** — **CLOSED by (b) on
+2026-08-10; see "R23's residual, decided" below.**
 
 **Both controls fire.** With `openBRefusals` neutered, a colliding id yields
 no refusal at all; with the file dropped from the control match, a control
@@ -1876,6 +1877,80 @@ suite. In this round one SOLO run of `tests/b12-register.test.ts` failed 1/29
 solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
+
+### R23'S RESIDUAL, DECIDED — 2026-08-10
+
+The user asked for the decision to be worked through with Codex
+(`gpt-5.6-sol`, xhigh, read-only) and then made. **The consultation moved the
+frame, and the frame was wrong in this file.**
+
+**Clause 6 already carries the rule.** "Shown FIRING" is frozen text, and a
+test that keeps its name while losing its assertions is not firing, however
+green it reports. What was missing was never a rule — it was the PROOF. This
+computer verifies present-and-passing by (file, fullName): identity and
+runner status, not firing. **The hole was evidentiary, not normative**, and
+saying "clause 5 doesn't name the test files" described the symptom.
+
+**Byte-pinning is therefore an amendment, and for a better reason than the
+one recorded here.** It is at once too strong — an edit may STRENGTHEN a
+control and would still void — and too weak: unchanged bytes can stop proving
+anything if a fixture beside them moved. Pinning rejects trees clause 6
+permits and accepts trees it does not. It is a fence, not a proof, so it
+cannot be derived as a reading of either clause.
+
+**Decided: both halves.**
+
+- **Reported, deciding nothing.** The audit artifact now carries each
+  conformance file's sha256 at the registration commit and at the
+  attestation's `subjectCommit`, with `same` / `DIFFERS` / `(unknown)` beside
+  it — the same standing as the capped/uncapped pair and the per-task
+  denominator share. It makes drift conspicuous, INCLUDING drift the
+  amendment's clock cannot reach, and `decideAudit` deliberately does not
+  read it: a difference is not a defect, and reading it as one later would be
+  a void wearing a disguise. That sentence is in the code, where the next
+  reader will be tempted.
+- **A pre-data amendment, committed alone**
+  (`evidence/2026-08-10-b12-amendment-conformance-paths.json`, its own
+  commit — the platform and Phase-3 amendments stay separate). It is
+  PROSPECTIVE and read that way: the collector widens clause 5's pinned set
+  only when the amendment's own INTRODUCING commit is an ancestor of the
+  run's freeze-anchor commit. The frozen artifact is not edited, clause 5's
+  clock does not move, and the re-emission escape is untouched — which is
+  what makes the cost bearable: a legitimate test edit mid-run does not void,
+  it obliges a re-emission the tooling already performs.
+
+**The window this closes, exactly one:** after the first scored observation,
+before the attestation. Earlier is free by clause 5's own text and the
+amendment does not pretend otherwise; later was already caught by R22's
+`subjectCommit..HEAD` confinement; an uncommitted edit never reaches the
+attestation, which runs from a detached checkout of `subjectCommit`.
+
+**The artifact records which regime decided.** `clause5.pinnedPaths` is now
+the set that was PROBED, not the constant beside it — the same defect R22
+found in the prereg fields — plus the amendment's path, introducing commit,
+sha256, added paths and `governs: yes|no`.
+
+**Not done, on purpose:** `b12-register.mjs` does NOT refuse a registration
+without the amendment. Its absence cannot produce a false clean — it produces
+a run governed by the original clause 5, which is what the pre-registration
+says — so a refusal there would be strictness with no soundness behind it.
+What matters is that the verdict says which regime it ran under, and it does.
+
+**Controls.** Same repository twice, with the gutting committed BEFORE the
+attestation and the attestation's subject set to the gutted commit — the only
+shape in which the window is real. With the amendment born in the
+registration act: `governs: true`, the file is in the pinned set, the commit
+is an offender, verdict VOID — and clause 6 is silent, so the amendment is
+demonstrably the only thing standing there. Without the amendment: `governs:
+false`, no offender, verdict CLEAN — **that is the pre-amendment damage,
+kept as a test** — while the reported hashes still say `DIFFERS` for the file
+that moved and `same` for the one that did not.
+
+**What stays open, written down rather than closed:** a control gutted BEFORE
+the first scored observation, which no clock here reaches; and mechanical
+proof of firing (a mutation harness, one seam per control) — the only real
+closure of clause 6, deliberately out of this session, and dangerous if
+fragile, since a harness that cannot attest is a run that cannot be scored.
 
 ---
 

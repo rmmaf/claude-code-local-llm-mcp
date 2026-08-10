@@ -55,10 +55,17 @@ for the archive) could drop the runlog row and the act still returned ok. The
 row is now held to the same blob standard: disk == barrier bytes + this one
 row, HEAD == disk.**
 
-**FOR THE USER, BEFORE THE SEAL:** a control gutted BEFORE its attestation is
-invisible to the audit. Closing it means naming the conformance files in
-clause 5's pinned set — a REGISTERED reading of frozen text, so it needs a
-new pre-data amendment or it stays a recorded residual. FINDINGS R23 has it.
+**R23's residual is DECIDED (2026-08-10), and the frame was wrong here:
+cláusula 6 ALREADY forbids a gutted control ("shown FIRING"); what was
+missing was the PROOF, since the audit checks present-and-passing. So
+byte-pinning is an amendment — and it is a FENCE, not a proof: an edit may
+STRENGTHEN a control, unchanged bytes may stop proving anything. Both halves
+shipped: the conformance hashes at registration and at subjectCommit, REPORTED
+and deciding nothing; and a pre-data amendment, COMMITTED ALONE, widening
+clause 5 only when its own introducing commit precedes the freeze anchor. The
+window closed is the only outcome-aware one: after the first score, before
+the attestation. STILL OPEN, written down: gutting BEFORE the first score
+(no clock reaches it) and mechanical proof of firing (a mutation harness).**
 PR to main is open — merge is the user's act.
 
 ## Still blocking a run

@@ -107,6 +107,29 @@ export const CONTROL_TESTS: readonly { file: string; fullName: string }[] = [
 export const CONFORMANCE_FILES = ["tests/cost-meter.test.ts", "tests/session-token-walk.test.ts"] as const;
 
 /**
+ * THE PRE-DATA AMENDMENT that puts the two conformance files under clause 5.
+ *
+ * Clause 6 already forbids counting a GUTTED control — a test that keeps its
+ * name and loses its assertions is not "shown FIRING", however green it
+ * reports. What was missing was never the rule but the PROOF: this computer
+ * verifies present-and-passing by (file, fullName), which is identity and
+ * runner status, not firing. A control emptied AFTER the first scored
+ * observation and BEFORE the attestation passes every check — the attestation
+ * honestly describes the gutted tree, and no drift exists after it.
+ *
+ * The amendment is PROSPECTIVE and it is read that way: it governs a run only
+ * when its own INTRODUCING commit is an ancestor of that run's freeze-anchor
+ * commit. Nothing here edits the frozen pre-registration, and nothing here
+ * moves clause 5's clock — before the first scored observation these paths
+ * are free, exactly as the frozen text says of the paths it names.
+ *
+ * Byte identity is a FENCE, not a proof of firing: an edit may strengthen a
+ * control, and unchanged bytes may stop proving anything if a fixture beside
+ * them moved. That is why it took an amendment and not a reading.
+ */
+export const AMENDMENT_CONFORMANCE_PATHS = "evidence/2026-08-10-b12-amendment-conformance-paths.json";
+
+/**
  * THE LITERAL KEY SET of the audit artifact's `inputs` — never "about 25".
  * `parseGitAudit` drops non-string values in silence (emit.ts), so without
  * this constant the producer and its own round-trip check would agree on
@@ -133,6 +156,11 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "manifestB.headSha256",
   "rates.deferral",
   "clause5.pinnedPaths",
+  "clause5.amendment.path",
+  "clause5.amendment.commit",
+  "clause5.amendment.sha256",
+  "clause5.amendment.addedPaths",
+  "clause5.amendment.governs",
   "clause5.anchor.taskId",
   "clause5.anchor.arm",
   "clause5.anchor.attempt",
@@ -149,6 +177,7 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause6.subjectCommit",
   "clause6.controls",
   "clause6.files",
+  "clause6.conformanceHashes",
   "tool.srcSha256",
 ];
 
@@ -188,6 +217,27 @@ export interface AuditFacts {
     anchor: { taskId: string; arm: string; attempt: number; started: string; commit: string } | null;
     /** Why the anchor could not be derived — a VOID, distinct from "none yet". */
     anchorProblems: string[];
+    /**
+     * The pinned set ACTUALLY probed — the frozen paths, plus whatever a
+     * governing amendment added. Recorded rather than assumed: an artifact
+     * that names the constant while the probe used something else is the
+     * exact defect R22 found in the prereg fields.
+     */
+    pinnedPaths: string[];
+    /**
+     * The conformance-path amendment: where it is, when it was born, its
+     * bytes, and whether it governs THIS run. `governs` is false when the
+     * amendment is absent, when it was born after the freeze anchor, and
+     * when there is no anchor at all — with no anchor clause 5 is free by
+     * its own text, so there is nothing yet for an amendment to govern.
+     */
+    amendment: {
+      path: string;
+      commit: string | null;
+      sha256: string | null;
+      addedPaths: readonly string[];
+      governs: boolean;
+    };
     /** Every commit touching a pinned path: `{sha, committerDate}`. */
     commitsTouchingPinned: Array<{ sha: string; committerDate: string }>;
     /** The union of the two probes (ancestry + committer date), minus nothing. */
@@ -211,6 +261,17 @@ export interface AuditFacts {
     subjectIsAncestor: boolean | null;
     /** Paths in `subjectCommit..HEAD` that are NOT under `evidence/`. */
     nonEvidenceDrift: string[];
+    /**
+     * REPORTED, DECIDING NOTHING: each conformance file's blob at the
+     * registration commit and at the attestation's `subjectCommit`. It makes
+     * drift between the two conspicuous — including drift the amendment's
+     * clock does not reach — WITHOUT minting a rule: a difference here may
+     * never void or rescue a run. A change is not evidence of a gutting (it
+     * may be a strengthening), which is precisely why it decides nothing.
+     * `null` where the blob is unreadable at that commit; an unreadable
+     * decoration is not a refusal, because nothing depends on it.
+     */
+    conformance: Array<{ file: string; atRegistration: string | null; atSubject: string | null }>;
   };
   /** Content sha of this tool's own SOURCE at HEAD; null when absent. */
   toolSrcSha256: string | null;
@@ -383,7 +444,9 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
     }
   }
   // With no anchor and no anchor problem, the sources are FREE — the clause's
-  // own text: "Before the first scored observation these are free".
+  // own text: "Before the first scored observation these are free". Which
+  // paths counted is `facts.clause5.pinnedPaths`, and whether the amendment
+  // widened them is on the artifact's face; neither is re-derived here.
 
   // ---- clause 6 — the conformance suite and its six controls --------------
   const att = facts.clause6.attestation;
@@ -439,6 +502,11 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
     } else if (facts.clause6.subjectIsAncestor === false) {
       reasons.push("clause 6: the attestation's subjectCommit is not an ancestor of HEAD — it attests some other history");
     }
+    // `facts.clause6.conformance` is NOT read here, and that is deliberate:
+    // the conformance hashes are reported so drift is visible, and a
+    // difference between them is not a defect — a control may have been
+    // strengthened. Turning them into a reason would mint a voiding
+    // condition the frozen text does not carry.
     if (facts.clause6.nonEvidenceDrift.length > 0) {
       reasons.push(
         `clause 6: ${facts.clause6.nonEvidenceDrift.length} non-evidence path(s) changed after the attestation (${facts.clause6.nonEvidenceDrift.slice(0, 3).join(", ")}${facts.clause6.nonEvidenceDrift.length > 3 ? ", …" : ""}) — the multi-commit model allows evidence/** only`
@@ -479,7 +547,15 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     "manifestB.headSha256": orNone(facts.manifestB.headSha256),
     "rates.deferral":
       "deferred-to-assemble: voidConditions 4's rates.json byte-identity is assemble's own check; two derivations of one rule is how figures drift",
-    "clause5.pinnedPaths": joined(PINNED_PATHS),
+    // THE SET THAT WAS PROBED, not the constant beside it — the amendment can
+    // widen it, and an artifact naming the constant would be unreplayable in
+    // exactly the way R22's prereg fields were.
+    "clause5.pinnedPaths": joined(facts.clause5.pinnedPaths),
+    "clause5.amendment.path": facts.clause5.amendment.path,
+    "clause5.amendment.commit": orNone(facts.clause5.amendment.commit),
+    "clause5.amendment.sha256": orNone(facts.clause5.amendment.sha256),
+    "clause5.amendment.addedPaths": joined(facts.clause5.amendment.addedPaths),
+    "clause5.amendment.governs": facts.clause5.amendment.governs ? "yes" : "no",
     "clause5.anchor.taskId": orNone(a?.taskId ?? null),
     "clause5.anchor.arm": orNone(a?.arm ?? null),
     "clause5.anchor.attempt": a === null ? "(none)" : String(a.attempt),
@@ -515,6 +591,22 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
         return f === undefined
           ? `${file} absent`
           : `${file} total=${String(f.total)} passed=${String(f.passed)} failed=${String(f.failed)} skipped=${String(f.skipped)}`;
+      })
+    ),
+    // REPORTED, DECIDING NOTHING — the same standing this project gives the
+    // capped/uncapped pair and the per-task denominator share. It exists so a
+    // reader can SEE whether the conformance suite moved between the act and
+    // the attestation, including in the window the amendment's clock does not
+    // reach. Reading it as a void later would be a void wearing a disguise.
+    "clause6.conformanceHashes": joined(
+      facts.clause6.conformance.map((c) => {
+        const verdictless =
+          c.atRegistration === null || c.atSubject === null
+            ? "(unknown)"
+            : c.atRegistration === c.atSubject
+              ? "same"
+              : "DIFFERS";
+        return `${c.file} registration=${orNone(c.atRegistration)} subject=${orNone(c.atSubject)} ${verdictless}`;
       })
     ),
     "tool.srcSha256": orNone(facts.toolSrcSha256),
@@ -563,6 +655,8 @@ export interface CollectorOptions {
   preregFrozenCommit?: string;
   preregPath?: string;
   pinnedPaths?: readonly string[];
+  /** Test seam: where the conformance-path amendment lives. */
+  amendmentPath?: string;
   /** Test seam: wrap or replace the git runner — how the oracle makes a
    * MANDATORY probe fail without corrupting a repository. */
   gitRunner?: Git;
@@ -726,6 +820,25 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     }
   }
 
+  // ---- clause 5: does the conformance-path amendment govern THIS run? -----
+  // PROSPECTIVE by construction: the amendment governs only when its own
+  // introducing commit is an ancestor of the anchor's commit — "every run
+  // whose first scored observation is committed after this artifact". An
+  // amendment born later governs nothing, and saying so is the whole point.
+  const amendmentPath = options.amendmentPath ?? AMENDMENT_CONFORMANCE_PATHS;
+  const amendmentCommit = introducingCommit(git, amendmentPath);
+  let amendmentGoverns = false;
+  if (amendmentCommit !== null && anchor !== null) {
+    const anc = isAncestor(git, amendmentCommit, anchor.commit);
+    if (anc === null) {
+      throw new AuditRefused(
+        `ancestry of the amendment ${amendmentCommit} against the anchor commit cannot be asked — which regime governs this run cannot be decided`
+      );
+    }
+    amendmentGoverns = anc;
+  }
+  const effectivePinned = amendmentGoverns ? [...pinnedPaths, ...CONFORMANCE_FILES] : [...pinnedPaths];
+
   // ---- clause 5: the two probes, in union ---------------------------------
   const commitsTouchingPinned: Array<{ sha: string; committerDate: string }> = [];
   const offenders: string[] = [];
@@ -734,7 +847,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     // FAIL-CLOSED: a failed MANDATORY probe may never wear the same empty
     // list a clean answer wears — "no commits touch the pinned paths" and
     // "the history could not be inspected" fire different clauses.
-    const log = git(["log", "--format=%H %cI", "--", ...pinnedPaths]);
+    const log = git(["log", "--format=%H %cI", "--", ...effectivePinned]);
     if (!log.ok) {
       throw new AuditRefused(
         "git log over the pinned paths failed — clause 5's history cannot be inspected, and an empty answer is not a clean one"
@@ -850,13 +963,32 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     clause5: {
       anchor,
       anchorProblems,
+      pinnedPaths: effectivePinned,
+      amendment: {
+        path: amendmentPath,
+        commit: amendmentCommit,
+        sha256: blobSha(git, "HEAD", amendmentPath),
+        addedPaths: CONFORMANCE_FILES,
+        governs: amendmentGoverns,
+      },
       commitsTouchingPinned,
       offenders,
       excusedByReemission,
       evidencePaths: evidence.paths,
       evidenceDigest: evidence.digest,
     },
-    clause6: { attestation, attestationSha256, subjectIsAncestor, nonEvidenceDrift },
+    clause6: {
+      attestation,
+      attestationSha256,
+      subjectIsAncestor,
+      nonEvidenceDrift,
+      // Reported beside the verdict, never inside it.
+      conformance: CONFORMANCE_FILES.map((file) => ({
+        file,
+        atRegistration: registrationCommit === null ? null : blobSha(git, registrationCommit, file),
+        atSubject: attestation === null ? null : blobSha(git, attestation.subjectCommit, file),
+      })),
+    },
     toolSrcSha256: blobSha(git, "HEAD", "src/cost/b12/audit.ts"),
   };
 }

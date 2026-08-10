@@ -16,6 +16,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  AMENDMENT_CONFORMANCE_PATHS,
   AUDIT_INPUT_KEYS,
   AuditRefused,
   attestationFromVitest,
@@ -26,6 +27,7 @@ import {
   CONFORMANCE_FILES,
   CONTROL_TESTS,
   decideAudit,
+  PINNED_PATHS,
   PREREG_FROZEN_COMMIT,
   PREREG_PATH,
   suiteRunRefusal,
@@ -111,6 +113,14 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
     clause5: {
       anchor: { taskId: "t1", arm: "treatment", attempt: 1, started: at(0), commit: "c".repeat(40) },
       anchorProblems: [],
+      pinnedPaths: [...PINNED_PATHS],
+      amendment: {
+        path: AMENDMENT_CONFORMANCE_PATHS,
+        commit: null,
+        sha256: null,
+        addedPaths: CONFORMANCE_FILES,
+        governs: false,
+      },
       commitsTouchingPinned: [],
       offenders: [],
       excusedByReemission: [],
@@ -122,6 +132,11 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
       attestationSha256: "t".repeat(64),
       subjectIsAncestor: true,
       nonEvidenceDrift: [],
+      conformance: CONFORMANCE_FILES.map((file) => ({
+        file,
+        atRegistration: "c".repeat(64),
+        atSubject: "c".repeat(64),
+      })),
     },
     toolSrcSha256: "u".repeat(64),
     ...over,
@@ -164,6 +179,7 @@ describe("the pure decider — every clause firing and not firing", () => {
     const offender = "f".repeat(40);
     const withOffender = factsOf({
       clause5: {
+        ...factsOf().clause5,
         anchor: { taskId: "t1", arm: "treatment", attempt: 1, started: at(0), commit: "c".repeat(40) },
         anchorProblems: [],
         commitsTouchingPinned: [{ sha: offender, committerDate: at(10) }],
@@ -198,7 +214,7 @@ describe("the pure decider — every clause firing and not firing", () => {
 
   it("clause 6 fires on absence, a failing file, a skipped file, a missing control, and foreign drift", () => {
     expect(
-      decideAudit(factsOf({ clause6: { attestation: null, attestationSha256: null, subjectIsAncestor: null, nonEvidenceDrift: [] } }))
+      decideAudit(factsOf({ clause6: { ...factsOf().clause6, attestation: null, attestationSha256: null, subjectIsAncestor: null, nonEvidenceDrift: [] } }))
         .reasons.join(" ")
     ).toMatch(/no committed suite attestation/);
 
@@ -210,7 +226,7 @@ describe("the pure decider — every clause firing and not firing", () => {
       ],
     });
     expect(
-      decideAudit(factsOf({ clause6: { attestation: failingFile, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
+      decideAudit(factsOf({ clause6: { ...factsOf().clause6, attestation: failingFile, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
         .reasons.join(" ")
     ).toMatch(/not FULLY passing/);
 
@@ -223,7 +239,7 @@ describe("the pure decider — every clause firing and not firing", () => {
       ],
     });
     expect(
-      decideAudit(factsOf({ clause6: { attestation: skippedFile, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
+      decideAudit(factsOf({ clause6: { ...factsOf().clause6, attestation: skippedFile, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
         .verdict
     ).toBe("void");
 
@@ -231,7 +247,7 @@ describe("the pure decider — every clause firing and not firing", () => {
       tests: CONTROL_TESTS.slice(1).map(({ file, fullName }) => ({ file, fullName, status: "passed" })),
     });
     expect(
-      decideAudit(factsOf({ clause6: { attestation: missingControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
+      decideAudit(factsOf({ clause6: { ...factsOf().clause6, attestation: missingControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
         .reasons.join(" ")
     ).toMatch(/required control absent/);
 
@@ -243,7 +259,7 @@ describe("the pure decider — every clause firing and not firing", () => {
       })),
     });
     expect(
-      decideAudit(factsOf({ clause6: { attestation: failedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
+      decideAudit(factsOf({ clause6: { ...factsOf().clause6, attestation: failedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
         .reasons.join(" ")
     ).toMatch(/required control not passing/);
 
@@ -258,7 +274,7 @@ describe("the pure decider — every clause firing and not firing", () => {
       })),
     });
     expect(
-      decideAudit(factsOf({ clause6: { attestation: movedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
+      decideAudit(factsOf({ clause6: { ...factsOf().clause6, attestation: movedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } }))
         .reasons.join(" ")
     ).toMatch(/attested in tests\/somewhere-else\.test\.ts, not in tests\/cost-meter\.test\.ts/);
 
@@ -270,19 +286,19 @@ describe("the pure decider — every clause firing and not firing", () => {
     });
     expect(
       decideAudit(
-        factsOf({ clause6: { attestation: duplicatedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } })
+        factsOf({ clause6: { ...factsOf().clause6, attestation: duplicatedControl, attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: [] } })
       ).reasons.join(" ")
     ).toMatch(/2 tests in tests\/cost-meter\.test\.ts carry the control's fullName/);
 
     expect(
       decideAudit(
-        factsOf({ clause6: { attestation: attestationOf(s), attestationSha256: "t".repeat(64), subjectIsAncestor: false, nonEvidenceDrift: [] } })
+        factsOf({ clause6: { ...factsOf().clause6, attestation: attestationOf(s), attestationSha256: "t".repeat(64), subjectIsAncestor: false, nonEvidenceDrift: [] } })
       ).reasons.join(" ")
     ).toMatch(/not an ancestor of HEAD/);
 
     expect(
       decideAudit(
-        factsOf({ clause6: { attestation: attestationOf(s), attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: ["src/cost/report.ts"] } })
+        factsOf({ clause6: { ...factsOf().clause6, attestation: attestationOf(s), attestationSha256: "t".repeat(64), subjectIsAncestor: true, nonEvidenceDrift: ["src/cost/report.ts"] } })
       ).reasons.join(" ")
     ).toMatch(/evidence\/\*\* only/);
   });
@@ -525,11 +541,22 @@ describe("fail-closed probes and the dirty-tree guard", () => {
 });
 
 describe("the e2e — the operator loop over the committed replay fixture", () => {
-  /** The full sequence once, returning the repo and its landmark commits. */
-  async function operatorLoop(): Promise<{ root: string; registration: string; afterEmit: string }> {
+  /**
+   * The full sequence once, returning the repo and its landmark commits.
+   *
+   * `seed` runs before the registration commit — the only place an artifact
+   * can be born EARLIER than the freeze anchor, which is what a prospective
+   * amendment's clock turns on. `beforeAttestation` runs after the emit and
+   * may return a new commit to attest, which is how the window between the
+   * first scored observation and the attestation gets modelled at all.
+   */
+  async function operatorLoop(
+    hooks: { seed?: (root: string) => Promise<void>; beforeAttestation?: (root: string) => Promise<string> } = {}
+  ): Promise<{ root: string; registration: string; afterEmit: string; subject: string }> {
     const root = tempRoot();
     await fs.cp(FIXTURE, root, { recursive: true });
     initRepo(root);
+    await hooks.seed?.(root);
     // Manifest B sealed in the SAME act as A — byte-identical blob, which is
     // what `open-b` will hold the real register to.
     await fs.copyFile(
@@ -544,14 +571,15 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     const afterEmit = commitAll(root, "first emit, unchecked");
 
     // 2. the attestation, subject = the commit the suite would have run at.
-    const attestation = attestationOf(afterEmit, { runId: "replay-01" });
+    const subject = (await hooks.beforeAttestation?.(root)) ?? afterEmit;
+    const attestation = attestationOf(subject, { runId: "replay-01" });
     await fs.writeFile(
       path.join(root, "evidence", "replay-01.b12.suite.json"),
       JSON.stringify(attestation, null, 2) + "\n",
       "utf8"
     );
     commitAll(root, "suite attestation");
-    return { root, registration, afterEmit };
+    return { root, registration, afterEmit, subject };
   }
 
   it("audit → commit → emit --audit lands gitAudit.ran === true with the clause check NOT fired", async () => {
@@ -711,5 +739,88 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     // The non-evidence drift ALSO fires clause 6 — two clauses, two reasons,
     // neither masking the other.
     expect(driftedVerdict.reasons.join(" ")).toMatch(/evidence\/\*\* only/);
+  }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // R23's residual, closed by a PRE-DATA AMENDMENT (2026-08-10).
+  //
+  // The window: a control emptied AFTER the first scored observation and
+  // BEFORE the attestation. Clause 6's drift check cannot see it — the
+  // attestation honestly describes the gutted tree and nothing moves after
+  // it — and clause 5 did not name the conformance files. The two tests below
+  // are the same repository twice: with the amendment born before the anchor,
+  // and without it. The second IS the pre-amendment damage.
+  // -------------------------------------------------------------------------
+  const AMENDMENT_REL = "evidence/2026-08-10-b12-amendment-conformance-paths.json";
+  const seedConformance = (withAmendment: boolean) => async (root: string): Promise<void> => {
+    await fs.mkdir(path.join(root, "tests"), { recursive: true });
+    for (const file of CONFORMANCE_FILES) {
+      await fs.writeFile(path.join(root, file), "// the control, with its teeth\n", "utf8");
+    }
+    if (withAmendment) {
+      await fs.writeFile(path.join(root, AMENDMENT_REL), `{"schema":"b12-amendment/1"}\n`, "utf8");
+    }
+  };
+  const gutTheControl = async (root: string): Promise<string> => {
+    await fs.writeFile(path.join(root, CONFORMANCE_FILES[0]!), "// the control, emptied\n", "utf8");
+    return commitAll(root, "the control gutted — mid-run, BEFORE the attestation");
+  };
+
+  it("the amendment, born BEFORE the anchor, puts the conformance files under clause 5", async () => {
+    const { root, registration, subject } = await operatorLoop({
+      seed: seedConformance(true),
+      beforeAttestation: gutTheControl,
+    });
+    const facts = collectAuditFacts(root, "replay-01", {
+      preregFrozenCommit: registration,
+      preregPath: "evidence/replay-01.b12.tasks.json",
+      amendmentPath: AMENDMENT_REL,
+    });
+    expect(facts.clause5.amendment.commit).toBe(registration); // born in the act itself
+    expect(facts.clause5.amendment.governs).toBe(true);
+    expect(facts.clause5.pinnedPaths).toContain(CONFORMANCE_FILES[0]);
+    expect(facts.clause5.offenders).toContain(subject);
+    const { verdict, reasons } = decideAudit(facts);
+    expect(verdict).toBe("void");
+    expect(reasons.join(" ")).toMatch(/touched a pinned path after the first scored observation/);
+    // And clause 6 is NOT what caught it: the attestation's subject IS the
+    // gutted commit, so nothing drifted after it. The amendment is the only
+    // thing standing between this edit and a clean verdict.
+    expect(reasons.join(" ")).not.toMatch(/evidence\/\*\* only/);
+    // The artifact says which regime decided, and the effective set — never
+    // the constant.
+    const { artifact } = buildAuditArtifact(facts);
+    expect(artifact.inputs["clause5.amendment.governs"]).toBe("yes");
+    expect(artifact.inputs["clause5.pinnedPaths"]).toMatch(/tests\/cost-meter\.test\.ts/);
+  }, 60_000);
+
+  it("WITHOUT the amendment the same gutting is clean — and the reported hashes still show it", async () => {
+    const { root, registration } = await operatorLoop({
+      seed: seedConformance(false),
+      beforeAttestation: gutTheControl,
+    });
+    const facts = collectAuditFacts(root, "replay-01", {
+      preregFrozenCommit: registration,
+      preregPath: "evidence/replay-01.b12.tasks.json",
+      amendmentPath: AMENDMENT_REL,
+    });
+    expect(facts.clause5.amendment.commit).toBeNull();
+    expect(facts.clause5.amendment.governs).toBe(false);
+    expect(facts.clause5.pinnedPaths).not.toContain(CONFORMANCE_FILES[0]);
+    expect(facts.clause5.offenders).toEqual([]);
+    const { verdict, reasons } = decideAudit(facts);
+    expect(verdict).toBe("clean");
+    expect(reasons).toEqual([]);
+    // THE POINT OF THE REPORTED HALF: the verdict is clean and the drift is
+    // nonetheless on the artifact's face, for the file that moved and not for
+    // the one that did not.
+    const gutted = facts.clause6.conformance.find((c) => c.file === CONFORMANCE_FILES[0]);
+    const untouched = facts.clause6.conformance.find((c) => c.file === CONFORMANCE_FILES[1]);
+    expect(gutted?.atRegistration).not.toBe(gutted?.atSubject);
+    expect(untouched?.atRegistration).toBe(untouched?.atSubject);
+    const { artifact } = buildAuditArtifact(facts);
+    expect(artifact.verdict).toBe("clean"); // reported, deciding nothing
+    expect(artifact.inputs["clause6.conformanceHashes"]).toMatch(/tests\/cost-meter\.test\.ts .*DIFFERS/);
+    expect(artifact.inputs["clause6.conformanceHashes"]).toMatch(/session-token-walk\.test\.ts .*same/);
   }, 60_000);
 });
