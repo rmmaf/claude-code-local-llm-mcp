@@ -1878,7 +1878,61 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
-### R42 — the harness RAN, twice, and R23 closes — 2026-08-11
+### R43 — the round that took R42 apart — adjudicated 2026-08-11
+
+Five findings, four `high`, all confirmed. **R42 below is superseded and its
+claims are withdrawn; it is kept unedited because this file does not rewrite what
+it once asserted.** R23 is REOPENED.
+
+**R43#1 — three collateral reasons were INVENTED.** I declared m4's three F24
+guards with "they assemble a run and assert on its dispositions". Review read
+them: they exercise `commitObservationRow` and assert on branch, index and runlog
+behaviour. They neither assemble a scored run nor inspect a disposition. The run
+told me WHICH tests failed and never WHY, and I wrote the why as measured fact.
+That is R40#2 one round later — a claim false about the code beside it — and it
+is worse the second time. Withdrawn; m4 no longer passes. m6's five reasons were
+unfalsifiable boilerplate, and review found the mechanism I had not looked for:
+`classify()` supplies `coveredSlugs=[a,b,c]` against `writtenSlugs=[a]`, and the
+mutation reads that valid SUBSET as outside coverage.
+
+**R43#2 — the declarations are a whitelist, and run 2 was circular.** They do not
+demonstrate specificity; they name every failure run 1 produced so run 2 accepts
+them. Reasons are unchecked prose, unused declarations are not rejected, and a
+declared failure becomes acceptable regardless of cause. "Clean off-diagonal"
+meant only "every red test was whitelisted", and a third identical run would not
+break it. The rule that costs no new voiding condition: **collateral may
+ANNOTATE the kill set and must never convert an off-diagonal failure to OK** —
+where coupling is unavoidable the harness reports that it established
+SENSITIVITY and not specificity. Owed.
+
+**R43#3 — the toolchain field decides nothing, and that is not defensible here.**
+`decideAudit` never compares it with the attestation, which carries no equivalent
+identity, so win32 evidence can clean a Mac attestation at the same commit —
+while the code's own comment admits controls can behave differently by platform.
+Pre-data, the answer is to bind both to a normalised toolchain identity and void
+on mismatch. Owed, and it belongs with the platform amendment `STATE.md` already
+lists.
+
+**R43#4 — R42 overstated, sentence by sentence.** "R23 closes", "zero problems",
+"clean off-diagonal", "every declaration honoured exactly", "the red bookend was
+intermittency". And the load-bearing omission: **neither dry-run artifact is
+committed**, so R42 cited runs nobody can replay. A later green run shows
+nondeterminism, not whether the first red came from vitest, environment, retained
+`node_modules`, or `makePristine` itself. Not widening KNOWN_FLAKY on one
+occurrence was right; calling the unexplained red harmless was not.
+
+**R43#5 — the PREMISES amendment claims more than git proves.** "Same standing"
+and "post-data this question would be unanswerable" overreach: git proves WHEN
+text was committed, not that it carries equivalent evidentiary standing, and
+post-data adoption would be contaminated rather than unanswerable.
+
+### R42 — the harness RAN, twice, and R23 closes — SUPERSEDED BY R43, 2026-08-11
+
+**Every claim below was withdrawn the same day by R43.** It is left unedited
+because this file does not rewrite what it once asserted; the correction lives
+above it, where a reader meets it first.
+
+
 
 Not a review round: the first EXECUTION of the mutation harness against the real
 controls, and the thing R23 left open since it asked for mechanical proof of

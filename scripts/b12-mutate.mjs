@@ -136,26 +136,17 @@ export const REGISTRY = [
     },
     kind: "historical",
     why: "dropping the inherited>0 rejection lets a resumed session claim ids a sibling worktree already held",
-    // All three are F24-pass guards that assemble a run and assert on its
-    // DISPOSITIONS. Removing a disposition necessarily moves them — which is
-    // why the reason is written per test rather than as one blanket excuse.
-    collateral: [
-      {
-        fullName:
-          "the B12 harness the F24 pass: every new guard shown FIRING a checkout DURING the act never stages evidence on the branch it lands in",
-        reason: "it asserts a run's dispositions end-to-end, and this mutation deletes one of them",
-      },
-      {
-        fullName:
-          "the B12 harness the F24 pass: every new guard shown FIRING the refresh is bound to the POSITION of HEAD, not to the branch's name",
-        reason: "same end-to-end assembly, same deleted disposition",
-      },
-      {
-        fullName:
-          "the B12 harness the F24 pass: every new guard shown FIRING is INERT to an index-mutating pre-commit hook — plumbing runs no hooks (R27)",
-        reason: "same end-to-end assembly, same deleted disposition",
-      },
-    ],
+    // WITHDRAWN, R43. Three F24 guards went red under this mutation and I
+    // declared them with the reason "they assemble a run and assert on its
+    // dispositions". Review read the tests: they exercise
+    // `commitObservationRow` and assert on branch, index and runlog behaviour.
+    // They neither assemble a scored run nor inspect a disposition. The reason
+    // was INVENTED — the run told me WHICH tests failed, never WHY, and I wrote
+    // the why as though it were measured. That is R40#2 one round later: a
+    // claim false about the code beside it.
+    //
+    // Nothing is declared here until the failures are reproduced and causally
+    // explained. This pair therefore does NOT pass, which is the honest state.
     subject: {
       path: "src/cost/b12/assemble.ts",
       find: "  if (inherited.length > 0) {",
