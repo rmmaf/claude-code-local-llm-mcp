@@ -771,6 +771,14 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
     reasons.push(
       `clause 6: no committed firing evidence (evidence/${facts.runId}.b12.firing.json) — the six controls can be shown PASSING but not FIRING, and a gutted control passes`
     );
+  } else if (!isFiringEvidence(fire)) {
+    // The collector validates what it reads, but this is a PURE function and
+    // can be handed anything. R41#2's control proved the point: injecting a
+    // malformed artifact straight into the facts threw a TypeError here, and an
+    // audit that throws on hostile input is one hostile input can silence.
+    reasons.push(
+      "clause 6: the firing evidence is malformed — bytes that cannot be read as evidence are not evidence, and a shape this cannot parse decides VOID rather than throwing"
+    );
   } else {
     if (att !== null && fire.baseCommit !== att.subjectCommit) {
       reasons.push(
@@ -791,6 +799,21 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
       if (!CONTROL_TESTS.some((k) => key(k) === key(c))) {
         reasons.push(`clause 6: the firing evidence evaluated a control the clause does not list: ${c.fullName}`);
       }
+    }
+    // R41#1: EXACTLY one pair per listed control, one-to-one. Without this the
+    // artifact could list all six in `controlsEvaluated` and carry `pairs: []`
+    // — every loop below stays quiet, `allFired: true` survives, and a matrix
+    // that ran nothing reads CLEAN. Same species as the empty-`subjects` hole.
+    for (const control of CONTROL_TESTS) {
+      const owning = fire.pairs.filter((p) => key(p.control) === key(control));
+      if (owning.length === 0) {
+        reasons.push(`clause 6: no pair reports on a required control: ${control.fullName}`);
+      } else if (owning.length > 1) {
+        reasons.push(`clause 6: ${owning.length} pairs report on ${control.fullName} — a control cannot be judged twice`);
+      }
+    }
+    if (new Set(fire.pairs.map((p) => p.id)).size !== fire.pairs.length) {
+      reasons.push("clause 6: the firing evidence repeats a pair id — two pairs cannot be the same act");
     }
     if (!fire.baseline.allGreen) {
       reasons.push(
@@ -949,13 +972,19 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     "clause6.firingPath": `evidence/${facts.runId}.b12.firing.json`,
     "clause6.firingSha256": orNone(facts.clause6.firingSha256),
     "clause6.firingBaseCommit": orNone(facts.clause6.firing?.baseCommit ?? null),
+    // SORTED, both of them. R41#5: these were rendered in the artifact's own
+    // array order, so two artifacts asserting identical facts in different
+    // orders produced different canonical inputs — and the whole point of this
+    // serialization is that identical facts have ONE spelling.
     "clause6.firingPairs": joined(
-      (facts.clause6.firing?.pairs ?? []).map((p) => `${p.id}=${p.fired ? "fired" : "NOT-FIRED"}`)
+      (facts.clause6.firing?.pairs ?? [])
+        .map((p) => `${p.id}=${p.fired ? "fired" : "NOT-FIRED"}`)
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     ),
     "clause6.firingSubjects": joined(
-      facts.clause6.firingSubjectsAtBase.map(
-        (s) => `${s.path}=${String(s.claimed).slice(0, 12)}/${String(s.recomputed).slice(0, 12)}`
-      )
+      facts.clause6.firingSubjectsAtBase
+        .map((s) => `${s.path}=${String(s.claimed).slice(0, 12)}/${String(s.recomputed).slice(0, 12)}`)
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     ),
     "tool.srcSha256": orNone(facts.toolSrcSha256),
   };
@@ -1024,6 +1053,51 @@ function gitIn(repoRoot: string): Git {
     }
     return { ok: r.status === 0, out: r.stdout ?? "" };
   };
+}
+
+/**
+ * Every nested field of a committed firing artifact, checked.
+ *
+ * R41#2. Shallow validation let malformed bytes through to the decider, where
+ * `fire.baseline.allGreen` on an absent `baseline` throws — and an audit that
+ * throws on hostile input is an audit that can be silenced by hostile input.
+ * Failing here yields `null`, which decides the same VOID as an absent
+ * artifact, because bytes that cannot be read as evidence are not evidence.
+ */
+export function isFiringEvidence(v: unknown): v is FiringEvidence {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.schema !== "b12-firing/1") return false;
+  if (typeof o.baseCommit !== "string" || o.baseCommit === "") return false;
+  if (typeof o.allFired !== "boolean") return false;
+  const strings = (x: unknown): boolean => Array.isArray(x) && x.every((s) => typeof s === "string");
+  if (!strings(o.problems)) return false;
+  const base = o.baseline as Record<string, unknown> | undefined;
+  if (typeof base !== "object" || base === null) return false;
+  if (typeof base.allGreen !== "boolean" || !strings(base.problems)) return false;
+  const ref = (x: unknown): boolean => {
+    if (typeof x !== "object" || x === null) return false;
+    const c = x as Record<string, unknown>;
+    return typeof c.file === "string" && c.file !== "" && typeof c.fullName === "string" && c.fullName !== "";
+  };
+  if (!Array.isArray(o.controlsEvaluated) || !o.controlsEvaluated.every(ref)) return false;
+  if (!Array.isArray(o.pairs)) return false;
+  for (const p of o.pairs) {
+    if (typeof p !== "object" || p === null) return false;
+    const pair = p as Record<string, unknown>;
+    if (typeof pair.id !== "string" || pair.id === "") return false;
+    if (typeof pair.fired !== "boolean" || typeof pair.detail !== "string") return false;
+    if (!ref(pair.control)) return false;
+  }
+  if (!Array.isArray(o.subjects)) return false;
+  for (const s of o.subjects) {
+    if (typeof s !== "object" || s === null) return false;
+    const sub = s as Record<string, unknown>;
+    if (typeof sub.id !== "string" || sub.id === "") return false;
+    if (typeof sub.path !== "string" || sub.path === "") return false;
+    if (sub.sha256AtBase !== null && typeof sub.sha256AtBase !== "string") return false;
+  }
+  return true;
 }
 
 const blobSha = (git: Git, ref: string, rel: string): string | null => {
@@ -1496,15 +1570,12 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     firingSha256 = sha256(firingShow.out);
     try {
       const candidate = JSON.parse(firingShow.out) as FiringEvidence;
-      if (
-        candidate.schema === "b12-firing/1" &&
-        typeof candidate.baseCommit === "string" &&
-        Array.isArray(candidate.controlsEvaluated) &&
-        Array.isArray(candidate.pairs) &&
-        Array.isArray(candidate.subjects)
-      ) {
-        firing = candidate;
-      }
+      // R41#2: the guard used to stop at the top level, so a committed artifact
+      // with a missing `baseline` or a null row reached the decider and THREW —
+      // an exception where a deterministic VOID belongs. Every nested field is
+      // checked here, and anything that fails becomes `null`, which is the same
+      // VOID as "no evidence": malformed committed bytes are not evidence.
+      if (isFiringEvidence(candidate)) firing = candidate;
     } catch {
       firing = null;
     }

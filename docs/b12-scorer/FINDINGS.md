@@ -1878,6 +1878,47 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R41 — clause 6's firing reader, and an argument that wanted both sides — adjudicated 2026-08-11
+
+Five findings. Three mechanical, one about coverage, and one about a sentence.
+
+**R41#3 is the one that matters, and it is not about code.** The `PREMISES.md`
+entry declaring this change ADMITTED that requiring a committed machine artifact
+NARROWS how clause 6's "shown" may be satisfied — thirty hand demonstrations in
+this file are also showings — and then, one sentence later, said corrections owe
+no amendment. Having it both ways. The review is right, and this project's whole
+defence against minted conditions is that the distinction stays unnegotiable
+exactly when it is inconvenient. Rewritten with the split it should have had:
+closing the gap between the frozen word FIRING and the code's PASSING is a
+**correction**; the named path, schema, green baseline, exact control set, commit
+relationship and digest binding are a **pre-data amendment**, recorded as one.
+
+**R41#1 — a forged matrix that ran nothing read CLEAN.** With
+`controlsEvaluated` listing all six and `pairs: []`, every loop stayed quiet and
+`allFired: true` survived. Same species as the empty-`subjects` hole found while
+writing the fixture. Now exactly one pair per listed control, one-to-one, with
+unique ids.
+
+**R41#2 — the audit THREW where it should have voided.** Validation stopped at
+the top level, so a missing `baseline` or a null row reached the decider and
+raised a TypeError. An audit that throws on hostile input is an audit hostile
+input can silence. A full nested validator now turns malformed committed bytes
+into the same VOID as absent bytes — and the control written for it caught more
+than the review predicted: validating in the COLLECTOR was not enough, because
+`decideAudit` is pure and can be handed anything, so it re-checks.
+
+**R41#5 — the canonical serialization was order-dependent.** Two artifacts
+asserting identical facts in different array orders produced different audit
+inputs, against the stated purpose of the one-spelling representation. Sorted.
+
+**Two gaps recorded rather than closed.** The artifact remains SELF-ASSERTED:
+recomputing subject digests proves those bytes exist at that commit, not that the
+harness executed them — the same trust boundary the suite attestation had before
+`--attest-suite`, and the equivalent answer is an `--attest-firing` that runs the
+harness from the auditor. And the e2e uses `harness-subjects/**` because the real
+subject paths ARE `PINNED_PATHS`, so nothing tests those files serving as firing
+subjects and pinned sources at once.
+
 ### R40 — the runner, and two mutations that lied about themselves — adjudicated 2026-08-11
 
 The hardest of the three harness rounds. Four findings, three `high`, and two of

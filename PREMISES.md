@@ -1867,12 +1867,20 @@ defect, and it pinned four of them in place.
   audit computer checked that they were *PASSING*, which is strictly weaker: a
   control gutted to assert nothing keeps its title and passes. Closing that is a
   **correction** — the code reaching the sentence it already claimed to
-  implement — and corrections owe no amendment. But one residue is real and is
-  settled here rather than argued away: a demonstration recorded BY HAND in
-  `FINDINGS.md` is also a showing, and thirty such demonstrations exist. Reading
-  a committed artifact instead NARROWS how "shown" may be satisfied.
-  That narrowing is declared now, before the first scored observation, with the
-  same standing as the two decisions below and provable by the same `git log -p`.
+  implement — and corrections owe no amendment. **That covers the FIRING-vs-
+  PASSING gap and nothing else.** Everything past it is a PRE-DATA AMENDMENT and
+  is recorded as one, because review was right that the first draft of this entry
+  wanted both sides at once: a demonstration recorded BY HAND in `FINDINGS.md` is
+  also a showing, thirty such demonstrations exist, and requiring a committed
+  machine artifact at a named path, with a schema, a green baseline, an exact
+  control set, a commit relationship and a digest binding, NARROWS how "shown"
+  may be satisfied. A narrowing is a new operational condition however frozen the
+  word FIRING already was. Calling it a correction would be having it both ways,
+  and this project's whole defence against minted conditions is that the
+  distinction is not negotiable when it is inconvenient.
+  So: amendment, pre-data, declared now — before the first scored observation and
+  before any firing artifact exists on this branch — with the same standing as
+  the two decisions below and provable by the same `git log -p`.
   Concretely: clause 6 fails unless `evidence/<runId>.b12.firing.json` is
   committed, names the attestation's own `subjectCommit`, covers exactly
   `CONTROL_TESTS`, records every pair FIRED over a green unmutated baseline, and

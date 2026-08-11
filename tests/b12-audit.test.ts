@@ -39,6 +39,7 @@ import {
   workingTreeDirtOutsideEvidence,
   type AuditFacts,
   type FiringEvidence,
+  isFiringEvidence,
   type Git,
   type SuiteAttestation,
 } from "../src/cost/b12/audit.js";
@@ -1451,5 +1452,61 @@ describe("clause 6 — the word FIRING", () => {
     expect(inputs["clause6.firingPath"]).toBe("evidence/replay-01.b12.firing.json");
     expect(inputs["clause6.firingPairs"]).toContain("m1=fired");
     expect(inputs["clause6.firingSubjects"]).toContain("src/cost/subject-1.ts");
+  });
+
+  it("VOIDS a forged matrix that lists the six and reports on NONE of them", () => {
+    // R41#1: `controlsEvaluated` full, `pairs: []` — every loop stays quiet and
+    // allFired:true survives, so a matrix that ran nothing read CLEAN.
+    const facts = factsOf();
+    const out = decideAudit({
+      ...facts,
+      clause6: {
+        ...facts.clause6,
+        firing: firingOf("s".repeat(40), { pairs: [], subjects: [] }),
+        firingSubjectsAtBase: [],
+      },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("no pair reports on a required control");
+  });
+
+  it("VOIDS when one control is judged twice, or a pair id repeats", () => {
+    const facts = factsOf();
+    const base = firingOf("s".repeat(40));
+    const first = base.pairs[0];
+    if (first === undefined) throw new Error("the fixture must carry pairs");
+    const twice = decideAudit({
+      ...facts,
+      clause6: { ...facts.clause6, firing: { ...base, pairs: [...base.pairs, { ...first, id: "m7" }] } },
+    });
+    expect(twice.reasons.join(" ")).toContain("cannot be judged twice");
+    const dupId = decideAudit({
+      ...facts,
+      clause6: { ...facts.clause6, firing: { ...base, pairs: [...base.pairs, first] } },
+    });
+    expect(dupId.reasons.join(" ")).toContain("repeats a pair id");
+  });
+
+  it("treats MALFORMED committed evidence as no evidence, and never throws on it", () => {
+    // R41#2: shallow validation let a missing `baseline` or a null row reach the
+    // decider, where it threw. An audit that throws on hostile input is an audit
+    // hostile input can silence.
+    expect(isFiringEvidence(null)).toBe(false);
+    expect(isFiringEvidence({ schema: "b12-firing/1", baseCommit: "x", controlsEvaluated: [], pairs: [], subjects: [] })).toBe(false);
+    const good = firingOf("s".repeat(40));
+    expect(isFiringEvidence(good)).toBe(true);
+    for (const broken of [
+      { ...good, baseline: undefined },
+      { ...good, pairs: [null] },
+      { ...good, subjects: [{ id: "m1" }] },
+      { ...good, controlsEvaluated: [{ file: "x" }] },
+      { ...good, allFired: "yes" },
+    ]) {
+      expect(isFiringEvidence(broken)).toBe(false);
+      const facts = factsOf();
+      expect(() =>
+        decideAudit({ ...facts, clause6: { ...facts.clause6, firing: broken as never } })
+      ).not.toThrow();
+    }
   });
 });
