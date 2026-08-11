@@ -14,6 +14,15 @@ import type { ControlRef } from "./b12-firing.mjs";
 export interface MutationPair {
   id: string;
   control: ControlRef;
+  /**
+   * `historical` means the mutation restores a defect this repository actually
+   * shipped. `invariant` means it violates the subject's stated invariant
+   * without claiming to be the original bug — R40#2 forced m5 to be relabelled
+   * when review showed it produced count-both where the entry claimed
+   * first-wins. The label is on the artifact's face because a reader judging a
+   * replay is owed the difference.
+   */
+  kind: "historical" | "invariant";
   why: string;
   subject: {
     path: string;
@@ -43,6 +52,15 @@ export function applyMutation(
   treeDir: string,
   subject: MutationPair["subject"]
 ): { applied: true; notApplied: null; beforeSha256: string } | { applied: false; notApplied: string };
+
+/** The committed blob's RAW bytes — not `git show`'s trimmed, decoded stdout. */
+export function blobSha(repoRoot: string, commit: string, rel: string): string | null;
+
+/** The bytes on disk in the tree, which CRLF conversion can make differ. */
+export function worktreeSha(treeDir: string, rel: string): string | null;
+
+/** Give the worktree back and prune regardless; returns what could not be released. */
+export function releaseTree(repoRoot: string, treeDir: string): string[];
 
 export function runConformance(
   treeDir: string,

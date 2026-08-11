@@ -25,13 +25,21 @@ import { evaluateMatrix } from "./b12-firing.mjs";
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 
 /**
- * THE CLAUSE-6 SET — six pairs, one per control, and each mutation is THE
- * HISTORICAL BUG the control was written against.
+ * THE CLAUSE-6 SET — six pairs, one per control.
  *
- * Not an invented edit. A mutation drawn from the fixture would satisfy every
- * firing predicate while proving nothing (R38#1); a mutation that shipped in
- * this repository is production-reachable by construction and mentions no
- * test-only identifier.
+ * FIVE replay the historical bug their control was written against; ONE (m5) is
+ * an invariant violation in the same class, and says so. Every entry carries a
+ * `kind`, because R40#2 caught two entries claiming to be historical replays
+ * that were not: one clamped a display aggregate while the scored figure stayed
+ * negative, and one produced count-both under a "first-wins" label. The harness
+ * would have certified a replay that never restored the defect. The first was
+ * fixed; the second was relabelled, which is the honest repair when the code is
+ * reachable and real but is not the thing the entry named.
+ *
+ * No mutation is an invented edit. A mutation drawn from the fixture would
+ * satisfy every firing predicate while proving nothing (R38#1); one that shipped
+ * in this repository, or that violates the subject's stated invariant, is
+ * production-reachable by construction and mentions no test-only identifier.
  *
  * The registry does NOT restate the controls: `runHarness` reads `CONTROL_TESTS`
  * out of the built tree under test and the evaluator refuses unless the two
@@ -53,6 +61,7 @@ export const REGISTRY = [
       fullName:
         "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
     },
+    kind: "historical",
     why: "an aborted repair writes bytes_raw:0/bytes_returned:0 and the meter must CREDIT it at exactly zero, never drop it",
     subject: {
       path: "src/cost/report.ts",
@@ -68,11 +77,18 @@ export const REGISTRY = [
       file: "tests/cost-meter.test.ts",
       fullName: "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
     },
-    why: "THE SHIPPED DEFECT, restored verbatim: max(0, raw - returned) turns a call that cost bytes into one that saved nothing",
+    kind: "historical",
+    why: "THE SHIPPED DEFECT, restored at its source: max(0, raw - returned) turns a call that COST bytes into one that saved nothing",
     subject: {
       path: "src/cost/report.ts",
-      find: "    saving.bytes.signedUncapped += signed;",
-      replace: "    saving.bytes.signedUncapped += Math.max(0, signed);",
+      // R40#2: this clamped `saving.bytes.signedUncapped` — a DISPLAY aggregate.
+      // The control still went red, but on its display assertion, while the
+      // scored figure stayed negative: the harness would have certified a
+      // historical replay that never restored the historical defect. Clamping
+      // `signed` itself is where the shipped clamp actually lived, and it moves
+      // rowsNetNegative, signedUncapped and unitsTotal together.
+      find: "    const signed = entry.bytes_raw - entry.bytes_returned;",
+      replace: "    const signed = Math.max(0, entry.bytes_raw - entry.bytes_returned);",
       occurrences: 1,
     },
   },
@@ -83,6 +99,7 @@ export const REGISTRY = [
       fullName:
         "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
     },
+    kind: "historical",
     why: "folding an unsizeable refusal in as 0 reads as 'we refused nothing worth having'",
     subject: {
       path: "src/cost/report.ts",
@@ -98,6 +115,7 @@ export const REGISTRY = [
       fullName:
         "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
     },
+    kind: "historical",
     why: "dropping the inherited>0 rejection lets a resumed session claim ids a sibling worktree already held",
     subject: {
       path: "src/cost/b12/assemble.ts",
@@ -107,13 +125,21 @@ export const REGISTRY = [
     },
   },
   {
-    id: "m5-first-wins-ownership",
+    id: "m5-count-both-ownership",
     control: {
       file: "tests/cost-meter.test.ts",
       fullName:
         "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
     },
-    why: "first-wins crediting for a doubly-owned invocation id, instead of refusing on both sides",
+    // NOT labelled historical, and the label is the correction. This was
+    // published as "first-wins"; raising the threshold makes NO id ambiguous, so
+    // BOTH sessions credit it — count-both, a different defect in the same
+    // class (R40#2). Count-both is production-reachable and the control catches
+    // it, so the mutation stands; the CLAIM was what had to change. Implementing
+    // genuine first-wins needs a restructure, not a one-line literal, and this
+    // registry admits no mutation it cannot anchor exactly.
+    kind: "invariant",
+    why: "count-both for a doubly-owned invocation id: no id is ambiguous, so two sessions each credit the same call instead of both refusing",
     subject: {
       path: "src/cost/report.ts",
       find: "  for (const [id, groups] of owners) if (groups.size > 1) ambiguous.add(id);",
@@ -128,6 +154,7 @@ export const REGISTRY = [
       fullName:
         "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
     },
+    kind: "historical",
     why: "counts instead of populations — the control's own comment says the slug COUNT grows 1→2 here, so a count reads nothing",
     subject: {
       path: "scripts/b12-run.mjs",
@@ -223,6 +250,14 @@ export function runConformance(treeDir, controlFile, { expectFailures }) {
   if (!expectFailures && run.status !== 0) {
     return { ok: false, why: `the unmutated suite exited ${String(run.status)} — the baseline must be green`, report: null };
   }
+  // R40#1: `expectFailures` was licence for ANY non-zero exit, so a worker
+  // crash, an OOM or a bail still handed a parseable report to the evaluator as
+  // valid mutant evidence. Vitest exits 1 for ordinary test failures; 0 means
+  // the control did not fire and is PASSED THROUGH so the evaluator can say so
+  // by name. Anything else is the process failing, not a control judging.
+  if (expectFailures && run.status !== 0 && run.status !== 1) {
+    return { ok: false, why: `vitest exited ${String(run.status)} — an abnormal exit is not a control's judgement`, report: null };
+  }
   const line = (run.stdout ?? "").split("\n").find((l) => l.trimStart().startsWith("{"));
   if (line === undefined) return { ok: false, why: "vitest produced no JSON payload", report: null };
   try {
@@ -264,6 +299,17 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
     const controlFile = files[0];
 
     const sources = { [controlFile]: readFileSync(path.join(treeDir, controlFile), "utf8") };
+
+    // Captured while the tree is PROVED pristine and before any mutation. The
+    // loop leaves the last mutant in place, so reading these at return time
+    // would hash a mutated subject and call it the base.
+    const pristineSubjectShas = {};
+    for (const e of registry) {
+      if (pristineSubjectShas[e.subject.path] === undefined) {
+        pristineSubjectShas[e.subject.path] = worktreeSha(treeDir, e.subject.path);
+      }
+    }
+    const conformanceInTree = worktreeSha(treeDir, controlFile);
 
     const baseline = runConformance(treeDir, controlFile, { expectFailures: false });
     if (!baseline.ok) throw new Error(`baseline: ${baseline.why}`);
@@ -311,28 +357,96 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
     return {
       ...artifact,
       runId,
-      /** The pairing §1 relies on: which bytes this matrix actually ran against. */
+      /**
+       * The pairing §1 relies on: which bytes this matrix actually ran against.
+       *
+       * BOTH digests, because R40#3 showed they can disagree: `sha256AtBase` is
+       * the committed blob's raw bytes, `sha256InTree` is what tsc and vitest
+       * actually read after checkout — and on a Windows checkout with CRLF
+       * conversion those differ legitimately. Publishing one and calling it the
+       * other is the claim that could not be kept; publishing both lets a reader
+       * see the conversion instead of being told it did not happen.
+       */
       subjects: registry.map((e) => ({
         id: e.id,
+        kind: e.kind,
         path: e.subject.path,
         sha256AtBase: blobSha(repoRoot, baseCommit, e.subject.path),
+        sha256InTree: pristineSubjectShas[e.subject.path] ?? null,
         why: e.why,
       })),
-      conformance: [{ file: controlFile, sha256AtBase: blobSha(repoRoot, baseCommit, controlFile) }],
+      conformance: [
+        {
+          file: controlFile,
+          sha256AtBase: blobSha(repoRoot, baseCommit, controlFile),
+          sha256InTree: conformanceInTree,
+        },
+      ],
       bookends,
       runsSpent: 1 + 2 * registry.length,
     };
   } finally {
-    if (!keepTree) {
-      rmSync(treeDir, { recursive: true, force: true });
-      git(repoRoot, ["worktree", "prune"]);
-    }
+    if (!keepTree) releaseTree(repoRoot, treeDir);
   }
 }
 
-function blobSha(repoRoot, commit, rel) {
-  const show = git(repoRoot, ["show", `${commit}:${rel}`]);
-  return show.ok ? sha256(show.out) : null;
+/**
+ * Give the worktree back, and PRUNE whatever happens.
+ *
+ * R40#4. This was `rmSync` then `prune`, with no nested recovery: on Windows a
+ * lingering npm/vitest child, an antivirus scan or a read-only `.git` entry can
+ * make the recursive removal throw, so `prune` never ran, the original error was
+ * masked, and the registration leaked — permanently, because the next run mints
+ * a fresh `mkdtemp` path and never repairs the old one. Now git is asked first
+ * (it knows about its own locks), removal retries, and prune runs in its own
+ * `finally` regardless. What could not be released is REPORTED, not swallowed.
+ */
+export function releaseTree(repoRoot, treeDir) {
+  const problems = [];
+  try {
+    const removed = git(repoRoot, ["worktree", "remove", "--force", treeDir]);
+    if (!removed.ok && existsSync(treeDir)) {
+      let lastError = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          rmSync(treeDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      if (lastError !== null) problems.push(`${treeDir} could not be removed: ${String(lastError)}`);
+    }
+  } finally {
+    const pruned = git(repoRoot, ["worktree", "prune"]);
+    if (!pruned.ok) problems.push(`git worktree prune refused: ${pruned.err}`);
+  }
+  for (const p of problems) console.error(`WARNING: ${p}`);
+  return problems;
+}
+
+/**
+ * The committed blob's RAW BYTES, hashed.
+ *
+ * R40#3. This read `sha256(show.out)` through the shared `git()` helper, whose
+ * `.trimEnd()` strips the trailing newline every one of these files ends with —
+ * so the recorded digest already disagreed with the blob it claimed to name,
+ * before line endings were even considered. `encoding: "buffer"` and no trimming
+ * is the only form that can carry the artifact's byte-level claim.
+ */
+export function blobSha(repoRoot, commit, rel) {
+  const r = spawnSync("git", ["-C", repoRoot, "show", `${commit}:${rel}`], { maxBuffer: 64 * 1024 * 1024 });
+  return r.status === 0 && r.stdout !== null ? createHash("sha256").update(r.stdout).digest("hex") : null;
+}
+
+/** The bytes actually on disk in the tree — what tsc and vitest really read. */
+export function worktreeSha(treeDir, rel) {
+  try {
+    return createHash("sha256").update(readFileSync(path.join(treeDir, rel))).digest("hex");
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

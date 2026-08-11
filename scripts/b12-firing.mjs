@@ -424,6 +424,22 @@ function evaluatePair({ entry, controls, baseIndex, mutants, sources, repoRoot }
   // The off-diagonal. Sensitivity without specificity is one control wearing
   // six titles: deleting the subject file reddens them all.
   const declared = new Map((entry.collateral ?? []).map((c) => [c.fullName, c.reason]));
+
+  // R40#1/#2: over the WHOLE conformance file, not merely the six. Restricting
+  // specificity to the registered controls made two things invisible at once —
+  // a mutation reddening unrelated tests in the same file, and a worker crash or
+  // late unhandled rejection that reddens something else while the diagonal
+  // fails for its own reasons. Either turns a broad mutation into a clean-looking
+  // firing. Every failure in the run must be the diagonal or declared.
+  for (const [, bucket] of mutantIndex.byKey) {
+    for (const other of bucket) {
+      if (other.status !== "failed") continue;
+      if (other.fullName === control.fullName && other.file === control.file) continue;
+      if (declared.has(other.fullName)) continue;
+      out.problems.push(`undeclared collateral: ${other.file} > ${other.fullName} failed under ${entry.id}`);
+    }
+  }
+
   for (const other of controls) {
     if (other.file === control.file && other.fullName === control.fullName) continue;
     const o = lookupControl(mutantIndex, other);
@@ -437,7 +453,11 @@ function evaluatePair({ entry, controls, baseIndex, mutants, sources, repoRoot }
       ok,
       ...(o.ok ? {} : { note: o.reason }),
     });
-    if (!ok) out.problems.push(`undeclared collateral: ${other.fullName} is ${status} under ${entry.id}`);
+    // A failed sibling is already named by the whole-file sweep above; what only
+    // THIS loop can see is a registered control the report cannot answer for.
+    if (!ok && status !== "failed") {
+      out.problems.push(`the mutant run cannot answer for ${other.fullName} (${status}) under ${entry.id}`);
+    }
   }
 
   out.fired = out.outcome === "fired" && out.problems.length === 0;

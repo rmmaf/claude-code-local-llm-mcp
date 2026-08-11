@@ -1878,6 +1878,58 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R40 — the runner, and two mutations that lied about themselves — adjudicated 2026-08-11
+
+The hardest of the three harness rounds. Four findings, three `high`, and two of
+them land on the registry itself rather than on plumbing.
+
+**R40#2 is the one that matters, and it is a new species of defect for this
+file: a claim that was false about the code beside it.** Two entries said they
+replayed a historical bug and did not. `m2` clamped `saving.bytes.signedUncapped`
+— a DISPLAY aggregate. Its control went red, so every firing predicate was
+satisfied, but it went red on a display assertion while the SCORED figure stayed
+negative: the harness would have certified a historical replay that never
+restored the historical defect. Fixed by clamping `signed` at its source, where
+the shipped clamp actually lived, which moves `rowsNetNegative`, `signedUncapped`
+and `unitsTotal` together. `m5` raised the ambiguity threshold, which makes NO id
+ambiguous and so has both sessions credit the call — count-both, under a label
+saying first-wins. There the MUTATION is fine: count-both is production-reachable
+and the control catches it. The CLAIM was wrong, so the claim was corrected —
+relabelled `kind: "invariant"`, renamed, and the entry now says why genuine
+first-wins was not implemented (it needs a restructure, and this registry admits
+no mutation it cannot anchor as an exact literal). Every pair now carries a
+`kind`, so "historical replay" is a checkable assertion rather than a flourish.
+
+**R40#1 — `expectFailures` was licence for any non-zero exit.** A worker crash,
+an OOM, a bail or a late unhandled rejection all produce a parseable JSON line,
+and all of them were handed to the evaluator as valid mutant evidence. Two fixes,
+and the second is the general one: vitest must exit 0 or 1 (0 passes through so
+the evaluator can say "did not fire" by name; anything else is the process
+failing, not a control judging), AND specificity is now checked over the WHOLE
+conformance file rather than the six registered controls. That second change also
+closes the collateral the review found in `m1`, which reddens unrelated zero-byte
+turn-collapse tests that the six-control sweep could not see.
+
+**R40#3 — the artifact's byte-level binding did not bind bytes.** `blobSha`
+hashed `git show`'s stdout through a helper that `trimEnd()`s it, and every one
+of these files ends in a newline, so the recorded digest already disagreed with
+the blob it named — before CRLF conversion on this checkout was even considered.
+Now the committed blob is hashed as raw bytes, and the artifact publishes
+`sha256InTree` beside `sha256AtBase` so a reader SEES the line-ending conversion
+instead of being told it did not happen.
+
+**R40#4 — Windows cleanup could leak a worktree permanently.** `rmSync` ran
+before `prune` with no nested recovery, so a lingering child or a locked `.git`
+entry masked the error and skipped the prune, and the next run mints a fresh
+`mkdtemp` path and never repairs the old one. Now `git worktree remove --force`
+is asked first, removal retries, prune runs in its own `finally`, and what could
+not be released is reported rather than swallowed.
+
+Two of the six claims came back in my favour, which is worth recording: the
+`CONTROL_TESTS` import is snapshotted before the first mutation, so no pair can
+be evaluated against a mutated control list; and `node_modules/.vite` survives
+the clean but holds only scheduling.
+
 ### R39 — the evaluator, reviewed the day it was written — adjudicated 2026-08-11
 
 Targeted at `scripts/b12-firing.mjs` and its self-test, six named claims. NO-SHIP

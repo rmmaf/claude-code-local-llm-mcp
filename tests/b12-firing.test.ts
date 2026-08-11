@@ -288,6 +288,21 @@ describe("the mutation harness evaluator", () => {
     expect(pair?.problems.join(" ")).toContain("undeclared collateral");
   });
 
+  it("REFUSES collateral OUTSIDE the six — a broad mutation is not a clean firing", () => {
+    // R40#1/#2: specificity used to be checked only across the registered
+    // controls, so a mutation reddening unrelated tests in the same file, or a
+    // worker crash reddening something else, read as a clean kill.
+    const spills = report([
+      t("suite alpha", "alpha", "failed", [assertionAt(6)]),
+      t("suite beta", "beta", "passed"),
+      t("other suite unrelated", "unrelated", "failed", [assertionAt(9)]),
+    ]);
+    const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: spills } });
+    expect(pairOf(out, "m-alpha")?.outcome).toBe("fired");
+    expect(pairOf(out, "m-alpha")?.fired).toBe(false);
+    expect(pairOf(out, "m-alpha")?.problems.join(" ")).toContain("other suite unrelated");
+  });
+
   it("accepts collateral that was DECLARED, with its reason, and only that", () => {
     const allRed = report([
       t("suite alpha", "alpha", "failed", [assertionAt(6)]),
