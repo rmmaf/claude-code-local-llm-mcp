@@ -1878,6 +1878,44 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R46 — the flake had a cause, and it was a five-second budget — 2026-08-11
+
+**My hypothesis was wrong, and writing it down before measuring is why that is
+visible.** I predicted git's racy-clean problem and named the message I expected
+(`expected '' to be 'M …'`). What came back:
+
+```
+Error: Test timed out in 5000ms.
+Error: EBUSY: resource busy or locked, rmdir 'C:\…\Temp\cost-meter-test-LRjxiB'
+```
+
+The F24 guards build REAL git repositories and spawn dozens of `git` processes
+each. Under vitest's 5s default they pass on an idle machine and time out on a
+busy one; teardown then races the still-running child and fails `EBUSY`. Not
+racy-clean, not `makePristine` residue, not ordering, not harness contention —
+**a load-sensitive budget**, which is why every red bookend appeared during the
+harness's thirteen chained cycles, the busiest this machine got.
+
+**A method failure worth more than the fix.** I chased this through
+`--reporter=json` for three rounds, and that reporter turns every one of these
+into the placeholder `Error: STACK_TRACE_ERROR`. I spent three rounds reading a
+channel that erased the evidence before I thought to change the channel.
+
+**The fix**: `{ timeout: 60_000 }` on the F24 describe — the figure
+`tests/b12-audit.test.ts` already gives its own git-heavy e2e tests, not a new
+number invented to make something pass. Verified the way this repository
+verifies: 4/4 green under DELIBERATE load (three suites running in parallel),
+zero 5000ms timeouts, and then the fix itself SHOWN FIRING — mutated to
+`{ timeout: 1 }` it produces `Test timed out in 1ms`, so the option is honoured
+rather than silently ignored. Restored byte-identically.
+
+**Why it reached past the harness.** `tests/cost-meter.test.ts` is a
+CONFORMANCE_FILE, and `--attest-suite` runs it in a clean worktree REQUIRING
+exit 0. Clause 6's attestation was therefore load-sensitive, which is not a
+property a pre-registration can carry silently. This edit moves a pinned
+conformance file, pre-data and free, and the audit's conformance hashes report
+the drift by design.
+
 ### R45 — the conformance suite is FLAKY, and m4's "collateral" was never collateral — 2026-08-11
 
 Investigating the red bookend found something much larger, and it falsifies a

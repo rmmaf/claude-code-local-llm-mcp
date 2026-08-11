@@ -3378,7 +3378,24 @@ describe("the B12 harness", () => {
     });
   });
 
-  describe("the F24 pass: every new guard shown FIRING", () => {
+  /**
+   * SIXTY SECONDS, and the reason is measured (R46).
+   *
+   * These guards build REAL git repositories in temp directories and spawn
+   * dozens of `git` processes each. Under vitest's 5s default they pass on an
+   * idle machine and time out on a busy one — then teardown races the still-
+   * running child and fails with `EBUSY: rmdir`. That is the whole of the
+   * intermittency chased across R42–R45: not racy-clean, not `makePristine`
+   * residue, not ordering. A load-sensitive budget.
+   *
+   * It mattered beyond this file: `tests/cost-meter.test.ts` is a
+   * CONFORMANCE_FILE, and `--attest-suite` runs it in a clean worktree
+   * REQUIRING exit 0 — so clause 6's attestation was load-sensitive too.
+   *
+   * The number matches what `tests/b12-audit.test.ts` already gives its own
+   * git-heavy e2e tests. This is the house figure, not a new one.
+   */
+  describe("the F24 pass: every new guard shown FIRING", { timeout: 60_000 }, () => {
     // The house rule — `DECISIONS.md § a check that cannot fail is worse than no
     // check` — applied to the guards this pass added, the same shape VOID 6
     // demands of the meter's own six controls. All on the exported pure
