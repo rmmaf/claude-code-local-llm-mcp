@@ -1878,6 +1878,59 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R47 — with the flake gone, the six fire and specificity becomes measurable — 2026-08-11
+
+The fourth harness run, and the first on a suite that answers the same thing
+twice. `f3f0ba9`, 13 runs, six green bookends, **all six controls FIRED**, zero
+problems.
+
+**The R45 inference held, and it was written down before this run.** R45 argued
+that m4's three "collateral" tests were never collateral — that they were the
+F24 guards failing on their own. With the budget fixed, **m4 returns
+`specificityClean: true`, `offDiagonalFailures: 0`.** The prediction was recorded
+first precisely because R46's prediction had been wrong; a hypothesis is only
+worth something if it was exposed before the result.
+
+**Specificity is measurable for the first time.** Eight off-diagonal kills, every
+one annotated, none stale:
+
+| pair | fired | specific | off-diagonal |
+|---|---|---|---|
+| m1 | yes | no | 2 |
+| m2 | yes | **yes** | 0 |
+| m3 | yes | no | 1 |
+| m4 | yes | **yes** | 0 |
+| m5 | yes | **yes** | 0 |
+| m6 | yes | no | 5 |
+
+**This corrects R43 in both directions, which is why it is written out.** R43 said
+every collateral declaration was suspect. The measurement says three of four were
+RIGHT: m1's 2, m3's 1 and m6's 5 are exactly what I declared from run 1, before
+the flake was known. Only m4's three were wrong, and they were wrong because they
+were noise. Convergence supports it — the contaminated run 3 showed m1 at FOUR
+kills; run 4 shows the declared two. Review found a real defect and overstated
+its reach, and both halves belong on the record.
+
+**What this establishes**: the six controls redden when their own subjects break,
+with the assertion inside the control's own body, over a proved-pristine tree
+with green bookends either side. Sensitivity, mechanically, which is clause 6's
+frozen word FIRING.
+
+**What it does not**: specificity is not clean — eight kills remain, now with a
+known cause (tests sharing the mutated subject). That stays REPORTED, DECIDING
+NOTHING; requiring it would mint a condition the frozen text does not carry.
+
+**The residual circularity, unerased.** m1's, m3's and m6's annotations were
+written from run 1's output. Their holding steady on a run with the flake removed
+is evidence for them; it is not the same as having predicted them before any run.
+Only m4's status was predicted in advance, and only m4's is therefore
+independent.
+
+**Still not evidence of record**: the runId says `dryrun`, the run came from
+win32 while the scored sessions come from the Mac, and the artifact remains
+self-asserted — the audit checks digests and coherence, never that the harness
+executed.
+
 ### R46 — the flake had a cause, and it was a five-second budget — 2026-08-11
 
 **My hypothesis was wrong, and writing it down before measuring is why that is
