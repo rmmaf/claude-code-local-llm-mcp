@@ -1861,6 +1861,48 @@ defect, and it pinned four of them in place.
     sustained rule and the give-up branch are untouched. No delta existed
     when this was written: the probe refused at replicate 1, treatment,
     before any pair completed, and that refusal transcript is the evidence.
+- **Pre-declared, 2026-08-11, before the manifest is sealed — THE TASK MIX, five
+  owner decisions.** Put and answered with the reachability estimate below
+  already on the table, with `open` already accepted as an outcome, and before
+  any task exists in a manifest. `git log -p` witnesses the ordering; what makes
+  these declarations rather than rationalisations is that none of them can be
+  reached backwards from a result nobody has yet.
+  1. **THE QUESTION IS "CAN the tool pay for itself", not "does it pay here".**
+     A favourable-but-real set: tasks where delegation plausibly wins — bulky
+     build/test output, mechanical type errors, lint — every one of them honest
+     and independently verifiable. Chosen because it is falsifiable in the
+     USEFUL direction: if the tool cannot pay under conditions chosen to suit it,
+     it does not pay anywhere, and that ends the question. A representative set
+     was declined on the record: with `holdsIf`'s own ~26% estimate already
+     known, it lands in `open` too readily, and `open` there means "could not
+     tell", not "does not pay".
+  2. **TASKS COME FROM THIS REPOSITORY'S REAL BACKLOG** — work that would happen
+     anyway, whose acceptance criteria are the project's own tests, and which
+     were not designed by the party doing the measuring.
+  3. **NOTHING THE MEASUREMENT DEPENDS ON IS ELIGIBLE.** No task may touch
+     `src/cost/**`, `src/telemetry.ts`, gate's or repair's emission, or
+     `scripts/b12-run.mjs`. This is not a new rule: those ARE `PINNED_PATHS`, and
+     clause 5 already VOIDS if they move after the first scored observation. It
+     is written here so the manifest says out loud what the clause enforces
+     silently — and because this repository IS the product under measurement, so
+     the self-reference has to be bounded explicitly rather than assumed away.
+  4. **TWO STRATA BY TASK SIZE**: short-mechanical (10–30 min) and
+     closed-unit (30–90 min). The dimension is not decorative — it is the one
+     `holdsIf` names as decisive, since a short denominator is what lifts `R_lo`.
+     Three levels were declined for a measured reason: `voidConditions` 3 VOIDS
+     the run if any declared stratum holds fewer than 5 admitted observations,
+     so cells are a loss-of-everything risk rather than a loss-of-power one.
+  5. **N = 26, the ceiling.** Chosen for margin against refusals, not for
+     statistical power: at 60% admission two strata still leave ~8 per cell,
+     while sealing 20 and finding one cell short is unrecoverable after the
+     sessions are paid for.
+
+  **What these decisions do NOT settle**, recorded so the gap is not mistaken
+  for a decision: the per-task acceptance predicate (each must be verified
+  FAILING at base, which restricts the eligible backlog to test-backed items),
+  each task's `fileScope`, the manifest's committed task ORDER, and the real
+  admission rate — which has never been measured in this environment, so the
+  margin argument for N = 26 rests on an assumption and says so.
 - **Pre-declared, 2026-08-11, before any run exists — clause 6's "SHOWN
   FIRING" is satisfied by MACHINE-PRODUCED evidence, and only by that.**
   The frozen text requires the six negative controls be *shown FIRING*. The
