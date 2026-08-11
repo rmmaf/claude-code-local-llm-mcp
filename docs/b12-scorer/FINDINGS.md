@@ -2018,6 +2018,62 @@ much review; it was where it pointed.
   Eighth occurrence of the recurring pattern, and the first INVERTED one: the
   rule was written down, and the code narrowed it with an argument.
 
+- **R36#1, #2 and #3 — three ways the archive was WRONG rather than fragile.**
+  All three read, before this pass, as a clean and slightly shorter
+  observation; none of them left a mark a reader could find.
+
+  **#2 (high) — a byte count has no identity.** R33's boundary is the log's
+  SIZE the moment before acceptance, and the capture clamps it to the file's
+  current length. An acceptance command that TRUNCATES or REPLACES the log
+  therefore moves the cut backwards, every acceptance row lands in the arm's
+  own segment, `scopeTelemetry`'s ±60 s window admits it, and the arm gains a
+  saving it never made. Fixed by taking the boundary as an IDENTITY: the
+  harness now reads the bytes once and passes their sha256 with the count
+  (`telemetryBoundaryIn`), and the capture verifies the prefix still hashes to
+  it. On mismatch — or a log now SHORTER than the count — the split is not
+  trusted; it is recorded in `attributionProblems`. **The control carries its
+  own damage:** on the same bytes, the pre-R36 boundary credits the arm with
+  the acceptance row (`[ACC]`, 999 raw bytes) and reports nothing.
+
+  **#1 (high) — the parser dropped what it should have counted.**
+  `parseTelemetryText` skipped any line that would not parse, under a comment
+  reading "a partially written last line is expected while a tool is running".
+  That is true of a LIVE log's last line and of nothing else: the capture reads
+  the log after the tool exited, so a partial line there is a row something
+  stopped mid-write, and the saving it carried is gone. `parseTelemetryLines`
+  now returns the count, and a malformed line in the ARM's own segment is an
+  attribution problem.
+
+  **What was NOT built, with the counter-example.** Codex asked for "every
+  local invocation in the archived transcript has exactly one telemetry row".
+  That rule is FALSE on a path the design intends: `emission.ts`'s state
+  machine emits NOTHING for a refused preflight (`not-started`), while the tool
+  result is still in the transcript. A guard on it would refuse lawful
+  observations. The gap is published as `invocationsWithoutRow` — reported,
+  deciding nothing — so a reader can see it and ask.
+
+  **#3 (medium) — "will not parse" and "will not open" shared one silence.**
+  `readTranscript`'s catch omitted the file under a comment that is only true
+  of parse failures ("a file yielding none relates to nothing"). A file that
+  could not be READ takes its billed requests and its tool-result ownership out
+  of the archive with no trace, while the surviving files keep `lineage`
+  non-empty so the harness's empty-lineage guard never fires. Now separated by
+  ERRNO — `ENOENT`/`EACCES`/`EPERM`/`EBUSY`/`EISDIR`/`EMFILE`/`ENFILE`/`EIO`,
+  not by message — recorded in `unreadableTranscripts`, and an attribution
+  problem. A real `EACCES` cannot be produced deterministically on Windows, so
+  the control uses a NEW TEST SEAM (`readTranscriptFor`), documented as never
+  passed by the harness, and its other half pins the lawful case: a `.jsonl`
+  full of junk is still omitted in silence.
+
+  **Where the three land.** `ArchivedObservation.attributionIntact`, beside
+  `telemetryIntact` rather than inside it — these bytes can agree perfectly
+  with the sealed copy and still be unattributable — and `assemble`'s
+  `suspect()` refuses terms on it. That rides on the EXISTING
+  "design.artifacts 6 — archive integrity" check, whose own words already
+  cover "a corrupt, drifted or missing telemetry.jsonl"; no new clause is
+  minted. **Shown firing:** forcing `attributionProblems` to `[]` fails all
+  three controls at once.
+
 - **R37#1 (high) — the artifact carried the fact and never said it.** The
   pre-data rule is in `PREMISES.md`, added before registration precisely so it
   could not be minted mid-game: *"The scoring invocation requires a COMMITTED

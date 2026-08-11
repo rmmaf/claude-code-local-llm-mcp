@@ -1024,6 +1024,22 @@ function readObservationDir(
     }
   }
 
+  // R36: THE CAPTURE'S OWN ATTRIBUTION PROBLEMS. These are NOT drift against
+  // the sealed copy — the bytes on disk can match `archive.json` perfectly
+  // while the split between the arm's rows and the acceptance command's is
+  // unknowable, or while the lineage is short a file that could not be read.
+  // `telemetryIntact` is about the identity SOURCE's bytes and cannot carry
+  // them, so they get their own name and the same consequence: an archive that
+  // cannot say which rows are the arm's may not price anything.
+  let attributionIntact = true;
+  if (isObject(archiveJson) && Array.isArray(archiveJson.attributionProblems)) {
+    const found = strings(archiveJson.attributionProblems);
+    if (found.length > 0) {
+      attributionIntact = false;
+      for (const p of found) problems.push(p);
+    }
+  }
+
   const invocationIds =
     isObject(archiveJson) && Array.isArray(archiveJson.invocationIds)
       ? strings(archiveJson.invocationIds)
@@ -1035,6 +1051,7 @@ function readObservationDir(
     attempt: id.attempt,
     dir: rel(repoRoot, dir),
     telemetryIntact,
+    attributionIntact,
     identityIntact,
     // Filled by `readRunArchive` from the one `git status` over the run —
     // a per-file check here would be one subprocess per file per observation.

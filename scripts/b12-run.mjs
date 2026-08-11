@@ -2925,7 +2925,15 @@ async function observe(args, pilotMode = false) {
   // whether or not the transcript names their invocation_id, which acceptance
   // rows, written seconds later, always are. The tree already had its
   // boundary (`endCommit` before, `endPorcelain` after); the log had none.
-  const telemetryBytesAtAcceptance = await capture.module.telemetryBytesIn(treeDir);
+  //
+  // AND THE PREFIX'S IDENTITY WITH IT (R36). A count alone survives an
+  // acceptance command that TRUNCATES or REPLACES the log: the capture clamps
+  // the boundary to the new, shorter length and every acceptance row lands in
+  // the arm's segment. The digest of the bytes the count was taken over is
+  // what makes the two comparable afterwards.
+  const acceptanceBoundary = await capture.module.telemetryBoundaryIn(treeDir);
+  const telemetryBytesAtAcceptance = acceptanceBoundary.bytes;
+  const telemetryPrefixSha256AtAcceptance = acceptanceBoundary.sha256;
 
   // The acceptance predicate decides whether this is a TASK or an ATTEMPT.
   // Without it the numerator is earned at a verification step and the
@@ -3024,6 +3032,7 @@ async function observe(args, pilotMode = false) {
     porcelain: endPorcelain,
     declaredFileScope: task.fileScope ?? null,
     telemetryBytesAtAcceptance,
+    telemetryPrefixSha256AtAcceptance,
   });
 
   // AN EMPTY LINEAGE BESIDE ORIGINATED IDS IS A CONTRADICTION, AND IT IS THE

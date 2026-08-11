@@ -563,6 +563,7 @@ export function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
     attempt,
     dir: `evidence/${RUN}/${dirName}`,
     telemetryIntact: true,
+    attributionIntact: true,
     identityIntact: over.identityIntact ?? true,
     evidenceCommitted: true,
     record,

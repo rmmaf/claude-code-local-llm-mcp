@@ -557,3 +557,149 @@ describe("captureObservation — the only filesystem surface", () => {
     expect(oneSlug.slugsSearched).toEqual(["slug-a"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// R36 — ATTRIBUTION. Three ways the archive could be WRONG rather than merely
+// fragile, all of which used to read as a clean, shorter, perfectly ordinary
+// observation.
+// ---------------------------------------------------------------------------
+
+describe("an archive that cannot say which rows are the arm's", () => {
+  const ARM = "11111111-2222-4333-8444-555555555555";
+  const ACC = "22222222-3333-4444-8555-666666666666";
+
+  /** One transcript naming exactly the arm's invocation, so the join is real. */
+  const ownTranscript = (): string =>
+    jsonl(
+      line({
+        sessionId: "s-own",
+        requestId: "r-1",
+        uuid: "u-1",
+        message: {
+          model: "claude-opus-5",
+          usage: { input_tokens: 10 },
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__gate" }],
+        },
+      }),
+      {
+        type: "user",
+        uuid: "u-2",
+        sessionId: "s-own",
+        timestamp: "2026-08-07T10:00:02.000Z",
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { invocation_id: ARM, tool: "mcp__local-coder__gate" },
+      }
+    );
+
+  it("REFUSES the split when the acceptance command TRUNCATED the log it was measured against", async () => {
+    const armRow = { ts: "2026-08-07T10:00:01.000Z", tool: "gate", invocation_id: ARM, bytes_raw: 40 };
+    const accRow = { ts: "2026-08-07T10:00:05.000Z", tool: "gate", invocation_id: ACC, bytes_raw: 999 };
+    const { treeDir, slugDir } = await tree(
+      { [TELEMETRY_REL_PATH]: jsonl(armRow, armRow, armRow) },
+      { "own.jsonl": ownTranscript() }
+    );
+    const logPath = path.join(treeDir, TELEMETRY_REL_PATH);
+
+    // The harness's boundary: the byte count AND the identity of those bytes.
+    const raw = await fs.readFile(logPath);
+    const telemetryBytesAtAcceptance = raw.length;
+    const telemetryPrefixSha256AtAcceptance = createHash("sha256").update(raw).digest("hex");
+
+    // …and then acceptance REPLACES the log with a shorter one of its own.
+    await fs.writeFile(logPath, jsonl(accRow), "utf8");
+
+    // THE DAMAGE, on these same bytes, with the pre-R36 boundary — a count and
+    // nothing else. The clamp pulls the cut back to the NEW length, so the
+    // acceptance row lands in the arm's own segment and the arm is credited
+    // with 999 raw bytes it never produced. Nothing is reported.
+    const blind = await captureObservation({
+      taskId: "t-01",
+      arm: "treatment",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+      telemetryBytesAtAcceptance,
+    });
+    expect(blind.telemetry.map((r) => r.invocation_id)).toEqual([ACC]);
+    expect(blind.attributionProblems).toEqual([]);
+
+    // With the prefix identity: the archive says so, and says it in a field
+    // `assemble` refuses terms on.
+    const seen = await captureObservation({
+      taskId: "t-01",
+      arm: "treatment",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+      telemetryBytesAtAcceptance,
+      telemetryPrefixSha256AtAcceptance,
+    });
+    expect(seen.telemetryPrefixIntact).toBe(false);
+    expect(seen.attributionProblems.join(" ")).toMatch(/truncated or replaced/);
+  });
+
+  it("REPORTS a row interrupted mid-write instead of parsing around it", async () => {
+    // A telemetry append that fails halfway leaves a partial line. The parser
+    // dropped it under a comment about "a tool still running" — true of a LIVE
+    // log's last line, and this log is read after the tool exited.
+    const good = { ts: "2026-08-07T10:00:01.000Z", tool: "gate", invocation_id: ARM, bytes_raw: 40 };
+    const { treeDir, slugDir } = await tree(
+      { [TELEMETRY_REL_PATH]: `${JSON.stringify(good)}\n{"ts":"2026-08-07T10:00:02.000Z","tool":"rep` },
+      { "own.jsonl": ownTranscript() }
+    );
+    const archive = await captureObservation({
+      taskId: "t-01",
+      arm: "treatment",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+    });
+    expect(archive.telemetry).toHaveLength(1); // the surviving row, as before
+    expect(archive.telemetryMalformedLines).toBe(1);
+    expect(archive.attributionProblems.join(" ")).toMatch(/interrupted mid-write/);
+  });
+
+  it("tells a transcript that will not OPEN from one that will not parse", async () => {
+    const { treeDir, slugDir } = await tree(
+      { [TELEMETRY_REL_PATH]: jsonl({ ts: "2026-08-07T10:00:01.000Z", tool: "gate", invocation_id: ARM }) },
+      { "own.jsonl": ownTranscript(), "junk.jsonl": "not json at all\n" }
+    );
+    const base = {
+      taskId: "t-01",
+      arm: "treatment",
+      sessionId: "s-own",
+      treeDir,
+      slugDirs: [slugDir],
+      porcelain: "",
+    };
+
+    // A file that PARSES to nothing relates to no lineage and is lawfully
+    // omitted — the pre-R36 behaviour, kept, and pinned so it is not "fixed".
+    const parseOnly = await captureObservation(base);
+    expect(parseOnly.unreadableTranscripts).toEqual([]);
+    expect(parseOnly.attributionProblems).toEqual([]);
+
+    // A file that will not OPEN is the other case, and it used to land in the
+    // same silence: its billed requests and its tool-result ownership leave no
+    // trace, while the surviving file keeps `lineage` non-empty so the
+    // harness's empty-lineage guard never fires.
+    const missing = await captureObservation({
+      ...base,
+      readTranscriptFor: async (file) => {
+        if (path.basename(file) === "junk.jsonl") {
+          throw Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), { code: "ENOENT" });
+        }
+        return readTranscript(file);
+      },
+    });
+    expect(missing.unreadableTranscripts).toHaveLength(1);
+    expect(missing.unreadableTranscripts[0]!.path).toMatch(/junk\.jsonl$/);
+    expect(missing.attributionProblems.join(" ")).toMatch(/could not be read/);
+    // The lineage is still non-empty — which is exactly why the silence was
+    // survivable, and why the problem has to be recorded rather than inferred.
+    expect(missing.lineage.length).toBeGreaterThan(0);
+  });
+});

@@ -38,7 +38,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import { parseTelemetryText, TELEMETRY_REL_PATH, type TelemetryRecord } from "../../telemetry.js";
+import { parseTelemetryLines, parseTelemetryText, TELEMETRY_REL_PATH, type TelemetryRecord } from "../../telemetry.js";
 import { isLocalToolResult, lineagesOf } from "../report.js";
 import { readTranscript, type RawRecord, type Transcript } from "../transcript.js";
 
@@ -209,6 +209,33 @@ export interface ObservationArchive {
    * whole log is the arm's — the pre-R33 reading, said out loud.
    */
   telemetryBoundaryBytes: number | null;
+  /** The prefix identity the boundary was taken with, and whether it survived
+   * to capture. `null`/`null` means the harness took no digest — the pre-R36
+   * reading, in which a truncating acceptance command is invisible. */
+  telemetryPrefixSha256: string | null;
+  telemetryPrefixIntact: boolean | null;
+  /** Lines in the ARM's own segment that did not parse. Zero is the only clean
+   * value: the log is read after the tool exited, so a partial line is a row
+   * something stopped mid-write, not a tool still running. */
+  telemetryMalformedLines: number;
+  /** Files `jsonlUnder` listed and `readTranscript` could not READ — as opposed
+   * to could not parse. Their billed requests leave no trace in the archive. */
+  unreadableTranscripts: Array<{ path: string; why: string }>;
+  /**
+   * Local tool invocations in the lineage with no row of their own in the arm's
+   * segment. REPORTED, DECIDING NOTHING: a tool whose preflight refuses emits
+   * no row by design, so this is not an error count — it is the gap a reader
+   * has to be able to see before they can ask why it is there.
+   */
+  invocationsWithoutRow: string[];
+  /**
+   * What makes this archive's ATTRIBUTION untrustworthy — a rewritten or
+   * truncated telemetry prefix, a malformed row in the arm's segment, a
+   * transcript that could not be read. Empty is the only clean value; the
+   * assembler refuses terms on a non-empty one, under the archive-integrity
+   * check that already covers a corrupt or drifted telemetry source.
+   */
+  attributionProblems: string[];
   /**
    * Where the rows were found, and whether that was where the harness expected.
    *
@@ -271,6 +298,21 @@ export interface CaptureInput {
    * ran — see `telemetryBoundaryBytes`. Omitted or null means no split.
    */
   telemetryBytesAtAcceptance?: number | null;
+  /**
+   * The sha256 of those same bytes, taken in the SAME breath as the count
+   * (R36). A count alone cannot tell "the arm wrote 10 KB and acceptance
+   * appended" from "acceptance replaced the log and wrote 1 KB": both leave a
+   * boundary the clamp accepts. The digest is what makes the prefix an
+   * IDENTITY rather than a length.
+   */
+  telemetryPrefixSha256AtAcceptance?: string | null;
+  /**
+   * TEST SEAM, never passed by `scripts/b12-run.mjs`: how the oracle makes one
+   * listed transcript refuse to be READ. A real `EACCES`/`EBUSY` cannot be
+   * produced deterministically on Windows, and the distinction between a file
+   * that will not parse and a file that will not open is the whole of R36#3.
+   */
+  readTranscriptFor?: (file: string) => Promise<Transcript>;
 }
 
 /**
@@ -286,6 +328,29 @@ export async function telemetryBytesIn(treeDir: string): Promise<number> {
     return (await fs.stat(path.join(treeDir, TELEMETRY_REL_PATH))).size;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * The acceptance boundary AS AN IDENTITY, not a length (R36).
+ *
+ * A byte count alone cannot tell "the arm wrote 10 KB and acceptance appended
+ * to it" from "acceptance truncated the log and wrote 1 KB": the capture
+ * clamps the count to the new length and hands the acceptance rows to the arm,
+ * where `scopeTelemetry`'s ±60 s window admits them and the arm gains a saving
+ * it never made. Reading the BYTES once and taking both figures off the same
+ * read is also what stops a write landing between a `stat` and a hash.
+ */
+export async function telemetryBoundaryIn(
+  treeDir: string
+): Promise<{ bytes: number; sha256: string | null }> {
+  try {
+    const raw = await fs.readFile(path.join(treeDir, TELEMETRY_REL_PATH));
+    return { bytes: raw.length, sha256: createHash("sha256").update(raw).digest("hex") };
+  } catch {
+    // No log yet is a lawful boundary of zero — and a zero-length prefix has a
+    // digest like any other, so the capture still compares something.
+    return { bytes: 0, sha256: createHash("sha256").update(Buffer.alloc(0)).digest("hex") };
   }
 }
 
@@ -385,18 +450,47 @@ export function reduceFile(text: string): { records: MeteredRecord[]; droppedLin
  * which is the only window in which the worktree and its telemetry log both
  * still exist.
  */
+/**
+ * Whether a `readTranscript` failure is the file REFUSING TO BE READ rather
+ * than refusing to parse. The distinction decides whether the omission is
+ * lawful (a `.jsonl` that holds no admitted request relates to no lineage) or
+ * evidence that the archive is short (R36).
+ *
+ * Read by errno, not by message: the messages are Node's and change between
+ * versions, while `ENOENT`/`EACCES`/`EPERM`/`EBUSY`/`EISDIR`/`EMFILE` do not.
+ */
+function isUnreadable(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return (
+    typeof code === "string" &&
+    ["ENOENT", "EACCES", "EPERM", "EBUSY", "EISDIR", "EMFILE", "ENFILE", "EIO"].includes(code)
+  );
+}
+
 export async function captureObservation(input: CaptureInput): Promise<ObservationArchive> {
   const files = (await Promise.all(input.slugDirs.map((d) => jsonlUnder(d)))).flat();
   const transcripts: Transcript[] = [];
   const kept: string[] = [];
+  const unreadableTranscripts: Array<{ path: string; why: string }> = [];
+  const readOne = input.readTranscriptFor ?? readTranscript;
   for (const file of files) {
     try {
-      transcripts.push(await readTranscript(file));
+      transcripts.push(await readOne(file));
       kept.push(file);
-    } catch {
-      // A file that will not parse at all is not this observation's lineage and
-      // cannot join one: `lineagesOf` relates transcripts by shared admitted
-      // request ids, and a file yielding none relates to nothing.
+    } catch (error) {
+      // A file that will not PARSE is not this observation's lineage and cannot
+      // join one: `lineagesOf` relates transcripts by shared admitted request
+      // ids, and a file yielding none relates to nothing.
+      //
+      // A file that could not be READ is a different animal (R36), and until
+      // now both landed here in the same silence. `jsonlUnder` listed it
+      // moments ago, so the bytes existed and are gone or unreachable — its
+      // billed requests and its tool-result ownership leave the archive
+      // without a trace, the surviving files keep `lineage` non-empty so the
+      // harness's empty-lineage guard never fires, and the arm quietly loses
+      // whatever that file held. Recorded, and it makes the archive suspect.
+      const why = error instanceof Error ? error.message : String(error);
+      if (isUnreadable(error)) unreadableTranscripts.push({ path: file, why });
     }
   }
 
@@ -434,13 +528,59 @@ export async function captureObservation(input: CaptureInput): Promise<Observati
   // fall between an append's open and its bytes, and a row being written when
   // acceptance starts was started by the arm; splitting it would destroy the
   // row on both sides instead of attributing it.
+  // R36: THE BOUNDARY IS A BYTE COUNT AND A BYTE COUNT HAS NO IDENTITY. If the
+  // acceptance command truncates, deletes or rewrites the log, `boundary` is
+  // clamped to the NEW length and the acceptance rows land in the arm's own
+  // segment — `scopeTelemetry`'s ±60 s window admits them, and the arm gains a
+  // saving it never made. The prefix digest taken WITH the count is what makes
+  // the two comparable: the bytes before the cut must still be the bytes the
+  // count was taken over.
+  const attributionProblems: string[] = [];
+  const prefixClaim = input.telemetryPrefixSha256AtAcceptance ?? null;
+  let prefixIntact: boolean | null = null;
+  if (boundary !== null && prefixClaim !== null) {
+    if (raw.length < boundary) {
+      prefixIntact = false;
+      attributionProblems.push(
+        `the telemetry log is SHORTER (${raw.length} bytes) than it was when the acceptance boundary was taken (${boundary}) — it was truncated or replaced, and the split cannot say which rows are the arm's`
+      );
+    } else {
+      prefixIntact = createHash("sha256").update(raw.subarray(0, boundary)).digest("hex") === prefixClaim;
+      if (!prefixIntact) {
+        attributionProblems.push(
+          "the telemetry bytes before the acceptance boundary are not the bytes the boundary was taken over — the log was rewritten, and the split cannot say which rows are the arm's"
+        );
+      }
+    }
+  }
   let cut = boundary === null ? raw.length : Math.min(Math.max(boundary, 0), raw.length);
   if (cut > 0 && cut < raw.length && raw[cut - 1] !== 0x0a) {
     const nl = raw.indexOf(0x0a, cut);
     cut = nl === -1 ? raw.length : nl + 1;
   }
-  const telemetry = parseTelemetryText(raw.subarray(0, cut).toString("utf8"));
+  const armSegment = parseTelemetryLines(raw.subarray(0, cut).toString("utf8"));
+  const telemetry = armSegment.records;
   const telemetryAfterAcceptance = parseTelemetryText(raw.subarray(cut).toString("utf8"));
+  // A malformed line in a log read AFTER the tool exited is not "a partial
+  // last line while a tool is running" — it is a row that was being written
+  // when something stopped it, and the saving it carried is gone.
+  if (armSegment.malformed > 0) {
+    attributionProblems.push(
+      `${armSegment.malformed} telemetry line(s) in the arm's own segment do not parse — a row interrupted mid-write is a saving this archive cannot account for`
+    );
+  }
+  for (const t of unreadableTranscripts) {
+    attributionProblems.push(`a transcript in this observation's slugs could not be read (${t.path}): ${t.why}`);
+  }
+  // REPORTED, DECIDING NOTHING — and the reason is a lawful counter-example,
+  // not squeamishness. A tool whose PREFLIGHT refuses emits no row at all by
+  // `emission.ts`'s own state machine (`not-started` emits NOTHING), while its
+  // tool result is still in the transcript. So "every local invocation has a
+  // row" is false on a path the design intends, and a guard built on it would
+  // refuse lawful observations. The count is published so a reader can SEE the
+  // gap and ask why, which is what R36 was actually pointing at.
+  const rowIds = new Set(telemetry.map((r) => r.invocation_id).filter((x): x is string => typeof x === "string"));
+  const invocationsWithoutRow = [...invocationIds].filter((id) => !rowIds.has(id)).sort();
 
   const sourcePaths = await filesUnder(input.treeDir, (name) => name === ".git");
   const sourceFiles: HashedFile[] = [];
@@ -463,6 +603,12 @@ export async function captureObservation(input: CaptureInput): Promise<Observati
     telemetry,
     telemetryAfterAcceptance,
     telemetryBoundaryBytes: boundary,
+    telemetryPrefixSha256: prefixClaim,
+    telemetryPrefixIntact: prefixIntact,
+    telemetryMalformedLines: armSegment.malformed,
+    unreadableTranscripts,
+    invocationsWithoutRow,
+    attributionProblems,
     telemetryPath,
     telemetryFound,
     invocationIds: [...invocationIds].sort(),

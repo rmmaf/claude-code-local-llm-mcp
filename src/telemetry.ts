@@ -86,15 +86,31 @@ export async function readTelemetry(root: string): Promise<TelemetryRecord[]> {
  * boundary — parses them by exactly the same rule.
  */
 export function parseTelemetryText(text: string): TelemetryRecord[] {
-  const out: TelemetryRecord[] = [];
+  return parseTelemetryLines(text).records;
+}
+
+/**
+ * The same parse, with the DROPPED LINES COUNTED (R36). A line that will not
+ * parse, or that parses without `ts`/`tool`, used to vanish silently — and a
+ * telemetry append that failed halfway leaves exactly that: a partial line
+ * whose row is gone, an archive that looks like a clean shorter log, and an
+ * arm that reads as having saved nothing on that call. "Expected while a tool
+ * is running" is true of the LAST line of a LIVE log and of nothing else; the
+ * B12 capture reads a log after the tool exited, so for it a malformed line is
+ * evidence, not noise.
+ */
+export function parseTelemetryLines(text: string): { records: TelemetryRecord[]; malformed: number } {
+  const records: TelemetryRecord[] = [];
+  let malformed = 0;
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     try {
       const parsed = JSON.parse(line) as TelemetryRecord;
-      if (typeof parsed.ts === "string" && typeof parsed.tool === "string") out.push(parsed);
+      if (typeof parsed.ts === "string" && typeof parsed.tool === "string") records.push(parsed);
+      else malformed += 1;
     } catch {
-      // A partially written last line is expected while a tool is running.
+      malformed += 1;
     }
   }
-  return out;
+  return { records, malformed };
 }

@@ -237,6 +237,9 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   // bracket is owed either way.
   const suspect = (o: ArchivedObservation): string[] => [
     ...(o.telemetryIntact ? [] : ["the telemetry identity source is not intact"]),
+    ...(o.attributionIntact
+      ? []
+      : ["the archive cannot say which telemetry rows are this arm's, or its lineage is short a file that could not be read"]),
     ...(o.identityIntact
       ? []
       : ["the observation's identity is cross-wired or unshowable — evidence that cannot be bound to its task, arm, run and session may not price anything"]),

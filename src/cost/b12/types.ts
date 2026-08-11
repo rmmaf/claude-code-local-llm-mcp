@@ -848,6 +848,16 @@ export interface ArchivedObservation {
    */
   telemetryIntact: boolean;
   /**
+   * FALSE when the CAPTURE could not say which rows are this arm's, or found
+   * its lineage short (R36): a telemetry prefix that no longer matches the
+   * bytes the acceptance boundary was taken over, a malformed row in the arm's
+   * own segment, a transcript file that could not be READ. Distinct from
+   * `telemetryIntact`, which is about the identity source's bytes agreeing
+   * with the sealed copy — these bytes can agree perfectly and still be
+   * unattributable. Same consequence: `assemble` refuses terms.
+   */
+  attributionIntact: boolean;
+  /**
    * FALSE the moment the evidence's own identity does not bind to the
    * directory it was scored from — `observation.json` or `archive.json` naming
    * another task, arm, run or session, or carrying no identity to check. The
