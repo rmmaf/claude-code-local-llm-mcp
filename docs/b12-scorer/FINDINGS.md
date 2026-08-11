@@ -1884,12 +1884,21 @@ The fourth harness run, and the first on a suite that answers the same thing
 twice. `f3f0ba9`, 13 runs, six green bookends, **all six controls FIRED**, zero
 problems.
 
-**The R45 inference held, and it was written down before this run.** R45 argued
-that m4's three "collateral" tests were never collateral — that they were the
-F24 guards failing on their own. With the budget fixed, **m4 returns
-`specificityClean: true`, `offDiagonalFailures: 0`.** The prediction was recorded
-first precisely because R46's prediction had been wrong; a hypothesis is only
-worth something if it was exposed before the result.
+**The R45 inference is SUPPORTED — not confirmed — and it was written down before
+this run.** R45 argued that m4's three "collateral" tests were never collateral,
+that they were the F24 guards failing on their own. With the budget raised, **m4
+returns `specificityClean: true`, `offDiagonalFailures: 0`.** The prediction was
+recorded first precisely because R46's had been wrong.
+
+**CORRECTED BY R48: one clean run is not confirmation, and the arithmetic says
+so.** At the observed ~1/3 failure rate, **eight** independent clean executions
+are needed before persistence is excluded at 95% — (2/3)^8 ≈ 3.9% — and twelve
+for 99%. This run contains enough nominal opportunities (a baseline, six green
+bookends, a clean m4) but they are chained on one machine within minutes, so
+their independence is unestablished and the count cannot simply be added up.
+"Their prior failures WERE noise" and "the eight remaining kills have a KNOWN
+cause" both overstate: they are hypotheses consistent with one run, and they stay
+hypotheses until independently reproduced.
 
 **Specificity is measurable for the first time.** Eight off-diagonal kills, every
 one annotated, none stale:
@@ -1943,11 +1952,23 @@ Error: EBUSY: resource busy or locked, rmdir 'C:\…\Temp\cost-meter-test-LRjxiB
 ```
 
 The F24 guards build REAL git repositories and spawn dozens of `git` processes
-each. Under vitest's 5s default they pass on an idle machine and time out on a
-busy one; teardown then races the still-running child and fails `EBUSY`. Not
-racy-clean, not `makePristine` residue, not ordering, not harness contention —
-**a load-sensitive budget**, which is why every red bookend appeared during the
-harness's thirteen chained cycles, the busiest this machine got.
+each, and under vitest's 5s default they sometimes exceed it; teardown then meets
+a live or locked resource and fails `EBUSY`.
+
+**CORRECTED BY R48 — this entry originally read the timeout as a proven root
+cause and named four hypotheses as falsified. That was wrong, and it is the third
+time in this file that I turned an observation into a causal claim it did not
+carry.** A deadline exceeded plus an `EBUSY` establishes that a test ran past 5s
+and that cleanup met something still alive. It does NOT establish that ordinary
+load was the cause, that `EBUSY` came after cancellation rather than before it,
+or that a deadlock, a leaked handle or an unawaited path inside
+`commitObservationRow` is excluded. Raising the deadline and seeing 4/4 pass
+shows those runs finished inside 60s — nothing more.
+
+So: **a mitigation that works, not a root cause.** Distinguishing the remaining
+hypotheses needs per-phase timings, child-process and active-handle capture at
+the deadline, and controlled load/no-load repetitions. None of that has been
+done.
 
 **A method failure worth more than the fix.** I chased this through
 `--reporter=json` for three rounds, and that reporter turns every one of these

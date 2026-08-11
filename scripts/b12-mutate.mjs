@@ -288,20 +288,49 @@ function parsedReport(run) {
   }
 }
 
-/** Every test the report marks failed, as `file > fullName`. */
-export function failedTestsIn(report) {
+/**
+ * Every failure the report carries, assertion-level AND suite-level.
+ *
+ * R48: the first version read only `assertionResults`, so a collection error, an
+ * import failure or a hook that died at file scope produced `failed: []` — a red
+ * bookend that named NOTHING, which is exactly what R44 added this to prevent.
+ * Vitest 4 puts those in `testResults[].message` with a non-passing
+ * `testResults[].status`, and they are the failures most likely to be invisible
+ * anywhere else.
+ *
+ * The suite path is kept ROOT-RELATIVE, not reduced to a basename: two files
+ * sharing a name in different directories would otherwise report identically.
+ * Harmless today, since `runHarness` refuses more than one control file — but
+ * a diagnostic that can be ambiguous later is one that will be.
+ */
+export function failedTestsIn(report, repoRoot) {
   const out = [];
   const suites =
     typeof report === "object" && report !== null && Array.isArray(report.testResults) ? report.testResults : [];
   for (const suite of suites) {
-    const file = (typeof suite?.name === "string" ? suite.name : "").split("\\").join("/").split("/").pop();
+    const raw = typeof suite?.name === "string" ? suite.name : "";
+    const norm = raw.split("\\").join("/");
+    const root = String(repoRoot ?? "").split("\\").join("/").replace(/\/+$/, "");
+    const file = root !== "" && norm.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? norm.slice(root.length + 1) : norm;
+    let named = 0;
     for (const t of Array.isArray(suite?.assertionResults) ? suite.assertionResults : []) {
       if (t?.status === "failed") {
+        named++;
         out.push({
+          scope: "test",
           test: `${file} > ${typeof t.fullName === "string" ? t.fullName : "?"}`,
           message: Array.isArray(t.failureMessages) ? String(t.failureMessages[0] ?? "").split("\n").slice(0, 3).join(" | ") : null,
         });
       }
+    }
+    // A suite that failed while naming no failed test is the case that used to
+    // vanish: the file never loaded, or a hook died before any test ran.
+    if (named === 0 && typeof suite?.status === "string" && suite.status !== "passed") {
+      out.push({
+        scope: "suite",
+        test: `${file} > (suite ${suite.status}, no test-level failure reported)`,
+        message: typeof suite.message === "string" ? suite.message.split("\n").slice(0, 3).join(" | ") : null,
+      });
     }
   }
   return out;
@@ -408,7 +437,7 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
         // R44: a red bookend NAMES itself now. Run 1's single red one was
         // recorded as "exited 1" and nothing more, which is why it could only
         // be called intermittency — the harness had discarded the evidence.
-        failed: bookend.ok ? [] : failedTestsIn(bookend.report),
+        failed: bookend.ok ? [] : failedTestsIn(bookend.report, treeDir),
       });
       if (!bookend.ok) {
         mutants[entry.id] = { applied: false, notApplied: `the pristine bookend was not green: ${bookend.why}`, report: null };
