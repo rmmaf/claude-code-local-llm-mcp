@@ -75,8 +75,32 @@ It is right. Six conditions now, and the last two are the new ones:
 4. **The kill is the control's own.** The failing assertion must be located in
    the named test's body — **not in a `beforeEach`/`beforeAll` hook**. Vitest
    attributes a hook failure to the test, so a mutation that only breaks shared
-   setup reads as a firing while the control's own assertions never ran. The
-   harness reads the failure's stack location and refuses the pair otherwise.
+   setup reads as a firing while the control's own assertions never ran.
+
+**Conditions 2 and 4 were written against a guess, and the guess was measured
+and killed.** A throwaway probe ran an assertion failure, a `beforeEach` failure
+and two same-titled passes through this project's own vitest and json reporter.
+Three facts, none of them what revision 2 assumed:
+
+- **`assertionResults[].location` is `null`** — `includeTaskLocation` is off in
+  this config. The reporter cannot tell the harness where a test is declared, so
+  "is the failure inside the test's body" is not answerable from the report
+  alone. The test's line range has to be parsed out of the control file itself.
+- **A hook failure is shape-identical to an assertion failure**: same
+  `status: "failed"`, same `failureMessages`, same stack pointing into the test
+  file. The only robust discriminator observed is the message prefix —
+  `AssertionError:` for a judgement, `Error:` for a hook that threw.
+- **The duplicate `fullName` case is real, not theoretical.** Two distinct
+  passing tests came back under one identical `fullName`, exactly the ambiguity
+  `audit.ts:672` refuses to resolve.
+
+So the implemented rule is: **`AssertionError:` prefix** (which covers condition
+2 and most of condition 4 — a throwing hook is a crash, not a judgement),
+**plus** the first stack frame in the control's file falling inside that test's
+body range, parsed from the file. A hook that fails an `expect` is the residual
+hole: it emits `AssertionError:` and is attributed to the test. The line-range
+check is what closes it, and it is the reason the range is parsed rather than
+skipped as too fiddly.
 5. **Production-reachable.** The mutant may not mention any test-only
    identifier — no fixture id, path, uuid or literal that appears in
    `CONFORMANCE_FILES`. Checked mechanically against the mutation text.
@@ -186,6 +210,10 @@ all-pass · all-fail · swapped names · **duplicate fullName** (the audit alrea
 treats a duplicated title as unanswerable, [audit.ts:672](../../src/cost/b12/audit.ts:672))
 · missing test · hook-attributed failure · inverted diagonal · crash instead of
 assertion · zero tests reported
+
+The hook-attributed and assertion cases are **not hand-written**: they are the
+probe's real payloads, kept as fixtures, so the evaluator is tested against what
+this vitest actually emits rather than against what a plan assumed it emits.
 
 Unlike the harness itself, this is an ordinary vitest test and runs under the
 gate — it mutates nothing and touches no worktree.
