@@ -1878,6 +1878,43 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R45 — the conformance suite is FLAKY, and m4's "collateral" was never collateral — 2026-08-11
+
+Investigating the red bookend found something much larger, and it falsifies a
+registered fact of this repository.
+
+**`tests/cost-meter.test.ts` is nondeterministic on its own.** Two independent
+probes in the MAIN tree — no worktree, no `npm ci`, no `git clean`, no chained
+cycles, no harness machinery: 1 red in 6, then 1 red in 3. The red bookend of
+dry run 1 was never about `makePristine`, contention or ordering. Three of the
+four hypotheses die at once.
+
+**The signature is the registered KNOWN_FLAKY class's, and the class does not
+cover this — twice over.** Failing tests are fs/git-heavy F24 guards and the
+message is the exact vitest placeholder `Error: STACK_TRACE_ERROR`. But the
+registered class names three files and `tests/cost-meter.test.ts` is not among
+them, and it says those failures occur ONLY in the FULL suite — these are SOLO
+runs of one file. **That second half of the class is now falsified.** The class
+is NOT being widened to absorb this: widening a registered condition so an
+inconvenient observation stops counting is the exact move this project exists to
+refuse. It is recorded against the class instead.
+
+**And it explains R43#1.** Two of the four tests named here —
+"a checkout DURING the act never stages evidence on the branch it lands in" and
+"the refresh is bound to the POSITION of HEAD, not to the branch's name" — are
+two of the three m4 "collateral" tests. They were almost certainly never
+collateral: they are intermittently red with or without any mutation. Review
+found my causal reasons false; this is WHY they were false. A flake was read as
+a mutation's blast radius, and the declaration would have taught the harness to
+accept it forever.
+
+**What this costs the clause.** `tests/cost-meter.test.ts` is a `CONFORMANCE_FILE`
+— the file clause 6 names, where all six controls live, and the one
+`--attest-suite` runs in a clean worktree REQUIRING exit 0. A flaky conformance
+suite means an attestation can fail spuriously, and worse, that "the six controls
+passed" carries an error rate nobody has measured. This is owed before the seal,
+and it is now the largest open item on the harness.
+
 ### R43 — the round that took R42 apart — adjudicated 2026-08-11
 
 Five findings, four `high`, all confirmed. **R42 below is superseded and its
