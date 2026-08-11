@@ -17,8 +17,8 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R34 (post-implementation adversarial rounds) are ADJUDICATED — forty-five
-findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
+R8–R37 (post-implementation adversarial rounds) are ADJUDICATED — fifty-four
+findings, all but two confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
 surface — the post-registration sync, from disk bytes to an APPEND to an
@@ -100,6 +100,27 @@ staged before the act; the index is refreshed after, bound to the POSITION of
 HEAD (== the installed commit), never the branch's NAME — the name spelling
 left a staged DELETION on a branch sitting at that same commit. A note, never
 a failure: the evidence is committed either way.**
+**R35–R37 ARE THE TARGETED ROUNDS, and they are why the generic ones stopped
+paying: same branch diff, three lenses (arithmetic, attribution, conformance to
+the frozen text), each told the hardened plumbing was worthless — NINE findings,
+seven high, none in git. R35: `poolRatio` and `rHiPlus` answered a CANCELLING
+denominator with the EMPTY one's 0, so an undefined R_hi+ read as the strongest
+fall-side answer there is and an undefined uncapped bracket passed clause 8's
+finiteness check. R37#2: clause 5 pinned `src/cost/emission.ts` (the LIFECYCLE)
+and never the ROW — `turns_collapsed` IS the saving's definition and lives in
+`src/tools/`, outside every pinned path; the frozen sentence names the emission
+as a FOURTH item because something of it lives there, so this is a CORRECTION
+and not an amendment. Fixed with a FENCE (`// b12:emission-begin`), digest
+compared anchor-vs-head, comments dropped, tools otherwise still editable.
+R37#1: `PREMISES.md` says a verdict without a committed audit is NOT FINAL, and
+nothing said it — `final` now on the artifact and before the CLI's verdict line.
+R36: the acceptance boundary was a byte COUNT with no identity (a truncating
+acceptance command handed its rows to the arm), unparseable telemetry lines were
+dropped as "a tool still running" when the log is read after the tool exits, and
+"will not parse" shared a catch with "will not open". R37#4 partly declined —
+the literal quantifier is unsatisfiable (manifests are create-only) — and R37#3
+DECLINED on its claim: the fifth control's topology IS the frozen one, only its
+crediting half stopped one layer below the scorer.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The
@@ -129,6 +150,14 @@ cert, before the formal preflight); the Phase-3 1/3 amendment (gate-only is
 CUT; only a NEW pre-data amendment seals); contract-stability re-run (F23
 grew report.ts); then seal-harness → register (CAS) → the 20–26 supervised
 sessions → the clause-6 sequence → verdict → A/B.
+
+**Two reviews the Codex rounds cannot do, and they gate paid sessions:
+(1) METRIC VALIDITY — the treatment arm wins by returning FEWER bytes, and the
+only quality floor is the acceptance command; nothing has ever asked whether the
+scored quantity is the one worth knowing. (2) STATISTICAL POWER — n=20–26, four
+strata with a floor of 5, a 15% line: whether this design can distinguish the
+hypotheses at all, priced BEFORE 26 supervised sessions rather than discovered
+in them. Neither is a code review; both are Rodrigo's call.**
 
 ## Do not redo
 
