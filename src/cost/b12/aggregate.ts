@@ -148,8 +148,16 @@ export function poolRatio(terms: readonly ObservationTerms[], form: PricedForm):
   const S = sumOf(terms, (t) => savedAt(t, form));
   const A = sumOf(terms, (t) => t.aO);
   const O = sumOf(terms, (t) => t.oO);
-  // An empty set has no ratio, and NaN propagates into every figure downstream.
-  if (A + S === 0) return 0;
+  // An empty set has no ratio, and NaN propagates into every figure
+  // downstream — the recomputations legitimately drop rows until none is left.
+  if (terms.length === 0) return 0;
+  // A NONEMPTY set whose denominator CANCELS is NOT that case, and this guard
+  // used to answer both with the same 0 (R35#2). `(S-O)/(A+S)` is undefined
+  // there, and 0 is a bound the bracket does not have: clause 8 checks the
+  // four bounds for FINITENESS, so a fabricated 0 passes and the artifact
+  // publishes a bracket that does not exist. NaN is the honest answer and it
+  // is the one clause 8 can see.
+  if (A + S === 0) return Number.NaN;
   return (S - O) / (A + S);
 }
 
@@ -211,7 +219,23 @@ export function rHiPlus(
   const A = sumOf(all, (t) => t.aO);
   const O = sumOf(all, (t) => t.oO);
   const denominator = A + S + refused;
-  if (denominator === 0) return { evaluable: true, value: 0 };
+  // TWO DIFFERENT NOTHINGS, and conflating them was R35#1. An EMPTY set has no
+  // fall-side figure and never claimed one; 0 is the honest reading of
+  // "nothing was measured". A NONEMPTY set whose denominator CANCELS is a
+  // different animal: real observations sit underneath it, `(S+refused-O)/0`
+  // is undefined, and publishing 0 as EVALUABLE hands `decide` a figure that
+  // reads as "no doubt-credited saving at all" — evidence FOR a fall,
+  // manufactured out of a quantity that does not exist. Cancellation is not
+  // hypothetical: `poolRatio`'s note records `gate` measured at -467.1 units,
+  // so signed rows can sum against A.
+  if (all.length === 0) return { evaluable: true, value: 0 };
+  if (denominator === 0) {
+    return {
+      evaluable: false,
+      reason:
+        "A + S + refused cancels to zero over a NONEMPTY observation set — R_hi+ is undefined, and an undefined fall-side figure may not stand in for one that says there was no saving",
+    };
+  }
   return { evaluable: true, value: (S + refused - O) / denominator };
 }
 

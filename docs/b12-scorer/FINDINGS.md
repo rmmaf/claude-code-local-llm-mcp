@@ -1906,6 +1906,51 @@ pre-registration. **Nine findings, seven of them high, none in plumbing** —
 against one per round for the four rounds before. The bottleneck was never how
 much review; it was where it pointed.
 
+- **R35#1 and R35#2 (both high) — two guards written for the EMPTY population
+  answered the CANCELLING one with the same 0.** `poolRatio` carried
+  `if (A + S === 0) return 0` under a comment reading "An empty set has no
+  ratio"; `rHiPlus` carried `if (denominator === 0) return { evaluable: true,
+  value: 0 }`. Both are correct for an empty population and wrong for a
+  nonempty one whose signed sums cancel — and cancellation is not a malformed
+  input here. `poolRatio`'s OWN note records the only live reading this project
+  has: `gate` came back at **-467.1 units**. Negative credited rows are
+  supported by design, so `A + S` can reach zero with twenty real observations
+  underneath it.
+
+  **What each fabricated number does.** For `rHiPlus`, `{ evaluable: true,
+  value: 0 }` is not a missing answer — it is the STRONGEST fall-side answer
+  the scale has: no doubt-credited saving at all. `decide` reads it as evidence
+  FOR a fall, and an undefined quantity becomes `fallen` where an unevaluable
+  one would have produced `open`. For `poolRatio`, F23's uncapped forms now
+  flow through the same guard, and clause 8 checks the four bracket bounds for
+  **finiteness** — so a fabricated `0` passes and the artifact publishes a
+  bracket that does not exist, with clause 8 reporting both brackets present.
+
+  **Fix: two nothings, two answers.** The empty population still reads 0 — the
+  recomputations legitimately drop rows until none is left, and NaN there would
+  propagate into every figure downstream. The nonempty cancelling population
+  reads `NaN` from `poolRatio` (which is exactly what clause 8 CAN see) and
+  `{ evaluable: false, reason }` from `rHiPlus`.
+
+  **Controls, three, all shown firing by mutation.** The `rHiPlus` control
+  builds Codex's own input — twenty observations at `aO=1, oO=1, sLo=-0.5,
+  sHi=-1`, so `A + S + refused` cancels exactly — and asserts the refusal by
+  its reason; restoring `{ evaluable: true, value: 0 }` gives `expected true to
+  be false`. The `poolRatio` control cancels ONLY the uncapped pair
+  (`sLoUncapped = sHiUncapped = -1` against `sLo = sHi = -2`), so the capped
+  bounds stay finite at 2.1 and the defect is isolated to F23's pair rather
+  than to the bracket as a whole; restoring the `0` gives `expected false to be
+  true`. The third pins the boundary in the other direction — the EMPTY set
+  still reads 0 on both — so nobody later "fixes" the empty case into NaN and
+  breaks every recomputation.
+
+  **Not asserted, and why.** A decider-level assertion that the cancelling
+  twenty produce `open` rather than `fallen` was written and thrown away: with
+  `terms()`'s default stratum every observation lands in one cell, so the
+  strata floor produces `open` for a reason that has nothing to do with this
+  defect. A control that passes against the defect is the R32 trap, and one
+  was not shipped here to make the section look stronger.
+
 - **R37#2 (high) — clause 5 pinned the emission WRAPPER and not the emission.**
   `PINNED_PATHS` is `["src/cost/", "src/telemetry.ts", "scripts/b12-run.mjs"]`,
   and the constant's own comment argued the case: `src/cost/emission.ts` owns

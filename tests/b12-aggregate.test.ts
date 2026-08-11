@@ -1237,3 +1237,58 @@ describe("the hold arithmetic — admissionRule 6 gives the run two domains", ()
     expect(result.verdict).toBe("holding (unvalidated)");
   });
 });
+
+// ---------------------------------------------------------------------------
+// R35 — TWO DIFFERENT NOTHINGS. Both guards below were written for the EMPTY
+// population and answered the CANCELLING one with the same 0. Negative
+// credited rows are not hypothetical: `poolRatio`'s own note records `gate`
+// measured at -467.1 units, so signed sums can cancel against A.
+// ---------------------------------------------------------------------------
+
+describe("a cancelling denominator is undefined, not zero", () => {
+  /** A = 20, S = -20, no refusals: `A + S + refused` cancels exactly. */
+  const cancelling = (): ObservationTerms[] =>
+    Array.from({ length: 20 }, (_, i) =>
+      terms({ taskId: `t-${i + 1}`, aO: 1, oO: 1, sLo: -0.5, sHi: -1 })
+    );
+
+  it("R_hi+ REFUSES rather than publishing 0 as the doubt-credited figure", () => {
+    // THE DAMAGE this replaces: `{ evaluable: true, value: 0 }` is not a
+    // missing answer, it is the STRONGEST fall-side answer there is — no
+    // doubt-credited saving at all. `decide` reads it as evidence FOR a fall
+    // while the quantity behind it does not exist.
+    const r = fallSide(cancelling());
+    expect(r.evaluable).toBe(false);
+    if (r.evaluable) throw new Error("unreachable: the cancelling set must not be evaluable");
+    expect(r.reason).toMatch(/cancels to zero over a NONEMPTY observation set/);
+  });
+
+  it("an EMPTY set still reads 0 — the boundary pinned in the other direction", () => {
+    // Not an oversight: the recomputations legitimately drop rows until none
+    // is left, and NaN there would propagate into every figure downstream.
+    expect(fallSide([])).toEqual({ evaluable: true, value: 0 });
+  });
+
+  it("poolRatio hands clause 8 a NaN it can SEE, where 0 passed the finiteness check", () => {
+    // F23's uncapped pair cancels while the capped pair stays finite, which
+    // isolates the defect to the uncapped forms rather than to the bracket as
+    // a whole: capped is (-40 - 2)/(20 - 40) = 2.1, uncapped is (-20 - 2)/0.
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      terms({
+        taskId: `t-${i + 1}`,
+        aO: 1,
+        oO: 0.1,
+        sLo: -2,
+        sHi: -2,
+        sLoUncapped: -1,
+        sHiUncapped: -1,
+      })
+    );
+    expect(Number.isNaN(poolRatio(rows, "loUncapped"))).toBe(true);
+    expect(Number.isNaN(poolRatio(rows, "hiUncapped"))).toBe(true);
+    expect(Number.isFinite(poolRatio(rows, "lo"))).toBe(true);
+    expect(Number.isFinite(poolRatio(rows, "hi"))).toBe(true);
+    // Empty stays 0, same reason as above.
+    expect(poolRatio([], "lo")).toBe(0);
+  });
+});
