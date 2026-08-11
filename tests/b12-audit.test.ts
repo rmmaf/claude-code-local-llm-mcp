@@ -703,8 +703,14 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8")) as {
       gitAudit: { ran: boolean; verdict?: string };
       uncheckedClauses: string[];
+      final: boolean;
       archiveChecks: Array<{ clause: string; fired: boolean }>;
     };
+    // R37#1 — the pre-data rule in PREMISES.md, now on the face: a verdict
+    // emitted WITHOUT a committed clause 4-6 audit is not final. The
+    // unchecked emit inside operatorLoop published one; this one is bound.
+    expect(emitted.final).toBe(true);
+    expect(result.final).toBe(true);
     expect(result.gitAudit.ran).toBe(true);
     expect(result.gitAudit.verdict).toBe("clean");
     expect(result.uncheckedClauses).toEqual([]);
@@ -1174,4 +1180,40 @@ describe("the re-emission escape's population", () => {
     expect(AUDIT_INPUT_KEYS).toContain("clause5.reemission.population");
     expect(AUDIT_INPUT_KEYS).toContain("clause5.reemission.reading");
   });
+});
+
+// ---------------------------------------------------------------------------
+// R37#1 — `PREMISES.md`, a PRE-DATA rule: "The scoring invocation requires a
+// COMMITTED clause 4–6 audit artifact … Anything short of that is NO audit:
+// `assemble` publishes clauses 4–6 as UNCHECKED — never as 'clean' — and a
+// verdict emitted without one is not final." `uncheckedClauses` carried the
+// fact and nothing SAID it: the artifact had no finality field and the CLI
+// printed an ordinary `verdict: …` line.
+// ---------------------------------------------------------------------------
+
+describe("a verdict emitted without a committed audit", () => {
+  it("is published as NOT FINAL, on the artifact and out of the emission", async () => {
+    const root = tempRoot();
+    await fs.cp(FIXTURE, root, { recursive: true });
+    initRepo(root);
+
+    // No `auditPath`: exactly the path an operator takes when they score
+    // before the audit exists — which the CLI permits and the rule qualifies.
+    const emitted = await emitRun(root, "replay-01");
+    expect(emitted.final).toBe(false);
+
+    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8")) as {
+      final: boolean;
+      uncheckedClauses: string[];
+      verdict: string;
+    };
+    expect(result.final).toBe(false);
+    // The two must agree, and `final` is DERIVED from this list rather than
+    // from `gitAudit.ran`, so a gap of any origin marks the verdict.
+    expect(result.uncheckedClauses.length).toBeGreaterThan(0);
+    // And the verdict is still published — the rule qualifies it, it does not
+    // suppress it. Minting a fourth verdict value would change the artifact's
+    // grammar, which the frozen text does not ask for.
+    expect(typeof result.verdict).toBe("string");
+  }, 60_000);
 });

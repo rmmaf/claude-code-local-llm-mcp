@@ -233,6 +233,10 @@ export interface EmitResult {
   resultPath: string;
   verdict: string;
   voidClause: string | null;
+  /** `PREMISES.md`: a verdict emitted without a committed clause 4–6 audit is
+   * NOT FINAL. Carried out of the emission so a caller cannot read `verdict`
+   * without the qualification the pre-data rule attaches to it. */
+  final: boolean;
 }
 
 export async function emitRun(
@@ -289,7 +293,13 @@ export async function emitRun(
   writeFileSync(counterfactualPath, JSON.stringify(counterfactual, null, 2) + "\n", "utf8");
   writeFileSync(resultPath, JSON.stringify(result, serializeResult, 2) + "\n", "utf8");
 
-  return { counterfactualPath, resultPath, verdict: result.verdict, voidClause: result.voidClause };
+  return {
+    counterfactualPath,
+    resultPath,
+    verdict: result.verdict,
+    voidClause: result.voidClause,
+    final: result.final,
+  };
 }
 
 /** `RunTelemetryCoverage.ownedBy` is a Map; JSON needs it as an object. */
@@ -335,7 +345,14 @@ if (isMain) {
     scoringCommandActual: invocationString(repoRoot, process.argv[1]!, args),
   })
     .then((r) => {
-      process.stdout.write(`${r.resultPath}\n${r.counterfactualPath}\nverdict: ${r.verdict}${r.voidClause === null ? "" : ` — ${r.voidClause}`}\n`);
+      // NOT FINAL IS SAID BEFORE THE VERDICT, not after it (R37#1). An
+      // operator reading `verdict: hold` off a terminal had no way to know
+      // clauses 4–6 were never checked; the pre-data rule in PREMISES.md says
+      // that verdict is not final, so the line has to say it too.
+      const mark = r.final ? "FINAL" : "NOT FINAL — clauses 4–6 UNCHECKED (no committed audit bound to this tree)";
+      process.stdout.write(
+        `${r.resultPath}\n${r.counterfactualPath}\n${mark}\nverdict: ${r.verdict}${r.voidClause === null ? "" : ` — ${r.voidClause}`}\n`
+      );
     })
     .catch((error: unknown) => {
       // The one lawful throw is the unreadable manifest — a bug or tampering,

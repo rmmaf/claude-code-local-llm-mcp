@@ -485,6 +485,14 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     manifestBlobSha256: archive.git.manifestBlobSha256,
     archiveChecks: checks,
     uncheckedClauses,
+    // THE PRE-DATA RULE, ON THE FACE (R37#1). PREMISES.md: "a verdict emitted
+    // without one is not final". `uncheckedClauses` carried that fact and
+    // nothing SAID it — a reader, a replayer and the CLI all saw an ordinary
+    // `verdict: hold|fall|open` and nothing marking it provisional. Derived
+    // from `uncheckedClauses` rather than from `gitAudit.ran` so there is one
+    // source: any clause no input allowed anyone to check makes the verdict
+    // not final, whatever produced that gap.
+    final: uncheckedClauses.length === 0,
     gitAudit,
     declarationFailures,
     integrityFailures,

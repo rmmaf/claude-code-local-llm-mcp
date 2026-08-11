@@ -1058,6 +1058,16 @@ export interface B12RunResult extends B12Result {
    * NEVER empty silently: an unchecked clause published as no-void is the shape
    * `voidConditions` 8's handling refuses one clause over. */
   uncheckedClauses: string[];
+  /**
+   * Whether this verdict is FINAL, by the pre-data rule in `PREMISES.md`: the
+   * scoring invocation requires a committed clause 4–6 audit artifact, and
+   * "a verdict emitted without one is not final". False whenever
+   * `uncheckedClauses` is non-empty — one source, so a gap of any origin
+   * marks the verdict provisional. Carried explicitly because until R37 the
+   * artifact and the CLI published an ordinary `hold`/`fall`/`open` with
+   * nothing on it saying the clauses behind it were never checked.
+   */
+  final: boolean;
   gitAudit: GitAudit;
   declarationFailures: DeclarationFailure[];
   /**

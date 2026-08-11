@@ -2018,6 +2018,36 @@ much review; it was where it pointed.
   Eighth occurrence of the recurring pattern, and the first INVERTED one: the
   rule was written down, and the code narrowed it with an argument.
 
+- **R37#1 (high) — the artifact carried the fact and never said it.** The
+  pre-data rule is in `PREMISES.md`, added before registration precisely so it
+  could not be minted mid-game: *"The scoring invocation requires a COMMITTED
+  clause 4–6 audit artifact … Anything short of that is NO audit: `assemble`
+  publishes clauses 4–6 as UNCHECKED — never as 'clean' — and **a verdict
+  emitted without one is not final**."*
+
+  `emitRun` sets `gitAudit = { ran: false }`, and with no `--audit` it goes
+  straight on to `assembleRun`, writes `result.json` and returns
+  `verdict: hold|fall|open`. `uncheckedClauses` recorded WHICH clauses nobody
+  checked — but nothing on the artifact, in the return value or on the CLI's
+  line said the verdict was provisional. An operator reading `verdict: hold`
+  off a terminal had no way to know.
+
+  **Fix: say it.** `B12RunResult.final` and `EmitResult.final`, derived from
+  `uncheckedClauses.length === 0` rather than from `gitAudit.ran` — one source,
+  so a gap of any origin marks the verdict. The CLI prints `NOT FINAL —
+  clauses 4–6 UNCHECKED (no committed audit bound to this tree)` BEFORE the
+  verdict line, not after it.
+
+  **What was NOT done, and why.** Codex asked that a preliminary emission "not
+  expose an ordinary final verdict". Minting a fourth verdict value would
+  change the artifact's grammar, and the frozen sentence qualifies the verdict
+  rather than suppressing it. The rule as written is implemented; a stronger
+  rule would be a new one.
+
+  **Control shown firing:** forcing `final: true` gives `expected true to be
+  false` on the unchecked emission, and the bound-audit e2e asserts the other
+  side (`final === true` out of the emission and on the artifact).
+
 - **R37#4 (medium) — PARTLY UPHELD, and the part declined is written down.**
   The frozen sentence is *"VOID if … changed after the first scored
   observation **without every existing evidence/ artifact for the run being
