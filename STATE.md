@@ -151,13 +151,32 @@ CUT; only a NEW pre-data amendment seals); contract-stability re-run (F23
 grew report.ts); then seal-harness → register (CAS) → the 20–26 supervised
 sessions → the clause-6 sequence → verdict → A/B.
 
-**Two reviews the Codex rounds cannot do, and they gate paid sessions:
-(1) METRIC VALIDITY — the treatment arm wins by returning FEWER bytes, and the
-only quality floor is the acceptance command; nothing has ever asked whether the
-scored quantity is the one worth knowing. (2) STATISTICAL POWER — n=20–26, four
-strata with a floor of 5, a 15% line: whether this design can distinguish the
-hypotheses at all, priced BEFORE 26 supervised sessions rather than discovered
-in them. Neither is a code review; both are Rodrigo's call.**
+**ONE review the Codex rounds cannot do, and it gates paid sessions: METRIC
+VALIDITY — the treatment arm wins by returning FEWER bytes, the only quality
+floor is the task's acceptance command, and nothing has ever asked whether the
+scored quantity is the one worth knowing. Not a code review; Rodrigo's call,
+owed before the first paid session.**
+
+**POWER ANALYSIS: DROPPED 2026-08-11, and the reason is recorded so the silence
+is not read later as an oversight.** The thresholds cannot move (30% and 15% are
+defended by PROVENANCE, not magnitude — "neither moves"), so the only thing an
+analysis could report is the probability of landing in `open`. Shown the
+pre-registration's OWN reachability estimate — `holdsIf`: a 25-request task
+suppressing 200 KB gives `R_lo` ≈ 26%, below the hold line, so "a hold requires
+either heavier suppression or shorter denominators than this project's median" —
+Rodrigo's answer was **"rodo assim mesmo, `open` é um resultado real"**. That is
+the frozen text's own stance (`runPlan`: the recorded conclusion may be that
+G-stop "is not evaluable in this venue... That is a real result"), reaffirmed
+PRE-DATA and after seeing the estimate, which is what separates it from a
+post-`open` rationalisation. An analysis whose result changes no decision is not
+evidence, and it is not run.
+
+**STILL OPEN, due before the manifest is SEALED: the task mix.** With `open`
+accepted, the question is no longer "can the run be rescued" but "which question
+do you want 26 sessions to answer" — a favourable-but-real set measures *the
+tool CAN pay*; a set representative of ordinary work measures *the tool DOES pay
+here*. Both are legitimate, they are different premises, and only one fits in
+one manifest.
 
 ## Do not redo
 
