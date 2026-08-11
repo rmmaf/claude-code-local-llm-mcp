@@ -1103,6 +1103,29 @@ describe("telemetry and the counterfactual", () => {
     // not of the join itself.
     const alone = buildCounterfactual(parent, [row], DEFAULT_RATES, buildSessionReport(parent, DEFAULT_RATES));
     expect(alone.byTool[0]?.calls).toBe(1);
+
+    // AND THE CREDITING HALF AT THE SCORING INVOCATION, not one layer below it
+    // (R37#3). voidConditions 6 asks for "a per-session scoring invocation
+    // REFUSING where the full-set invocation credits". The refusing half ran
+    // through `buildCounterfactual` above; the crediting half stopped at
+    // `invocationOwners` returning an empty set, which is an ownership fact and
+    // not a scored one. The FULL-SET invocation is the same rows grouped by
+    // LINEAGE -- these two transcripts are one compaction continuation -- and
+    // it has to be shown crediting the very row the per-session one refuses.
+    const fullSet = buildCounterfactual(
+      parent,
+      [row],
+      DEFAULT_RATES,
+      buildSessionReport(parent, DEFAULT_RATES),
+      invocationOwners([parent, child], lineagesOf([parent, child]))
+    );
+    expect(fullSet.ambiguous).toBe(0);
+    expect(fullSet.refusedRows).toBe(0);
+    expect(fullSet.byTool[0]?.calls).toBe(1);
+    expect(fullSet.unitsTotal).toBeGreaterThan(0);
+    // Withheld on the per-session side, STATED on the full-set side: the two
+    // outcomes the frozen sentence contrasts, both read off a scored result.
+    expect(fullSet.savedFraction).not.toBeNull();
   });
 
   it("withholds the saved fraction rather than reporting one built on timestamps", async () => {

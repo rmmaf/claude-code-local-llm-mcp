@@ -2018,6 +2018,40 @@ much review; it was where it pointed.
   Eighth occurrence of the recurring pattern, and the first INVERTED one: the
   rule was written down, and the code narrowed it with an argument.
 
+- **R37#3 (high) — DECLINED on its central claim, UPHELD on a narrower one,
+  and its third part was already written down.** This is the one finding of the
+  nine whose headline does not survive reading the code.
+
+  **The claim: the fifth registered control is a SUBSTITUTE that proves the
+  opposite topology.** The frozen requirement is *"a per-session scoring
+  invocation REFUSING where the full-set invocation credits"*, and Codex read
+  the registered test's `alone` / `ambiguous` contrast — per-session credits,
+  full-set refuses — as the inverse of it. That contrast is in the test, and it
+  is not the control. The control is at `tests/cost-meter.test.ts:1054-1065`:
+  `invocationOwners([parent, child])` groups PER TRANSCRIPT and returns
+  `[shared]` — the per-session invocation REFUSING — while
+  `invocationOwners([parent, child], lineagesOf([parent, child]))` groups by
+  LINEAGE and returns `[]` — the full-set invocation CREDITING. That is the
+  frozen sentence, in the frozen order. The `alone` line proves something
+  else: that the pre-fix caller, knowing nothing, credited once.
+
+  **What IS true, and narrower.** The refusing half ran end to end, through
+  `buildCounterfactual`. The crediting half stopped at `invocationOwners`
+  returning an empty set — an ownership fact, not a SCORED one — and the frozen
+  sentence says "invocation", meaning the scorer. Closed: the full-set
+  ambiguity set is now handed to `buildCounterfactual` and the same row is
+  shown credited (`ambiguous: 0`, `refusedRows: 0`, one call, positive units,
+  and `savedFraction` STATED where the per-session side withholds it). Shown
+  firing: making `invocationOwners` ignore its lineage argument gives
+  `expected [ Array(1) ] to deeply equal []`.
+
+  **The third part is not new.** "Present-and-passing proves identity and
+  runner status, not firing" is the residual R23 recorded on 2026-08-10 and
+  `STATE.md` still carries as STILL OPEN, with the mutation harness named as
+  the fix. Codex restating it is confirmation, not discovery, and it is not
+  closed here: every control in this pass was shown firing BY HAND, which is
+  evidence about these controls and not a mechanism.
+
 - **R36#1, #2 and #3 — three ways the archive was WRONG rather than fragile.**
   All three read, before this pass, as a clean and slightly shorter
   observation; none of them left a mark a reader could find.
