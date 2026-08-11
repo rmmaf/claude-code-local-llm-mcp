@@ -29,6 +29,7 @@ import {
   decideAudit,
   evidenceArtifactPath,
   parseGitAudit,
+  EMISSION_FENCED_FILES,
   PINNED_PATHS,
   SAFE_RUN_ID,
   PREREG_FROZEN_COMMIT,
@@ -92,6 +93,22 @@ const FIXTURE = path.join(process.cwd(), "tests", "fixtures", "b12-run");
  * real thing at `subjectCommit`, so the oracle has to commit one. */
 const LOCKFILE_TEXT = `{"name":"b12-scratch","lockfileVersion":3,"packages":{}}\n`;
 
+/**
+ * The scratch repositories' stand-in for clause 5's FOURTH item (R37): the
+ * emission fence is read out of `src/tools/**`, and a repository without those
+ * files has a pin with nothing to pin — which the collector reports rather
+ * than passing over. Only the fence has to be real here; what the audit
+ * compares is the canonical digest of what lies between the markers.
+ */
+const FENCED_TOOL_TEXT = [
+  "export const standIn = 1;",
+  "// b12:emission-begin",
+  "// PROSE, inside the fence — this repository rewrites its comments constantly",
+  "await emission.emit({ turns_collapsed: 0 });",
+  "// b12:emission-end",
+  "",
+].join("\n");
+
 // ---------------------------------------------------------------------------
 // Facts fixtures for the pure decider.
 // ---------------------------------------------------------------------------
@@ -131,6 +148,14 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
       commitsTouchingPinned: [],
       offenders: [],
       excusedByReemission: [],
+      emission: {
+        files: [...EMISSION_FENCED_FILES],
+        atAnchor: EMISSION_FENCED_FILES.map((file) => ({ file, sha256: "f".repeat(64) })),
+        atHead: EMISSION_FENCED_FILES.map((file) => ({ file, sha256: "f".repeat(64) })),
+        drifted: [],
+        excused: [],
+        problems: [],
+      },
       evidencePaths: ["evidence/replay-01.b12.runlog.jsonl"],
       evidenceDigest: "e".repeat(64),
     },
@@ -606,6 +631,12 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     // (R29): the scratch repo needs a real lockfile, and the attestation gets
     // its real hash.
     await fs.writeFile(path.join(root, "package-lock.json"), LOCKFILE_TEXT, "utf8");
+    // Clause 5's emission item needs somewhere to be (R37): the fenced tool
+    // files, born BEFORE the registration commit so they exist at the anchor.
+    for (const rel of EMISSION_FENCED_FILES) {
+      await fs.mkdir(path.join(root, path.dirname(rel)), { recursive: true });
+      await fs.writeFile(path.join(root, rel), FENCED_TOOL_TEXT, "utf8");
+    }
     await hooks.seed?.(root);
     // Manifest B sealed in the SAME act as A — byte-identical blob, which is
     // what `open-b` will hold the real register to.
@@ -796,6 +827,84 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     // The non-evidence drift ALSO fires clause 6 — two clauses, two reasons,
     // neither masking the other.
     expect(driftedVerdict.reasons.join(" ")).toMatch(/evidence\/\*\* only/);
+  }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // R37: clause 5's FOURTH item — "gate's or repair's telemetry emission" —
+  // which `PINNED_PATHS` structurally could not reach. `src/cost/**` pins the
+  // emission LIFECYCLE; the ROW is built in `src/tools/**`.
+  // -------------------------------------------------------------------------
+
+  it("clause 5 sees gate's telemetry emission MOVE, and the pinned paths never could", async () => {
+    const rel = "src/tools/gate.ts";
+    // The edit lands BEFORE the attestation and IS the commit attested, so
+    // clause 6's non-evidence drift cannot stand in for the reason under test.
+    const { root, registration } = await operatorLoop({
+      beforeAttestation: async (r) => {
+        const before = await fs.readFile(path.join(r, rel), "utf8");
+        // WHAT THE ROW MEANS, not where it lives: `turns_collapsed` IS the
+        // credited saving's definition. Nothing under `evidence/`,
+        // `src/cost/**`, `src/telemetry.ts` or `scripts/b12-run.mjs` moves.
+        await fs.writeFile(
+          path.join(r, rel),
+          before.replace("turns_collapsed: 0", "turns_collapsed: 99"),
+          "utf8"
+        );
+        return commitAll(r, "the emission's MEANING, edited after the first scored observation");
+      },
+    });
+    const opts = { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" };
+
+    // THE DAMAGE, on these same bytes. With the fence unread — which is what
+    // this audit did until R37 — the path probe has nothing to say and the run
+    // audits CLEAN, while every scored observation's saving was redefined
+    // underneath it.
+    const blind = collectAuditFacts(root, "replay-01", { ...opts, emissionFencedFiles: [] });
+    expect(blind.clause5.offenders).toEqual([]);
+    expect(decideAudit(blind).verdict).toBe("clean");
+
+    // With the fence: an offender no PATH can name, and a void that says so.
+    const seen = collectAuditFacts(root, "replay-01", opts);
+    expect(seen.clause5.offenders).toEqual([]); // still none — that IS the finding
+    expect(seen.clause5.emission.drifted).toHaveLength(1);
+    expect(seen.clause5.emission.drifted[0]).toMatch(/src\/tools\/gate\.ts$/);
+    expect(seen.clause5.emission.excused).toEqual([]); // nothing was re-emitted
+    const verdict = decideAudit(seen);
+    expect(verdict.verdict).toBe("void");
+    expect(verdict.reasons.join(" ")).toMatch(/moved gate's or repair's telemetry emission/);
+  }, 60_000);
+
+  it("the same file edited OUTSIDE the fence stays clean — the tools are the subject, not the instrument", async () => {
+    const rel = "src/tools/repair.ts";
+    const { root, registration } = await operatorLoop({
+      beforeAttestation: async (r) => {
+        const before = await fs.readFile(path.join(r, rel), "utf8");
+        await fs.writeFile(
+          path.join(r, rel),
+          before
+            .replace("export const standIn = 1;", "export const standIn = 2;")
+            // AND a comment rewritten INSIDE the fence. The canonical digest
+            // drops whole-line comments on purpose: hashing prose would void a
+            // paid run over a typo fix, and prose is not the measurement.
+            .replace("// PROSE, inside the fence", "// PROSE, rewritten in place"),
+          "utf8"
+        );
+        return commitAll(r, "the tool edited outside its emission, and prose rewritten inside it");
+      },
+    });
+    const facts = collectAuditFacts(root, "replay-01", {
+      preregFrozenCommit: registration,
+      preregPath: "evidence/replay-01.b12.tasks.json",
+    });
+    // THE BOUNDARY, pinned in the other direction so nobody later "simplifies"
+    // the fence into a whole-file pin: freezing the tools would freeze what the
+    // experiment measures, and clause 5 does not ask for that.
+    expect(facts.clause5.emission.drifted).toEqual([]);
+    expect(decideAudit(facts).verdict).toBe("clean");
+    // Reported either way, so a reader can see the fence held rather than
+    // infer it from silence.
+    expect(facts.clause5.emission.atHead).toHaveLength(EMISSION_FENCED_FILES.length);
+    expect(facts.clause5.emission.atHead.every((e) => e.sha256 !== null)).toBe(true);
   }, 60_000);
 
   // -------------------------------------------------------------------------

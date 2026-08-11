@@ -463,6 +463,8 @@ export async function runRepair(
     // best-effort here and the tree is not.
     let abortFailure: string | null = null;
     try {
+      // b12:emission-begin — the ABORT row is an emission too, and its zeroes
+      // are a claim about the measurement, not an absence of one.
       await emission.abort({
         tool: "repair",
         invocation_id: invocationId,
@@ -477,6 +479,7 @@ export async function runRepair(
           attempts: attempts.map(({ round, ...a }) => ({ round, ...a })),
         },
       });
+      // b12:emission-end
     } catch (telemetryError) {
       abortFailure = telemetryError instanceof Error ? telemetryError.message : String(telemetryError);
     }
@@ -949,6 +952,8 @@ async function repairLoop(
     bytes_raw: rawBytes,
     bytes_returned: 0,
   };
+  // b12:emission-begin — see the note at `gate.ts`'s fence. `turns_collapsed`
+  // below is the credited saving's definition, not a diagnostic.
   result.bytes_returned = JSON.stringify(result).length;
 
   // `emit` claims before the write, so `runRepair`'s abort path cannot add a
@@ -1052,6 +1057,7 @@ async function repairLoop(
       }),
     },
   });
+  // b12:emission-end
 
   if (rounds.length === 0 && stoppedBecause === "passed") {
     log.info("repair: checks were already green; nothing to do");

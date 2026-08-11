@@ -398,6 +398,19 @@ export async function runGate(
     bytes_raw: rawBytes,
     bytes_returned: 0,
   };
+  // b12:emission-begin
+  // WHAT voidConditions 5 MEANS BY "gate's or repair's telemetry emission".
+  // `src/cost/emission.ts` owns the LIFECYCLE — writer selection, write-once,
+  // the abort pair — and `src/cost/**` already pins it. The ROW is built HERE,
+  // and `turns_collapsed` below is not a diagnostic: it IS the definition of
+  // the credited saving. Clause 5 lists the emission as a FOURTH item beside
+  // `src/cost/**` precisely because something of it lives outside that pin.
+  //
+  // The audit hashes the bytes between these markers at the freeze anchor and
+  // at the head it audits, with whole-line comments dropped, so the rest of
+  // this file stays editable — it is what the experiment MEASURES, not what it
+  // freezes. Moving code out of the fence, or deleting the markers, reads as
+  // drift; it does not read as clean.
   result.bytes_returned = JSON.stringify(result).length;
 
   await emission.emit({
@@ -411,6 +424,7 @@ export async function runGate(
     latency_ms: now() - started,
     detail: { checks: selected.map((s) => s.name), passed: result.passed },
   });
+  // b12:emission-end
 
   // Archive what a red run actually found. Gated on parsed failures rather than
   // on `passed`: a gate can be red because a check could not RUN — a missing

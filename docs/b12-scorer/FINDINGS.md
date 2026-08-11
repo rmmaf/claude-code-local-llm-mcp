@@ -1878,6 +1878,101 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### THE TARGETED ROUNDS (R35, R36, R37) — adjudicated 2026-08-11
+
+**Why these three are different, and what that says about the twenty-seven
+before them.** R8–R34 were generic: the same prompt against the same branch
+diff, twenty-seven times, for forty-five findings — almost all of them in git
+plumbing, locks, IO and atomicity. Seven consecutive rounds landed on ONE
+surface, the harness's commit act, and the last four produced exactly one
+finding each. That is not a codebase running out of defects; it is a review
+running out of places it was willing to look.
+
+Two structural reasons, both measured rather than supposed:
+
+1. **The review target is the branch diff**, and the diff is
+   `scripts/b12-run.mjs` +1580, `src/cost/b12/audit.ts` +1384,
+   `scripts/b12-register.mjs` +901 against `src/cost/b12/aggregate.ts` +61,
+   `assemble.ts` +69 and `src/cost/report.ts` +16. The reviewer goes where the
+   mass is, and the mass is plumbing.
+2. **The prompt template's own `<attack_surface>`** names auth, data loss,
+   rollback, races, re-entrancy and degraded dependencies. It never says
+   "arithmetic" and never says "does the code match the frozen text".
+
+So three rounds were run with the SAME target and different lenses, each
+explicitly told that findings on the already-hardened surfaces were worthless:
+R35 the arithmetic, R36 attribution, R37 conformance of code to the
+pre-registration. **Nine findings, seven of them high, none in plumbing** —
+against one per round for the four rounds before. The bottleneck was never how
+much review; it was where it pointed.
+
+- **R37#2 (high) — clause 5 pinned the emission WRAPPER and not the emission.**
+  `PINNED_PATHS` is `["src/cost/", "src/telemetry.ts", "scripts/b12-run.mjs"]`,
+  and the constant's own comment argued the case: `src/cost/emission.ts` owns
+  "gate's or repair's telemetry emission", so the tool files may stay editable
+  because they are what the experiment MEASURES. Half of that is true. The
+  wrapper owns the LIFECYCLE — writer selection, the write-once rule, the
+  abort pair. It does not own the ROW. `bytes_raw`, `bytes_returned` and
+  `turns_collapsed` are built in `src/tools/gate.ts` and `src/tools/repair.ts`,
+  outside every pinned path, and `turns_collapsed: Math.max(0, selected.length
+  - 1)` is not a diagnostic: **it is the definition of the credited saving.**
+  Editing it after the first scored observation redefines every scored
+  observation's saving, and the audit returns CLEAN.
+
+  **The textual argument is what settles it.** Clause 5 lists the emission as a
+  FOURTH item beside `src/cost/**`. If the path pin reached it, the frozen
+  sentence would not name it separately. It names it because something of it
+  lives outside — which is exactly what the code confirms. So this is a
+  CORRECTION, not a widening, and needs no amendment: an amendment is for text
+  the frozen sentence does not carry, and this sentence carries it. (Had it
+  been a widening, the window would have been closing: amendments are pre-data
+  and the freeze anchor is the first scored observation.)
+
+  **The fix is a fence, not a path.** Pinning `src/tools/gate.ts` whole would
+  freeze the subject of the experiment — the objection in `emission.ts`'s
+  header is right about that. What is pinned is the region between
+  `// b12:emission-begin` and `// b12:emission-end`: the row construction and
+  the handover, three fences across the two files (gate's normal emission,
+  repair's normal emission, repair's ABORT emission — its zeroes are a claim
+  about the measurement, not the absence of one). Clause 5 compares the
+  canonical digest of that region AT THE FREEZE ANCHOR against the same region
+  at the audited head, names the commits that moved it, and grants them the
+  same re-emission escape the path probe grants. Editing those files anywhere
+  else stays lawful.
+
+  **Comments are dropped from the digest, deliberately.** This repository
+  rewrites its prose constantly; hashing prose would VOID a paid run over a
+  typo fix, and prose is not the measurement. Commenting a field out still
+  removes its line. A separator that survives the filter sits between fenced
+  regions, so moving a line from one region into another still reads as drift.
+
+  **Fail-closed in three places, none of which existed before:** a fenced file
+  absent at the anchor, a fence unreadable at either end (absent marker,
+  unclosed region, stray `END`), and digests that disagree with no commit in
+  the history owning the difference. Each is a reason, not a silence — a pin
+  that cannot be read is not a pin.
+
+  **Controls, both directions.** The firing one edits `turns_collapsed` after
+  the anchor and asserts, on the SAME bytes, that the pre-R37 configuration
+  (`emissionFencedFiles: []`) audits **clean** while the fence makes it
+  **void** — the damage and the fix in one test, rather than a disable-and-look
+  by hand. Shown firing by mutation: forcing `fencedEmission` to a constant
+  gives `expected [] to have a length of 1`. The second control pins the
+  boundary in the OTHER direction — the same file edited outside the fence, and
+  a comment rewritten inside it, stay clean — so nobody later "simplifies" the
+  fence into a whole-file pin.
+
+  **Residual, written down and not fixed.** The re-emission escape is granted
+  to emission drift because the frozen sentence grants it to the whole clause,
+  and narrowing it would mint a stricter condition than the text carries. It is
+  substantively weak here: re-emitting `result.json` from the archive re-reads
+  telemetry rows that the OLD emission wrote, so the escape can excuse a drift
+  it does not actually neutralise. Recorded rather than repaired, because the
+  repair is an amendment and amendments are pre-data.
+
+  Eighth occurrence of the recurring pattern, and the first INVERTED one: the
+  rule was written down, and the code narrowed it with an argument.
+
 ### TWENTY-SEVENTH POST-IMPLEMENTATION ROUND (R34) — adjudicated 2026-08-10
 
 One finding, confirmed and REPRODUCED — the seventh round on the same surface,

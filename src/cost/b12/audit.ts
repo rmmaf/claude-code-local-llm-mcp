@@ -44,11 +44,69 @@ export const PREREG_PATH = "evidence/2026-08-05-b12-preregistration.json";
 
 /**
  * Clause 5's pinned path set. The emission wrapper (`src/cost/emission.ts`)
- * is inside `src/cost/**` ON PURPOSE — "gate's or repair's telemetry emission"
- * is pinned by pinning the module that owns it, while the tool files stay
- * editable.
+ * is inside `src/cost/**` ON PURPOSE — the emission LIFECYCLE is pinned by
+ * pinning the module that owns it, while the tool files stay editable.
+ *
+ * IT DOES NOT COVER THE WHOLE OF "gate's or repair's telemetry emission", and
+ * this constant used to claim it did (R37). Clause 5 lists the emission as a
+ * FOURTH item beside `src/cost/**`; if the path pin reached it, the frozen
+ * text would not name it separately. It does not reach it: the wrapper selects
+ * writers and forwards a caller-built row, while `bytes_raw`, `bytes_returned`
+ * and `turns_collapsed` — the credited saving's own definition — are built in
+ * `src/tools/gate.ts` and `src/tools/repair.ts`. `EMISSION_FENCED_FILES`
+ * below is the rest of the clause, and it is a CORRECTION, not a widening: an
+ * amendment is for text the frozen sentence does not carry, and this sentence
+ * carries it.
  */
 export const PINNED_PATHS = ["src/cost/", "src/telemetry.ts", "scripts/b12-run.mjs"] as const;
+
+/**
+ * The files carrying the OTHER half of clause 5's emission item, and the
+ * markers that bound it. Pinning these files WHOLE would freeze what the
+ * experiment measures — the tools are the subject, not the instrument — so
+ * what is pinned is the FENCED REGION, and a commit touching the file offends
+ * only when the bytes inside the fence actually moved.
+ */
+export const EMISSION_FENCED_FILES = ["src/tools/gate.ts", "src/tools/repair.ts"] as const;
+export const EMISSION_FENCE_BEGIN = "// b12:emission-begin";
+export const EMISSION_FENCE_END = "// b12:emission-end";
+
+/**
+ * The fenced bytes of one file, CANONICAL: every fenced region in source
+ * order, whole-line comments and blank lines dropped, each surviving line
+ * trimmed. Null when the file carries no usable fence at all — an absent
+ * marker, an unclosed region, or a stray END. Null is never "clean": the
+ * caller reports it, because a fence the audit cannot find is a pin that
+ * stopped pinning.
+ *
+ * COMMENTS ARE DROPPED ON PURPOSE. This repository comments heavily and
+ * rewrites those comments constantly; hashing prose would VOID a paid run for
+ * a typo fix. What clause 5 protects is the CODE that defines the measurement,
+ * and commenting a field out still removes its line.
+ */
+export function fencedEmission(text: string): string | null {
+  const regions: string[] = [];
+  let from = 0;
+  for (;;) {
+    const begin = text.indexOf(EMISSION_FENCE_BEGIN, from);
+    if (begin === -1) break;
+    const end = text.indexOf(EMISSION_FENCE_END, begin);
+    if (end === -1) return null; // an OPEN fence is not a fence
+    regions.push(text.slice(begin + EMISSION_FENCE_BEGIN.length, end));
+    from = end + EMISSION_FENCE_END.length;
+  }
+  if (regions.length === 0) return null;
+  if (text.indexOf(EMISSION_FENCE_END, from) !== -1) return null; // a stray END
+  const canonical = regions
+    // A separator that SURVIVES the filter below, so moving a line out of one
+    // fenced region and into another still reads as drift.
+    .join("\n@@\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("//"))
+    .join("\n");
+  return canonical === "" ? null : canonical;
+}
 
 /**
  * The six negative controls `voidConditions` 6 requires SHOWN FIRING, by the
@@ -194,6 +252,12 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause5.commitsTouchingPinned",
   "clause5.offenders",
   "clause5.excusedByReemission",
+  "clause5.emission.files",
+  "clause5.emission.atAnchor",
+  "clause5.emission.atHead",
+  "clause5.emission.drifted",
+  "clause5.emission.excused",
+  "clause5.emission.problems",
   "clause5.evidencePaths",
   "clause5.evidenceDigest",
   "clause6.attestationPath",
@@ -317,6 +381,23 @@ export interface AuditFacts {
     offenders: string[];
     /** Offenders excused because EVERY run artifact was re-emitted after them. */
     excusedByReemission: string[];
+    /**
+     * Clause 5's FOURTH item — "gate's or repair's telemetry emission" — which
+     * `pinnedPaths` structurally cannot reach (R37). `atHead` is recorded
+     * always, so a broken fence is visible before the first score; the rest is
+     * populated only once an anchor exists, because until then the clause's
+     * own text leaves the sources free. `drifted` and `excused` are
+     * `"<sha> <file>"`; `problems` carries a fence the audit could not read,
+     * which is a VOID and not an absence.
+     */
+    emission: {
+      files: readonly string[];
+      atAnchor: Array<{ file: string; sha256: string | null }>;
+      atHead: Array<{ file: string; sha256: string | null }>;
+      drifted: string[];
+      excused: string[];
+      problems: string[];
+    };
     /**
      * The committed files these facts were DERIVED from — the runlog, the
      * counterfactual, every per-observation archive — and their canonical
@@ -525,6 +606,20 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
       }
     }
   }
+  // The emission item (R37). `problems` fires whatever the escape says: a
+  // fence the audit cannot read is not an offender re-emission could excuse,
+  // it is an instrument that stopped working.
+  for (const p of facts.clause5.emission.problems) reasons.push(`clause 5: ${p}`);
+  {
+    const excusedEmission = new Set(facts.clause5.emission.excused);
+    for (const drift of facts.clause5.emission.drifted) {
+      if (!excusedEmission.has(drift)) {
+        reasons.push(
+          `clause 5: ${drift} moved gate's or repair's telemetry emission after the first scored observation and not every run artifact was re-emitted after it`
+        );
+      }
+    }
+  }
   // With no anchor and no anchor problem, the sources are FREE — the clause's
   // own text: "Before the first scored observation these are free". Which
   // paths counted is `facts.clause5.pinnedPaths`, and whether the amendment
@@ -666,6 +761,19 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     ),
     "clause5.offenders": joined(facts.clause5.offenders),
     "clause5.excusedByReemission": joined(facts.clause5.excusedByReemission),
+    // The emission item, on the artifact's face. `atHead` appears even with no
+    // anchor — a fence that stopped being readable is worth seeing while it is
+    // still free to fix, and it decides nothing until the first score.
+    "clause5.emission.files": joined(facts.clause5.emission.files),
+    "clause5.emission.atAnchor": joined(
+      facts.clause5.emission.atAnchor.map((e) => `${e.file} ${orNone(e.sha256)}`)
+    ),
+    "clause5.emission.atHead": joined(
+      facts.clause5.emission.atHead.map((e) => `${e.file} ${orNone(e.sha256)}`)
+    ),
+    "clause5.emission.drifted": joined(facts.clause5.emission.drifted),
+    "clause5.emission.excused": joined(facts.clause5.emission.excused),
+    "clause5.emission.problems": joined(facts.clause5.emission.problems),
     "clause5.evidencePaths": joined(facts.clause5.evidencePaths),
     "clause5.evidenceDigest": facts.clause5.evidenceDigest,
     "clause6.attestationPath": `evidence/${facts.runId}.b12.suite.json`,
@@ -755,6 +863,8 @@ export interface CollectorOptions {
   preregFrozenCommit?: string;
   preregPath?: string;
   pinnedPaths?: readonly string[];
+  /** Test seam: the files clause 5's emission fence is read from. */
+  emissionFencedFiles?: readonly string[];
   /** Test seam: where the conformance-path amendment lives. */
   amendmentPath?: string;
   /** Test seam: wrap or replace the git runner — how the oracle makes a
@@ -780,6 +890,15 @@ const blobSha = (git: Git, ref: string, rel: string): string | null => {
   const r = git(["show", `${ref}:${rel}`]);
   return r.ok ? sha256(r.out) : null;
 };
+
+/**
+ * The artifacts clause 5's re-emission escape asks about. Hoisted out of the
+ * probe so the emission fence can ask the SAME question on the SAME terms —
+ * one escape, one list, never two spellings that can drift apart.
+ */
+function reemissionArtifacts(runId: string): readonly string[] {
+  return [`evidence/${runId}.b12.counterfactual.json`, `evidence/${runId}.b12.result.json`];
+}
 
 /** The commit that INTRODUCED a path: the last line of `git log --diff-filter=A`. */
 function introducingCommit(git: Git, rel: string): string | null {
@@ -1040,10 +1159,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       // The re-emission escape, PER ARTIFACT: an offender is excused only if
       // EVERY artifact of the run was re-committed with the offender already
       // in its history — merge-base(offender, artifactCommit) == offender.
-      const artifacts = [
-        `evidence/${runId}.b12.counterfactual.json`,
-        `evidence/${runId}.b12.result.json`,
-      ];
+      const artifacts = reemissionArtifacts(runId);
       for (const offender of offenders) {
         let excused = true;
         for (const rel of artifacts) {
@@ -1054,6 +1170,101 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
           }
         }
         if (excused) excusedByReemission.push(offender);
+      }
+    }
+  }
+
+  // ---- clause 5: the emission fence — the item `pinnedPaths` cannot reach --
+  // R37. `src/cost/**` pins the emission LIFECYCLE; the ROW is built in the
+  // tool files, and `turns_collapsed` there IS the credited saving's
+  // definition. Pinning those files WHOLE would freeze the subject of the
+  // experiment, so the comparison is the FENCED REGION at the freeze anchor
+  // against the same region at the head being audited: editing `gate.ts`
+  // anywhere else is lawful, moving the emission is not.
+  const emissionFencedFiles = options.emissionFencedFiles ?? EMISSION_FENCED_FILES;
+  const emissionAtAnchor: Array<{ file: string; sha256: string | null }> = [];
+  const emissionAtHead: Array<{ file: string; sha256: string | null }> = [];
+  const emissionDrifted: string[] = [];
+  const emissionExcused: string[] = [];
+  const emissionProblems: string[] = [];
+  {
+    /** `file: false` is "not at that ref"; `sha256: null` is "there, unfenced". */
+    const fenceAt = (ref: string, rel: string): { file: boolean; sha256: string | null } => {
+      const show = git(["show", `${ref}:${rel}`]);
+      if (!show.ok) return { file: false, sha256: null };
+      const fence = fencedEmission(show.out);
+      return { file: true, sha256: fence === null ? null : sha256(fence) };
+    };
+    const artifacts = reemissionArtifacts(runId);
+    for (const rel of emissionFencedFiles) {
+      // Recorded ALWAYS — a reader can see the fence on the artifact's face
+      // before any observation is scored, which is when a broken pin is still
+      // cheap to fix.
+      const atHead = fenceAt(headSha, rel);
+      emissionAtHead.push({ file: rel, sha256: atHead.sha256 });
+      if (anchor === null) continue; // clause 5's own text: free until the first score
+      const atAnchor = fenceAt(anchor.commit, rel);
+      emissionAtAnchor.push({ file: rel, sha256: atAnchor.sha256 });
+
+      if (!atAnchor.file) {
+        emissionProblems.push(
+          `${rel} does not exist at the freeze anchor ${anchor.commit.slice(0, 12)} — the emission item has nothing to pin`
+        );
+        continue;
+      }
+      if (atAnchor.sha256 === null) {
+        emissionProblems.push(
+          `${rel} carries no readable ${EMISSION_FENCE_BEGIN} fence at the freeze anchor — a pin that cannot be read is not a pin`
+        );
+        continue;
+      }
+      if (!atHead.file || atHead.sha256 === null) {
+        emissionProblems.push(
+          `${rel} carries no readable ${EMISSION_FENCE_BEGIN} fence at the audited head — the emission left the fence after the first scored observation`
+        );
+        continue;
+      }
+      if (atHead.sha256 === atAnchor.sha256) continue;
+
+      // The emission MOVED. Name the commits that moved it, so the SAME
+      // re-emission escape can be asked of them on the same terms.
+      const log = git(["log", "--format=%H %cI", "--", rel]);
+      if (!log.ok) {
+        throw new AuditRefused(
+          `git log over ${rel} failed — clause 5's emission fence cannot be attributed, and an empty answer is not a clean one`
+        );
+      }
+      let named = 0;
+      for (const line of log.out.trim().split(/\r?\n/).filter(Boolean)) {
+        const [sha, committerDate] = line.split(" ");
+        if (sha === undefined || committerDate === undefined) continue;
+        const byDate = Date.parse(committerDate) > Date.parse(anchor.started);
+        const anc = isAncestor(git, sha, anchor.commit);
+        if (anc === null) {
+          throw new AuditRefused(
+            `ancestry of ${sha} against the anchor commit cannot be asked — clause 5's emission fence cannot be attributed`
+          );
+        }
+        if (!(byDate || anc === false)) continue;
+        if (fenceAt(sha, rel).sha256 === atAnchor.sha256) continue;
+        named += 1;
+        emissionDrifted.push(`${sha} ${rel}`);
+        let excused = true;
+        for (const relArtifact of artifacts) {
+          const last = lastCommit(git, relArtifact);
+          if (last === null || isAncestor(git, sha, last) !== true) {
+            excused = false;
+            break;
+          }
+        }
+        if (excused) emissionExcused.push(`${sha} ${rel}`);
+      }
+      // FAIL-CLOSED: the digests disagree and nothing in the history owns the
+      // difference. That is not a clean fence, it is an unexplained one.
+      if (named === 0) {
+        emissionProblems.push(
+          `${rel}'s emission fence differs between the freeze anchor and the audited head, and no commit touching it after the anchor accounts for the difference`
+        );
       }
     }
   }
@@ -1141,6 +1352,14 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       commitsTouchingPinned,
       offenders,
       excusedByReemission,
+      emission: {
+        files: emissionFencedFiles,
+        atAnchor: emissionAtAnchor,
+        atHead: emissionAtHead,
+        drifted: emissionDrifted,
+        excused: emissionExcused,
+        problems: emissionProblems,
+      },
       evidencePaths: evidence.paths,
       evidenceDigest: evidence.digest,
     },
