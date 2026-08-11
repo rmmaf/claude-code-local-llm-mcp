@@ -355,7 +355,20 @@ export function evaluateMatrix({ registry, controls, baseline, mutants, sources,
     firedCount: pairs.filter((p) => p.fired).length,
     registeredCount: pairs.length,
     problems,
+    /**
+     * SENSITIVITY — each control goes red when its own subject breaks, with the
+     * assertion inside its own body. This is clause 6's frozen word FIRING, and
+     * it is the only thing `allFired` has ever been entitled to mean.
+     */
     allFired: allFired && baselineProblems.length === 0 && problems.length === 0,
+    /**
+     * SPECIFICITY — REPORTED, DECIDING NOTHING. Whether anything outside the
+     * diagonal went red. Requiring it would mint a condition the frozen text
+     * does not carry; hiding it would let a mutation that reddens the file read
+     * as a clean kill, which is what R43#2 caught. So it is published, whole.
+     */
+    specificityClean: pairs.every((p) => p.specificityClean),
+    offDiagonalKillCount: pairs.reduce((n, p) => n + p.offDiagonalFailures.length, 0),
   };
 }
 
@@ -369,6 +382,9 @@ function evaluatePair({ entry, controls, baseIndex, mutants, sources, repoRoot }
     outcome: "refused",
     detail: "",
     offDiagonal: [],
+    /** The RAW kill set outside the diagonal. Waives nothing; annotates only. */
+    offDiagonalFailures: [],
+    specificityClean: false,
     problems: [],
   };
 
@@ -431,12 +447,32 @@ function evaluatePair({ entry, controls, baseIndex, mutants, sources, repoRoot }
   // late unhandled rejection that reddens something else while the diagonal
   // fails for its own reasons. Either turns a broad mutation into a clean-looking
   // firing. Every failure in the run must be the diagonal or declared.
+  // R43#2 CHANGED WHAT THIS DOES. It used to push undeclared failures into
+  // `problems`, which gated `fired` — so a DECLARATION made a red test
+  // acceptable and "clean off-diagonal" meant only "every red test was
+  // whitelisted". Reasons are unchecked prose; a declaration cannot establish
+  // causality; and run 2 passed because run 1's failures had been listed.
+  //
+  // Now the raw kill set is recorded WHOLE and waives nothing. Annotations
+  // explain; they never convert a failure to OK. And specificity is reported
+  // beside sensitivity rather than folded into it, because clause 6's frozen
+  // word is FIRING — that is sensitivity — and requiring specificity would mint
+  // a condition the frozen text does not carry.
   for (const [, bucket] of mutantIndex.byKey) {
     for (const other of bucket) {
       if (other.status !== "failed") continue;
       if (other.fullName === control.fullName && other.file === control.file) continue;
-      if (declared.has(other.fullName)) continue;
-      out.problems.push(`undeclared collateral: ${other.file} > ${other.fullName} failed under ${entry.id}`);
+      out.offDiagonalFailures.push({
+        file: other.file,
+        fullName: other.fullName,
+        annotation: declared.get(other.fullName) ?? null,
+      });
+    }
+  }
+  out.specificityClean = out.offDiagonalFailures.length === 0;
+  for (const c of entry.collateral ?? []) {
+    if (!out.offDiagonalFailures.some((f) => f.fullName === c.fullName)) {
+      out.problems.push(`the registry annotates ${c.fullName} under ${entry.id}, which did not fail — a stale annotation describes nothing`);
     }
   }
 

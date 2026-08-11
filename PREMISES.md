@@ -1879,8 +1879,16 @@ defect, and it pinned four of them in place.
   and this project's whole defence against minted conditions is that the
   distinction is not negotiable when it is inconvenient.
   So: amendment, pre-data, declared now — before the first scored observation and
-  before any firing artifact exists on this branch — with the same standing as
-  the two decisions below and provable by the same `git log -p`.
+  before any firing artifact exists on this branch. **What `git log -p` proves is
+  WHEN this text was committed, and nothing more** — an earlier draft said it
+  carried "the same standing" as the two decisions below and that the question
+  would be "unanswerable" post-data, and both overreached (R43#5). Ordering is
+  what git can witness; standing is a governance claim this file makes, not a
+  fact git establishes. Post-data adoption would be CONTAMINATED, not
+  unanswerable — the difference matters, because "unanswerable" would excuse
+  never asking. Nor is this amendment SATISFIED by anything yet: no firing
+  artifact is committed, and the audit reads self-asserted `fired` values rather
+  than executing the matrix itself.
   Concretely: clause 6 fails unless `evidence/<runId>.b12.firing.json` is
   committed, names the attestation's own `subjectCommit`, covers exactly
   `CONTROL_TESTS`, records every pair FIRED over a green unmutated baseline, and

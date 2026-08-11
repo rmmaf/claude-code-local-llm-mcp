@@ -132,6 +132,13 @@ export interface PairVerdict {
     ok: boolean;
     note?: string;
   }>;
+  /**
+   * The RAW kill set outside the diagonal, whole. R43#2: annotations used to
+   * WAIVE these, so "clean off-diagonal" meant "every red test was
+   * whitelisted". They annotate now and waive nothing.
+   */
+  offDiagonalFailures: Array<{ file: string; fullName: string; annotation: string | null }>;
+  specificityClean: boolean;
   problems: string[];
 }
 
@@ -151,7 +158,11 @@ export interface FiringArtifact {
   firedCount: number;
   registeredCount: number;
   problems: string[];
+  /** SENSITIVITY — clause 6's frozen word FIRING, and all it ever meant. */
   allFired: boolean;
+  /** SPECIFICITY — reported, deciding nothing. Requiring it would mint a condition. */
+  specificityClean: boolean;
+  offDiagonalKillCount: number;
 }
 
 /**

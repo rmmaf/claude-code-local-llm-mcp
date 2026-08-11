@@ -283,12 +283,47 @@ describe("the mutation harness evaluator", () => {
     ]);
     const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: allRed } });
     const pair = pairOf(out, "m-alpha");
-    expect(pair?.outcome).toBe("fired"); // the diagonal alone WOULD have accepted it
-    expect(pair?.fired).toBe(false); // but specificity does not
-    expect(pair?.problems.join(" ")).toContain("undeclared collateral");
+    // SENSITIVITY is what clause 6's frozen word FIRING asks, and it holds.
+    expect(pair?.outcome).toBe("fired");
+    expect(pair?.fired).toBe(true);
+    // SPECIFICITY is separate, reported, and NOT established here — which is
+    // the honest reading of a mutation that reddened a sibling control.
+    expect(pair?.specificityClean).toBe(false);
+    expect(pair?.offDiagonalFailures.map((f) => f.fullName)).toContain("suite beta");
+    expect(out.specificityClean).toBe(false);
   });
 
-  it("REFUSES collateral OUTSIDE the six — a broad mutation is not a clean firing", () => {
+  it("RECORDS collateral outside the six and lets an ANNOTATION explain, never waive", () => {
+    // R43#2: annotations used to convert a red test to OK, so "clean
+    // off-diagonal" meant "every red test was whitelisted". Now the kill set is
+    // whole, specificity is reported separately, and clause 6's FIRING —
+    // sensitivity — is what `fired` means.
+    const spills = report([
+      t("suite alpha", "alpha", "failed", [assertionAt(6)]),
+      t("suite beta", "beta", "passed"),
+      t("other suite unrelated", "unrelated", "failed", [assertionAt(9)]),
+    ]);
+    const annotated = [
+      { ...M_ALPHA, collateral: [{ fullName: "other suite unrelated", reason: "shares the predicate" }] },
+      M_BETA,
+    ];
+    const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: spills } }, annotated);
+    const pair = pairOf(out, "m-alpha");
+    expect(pair?.fired).toBe(true); // sensitivity: the diagonal fired
+    expect(pair?.specificityClean).toBe(false); // and the annotation did NOT hide it
+    expect(pair?.offDiagonalFailures).toHaveLength(1);
+    expect(pair?.offDiagonalFailures[0]?.annotation).toBe("shares the predicate");
+    expect(out.specificityClean).toBe(false);
+    expect(out.offDiagonalKillCount).toBe(1);
+  });
+
+  it("names a STALE annotation — one that describes a test which did not fail", () => {
+    const stale = [{ ...M_ALPHA, collateral: [{ fullName: "suite beta", reason: "never fails" }] }, M_BETA];
+    const out = evaluate(BOTH_FIRE, stale);
+    expect(pairOf(out, "m-alpha")?.problems.join(" ")).toContain("stale annotation");
+  });
+
+  it("still records collateral when NOTHING was annotated", () => {
     // R40#1/#2: specificity used to be checked only across the registered
     // controls, so a mutation reddening unrelated tests in the same file, or a
     // worker crash reddening something else, read as a clean kill.
@@ -298,9 +333,14 @@ describe("the mutation harness evaluator", () => {
       t("other suite unrelated", "unrelated", "failed", [assertionAt(9)]),
     ]);
     const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: spills } });
-    expect(pairOf(out, "m-alpha")?.outcome).toBe("fired");
-    expect(pairOf(out, "m-alpha")?.fired).toBe(false);
-    expect(pairOf(out, "m-alpha")?.problems.join(" ")).toContain("other suite unrelated");
+    const pair = pairOf(out, "m-alpha");
+    expect(pair?.outcome).toBe("fired");
+    // Un-annotated collateral is recorded exactly like annotated collateral —
+    // the annotation was never what made it visible, and R43#2 removed the only
+    // thing it ever did, which was to make it acceptable.
+    expect(pair?.specificityClean).toBe(false);
+    expect(pair?.offDiagonalFailures.map((f) => f.fullName)).toContain("other suite unrelated");
+    expect(pair?.offDiagonalFailures.every((f) => f.annotation === null)).toBe(true);
   });
 
   it("accepts collateral that was DECLARED, with its reason, and only that", () => {

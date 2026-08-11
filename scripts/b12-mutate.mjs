@@ -186,15 +186,17 @@ export const REGISTRY = [
     },
     kind: "historical",
     why: "counts instead of populations — the control's own comment says the slug COUNT grows 1→2 here, so a count reads nothing",
-    // Five, and every one is a `classifyRun` test. The mutation rewrites that
-    // function's coverage predicate, so its own suite moves with it. Five of
-    // 162 is a narrow blast radius, which is the fact the declaration records.
+    // ANNOTATIONS, not waivers (R43#2). The first version of these said "a
+    // classifyRun test — the mutated predicate is inside its subject" five
+    // times, which is unfalsifiable boilerplate: it is true of any test of any
+    // mutated function and explains nothing. Review supplied the mechanism I
+    // had not looked for, and it is one mechanism, stated once and shared.
     collateral: [
-      { fullName: "the B12 harness keeps a budget timeout as a censored observation, not an invalid one", reason: "a classifyRun test — the mutated predicate is inside its subject" },
-      { fullName: "the B12 harness refuses an arm the CLI abandoned partway, however much it had already done", reason: "a classifyRun test — the mutated predicate is inside its subject" },
-      { fullName: "the B12 harness gives a failure the same verdict however late it happened", reason: "a classifyRun test — the mutated predicate is inside its subject" },
-      { fullName: "the B12 harness does not censor a child that finished, whatever the timer says", reason: "a classifyRun test — the mutated predicate is inside its subject" },
-      { fullName: "the B12 harness names every outcome, so an unhandled combination cannot become a default", reason: "a classifyRun test — the mutated predicate is inside its subject" },
+      { fullName: "the B12 harness keeps a budget timeout as a censored observation, not an invalid one", reason: "MECHANISM: its fixture calls classify() with coveredSlugs=[a,b,c] against writtenSlugs=[a]; the mutation reads that valid SUBSET as outside coverage and poisons the run before the test's own outcome assertion is reached" },
+      { fullName: "the B12 harness refuses an arm the CLI abandoned partway, however much it had already done", reason: "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion" },
+      { fullName: "the B12 harness gives a failure the same verdict however late it happened", reason: "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion" },
+      { fullName: "the B12 harness does not censor a child that finished, whatever the timer says", reason: "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion" },
+      { fullName: "the B12 harness names every outcome, so an unhandled combination cannot become a default", reason: "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion" },
     ],
     subject: {
       path: "scripts/b12-run.mjs",
