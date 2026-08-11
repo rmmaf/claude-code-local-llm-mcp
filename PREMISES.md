@@ -1861,6 +1861,24 @@ defect, and it pinned four of them in place.
     sustained rule and the give-up branch are untouched. No delta existed
     when this was written: the probe refused at replicate 1, treatment,
     before any pair completed, and that refusal transcript is the evidence.
+- **Pre-declared, 2026-08-11, before any run exists — clause 6's "SHOWN
+  FIRING" is satisfied by MACHINE-PRODUCED evidence, and only by that.**
+  The frozen text requires the six negative controls be *shown FIRING*. The
+  audit computer checked that they were *PASSING*, which is strictly weaker: a
+  control gutted to assert nothing keeps its title and passes. Closing that is a
+  **correction** — the code reaching the sentence it already claimed to
+  implement — and corrections owe no amendment. But one residue is real and is
+  settled here rather than argued away: a demonstration recorded BY HAND in
+  `FINDINGS.md` is also a showing, and thirty such demonstrations exist. Reading
+  a committed artifact instead NARROWS how "shown" may be satisfied.
+  That narrowing is declared now, before the first scored observation, with the
+  same standing as the two decisions below and provable by the same `git log -p`.
+  Concretely: clause 6 fails unless `evidence/<runId>.b12.firing.json` is
+  committed, names the attestation's own `subjectCommit`, covers exactly
+  `CONTROL_TESTS`, records every pair FIRED over a green unmutated baseline, and
+  binds to subject bytes the audit recomputes at that commit. Post-data this
+  question would be unanswerable; the audit's own comment says the quiet part —
+  *before the first scored observation these are free*.
 - **Pre-declared, 2026-08-11, before any run exists — TWO OWNER DECISIONS on
   what this measurement is allowed to be.** Both were put and answered AFTER the
   reachability estimate below was on the table and BEFORE the first paid

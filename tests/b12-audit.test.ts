@@ -38,6 +38,7 @@ import {
   suiteRunRefusal,
   workingTreeDirtOutsideEvidence,
   type AuditFacts,
+  type FiringEvidence,
   type Git,
   type SuiteAttestation,
 } from "../src/cost/b12/audit.js";
@@ -101,6 +102,20 @@ const LOCKFILE_TEXT = `{"name":"b12-scratch","lockfileVersion":3,"packages":{}}\
  * than passing over. Only the fence has to be real here; what the audit
  * compares is the canonical digest of what lies between the markers.
  */
+/**
+ * Stand-ins for the mutation harness's six subjects. The scratch repo has no
+ * `src/**` of its own — it is a copy of `tests/fixtures/b12-run/` — so the
+ * bytes clause 6's firing evidence binds to have to be created here, before the
+ * registration commit, exactly as the emission fences are.
+ *
+ * They are deliberately NOT the real subjects' paths: those are `src/cost/**`
+ * and `scripts/b12-run.mjs`, which are exactly `PINNED_PATHS`, and creating
+ * them here put the scratch repo's own commits under clause 5's pinned-path
+ * machinery — fifteen tests went red on offenders that were fixture scaffolding.
+ * The audit only requires the paths be READABLE at the base commit.
+ */
+const FIRING_SUBJECTS = [1, 2, 3, 4, 5, 6].map((n) => `harness-subjects/s${n}.ts`);
+
 const FENCED_TOOL_TEXT = [
   "export const standIn = 1;",
   "// b12:emission-begin",
@@ -125,6 +140,40 @@ function attestationOf(subjectCommit: string, over: Partial<SuiteAttestation> = 
     tests: CONTROL_TESTS.map(({ file, fullName }) => ({ file, fullName, status: "passed" })),
     ...over,
   };
+}
+
+function firingOf(baseCommit: string, over: Partial<FiringEvidence> = {}): FiringEvidence {
+  return {
+    schema: "b12-firing/1",
+    baseCommit,
+    controlsEvaluated: CONTROL_TESTS.map(({ file, fullName }) => ({ file, fullName })),
+    baseline: { allGreen: true, problems: [] },
+    pairs: CONTROL_TESTS.map((control, i) => ({
+      id: `m${i + 1}`,
+      control: { file: control.file, fullName: control.fullName },
+      fired: true,
+      detail: "assertion failed inside the control's own body",
+    })),
+    // One subject per pair: the audit REQUIRES it, because an artifact that
+    // omits `subjects` would otherwise bind to no bytes at all.
+    subjects: CONTROL_TESTS.map((_, i) => ({
+      id: `m${i + 1}`,
+      path: `src/cost/subject-${i + 1}.ts`,
+      sha256AtBase: "j".repeat(64),
+    })),
+    problems: [],
+    allFired: true,
+    ...over,
+  };
+}
+
+/** The recomputation the audit performs over `firingOf`'s subjects, agreeing. */
+function firingSubjectsAgreeing(): Array<{ path: string; claimed: string | null; recomputed: string | null }> {
+  return CONTROL_TESTS.map((_, i) => ({
+    path: `src/cost/subject-${i + 1}.ts`,
+    claimed: "j".repeat(64),
+    recomputed: "j".repeat(64),
+  }));
 }
 
 function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
@@ -173,6 +222,13 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
         atRegistration: "c".repeat(64),
         atSubject: "c".repeat(64),
       })),
+      // The default facts describe a harness matrix in which every one of the
+      // six controls was shown FIRING on the very tree the attestation names.
+      // Clause 6's frozen word is FIRING; passing is strictly weaker, since a
+      // gutted control keeps its title and passes.
+      firing: firingOf("s".repeat(40)),
+      firingSha256: "g".repeat(64),
+      firingSubjectsAtBase: firingSubjectsAgreeing(),
     },
     toolSrcSha256: "u".repeat(64),
     ...over,
@@ -638,6 +694,13 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
       await fs.mkdir(path.join(root, path.dirname(rel)), { recursive: true });
       await fs.writeFile(path.join(root, rel), FENCED_TOOL_TEXT, "utf8");
     }
+    // Clause 6's FIRING item needs subject bytes to bind to, born BEFORE the
+    // registration commit for the same reason the fences are: the artifact
+    // claims a digest at its base commit, and the audit recomputes it there.
+    for (const rel of FIRING_SUBJECTS) {
+      await fs.mkdir(path.join(root, path.dirname(rel)), { recursive: true });
+      await fs.writeFile(path.join(root, rel), `export const subject = ${JSON.stringify(rel)};\n`, "utf8");
+    }
     await hooks.seed?.(root);
     // Manifest B sealed in the SAME act as A — byte-identical blob, which is
     // what `open-b` will hold the real register to.
@@ -660,7 +723,34 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
       JSON.stringify(attestation, null, 2) + "\n",
       "utf8"
     );
-    commitAll(root, "suite attestation");
+    // 2b. the firing matrix, on the SAME subject the attestation names. Clause
+    // 6's frozen word is SHOWN FIRING, and the checks above it only establish
+    // PASSING — a gutted control keeps its title and passes.
+    const showAt = (rel: string): string => {
+      const r = spawnSync("git", ["show", `${subject}:${rel}`], { cwd: root, encoding: "utf8" });
+      return sha256(r.stdout ?? "");
+    };
+    const firing = {
+      schema: "b12-firing/1" as const,
+      baseCommit: subject,
+      controlsEvaluated: CONTROL_TESTS.map(({ file, fullName }) => ({ file, fullName })),
+      baseline: { allGreen: true, problems: [] },
+      pairs: CONTROL_TESTS.map((control, i) => ({
+        id: `m${i + 1}`,
+        control: { file: control.file, fullName: control.fullName },
+        fired: true,
+        detail: "assertion failed inside the control's own body",
+      })),
+      subjects: FIRING_SUBJECTS.map((rel, i) => ({ id: `m${i + 1}`, path: rel, sha256AtBase: showAt(rel) })),
+      problems: [],
+      allFired: true,
+    };
+    await fs.writeFile(
+      path.join(root, "evidence", "replay-01.b12.firing.json"),
+      JSON.stringify(firing, null, 2) + "\n",
+      "utf8"
+    );
+    commitAll(root, "suite attestation and firing matrix");
     return { root, registration, afterEmit, subject };
   }
 
@@ -1216,4 +1306,150 @@ describe("a verdict emitted without a committed audit", () => {
     // grammar, which the frozen text does not ask for.
     expect(typeof result.verdict).toBe("string");
   }, 60_000);
+});
+
+/**
+ * Clause 6's frozen word is SHOWN FIRING. Every check that predates these is
+ * about the six controls PASSING, which is strictly weaker: a control gutted to
+ * assert nothing keeps its title and passes. R38#2 — implementing the word the
+ * clause already uses is a correction, so none of these is a seventh condition
+ * and `voidConditions` gains no entry.
+ */
+describe("clause 6 — the word FIRING", () => {
+  const firingReason = (facts: AuditFacts): string[] =>
+    decideAudit(facts).reasons.filter((r) => r.startsWith("clause 6:"));
+
+  it("is CLEAN when every control was shown firing on the attested tree", () => {
+    expect(decideAudit(factsOf()).verdict).toBe("clean");
+  });
+
+  it("VOIDS when there is no committed firing evidence at all", () => {
+    const facts = factsOf();
+    const out = decideAudit({ ...facts, clause6: { ...facts.clause6, firing: null, firingSubjectsAtBase: [] } });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("PASSING but not FIRING");
+    expect(out.reasons.join(" ")).toContain("a gutted control passes");
+  });
+
+  it("VOIDS, naming the pair, when one control did not fire", () => {
+    const facts = factsOf();
+    const pairs = firingOf("s".repeat(40)).pairs.map((p, i) =>
+      i === 2 ? { ...p, fired: false, detail: "the control is passed under its own mutation — it did not fire" } : p
+    );
+    const out = decideAudit({
+      ...facts,
+      clause6: { ...facts.clause6, firing: firingOf("s".repeat(40), { pairs, allFired: false }) },
+    });
+    expect(out.verdict).toBe("void");
+    expect(firingReason(facts).length).toBe(0); // the DEFAULT facts carry no clause-6 reason
+    expect(out.reasons.join(" ")).toContain("NOT shown firing under m3");
+  });
+
+  it("VOIDS when the matrix ran on a tree the attestation does not name", () => {
+    const facts = factsOf();
+    const out = decideAudit({
+      ...facts,
+      clause6: { ...facts.clause6, firing: firingOf("z".repeat(40)) },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("not the one attested");
+  });
+
+  it("VOIDS when the matrix skipped a control the clause requires", () => {
+    // R39#1: `allFired` quantifies over the control list the HARNESS was
+    // handed, so a five-control matrix is still allFired:true. The six-ness is
+    // decided here, where CONTROL_TESTS lives.
+    const facts = factsOf();
+    const short = firingOf("s".repeat(40));
+    const out = decideAudit({
+      ...facts,
+      clause6: {
+        ...facts.clause6,
+        firing: { ...short, controlsEvaluated: short.controlsEvaluated.slice(1), pairs: short.pairs.slice(1) },
+      },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("never evaluated a required control");
+  });
+
+  it("VOIDS when the matrix evaluated something the clause does not list", () => {
+    const facts = factsOf();
+    const base = firingOf("s".repeat(40));
+    const out = decideAudit({
+      ...facts,
+      clause6: {
+        ...facts.clause6,
+        firing: {
+          ...base,
+          controlsEvaluated: [...base.controlsEvaluated, { file: "tests/cost-meter.test.ts", fullName: "a stranger" }],
+        },
+      },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("a control the clause does not list");
+  });
+
+  it("VOIDS when the evidence's claimed subject bytes are not the bytes its base commit carries", () => {
+    // R29's question asked of the second producer: an artifact nobody
+    // recomputes can name any tree it likes.
+    const facts = factsOf();
+    const out = decideAudit({
+      ...facts,
+      clause6: {
+        ...facts.clause6,
+        firingSubjectsAtBase: firingSubjectsAgreeing().map((s, i) =>
+          i === 0 ? { ...s, recomputed: "k".repeat(64) } : s
+        ),
+      },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("did not run against the bytes it names");
+  });
+
+  it("VOIDS an artifact that names no subject bytes at all — it binds to nothing", () => {
+    const facts = factsOf();
+    const out = decideAudit({
+      ...facts,
+      clause6: {
+        ...facts.clause6,
+        firing: firingOf("s".repeat(40), { subjects: [] }),
+        firingSubjectsAtBase: [],
+      },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("cannot say WHICH tree the controls fired on");
+  });
+
+  it("VOIDS when the unmutated baseline was not green", () => {
+    const facts = factsOf();
+    const out = decideAudit({
+      ...facts,
+      clause6: {
+        ...facts.clause6,
+        firing: firingOf("s".repeat(40), { baseline: { allGreen: false, problems: ["baseline: x is failed"] } }),
+      },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("proves nothing by going red");
+  });
+
+  it("VOIDS on a problem the harness itself reported", () => {
+    const facts = factsOf();
+    const out = decideAudit({
+      ...facts,
+      clause6: {
+        ...facts.clause6,
+        firing: firingOf("s".repeat(40), { problems: ["duplicate mutation id \"m1\""] }),
+      },
+    });
+    expect(out.verdict).toBe("void");
+    expect(out.reasons.join(" ")).toContain("duplicate mutation id");
+  });
+
+  it("publishes the firing pairs and both subject digests as canonical inputs", () => {
+    const inputs = auditInputs(factsOf());
+    expect(inputs["clause6.firingPath"]).toBe("evidence/replay-01.b12.firing.json");
+    expect(inputs["clause6.firingPairs"]).toContain("m1=fired");
+    expect(inputs["clause6.firingSubjects"]).toContain("src/cost/subject-1.ts");
+  });
 });

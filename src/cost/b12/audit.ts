@@ -270,6 +270,11 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause6.conformanceHashes",
   "clause6.lockfileClaimed",
   "clause6.lockfileAtSubject",
+  "clause6.firingPath",
+  "clause6.firingSha256",
+  "clause6.firingBaseCommit",
+  "clause6.firingPairs",
+  "clause6.firingSubjects",
   "tool.srcSha256",
 ];
 
@@ -437,9 +442,54 @@ export interface AuditFacts {
      * attestation could name any tree it liked and still satisfy clause 6.
      */
     lockfileAtSubject: string | null;
+    /**
+     * `evidence/<runId>.b12.firing.json` at HEAD — the mutation harness's
+     * matrix. Null when absent or unparseable.
+     *
+     * THIS IS NOT A SEVENTH CONDITION. The frozen clause says the six controls
+     * must be shown **FIRING**; everything above this line checks that they are
+     * **PASSING**, which is strictly weaker, because a gutted control that keeps
+     * its title and asserts nothing passes. Reading firing evidence implements
+     * the word the clause already uses. Widening past it would owe a pre-data
+     * amendment; closing the gap between the code and the sentence the code
+     * claims to implement is a correction, and corrections owe none.
+     *
+     * That the evidence must be MACHINE-produced does narrow how "shown" may be
+     * satisfied — a hand demonstration in `FINDINGS.md` is also a showing. That
+     * narrowing is declared pre-data in `PREMISES.md`, ordered by `git log -p`,
+     * exactly as the two owner decisions of 2026-08-11 were.
+     */
+    firing: FiringEvidence | null;
+    firingSha256: string | null;
+    /**
+     * Each firing subject's blob sha256 RECOMPUTED at the evidence's own
+     * `baseCommit`, beside the digest the artifact claims. R29's lesson applied
+     * to a second producer: the attestation recorded a lockfile hash nobody ever
+     * checked, so a copied artifact could name any tree it liked. These are the
+     * same question asked of the harness.
+     */
+    firingSubjectsAtBase: Array<{ path: string; claimed: string | null; recomputed: string | null }>;
   };
   /** Content sha of this tool's own SOURCE at HEAD; null when absent. */
   toolSrcSha256: string | null;
+}
+
+/**
+ * `evidence/<runId>.b12.firing.json` — what `scripts/b12-mutate.mjs` writes.
+ *
+ * Only the fields clause 6 reads are typed here. The artifact carries more (the
+ * off-diagonal matrix, the bookends, the run budget) and a reader is meant to
+ * have it; the audit deliberately reads the narrow set it can decide on.
+ */
+export interface FiringEvidence {
+  schema: "b12-firing/1";
+  baseCommit: string;
+  controlsEvaluated: Array<{ file: string; fullName: string }>;
+  baseline: { allGreen: boolean; problems: string[] };
+  pairs: Array<{ id: string; control: { file: string; fullName: string }; fired: boolean; detail: string }>;
+  subjects: Array<{ id: string; path: string; sha256AtBase: string | null }>;
+  problems: string[];
+  allFired: boolean;
 }
 
 /** `evidence/<runId>.b12.suite.json` — what `--attest-suite` writes. */
@@ -709,6 +759,78 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
     }
   }
 
+  // ---- clause 6, the word FIRING ------------------------------------------
+  // Everything above checks the six controls are PASSING. Passing is strictly
+  // weaker: a control gutted to `expect(true).toBe(true)` keeps its title and
+  // passes. The frozen text says SHOWN FIRING, so the gap being closed here is
+  // between the code and the sentence the code already claims to implement —
+  // a correction, not a seventh condition. Every reason below is reported as a
+  // failure of that existing phrase, and `voidConditions` gains no entry.
+  const fire = facts.clause6.firing;
+  if (fire === null) {
+    reasons.push(
+      `clause 6: no committed firing evidence (evidence/${facts.runId}.b12.firing.json) — the six controls can be shown PASSING but not FIRING, and a gutted control passes`
+    );
+  } else {
+    if (att !== null && fire.baseCommit !== att.subjectCommit) {
+      reasons.push(
+        `clause 6: the firing evidence names base ${fire.baseCommit.slice(0, 12)} and the attestation names subject ${att.subjectCommit.slice(0, 12)} — the controls were shown firing on a tree that is not the one attested`
+      );
+    }
+    // Coverage is compared against CONTROL_TESTS here rather than inside the
+    // harness, because `allFired` quantifies over whatever control list the
+    // harness was handed (R39#1). This is where the clause's own list lives.
+    const key = (c: { file: string; fullName: string }): string => JSON.stringify([c.file, c.fullName]);
+    const evaluated = new Set(fire.controlsEvaluated.map(key));
+    for (const control of CONTROL_TESTS) {
+      if (!evaluated.has(key(control))) {
+        reasons.push(`clause 6: the firing evidence never evaluated a required control: ${control.fullName}`);
+      }
+    }
+    for (const c of fire.controlsEvaluated) {
+      if (!CONTROL_TESTS.some((k) => key(k) === key(c))) {
+        reasons.push(`clause 6: the firing evidence evaluated a control the clause does not list: ${c.fullName}`);
+      }
+    }
+    if (!fire.baseline.allGreen) {
+      reasons.push(
+        `clause 6: the firing evidence's unmutated baseline was not green (${fire.baseline.problems.slice(0, 2).join("; ")}) — a control already red proves nothing by going red`
+      );
+    }
+    for (const pair of fire.pairs) {
+      if (pair.fired !== true) {
+        reasons.push(`clause 6: control NOT shown firing under ${pair.id}: ${pair.detail}`);
+      }
+    }
+    for (const p of fire.problems) reasons.push(`clause 6: the firing evidence reports a problem: ${p}`);
+    if (fire.allFired !== true && fire.pairs.every((p) => p.fired)) {
+      // Belt and braces: the summary disagreeing with the pairs is itself a
+      // reason, because an artifact that contradicts itself decides nothing.
+      reasons.push("clause 6: the firing evidence says allFired is false while every pair reads fired — it contradicts itself");
+    }
+    // R29's question, asked of the second producer: a copied artifact could
+    // name any tree it liked unless the digests it claims are recomputed. And
+    // the digests must be REQUIRED, not merely checked when present: an
+    // artifact that simply omits `subjects` would otherwise skip this whole
+    // section and bind to nothing at all.
+    for (const pair of fire.pairs) {
+      if (!fire.subjects.some((s) => s.id === pair.id)) {
+        reasons.push(
+          `clause 6: the firing evidence names no subject bytes for ${pair.id} — a matrix that binds to no bytes cannot say WHICH tree the controls fired on`
+        );
+      }
+    }
+    for (const s of facts.clause6.firingSubjectsAtBase) {
+      if (s.recomputed === null) {
+        reasons.push(`clause 6: the firing evidence's base commit carries no readable ${s.path} — the bytes it names cannot be checked`);
+      } else if (s.claimed !== s.recomputed) {
+        reasons.push(
+          `clause 6: the firing evidence claims ${s.path} at ${String(s.claimed).slice(0, 12)} and its base commit carries ${s.recomputed.slice(0, 12)} — the matrix did not run against the bytes it names`
+        );
+      }
+    }
+  }
+
   return { verdict: reasons.length === 0 ? "clean" : "void", reasons };
 }
 
@@ -824,6 +946,17 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     ),
     "clause6.lockfileClaimed": orNone(typeof att?.lockfileSha256 === "string" ? att.lockfileSha256 : null),
     "clause6.lockfileAtSubject": orNone(facts.clause6.lockfileAtSubject),
+    "clause6.firingPath": `evidence/${facts.runId}.b12.firing.json`,
+    "clause6.firingSha256": orNone(facts.clause6.firingSha256),
+    "clause6.firingBaseCommit": orNone(facts.clause6.firing?.baseCommit ?? null),
+    "clause6.firingPairs": joined(
+      (facts.clause6.firing?.pairs ?? []).map((p) => `${p.id}=${p.fired ? "fired" : "NOT-FIRED"}`)
+    ),
+    "clause6.firingSubjects": joined(
+      facts.clause6.firingSubjectsAtBase.map(
+        (s) => `${s.path}=${String(s.claimed).slice(0, 12)}/${String(s.recomputed).slice(0, 12)}`
+      )
+    ),
     "tool.srcSha256": orNone(facts.toolSrcSha256),
   };
 }
@@ -1352,6 +1485,39 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     }
   }
 
+  // ---- clause 6: the committed FIRING evidence ----------------------------
+  // Same shape as the attestation above, and read the same way: from HEAD, by
+  // its own name, parsed narrowly, fail-closed on anything it cannot answer.
+  const firingRel = `evidence/${runId}.b12.firing.json`;
+  const firingShow = git(["show", `HEAD:${firingRel}`]);
+  let firing: FiringEvidence | null = null;
+  let firingSha256: string | null = null;
+  if (firingShow.ok) {
+    firingSha256 = sha256(firingShow.out);
+    try {
+      const candidate = JSON.parse(firingShow.out) as FiringEvidence;
+      if (
+        candidate.schema === "b12-firing/1" &&
+        typeof candidate.baseCommit === "string" &&
+        Array.isArray(candidate.controlsEvaluated) &&
+        Array.isArray(candidate.pairs) &&
+        Array.isArray(candidate.subjects)
+      ) {
+        firing = candidate;
+      }
+    } catch {
+      firing = null;
+    }
+  }
+  const firingSubjectsAtBase =
+    firing === null
+      ? []
+      : firing.subjects.map((s) => ({
+          path: s.path,
+          claimed: s.sha256AtBase,
+          recomputed: blobSha(git, firing.baseCommit, s.path),
+        }));
+
   return {
     runId,
     head: headSha,
@@ -1401,6 +1567,9 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       subjectIsAncestor,
       nonEvidenceDrift,
       lockfileAtSubject: attestation === null ? null : blobSha(git, attestation.subjectCommit, "package-lock.json"),
+      firing,
+      firingSha256,
+      firingSubjectsAtBase,
       // Reported beside the verdict, never inside it.
       conformance: CONFORMANCE_FILES.map((file) => ({
         file,
