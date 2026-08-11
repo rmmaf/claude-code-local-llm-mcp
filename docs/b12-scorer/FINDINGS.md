@@ -1878,6 +1878,64 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R38 — the first round against a PLAN, and the first NO-SHIP — adjudicated 2026-08-11
+
+Every round before this one reviewed a diff. R38 reviewed
+`docs/b12-scorer/MUTATION-HARNESS-PLAN.md` — a design for the mutation harness
+R23 left open — **before a line of it was written**, and returned NO-SHIP on all
+five claims it was pointed at. Four confirmed whole, one in part. The cheapest
+round in the file: it killed a design instead of a day of code.
+
+**R38#2 is the round, and it is the NINTH instance of the pattern.** The plan
+argued that reading firing evidence in `voidConditions` would mint a voiding
+condition and owe a pre-data amendment, so the artifact should stay advisory.
+That was a rationalisation. Clause 6's frozen text says the six controls must be
+**shown FIRING**; the audit computer checks that they are **PASSING**
+(`audit.ts:632-675`). Passing is strictly weaker — a gutted control that keeps
+its title and asserts nothing passes. The gap was never between the code and a
+condition someone wanted to add; it was between the code and the frozen sentence
+the code already claimed to implement. By this project's own distinction that
+makes it a **correction**, and corrections owe no amendment. Firing evidence
+moves inside clause 6's existing evaluator, reported as failure of the existing
+phrase. No seventh condition, no new clause.
+
+One residual is settled rather than argued away: requiring the evidence be
+*machine-produced* does narrow how "shown" may be satisfied, since a hand
+demonstration in this file is also a showing. That narrowing is declared
+**pre-data** in `PREMISES.md`, ordered by `git log -p`, exactly as the two owner
+decisions of 2026-08-11 were.
+
+**R38#1** — the three-part firing predicate admitted a mutant keyed to the
+diagonal test's own fixture id: builds, kills only `C_i`, proves nothing. The
+sub-point was better than the headline: a failure in `beforeEach` is attributed
+by vitest to the test, so a mutation that breaks only shared setup reads as a
+firing while the control's own assertions never run. Six conditions now, adding
+*the kill is located in the named test's body* and *the mutant names no test-only
+identifier*.
+
+**R38#3** — the plan promised per-pair bookends and then budgeted seven runs.
+Arithmetic that cannot hold, mine. Worse half: restoring the subject's BYTES does
+not restore the TREE — `tsc` does not delete obsolete output, so a restored
+source with a stale `dist/` still runs the mutant, and a later pair failing on an
+earlier pair's residue records as a firing. Pristine is now PROVED (`git clean
+-xfd -e node_modules`, `git status --porcelain` empty, `dist/` deleted and
+rebuilt) and the budget is stated honestly at 1 + 2N = 13.
+
+**R38#5** — the vacuous seventh control was theatre. The plan called living
+outside `CONFORMANCE_FILES` a virtue; outside is precisely what makes it travel a
+different lookup path, so it cannot catch an acceptance rule inverted for
+registered controls only. Replaced by synthetic `--reporter=json` fixtures pushed
+through the *same* parsing and acceptance functions — including the duplicate
+`fullName` case the audit already treats as unanswerable (`audit.ts:672`).
+
+**R38#4 — CONFIRMED AS A LIMITATION, RECOMMENDATION DECLINED.** Replaying each
+control's historical bug does show only that it is a regression test for the
+defect it was born from. True. But the recommendation — *require* each control to
+kill several non-equivalent mutants — argues for a goal the clause does not set
+and would mint exactly the condition R38#2 refuses to mint. Declined. The
+invariant-derived operator catalogue ships instead as **reported, deciding
+nothing**, naming surviving mutants beside the six that decide.
+
 ### THE TARGETED ROUNDS (R35, R36, R37) — adjudicated 2026-08-11
 
 **Why these three are different, and what that says about the twenty-seven
