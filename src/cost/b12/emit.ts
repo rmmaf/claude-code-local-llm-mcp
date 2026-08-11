@@ -36,6 +36,7 @@ import {
   collectAuditFacts,
   decideAudit,
   parseGitAudit,
+  runEmittedArtifacts,
   type CollectorOptions,
 } from "./audit.js";
 import type { GitAudit } from "./types.js";
@@ -275,8 +276,16 @@ export async function emitRun(
     scoringCommandActual: options.scoringCommandActual ?? null,
   });
 
-  const counterfactualPath = path.join(repoRoot, "evidence", `${runId}.b12.counterfactual.json`);
-  const resultPath = path.join(repoRoot, "evidence", `${runId}.b12.result.json`);
+  // ONE LIST, not two spellings (R37#4). Clause 5's re-emission escape asks
+  // about the artifacts re-emission PRODUCES; deriving the write paths from
+  // the same function is what stops a third emitted artifact from existing
+  // without the escape ever hearing about it.
+  const [counterfactualRel, resultRel] = runEmittedArtifacts(runId);
+  if (counterfactualRel === undefined || resultRel === undefined) {
+    throw new Error("runEmittedArtifacts must name the counterfactual and the result, in that order");
+  }
+  const counterfactualPath = path.join(repoRoot, counterfactualRel);
+  const resultPath = path.join(repoRoot, resultRel);
   writeFileSync(counterfactualPath, JSON.stringify(counterfactual, null, 2) + "\n", "utf8");
   writeFileSync(resultPath, JSON.stringify(result, serializeResult, 2) + "\n", "utf8");
 

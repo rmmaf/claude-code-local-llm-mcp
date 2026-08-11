@@ -2018,6 +2018,40 @@ much review; it was where it pointed.
   Eighth occurrence of the recurring pattern, and the first INVERTED one: the
   rule was written down, and the code narrowed it with an argument.
 
+- **R37#4 (medium) — PARTLY UPHELD, and the part declined is written down.**
+  The frozen sentence is *"VOID if … changed after the first scored
+  observation **without every existing evidence/ artifact for the run being
+  re-emitted from the archive**"*, and the escape asked about exactly two
+  hard-coded paths.
+
+  **The literal reading is declined, with a reason.** The frozen artifact
+  inventory for a run contains manifest A, manifest B, the preflight, the
+  pilot, every snapshot, every `obs-<NN>/`, the counterfactual and the result.
+  The register seals both manifests CREATE-ONLY (`wx`), and clause 4 makes a
+  commit touching manifest A its own VOID. So "re-emit every existing evidence/
+  artifact" cannot be satisfied by any lawful sequence: under the literal
+  reading the escape is unobtainable and half the sentence is dead letter. The
+  reading applied is the only one under which it has content — the population
+  is what re-emission PRODUCES.
+
+  **The part upheld is the real one.** The list was TWO HARD-CODED STRINGS,
+  disconnected from the emission that writes them. That is R24's defect again
+  in miniature: a population named by hand is not a population. `emitRun` now
+  derives its own two write paths from `runEmittedArtifacts`, so escape and
+  emission are ONE list and a third emitted artifact cannot appear without
+  landing in it. The reading itself is now an audit INPUT
+  (`clause5.reemission.reading` and `.population`), so a replayer can see it
+  and argue with it instead of inferring it from two strings.
+
+  **Control shown firing:** adding a third path to the population makes the
+  binding test report `expected [ …(2) ] to deeply equal [
+  'replay-01.b12.MUTANT.json', …(2) ]`.
+
+  **His call, not mine, and not taken:** narrowing the frozen quantifier to
+  "every DERIVED artifact" is a pre-data amendment. None exists, so the
+  sentence and the code agree in effect and disagree in wording, and that is
+  recorded rather than papered over.
+
 ### TWENTY-SEVENTH POST-IMPLEMENTATION ROUND (R34) — adjudicated 2026-08-10
 
 One finding, confirmed and REPRODUCED — the seventh round on the same surface,

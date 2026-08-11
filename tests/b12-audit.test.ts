@@ -30,6 +30,7 @@ import {
   evidenceArtifactPath,
   parseGitAudit,
   EMISSION_FENCED_FILES,
+  runEmittedArtifacts,
   PINNED_PATHS,
   SAFE_RUN_ID,
   PREREG_FROZEN_COMMIT,
@@ -1138,4 +1139,39 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     expect(artifact.inputs["clause6.conformanceHashes"]).toMatch(/tests\/cost-meter\.test\.ts .*DIFFERS/);
     expect(artifact.inputs["clause6.conformanceHashes"]).toMatch(/session-token-walk\.test\.ts .*same/);
   }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+// R37#4 — clause 5's re-emission escape asked about TWO HARD-CODED PATHS. The
+// frozen quantifier is "every existing evidence/ artifact for the run being
+// re-emitted from the archive"; read literally over the frozen inventory it is
+// unsatisfiable (the two manifests are sealed create-only, and a commit
+// touching manifest A is its own VOID), so the reading applied is "what
+// re-emission PRODUCES". What is fixed here is the disconnection: the escape's
+// population is now the emission's own write list, and this control fires the
+// moment those two drift apart.
+// ---------------------------------------------------------------------------
+
+describe("the re-emission escape's population", () => {
+  it("is EXACTLY what the emission creates — one list, not two spellings", async () => {
+    const root = tempRoot();
+    await fs.cp(FIXTURE, root, { recursive: true });
+    initRepo(root);
+    const evidenceDir = path.join(root, "evidence");
+    const listing = async (): Promise<Set<string>> => new Set(await fs.readdir(evidenceDir));
+
+    const before = await listing();
+    await emitRun(root, "replay-01");
+    const created = [...(await listing())].filter((f) => !before.has(f)).sort();
+
+    // A third emitted artifact, or one that stopped being written, breaks this
+    // — which is the whole point. R24 already paid for naming files by hand.
+    expect(created).toEqual(runEmittedArtifacts("replay-01").map((r) => path.basename(r)).sort());
+  }, 60_000);
+
+  it("and the READING is on the artifact's face, not only in a comment", () => {
+    // A rule a replayer cannot see is a rule only its author can check.
+    expect(AUDIT_INPUT_KEYS).toContain("clause5.reemission.population");
+    expect(AUDIT_INPUT_KEYS).toContain("clause5.reemission.reading");
+  });
 });

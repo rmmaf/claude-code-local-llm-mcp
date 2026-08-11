@@ -252,6 +252,8 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause5.commitsTouchingPinned",
   "clause5.offenders",
   "clause5.excusedByReemission",
+  "clause5.reemission.population",
+  "clause5.reemission.reading",
   "clause5.emission.files",
   "clause5.emission.atAnchor",
   "clause5.emission.atHead",
@@ -761,6 +763,11 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     ),
     "clause5.offenders": joined(facts.clause5.offenders),
     "clause5.excusedByReemission": joined(facts.clause5.excusedByReemission),
+    // WHICH ARTIFACTS THE ESCAPE ASKED ABOUT, and under which reading of the
+    // frozen quantifier (R37#4). Two hard-coded strings could not be replayed
+    // or argued with; a named population and a stated reading can be.
+    "clause5.reemission.population": joined(runEmittedArtifacts(facts.runId)),
+    "clause5.reemission.reading": REEMISSION_READING,
     // The emission item, on the artifact's face. `atHead` appears even with no
     // anchor — a fence that stopped being readable is worth seeing while it is
     // still free to fix, and it decides nothing until the first score.
@@ -892,13 +899,38 @@ const blobSha = (git: Git, ref: string, rel: string): string | null => {
 };
 
 /**
- * The artifacts clause 5's re-emission escape asks about. Hoisted out of the
- * probe so the emission fence can ask the SAME question on the SAME terms —
- * one escape, one list, never two spellings that can drift apart.
+ * THE ARTIFACTS THE EMISSION WRITES, and therefore the ones clause 5's
+ * re-emission escape can ask about. `emitRun` derives its own two write paths
+ * from this function, so the escape's population and the emission's output are
+ * ONE list. A third emitted artifact cannot appear without landing here, which
+ * is the defect R24 already paid for once: naming files by hand is not the
+ * same as covering the population.
+ *
+ * WHICH READING OF THE FROZEN QUANTIFIER THIS IS, said out loud (R37#4). The
+ * text is "without every existing evidence/ artifact for the run being
+ * RE-EMITTED FROM THE ARCHIVE". Read literally over the frozen inventory it is
+ * unsatisfiable: that inventory contains the two sealed manifests, and the
+ * register seals them create-only (`wx`) with a commit touching manifest A
+ * being its own VOID — so "re-emit every artifact" cannot be done, the escape
+ * can never be obtained, and half the sentence becomes dead letter. The
+ * reading applied here is the only one under which the escape has content:
+ * the population is what re-emission PRODUCES. It is recorded on the
+ * artifact's face so a replayer can see it and disagree, rather than having to
+ * infer it from two hard-coded strings.
+ *
+ * STILL OPEN, and it is the project owner's call, not this function's:
+ * narrowing the frozen quantifier to "every DERIVED artifact" is a pre-data
+ * amendment. Until one exists, the sentence and the code disagree in wording
+ * and agree in effect.
  */
-function reemissionArtifacts(runId: string): readonly string[] {
+export function runEmittedArtifacts(runId: string): readonly string[] {
   return [`evidence/${runId}.b12.counterfactual.json`, `evidence/${runId}.b12.result.json`];
 }
+
+/** The reading above, verbatim on the artifact, because a rule a replayer
+ * cannot see is a rule only the author can check. */
+export const REEMISSION_READING =
+  "population = what re-emission PRODUCES (emitRun's own write paths). The frozen quantifier says every existing evidence/ artifact for the run; read over the frozen inventory that is unsatisfiable, because the two manifests are sealed create-only and a commit touching manifest A is itself a VOID. Narrowing the quantifier is a pre-data amendment and none exists.";
 
 /** The commit that INTRODUCED a path: the last line of `git log --diff-filter=A`. */
 function introducingCommit(git: Git, rel: string): string | null {
@@ -1159,7 +1191,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       // The re-emission escape, PER ARTIFACT: an offender is excused only if
       // EVERY artifact of the run was re-committed with the offender already
       // in its history — merge-base(offender, artifactCommit) == offender.
-      const artifacts = reemissionArtifacts(runId);
+      const artifacts = runEmittedArtifacts(runId);
       for (const offender of offenders) {
         let excused = true;
         for (const rel of artifacts) {
@@ -1195,7 +1227,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       const fence = fencedEmission(show.out);
       return { file: true, sha256: fence === null ? null : sha256(fence) };
     };
-    const artifacts = reemissionArtifacts(runId);
+    const artifacts = runEmittedArtifacts(runId);
     for (const rel of emissionFencedFiles) {
       // Recorded ALWAYS — a reader can see the fence on the artifact's face
       // before any observation is scored, which is when a broken pin is still
