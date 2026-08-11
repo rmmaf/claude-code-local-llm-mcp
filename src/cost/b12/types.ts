@@ -322,6 +322,15 @@ export interface ObservationTerms {
   sLo: number;
   /** `S_o` at the observed segment. */
   sHi: number;
+  /**
+   * The same two sums with NO `clientTruncationCap` — accumulated from the
+   * ledger's `unitsLoUncapped`/`unitsUncapped` in the same credited branch, so
+   * the uncapped bracket is summed from rows priced whole rather than
+   * reconstructed from byte totals. Feeds `B12Result.uncappedBracket` and
+   * nothing else.
+   */
+  sLoUncapped: number;
+  sHiUncapped: number;
   /** `unitsAddedByInstallation` restricted to the segments this window originated. */
   oO: number;
   /**
@@ -548,6 +557,19 @@ export interface B12Result {
    */
   rHiPlus: Evaluable<number>;
   /**
+   * The bracket priced with NO `clientTruncationCap` — the second half of
+   * `voidConditions` 8, which is VOID "if the artifact does not carry both the
+   * capped and uncapped brackets".
+   *
+   * REPORTED, DECIDING NOTHING: its PRESENCE is the requirement. The frozen
+   * bracket is `[R_lo, R_hi]` and detector 2 asks for that one bracket
+   * published capped AND uncapped — not for an uncapped variant of `rHiPlus`,
+   * the strata, the recomputations, the hold or the deliveries, and none
+   * exists. `cappedVsUncapped` below stays what it was: a byte-sum pair on the
+   * artifact's face, deciding nothing.
+   */
+  uncappedBracket: { rLo: number; rHi: number };
+  /**
    * What the run could and could not account for, on the artifact's face.
    *
    * Published whether or not `rHiPlus` was evaluable, and especially when it was
@@ -736,6 +758,22 @@ export interface RunManifest {
 /** A pre/post-observation snapshot, as archived. `requestIds` is the full list. */
 export interface SnapshotFacts {
   ts: string | null;
+  /**
+   * WHOSE snapshot this is — stamped by the harness since the R7 debt closed,
+   * and CHECKED by the archive reader against the directory, the record, the
+   * run AND the filename's phase. A stamp that disagrees, that names the
+   * wrong phase, or that is ABSENT all make `identityIntact` false and refuse
+   * terms (R13 superseded the reading where absence was merely reported —
+   * stripping the stamp is a swapper's cheapest move, and it was also the
+   * only one that cost nothing).
+   */
+  identity: {
+    runId: string | null;
+    taskId: string | null;
+    arm: string | null;
+    sessionId: string | null;
+    phase: string | null;
+  } | null;
   slugsWalked: number | null;
   files: number | null;
   requestIds: string[];
@@ -809,6 +847,16 @@ export interface ArchivedObservation {
    * scoring the surviving subset (the diff review's third finding).
    */
   telemetryIntact: boolean;
+  /**
+   * FALSE when the CAPTURE could not say which rows are this arm's, or found
+   * its lineage short (R36): a telemetry prefix that no longer matches the
+   * bytes the acceptance boundary was taken over, a malformed row in the arm's
+   * own segment, a transcript file that could not be READ. Distinct from
+   * `telemetryIntact`, which is about the identity source's bytes agreeing
+   * with the sealed copy — these bytes can agree perfectly and still be
+   * unattributable. Same consequence: `assemble` refuses terms.
+   */
+  attributionIntact: boolean;
   /**
    * FALSE the moment the evidence's own identity does not bind to the
    * directory it was scored from — `observation.json` or `archive.json` naming
@@ -973,6 +1021,10 @@ export interface CounterfactualObservation {
   subagentShare: Evaluable<SubagentShare>;
   requestsPerSegment: Array<{ thread: string; segment: number; requests: number }>;
   rateKeys: string[];
+  /** `(A_t + S_t,lo) / Σ_admitted (A + S_lo)` — the task's share of the
+   * metric's OWN denominator, deciding lo horizon (the registered R7#12
+   * formula; FINDINGS.md). A covariate beside the manifest's cap constant,
+   * reported and deciding nothing. Null on a non-admitted observation. */
   perTaskDenominatorShare: number | null;
   binaryVersion: string | null;
   binarySha256: string | null;
@@ -1016,6 +1068,16 @@ export interface B12RunResult extends B12Result {
    * NEVER empty silently: an unchecked clause published as no-void is the shape
    * `voidConditions` 8's handling refuses one clause over. */
   uncheckedClauses: string[];
+  /**
+   * Whether this verdict is FINAL, by the pre-data rule in `PREMISES.md`: the
+   * scoring invocation requires a committed clause 4–6 audit artifact, and
+   * "a verdict emitted without one is not final". False whenever
+   * `uncheckedClauses` is non-empty — one source, so a gap of any origin
+   * marks the verdict provisional. Carried explicitly because until R37 the
+   * artifact and the CLI published an ordinary `hold`/`fall`/`open` with
+   * nothing on it saying the clauses behind it were never checked.
+   */
+  final: boolean;
   gitAudit: GitAudit;
   declarationFailures: DeclarationFailure[];
   /**

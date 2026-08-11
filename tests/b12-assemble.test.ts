@@ -6,8 +6,10 @@
  *
  * Every guard is shown FIRING and shown NOT firing — a check that cannot fail
  * is worse than no check (`DECISIONS.md`), and the F24 pass's oracle style is
- * kept: build ONE coherent default in which only the known-always-fired check
- * (clause 8 — `FINDINGS.md` F23) fires, then break exactly one thing per test.
+ * kept: build ONE coherent default on which NO archive-level check fires —
+ * clause 8 went LIVE with F23's repair and the default archive satisfies it —
+ * then break exactly one thing per test. The default's void is the
+ * ARITHMETIC's own (clause 3: one admitted observation against the frozen 20).
  */
 
 import { describe, expect, it } from "vitest";
@@ -33,265 +35,21 @@ import type {
   RunArchive,
   RunlogRow,
 } from "../src/cost/b12/types.js";
-import { at } from "./b12-fixtures.js";
-
-const RUN = "run-01";
-const H64 = (c: string): string => c.repeat(64);
-const SHA40 = (c: string): string => c.repeat(40);
-
-// ---------------------------------------------------------------------------
-// builders — one coherent default, broken one field at a time
-// ---------------------------------------------------------------------------
-
-function billed(
-  requestId: string,
-  sessionId: string,
-  ms: number,
-  over: {
-    write1h?: number;
-    write5m?: number;
-    model?: string;
-    sidechain?: boolean;
-    content?: unknown[];
-  } = {}
-): RawRecord {
-  const write1h = over.write1h ?? 0;
-  const write5m = over.write5m ?? 0;
-  return {
-    type: "assistant",
-    requestId,
-    sessionId,
-    uuid: `u-${sessionId}-${requestId}`,
-    parentUuid: null,
-    isSidechain: over.sidechain ?? false,
-    timestamp: at(ms),
-    message: {
-      model: over.model ?? "test-model",
-      content: over.content ?? [],
-      usage: {
-        input_tokens: 0,
-        cache_creation_input_tokens: write1h + write5m,
-        cache_read_input_tokens: 0,
-        output_tokens: 0,
-        cache_creation: { ephemeral_1h_input_tokens: write1h, ephemeral_5m_input_tokens: write5m },
-      },
-    },
-  } as RawRecord;
-}
-
-/** A tool-result record whose payload is taken VERBATIM — no invocation id unless given. */
-function toolResultRec(sessionId: string, toolUseId: string, ms: number, payload: unknown): RawRecord {
-  return {
-    type: "user",
-    uuid: `res-${sessionId}-${toolUseId}`,
-    parentUuid: null,
-    sessionId,
-    timestamp: at(ms),
-    message: { content: [{ type: "tool_result", tool_use_id: toolUseId }] },
-    toolUseResult: payload,
-  } as RawRecord;
-}
-
-function telemetryRow(ms: number, over: Partial<TelemetryRecord> = {}): TelemetryRecord {
-  return {
-    ts: at(ms),
-    tool: "gate",
-    bytes_raw: 5_000,
-    bytes_returned: 1_000,
-    turns_collapsed: 0,
-    latency_ms: 10,
-    ...over,
-  };
-}
-
-function recordOf(taskId: string, sessionId: string, over: Partial<ObservationRecord> = {}): ObservationRecord {
-  const components = {
-    claudeMd: "h-claude",
-    memory: "h-mem",
-    settings: "h-set",
-    settingsLocal: "h-setl",
-    mcpConfigPassed: "h-mcp",
-    policyBlob: "h-pol",
-    allowlist: null,
-  };
-  return {
-    taskId,
-    arm: "treatment",
-    sessionId,
-    runId: RUN,
-    started: at(-500),
-    outcome: "completed",
-    valid: true,
-    invalidReasons: [],
-    censored: false,
-    originatedRequestIds: [`rq-${taskId}`],
-    accepted: true,
-    acceptanceExpectedExit: 0,
-    baseCommit: SHA40("0"),
-    endCommit: SHA40("1"),
-    treeHashAtStart: SHA40("2"),
-    binaryVersion: "2.1.221",
-    binarySha256: H64("b"),
-    mcpConfigPassedSha256: H64("c"),
-    mcpConfigPinned: H64("c"),
-    policyBlobSha256: H64("d"),
-    installedChars: { value: 310.8, adapter: "310.8", probeRunId: "probe-1" },
-    memorySnapshotSha256: H64("e"),
-    instructionHashes: { pre: { ...components }, post: { ...components } },
-    ...over,
-  };
-}
-
-interface ObsOver {
-  attempt?: number;
-  records?: RawRecord[];
-  telemetry?: TelemetryRecord[];
-  record?: Partial<ObservationRecord> | null;
-  snapshotBefore?: ArchivedObservation["snapshotBefore"];
-  snapshotAfter?: ArchivedObservation["snapshotAfter"];
-  invocationIds?: string[];
-  identityIntact?: boolean;
-}
-
-function obsOf(taskId: string, over: ObsOver = {}): ArchivedObservation {
-  const attempt = over.attempt ?? 1;
-  const sessionId = `sess-${taskId}-${attempt}`;
-  // A re-run is a FRESH session with fresh request ids — reusing the first
-  // attempt's would be the sibling inheritance `admissionRule` 4 refuses, and
-  // the disposition table's own oracle proves it does.
-  const rqId = attempt === 1 ? `rq-${taskId}` : `rq-${taskId}-r${attempt}`;
-  const records = over.records ?? [billed(rqId, sessionId, 0, { write1h: 1_000 })];
-  const dirName = `obs-${taskId}-treatment${attempt === 1 ? "" : `-r${attempt}`}`;
-  const source = `evidence/${RUN}/${dirName}/telemetry.jsonl`;
-  const files = [`/fake/${sessionId}.jsonl`];
-  const record =
-    over.record === null
-      ? null
-      : recordOf(taskId, sessionId, { originatedRequestIds: [rqId], ...(over.record ?? {}) });
-  const transcript = transcriptFromRecords(records, { files, skippedLines: 0, sessionId });
-  // The sealed inventory the capture would have written — derived from the
-  // same records, so the fixture is coherent and clause 19's equality holds
-  // unless a test breaks it on purpose.
-  const sealedIds =
-    over.invocationIds ??
-    [...new Set(
-      transcript.toolResults
-        .filter(isLocalToolResult)
-        .map((r) => r.invocationId)
-        .filter((id): id is string => id !== null)
-    )].sort();
-  return {
-    taskId,
-    arm: "treatment",
-    attempt,
-    dir: `evidence/${RUN}/${dirName}`,
-    telemetryIntact: true,
-    identityIntact: over.identityIntact ?? true,
-    evidenceCommitted: true,
-    record,
-    lineageRecords: records,
-    lineageFiles: files,
-    transcript,
-    identified: identify(source, over.telemetry ?? []),
-    telemetrySource: source,
-    invocationIds: sealedIds,
-    snapshotBefore:
-      over.snapshotBefore !== undefined
-        ? over.snapshotBefore
-        : { ts: at(-1_000), slugsWalked: 4, files: 2, requestIds: ["rq-prior"] },
-    snapshotAfter:
-      over.snapshotAfter !== undefined
-        ? over.snapshotAfter
-        : {
-            ts: at(60_000),
-            slugsWalked: 4,
-            files: 3,
-            requestIds: ["rq-prior", ...(record?.originatedRequestIds ?? [])],
-          },
-    problems: [],
-  };
-}
-
-function taskOf(id: string, over: Partial<ManifestTask> = {}): ManifestTask {
-  return {
-    id,
-    promptSha256: H64("f"),
-    baseCommit: SHA40("0"),
-    verificationStratum: "types-only",
-    expectedSubagentStratum: "solo",
-    acceptance: ["node -e ok"],
-    acceptanceExpectedExit: 0,
-    verificationCommands: ["npx tsc --noEmit"],
-    gateCategory: "types",
-    repairMaxRounds: 3,
-    fileScope: ["src/"],
-    ...over,
-  };
-}
-
-const PINNED = {
-  claudeCodeVersion: "2.1.221",
-  claudeBinarySha256: H64("b"),
-  ratesSha256: H64("a"),
-  clientTruncationCap: 30_000,
-  pacingCacheWriteShareCeiling: 1,
-  perTaskDenominatorShareCap: 0.5,
-  scoringCommand: `node dist/cost/b12/emit.js ${RUN}`,
-  memorySnapshotSha256: H64("e"),
-  mcpConfigSha256: H64("c"),
-};
-
-function runlogOf(observations: readonly ArchivedObservation[]): RunlogRow[] {
-  return observations.map((o, i) => ({
-    ts: at(i * 100_000),
-    runId: RUN,
-    taskId: o.taskId,
-    arm: o.arm,
-    sessionId: o.record?.sessionId ?? "",
-    outcome: o.record?.outcome ?? "completed",
-    valid: o.record?.valid === true,
-    accepted: o.record?.accepted ?? null,
-    originated: o.record?.originatedRequestIds.length ?? 0,
-  }));
-}
-
-interface ArchiveOver {
-  tasks?: ManifestTask[];
-  observations?: ArchivedObservation[];
-  runlogRows?: RunlogRow[];
-  corruptLines?: number;
-  pinned?: Record<string, unknown>;
-  git?: Partial<RunArchive["git"]>;
-  register?: RunArchive["register"];
-  evidenceCommitted?: RunArchive["evidenceCommitted"];
-  ratesSha256?: string;
-  problems?: string[];
-}
-
-function archiveOf(over: ArchiveOver = {}): RunArchive {
-  const tasks = over.tasks ?? [taskOf("t1")];
-  const observations = over.observations ?? tasks.map((t) => obsOf(t.id));
-  return {
-    runId: RUN,
-    manifest: { runId: RUN, tasks, pinned: { ...PINNED, ...(over.pinned ?? {}) }, abPairs: [], raw: {} },
-    manifestSha256: H64("9"),
-    observations,
-    runlog: { rows: over.runlogRows ?? runlogOf(observations), corruptLines: over.corruptLines ?? 0 },
-    rates: DEFAULT_RATES,
-    ratesSha256: over.ratesSha256 ?? H64("a"),
-    git: {
-      manifestBlobSha256: "blob-in-head",
-      manifestMatchesHead: true,
-      manifestCommitsAfterStart: [],
-      ratesSha256AtFrozenCommit: H64("a"),
-      problems: [],
-      ...(over.git ?? {}),
-    },
-    register: over.register ?? { priorRuns: [], discrepancies: [] },
-    evidenceCommitted: over.evidenceCommitted ?? { state: "clean", dirty: [] },
-    problems: over.problems ?? [],
-  };
-}
+import {
+  archiveOf,
+  at,
+  billed,
+  H64,
+  obsOf,
+  PINNED,
+  recordOf,
+  RUN,
+  runlogOf,
+  SHA40,
+  taskOf,
+  telemetryRow,
+  toolResultRec,
+} from "./b12-fixtures.js";
 
 const AUDIT_CLEAN: GitAudit = { ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } };
 
@@ -314,15 +72,22 @@ const cfOf = (out: ReturnType<typeof assembleRun>, taskId: string, attempt = 1) 
 // ---------------------------------------------------------------------------
 
 describe("the default archive — one coherent value, and what fires on it", () => {
-  it("only clause 8 fires, and it names F23 — the artifact cannot yet carry two brackets", () => {
+  it("NO archive check fires — clause 8 is live and satisfied — and the void is the arithmetic's clause 3", () => {
     const out = assemble(archiveOf());
     const fired = out.result.archiveChecks.filter((c) => c.fired);
-    expect(fired.map((c) => c.clause)).toEqual(["voidConditions 8 — measured cap and both brackets"]);
-    expect(fired[0]!.detail).toMatch(/F23/);
-    // The archive-level void OVERRIDES the arithmetic's (clause 3 would have
-    // named the 1-of-20 count): a void the arithmetic cannot see is still a void.
+    expect(fired).toEqual([]);
+    // F23 repaired: clause 8 is a LIVE predicate now — present on the face,
+    // NOT fired, because the cap is pinned finite-positive and the artifact
+    // carries both brackets with four finite bounds.
+    const c8 = check(out.result, "voidConditions 8");
+    expect(c8.fired).toBe(false);
+    expect(c8.detail).toMatch(/both brackets/);
+    expect(Number.isFinite(out.result.uncappedBracket.rLo)).toBe(true);
+    expect(Number.isFinite(out.result.uncappedBracket.rHi)).toBe(true);
+    // With no archive-level void left standing, the verdict falls through to
+    // the ARITHMETIC: clause 3 names the 1-of-20 count.
     expect(out.result.verdict).toBe("void");
-    expect(out.result.voidClause).toMatch(/^voidConditions 8/);
+    expect(out.result.voidClause).toMatch(/^voidConditions 3/);
   });
 
   it("the single observation is scored, admitted, and its report fields are the hand-derived ones", () => {
@@ -338,6 +103,60 @@ describe("the default archive — one coherent value, and what fires on it", () 
     expect(cf.perTaskDenominatorShare).toBe(1);
     expect(out.result.rLo).toBeCloseTo((0 - 168) / 2_000, 12);
     expect(out.result.admitted).toBe(1);
+  });
+
+  it("perTaskDenominatorShare is the share of the METRIC'S denominator — A + S_lo, never A alone", () => {
+    // The seventh round (R7#12): the frozen name is "per-task DENOMINATOR
+    // share" and the metric's denominator is A + S — but this computed
+    // aO / ΣaO. Two observations with EQUAL A and UNEQUAL S expose the
+    // difference: A-only says 0.5 and 0.5; the registered formula
+    // (A_t + S_t,lo) / Σ(A + S_lo), deciding lo horizon, does not. A
+    // covariate — reported beside the manifest's cap constant, deciding
+    // nothing.
+    const id = "aaaaaaaa-1111-2222-3333-444444444444";
+    const out = assemble(
+      archiveOf({
+        tasks: [taskOf("t1"), taskOf("t2")],
+        observations: [
+          obsOf("t1", {
+            records: [
+              billed("rq-t1", "sess-t1-1", 0, {
+                write1h: 1_000,
+                content: [{ type: "tool_use", id: "tu-t1", name: "mcp__local-coder__gate" }],
+              }),
+              toolResultRec("sess-t1-1", "tu-t1", 500, {
+                content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }],
+              }),
+              // The saving is priced against the request FOLLOWING the call —
+              // without one, the row cannot credit and S stays 0.
+              billed("rq-t1b", "sess-t1-1", 1_000, { write1h: 100 }),
+            ],
+            telemetry: [telemetryRow(600, { invocation_id: id })],
+            record: { originatedRequestIds: ["rq-t1", "rq-t1b"] },
+          }),
+          obsOf("t2"),
+        ],
+      })
+    );
+    const cf1 = cfOf(out, "t1")!;
+    const cf2 = cfOf(out, "t2")!;
+    // The premise, asserted rather than assumed: t1 credits one collapsed
+    // gate call, t2 credits nothing — unequal S parcels.
+    expect(cf1.disposition).toBe("scored");
+    expect(cf2.disposition).toBe("scored");
+    expect(cf1.sLo).toBeGreaterThan(0);
+    expect(cf2.sLo).toBe(0);
+    // Hand-derived: sLo_1 = (5,000 − 1,000 saved chars) / 3.7 × 2.0 (1h lo).
+    const s1 = (4_000 / 3.7) * 2.0;
+    expect(cf1.sLo).toBeCloseTo(s1, 9);
+    const denom = cf1.aO + s1 + cf2.aO;
+    expect(cf1.perTaskDenominatorShare).toBeCloseTo((cf1.aO + s1) / denom, 12);
+    expect(cf2.perTaskDenominatorShare).toBeCloseTo(cf2.aO / denom, 12);
+    // The A-only formula would put t1's share at aO/(ΣaO); the registered one
+    // shifts the S-heavy task's share up, and the shares still sum to 1.
+    const aOnlyShare = cf1.aO / (cf1.aO + cf2.aO);
+    expect(cf1.perTaskDenominatorShare!).toBeGreaterThan(aOnlyShare + 0.05);
+    expect(cf1.perTaskDenominatorShare! + cf2.perTaskDenominatorShare!).toBeCloseTo(1, 12);
   });
 
   it("the registered conventions are labelled on the artifact, not buried", () => {
@@ -887,7 +706,9 @@ describe("the archive-level clauses — each fired and each held", () => {
     const zero = assemble(
       archiveOf({
         observations: [
-          obsOf("t1", { snapshotBefore: { ts: at(0), slugsWalked: 0, files: 0, requestIds: [] } }),
+          obsOf("t1", {
+            snapshotBefore: { ts: at(0), identity: null, slugsWalked: 0, files: 0, requestIds: [] },
+          }),
         ],
       })
     );
@@ -927,6 +748,42 @@ describe("the archive-level clauses — each fired and each held", () => {
     expect(check(noVersion.result, "voidConditions 7").fired).toBe(true);
     const noCeiling = assemble(archiveOf({ pinned: { pacingCacheWriteShareCeiling: undefined } }));
     expect(check(noCeiling.result, "voidConditions 20").fired).toBe(true);
+  });
+
+  it("admissionRule 7 sweeps EVERY manifest task's scope — coverage, grammar, and the not_started too", () => {
+    // NOT firing: the fixture default (src/tools/) is disjoint from the
+    // instrument set — that is why the default narrowed.
+    expect(check(assemble(archiveOf()).result, "admissionRule 7").fired).toBe(false);
+    // Firing on a task with NO observation: "no manifest task's file scope"
+    // is the whole pre-registered list, never only the admitted ones.
+    const notStarted = assemble(
+      archiveOf({ tasks: [taskOf("t1"), taskOf("t9", { fileScope: ["src/"] })], observations: [obsOf("t1")] })
+    );
+    const c = check(notStarted.result, "admissionRule 7");
+    expect(c.fired).toBe(true);
+    expect(c.detail).toMatch(/t9: file scope src\/ intersects the instrument set at src\/cost\/\*\*/);
+    // The grammar rejects what it cannot place, and coverage catches the
+    // rest: ancestry tricks, absolutes, Windows backslashes into a protected
+    // directory, and globs outside a trailing /**.
+    for (const scope of ["src/../src/cost/**", "/etc/passwd", "src\\cost\\", "src/*.ts", "evidence/"]) {
+      const out = assemble(archiveOf({ tasks: [taskOf("t1", { fileScope: [scope] })] }));
+      expect(check(out.result, "admissionRule 7").fired).toBe(true);
+    }
+  });
+
+  it("voidConditions 8 fires on an absent, zero, negative or infinite cap — the firing half of the live predicate", () => {
+    // Literally `!(Number.isFinite(cap) && cap > 0)`, plus a non-finite
+    // bracket bound. The NOT-firing half is the default-archive oracle at the
+    // top of this file; here the cap goes bad four ways and each one fires.
+    const absent = assemble(archiveOf({ pinned: { clientTruncationCap: undefined } }));
+    expect(check(absent.result, "voidConditions 8").fired).toBe(true);
+    expect(check(absent.result, "voidConditions 8").detail).toMatch(/NO measured clientTruncationCap/);
+    const zero = assemble(archiveOf({ pinned: { clientTruncationCap: 0 } }));
+    expect(check(zero.result, "voidConditions 8").fired).toBe(true);
+    const negative = assemble(archiveOf({ pinned: { clientTruncationCap: -1 } }));
+    expect(check(negative.result, "voidConditions 8").fired).toBe(true);
+    const infinite = assemble(archiveOf({ pinned: { clientTruncationCap: Number.POSITIVE_INFINITY } }));
+    expect(check(infinite.result, "voidConditions 8").fired).toBe(true);
   });
 });
 

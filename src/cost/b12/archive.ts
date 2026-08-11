@@ -47,7 +47,8 @@ import type {
   SnapshotFacts,
 } from "./types.js";
 
-const sha256 = (bytes: string | Buffer): string =>
+/** Exported since the audit computer landed — one hash, one spelling. */
+export const sha256 = (bytes: string | Buffer): string =>
   createHash("sha256").update(bytes).digest("hex");
 
 /**
@@ -58,6 +59,49 @@ const sha256 = (bytes: string | Buffer): string =>
  */
 export const sameCommittedText = (a: string, b: string): boolean =>
   a.replace(/\r\n/g, "\n").trim() === b.replace(/\r\n/g, "\n").trim();
+
+/**
+ * THE EVIDENCE CLAUSE 5 IS COMPUTED FROM, AS ONE CANONICAL DIGEST.
+ *
+ * The audit's clause-5 facts are derived from committed FILES — the runlog
+ * (the row order and the sessionId join), the counterfactual (which
+ * observation is the freeze anchor, by `aPlusSPositive`), and every
+ * per-observation archive under `evidence/<runId>/`. R22 bound a committed
+ * audit to HEAD by refusing any change OUTSIDE `evidence/**` and re-hashing
+ * the four evidence inputs the artifact named. That left this set free: an
+ * observation appended after a clean audit changes the anchor's population
+ * and the archive being scored, while the audit's verdict rides along
+ * unchanged (R24). So the set is enumerated, hashed, and recorded — one key
+ * the emission-time binding can recompute.
+ *
+ * Canonical form: paths repo-relative with `/`, SORTED, one `"<path>
+ * <sha256>"` line each, newline-joined; the digest is the sha256 of that
+ * text. Paths are inside the hashed lines ON PURPOSE — an added or removed
+ * file moves the digest exactly as an edited one does. `null` means git
+ * could not enumerate, which is a refusal at the caller, never "no evidence".
+ */
+export function runEvidenceDigest(
+  runId: string,
+  git: (args: string[]) => { ok: boolean; out: string }
+): { paths: string[]; digest: string | null } {
+  const listed = git(["ls-tree", "-r", "--name-only", "HEAD", "--", `evidence/${runId}/`]);
+  if (!listed.ok) return { paths: [], digest: null };
+  const paths = listed.out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
+  for (const rel of [`evidence/${runId}.b12.runlog.jsonl`, `evidence/${runId}.b12.counterfactual.json`]) {
+    if (git(["cat-file", "-e", `HEAD:${rel}`]).ok) paths.push(rel);
+  }
+  paths.sort();
+  const lines: string[] = [];
+  for (const rel of paths) {
+    const show = git(["show", `HEAD:${rel}`]);
+    if (!show.ok) return { paths, digest: null };
+    lines.push(`${rel} ${sha256(show.out)}`);
+  }
+  return { paths, digest: sha256(lines.join("\n")) };
+}
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -172,8 +216,18 @@ export function narrowObservationRecord(raw: unknown): ObservationRecord | null 
 /** Narrow a snapshot file. `requestIds` is the FULL list — origination replays over it. */
 export function narrowSnapshot(raw: unknown): SnapshotFacts | null {
   if (!isObject(raw)) return null;
+  const identity = isObject(raw.identity)
+    ? {
+        runId: str(raw.identity.runId),
+        taskId: str(raw.identity.taskId),
+        arm: str(raw.identity.arm),
+        sessionId: str(raw.identity.sessionId),
+        phase: str(raw.identity.phase),
+      }
+    : null;
   return {
     ts: str(raw.ts),
+    identity,
     slugsWalked: int(raw.slugsWalked),
     files: int(raw.files),
     requestIds: strings(raw.requestIds),
@@ -890,6 +944,49 @@ function readObservationDir(
       );
     }
   }
+  // The snapshots joined the binding when the harness started stamping them
+  // (the R7 debt), and they are held to EXACTLY the standard the record and
+  // the archive are held to: a disagreeing stamp is cross-wired evidence, an
+  // ABSENT stamp is an identity that cannot be shown bound, and the PHASE
+  // must be the one the filename claims — `narrowSnapshot` parsed `phase`
+  // from the start while nothing compared it.
+  //
+  // THE LENIENT READING IS SUPERSEDED (R13). Absence used to be a reported
+  // problem only, on the argument that absence is not proof of cross-wiring.
+  // Three things overrule it: the type has always said `identityIntact` goes
+  // false when evidence carries "no identity to check"; `observation.json`
+  // with no `sessionId` was ALREADY an identity problem by that same reading,
+  // so the snapshot was the one member of the binding judged by a softer
+  // rule; and the incentive ran backwards — DELETING a snapshot voids the run
+  // through `voidConditions` 14, while stripping its stamp cost nothing,
+  // making the cheapest tampering the safest.
+  const snapshotBefore = narrowSnapshot(readJson("snapshot-before.json"));
+  const snapshotAfter = narrowSnapshot(readJson("snapshot-after.json"));
+  for (const [name, snap, expectedPhase] of [
+    ["snapshot-before.json", snapshotBefore, "before"],
+    ["snapshot-after.json", snapshotAfter, "after"],
+  ] as const) {
+    if (snap === null) continue; // the missing FILE is its own problem, and clause 14's
+    if (snap.identity === null) {
+      identityProblems.push(`${name} carries no identity stamps — a swapped snapshot cannot be shown bound`);
+      continue;
+    }
+    const wrong: string[] = [];
+    if (snap.identity.taskId !== id.taskId || snap.identity.arm !== id.arm) {
+      wrong.push(`names ${snap.identity.taskId ?? "(absent)"}/${snap.identity.arm ?? "(absent)"} while the directory names ${id.taskId}/${id.arm}`);
+    }
+    if (snap.identity.runId !== runId) {
+      wrong.push(`names run ${snap.identity.runId ?? "(absent)"} while the archive is ${runId}'s`);
+    }
+    if (record !== null && snap.identity.sessionId !== record.sessionId) {
+      wrong.push(`is stamped for session ${snap.identity.sessionId ?? "(absent)"} while observation.json names ${record.sessionId}`);
+    }
+    if (snap.identity.phase !== expectedPhase) {
+      wrong.push(`is stamped phase ${snap.identity.phase ?? "(absent)"} while the file is the ${expectedPhase} snapshot`);
+    }
+    if (wrong.length > 0) identityProblems.push(`${name} ${wrong.join("; ")}`);
+  }
+
   const identityIntact = identityProblems.length === 0;
   problems.push(...identityProblems);
 
@@ -927,6 +1024,22 @@ function readObservationDir(
     }
   }
 
+  // R36: THE CAPTURE'S OWN ATTRIBUTION PROBLEMS. These are NOT drift against
+  // the sealed copy — the bytes on disk can match `archive.json` perfectly
+  // while the split between the arm's rows and the acceptance command's is
+  // unknowable, or while the lineage is short a file that could not be read.
+  // `telemetryIntact` is about the identity SOURCE's bytes and cannot carry
+  // them, so they get their own name and the same consequence: an archive that
+  // cannot say which rows are the arm's may not price anything.
+  let attributionIntact = true;
+  if (isObject(archiveJson) && Array.isArray(archiveJson.attributionProblems)) {
+    const found = strings(archiveJson.attributionProblems);
+    if (found.length > 0) {
+      attributionIntact = false;
+      for (const p of found) problems.push(p);
+    }
+  }
+
   const invocationIds =
     isObject(archiveJson) && Array.isArray(archiveJson.invocationIds)
       ? strings(archiveJson.invocationIds)
@@ -938,6 +1051,7 @@ function readObservationDir(
     attempt: id.attempt,
     dir: rel(repoRoot, dir),
     telemetryIntact,
+    attributionIntact,
     identityIntact,
     // Filled by `readRunArchive` from the one `git status` over the run —
     // a per-file check here would be one subprocess per file per observation.
@@ -949,8 +1063,8 @@ function readObservationDir(
     identified: identify(telemetrySource, telemetryRows as TelemetryRecord[]),
     telemetrySource,
     invocationIds,
-    snapshotBefore: narrowSnapshot(readJson("snapshot-before.json")),
-    snapshotAfter: narrowSnapshot(readJson("snapshot-after.json")),
+    snapshotBefore,
+    snapshotAfter,
     problems,
   };
 }

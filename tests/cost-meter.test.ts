@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -30,7 +30,9 @@ import {
 } from "../src/cost/rates.js";
 import type { BilledRequest } from "../src/cost/transcript.js";
 import { listSessionIds, listTranscripts, projectTranscriptDir, readTranscript, sessionFiles } from "../src/cost/transcript.js";
+import { assembleRun } from "../src/cost/b12/assemble.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
+import { archiveOf, billed, obsOf, PINNED, taskOf } from "./b12-fixtures.js";
 import { makeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
@@ -1101,6 +1103,29 @@ describe("telemetry and the counterfactual", () => {
     // not of the join itself.
     const alone = buildCounterfactual(parent, [row], DEFAULT_RATES, buildSessionReport(parent, DEFAULT_RATES));
     expect(alone.byTool[0]?.calls).toBe(1);
+
+    // AND THE CREDITING HALF AT THE SCORING INVOCATION, not one layer below it
+    // (R37#3). voidConditions 6 asks for "a per-session scoring invocation
+    // REFUSING where the full-set invocation credits". The refusing half ran
+    // through `buildCounterfactual` above; the crediting half stopped at
+    // `invocationOwners` returning an empty set, which is an ownership fact and
+    // not a scored one. The FULL-SET invocation is the same rows grouped by
+    // LINEAGE -- these two transcripts are one compaction continuation -- and
+    // it has to be shown crediting the very row the per-session one refuses.
+    const fullSet = buildCounterfactual(
+      parent,
+      [row],
+      DEFAULT_RATES,
+      buildSessionReport(parent, DEFAULT_RATES),
+      invocationOwners([parent, child], lineagesOf([parent, child]))
+    );
+    expect(fullSet.ambiguous).toBe(0);
+    expect(fullSet.refusedRows).toBe(0);
+    expect(fullSet.byTool[0]?.calls).toBe(1);
+    expect(fullSet.unitsTotal).toBeGreaterThan(0);
+    // Withheld on the per-session side, STATED on the full-set side: the two
+    // outcomes the frozen sentence contrasts, both read off a scored result.
+    expect(fullSet.savedFraction).not.toBeNull();
   });
 
   it("withholds the saved fraction rather than reporting one built on timestamps", async () => {
@@ -1729,6 +1754,65 @@ describe("telemetry and the counterfactual", () => {
     expect(gate?.unitsFromSuppression.clampedUncapped).toBe(0);
   });
 
+  it("credits a failed repair row at zero units — clause 6's failed-repair control", async () => {
+    // `voidConditions` 6's FIRST named control, and it had no test until the
+    // audit computer needed to pin its title: a repair that ABORTED writes the
+    // row B16 needs (the request happened) with `bytes_raw: 0,
+    // bytes_returned: 0` — and the meter must CREDIT that row at exactly zero
+    // units, never refuse it, never let it claim a saving, never count it
+    // toward a closure.
+    clock = 0;
+    const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const at = (ms: number): string => new Date(1_700_000_000_000 + ms).toISOString();
+    const file = await writeTranscript(tempRoot(), [
+      assistantRecord("req-1", { write1h: 100 }, {
+        message: {
+          model: "test-model",
+          content: [{ type: "tool_use", id: "tu-1", name: "mcp__local-coder__repair" }],
+          usage: { cache_creation_input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 0 },
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        uuid: "res-1",
+        parentUuid: null,
+        sessionId: "sess-1",
+        timestamp: at(500),
+        message: { content: [{ type: "tool_result", tool_use_id: "tu-1" }] },
+        toolUseResult: { content: [{ type: "text", text: JSON.stringify({ invocation_id: id }) }] },
+      }),
+      assistantRecord("req-2", { write1h: 100 }),
+    ]);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      // The abort row's exact shape, from `runRepair`'s catch path.
+      [{
+        ts: at(500),
+        invocation_id: id,
+        tool: "repair",
+        bytes_raw: 0,
+        bytes_returned: 0,
+        turns_collapsed: 0,
+        latency_ms: 1,
+        detail: { aborted: true, stopped_because: "aborted" },
+      }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+
+    const row = result.rows[0];
+    expect(row?.disposition).toBe("credited"); // a row, never a refusal
+    expect(row?.units).toBe(0);
+    expect(row?.unitsLo).toBe(0);
+    expect(row?.signed).toBe(0);
+    // A failed repair did not close anything, and its row may not say it did.
+    expect(row?.passed).not.toBe(true);
+    const repair = result.byTool[0];
+    expect(repair?.tool).toBe("repair");
+    expect(repair?.unitsTotal).toBe(0);
+  });
+
   it("refuses to credit bytes that could never have reached a context", async () => {
     // The counterfactual world is "the agent ran this through Bash", and Claude
     // Code truncates a tool result at `clientTruncationCap` characters before it
@@ -2111,6 +2195,11 @@ describe("the B12 harness", () => {
       originatedCount: 12,
       slugsBefore: 3,
       slugsAfter: 3,
+      // The covered-vs-written populations, satisfied by default (written is a
+      // subset) so every outcome test above stays about ITS outcome. The rule
+      // fails closed without them; the slug-coverage control fires them.
+      coveredSlugs: ["slug-a", "slug-b", "slug-c"],
+      writtenSlugs: ["slug-a"],
       ...over,
     });
   };
@@ -2386,6 +2475,755 @@ describe("the B12 harness", () => {
     expect([...harness].sort()).toEqual([...meter].filter((r) => !r.startsWith("__norid__")).sort());
   });
 
+  it("the pilot table covers the frozen covariates and its shape guard refuses every aggregate", async () => {
+    // Artifact 4: "No units, no bracket" — read as NO AGGREGATE and NO
+    // bracket, never as a ban on the per-observation unit-valued covariates
+    // the frozen list itself demands. The table's not-applicable rows are the
+    // A/B-only ones, and nothing else.
+    const { PILOT_COVARIATE_TABLE, assertPilotShape, buildPilotRecord, appendPilotRecord } = await import(
+      "../scripts/b12-run.mjs"
+    );
+    expect(PILOT_COVARIATE_TABLE).toHaveLength(17);
+    expect(
+      PILOT_COVARIATE_TABLE.filter((r: { applicability: string }) => r.applicability !== "recorded").map(
+        (r: { covariate: string }) => r.covariate
+      )
+    ).toEqual([
+      "the A/B acceptance 2x2 (concordant/discordant)",
+      "per A/B arm: turns, wall-clock, files read, tool bytes, billed count, ABBA position",
+    ]);
+    // Unit-VALUED per-observation covariates pass…
+    expect(() => assertPilotShape({ observation: { aO: 123 }, telemetry: [{ bytes_raw: 5 }] })).not.toThrow();
+    // …and every aggregate/bracket spelling refuses, at ANY depth.
+    for (const key of ["rLo", "rHi", "rHiPlus", "uncappedBracket", "bracket", "verdict", "strata", "hold"]) {
+      expect(() => assertPilotShape({ nested: { deep: { [key]: 1 } } })).toThrow(/forbidden key/);
+    }
+    // The appender accumulates into the ONE pilot file, table included.
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const record = buildPilotRecord(
+      {
+        taskId: "t1",
+        arm: "treatment",
+        sessionId: "s1",
+        outcome: "completed",
+        valid: true,
+        censored: false,
+        accepted: true,
+        invalidReasons: [],
+      },
+      { telemetry: [], lineage: [] }
+    );
+    await appendPilotRecord(root, "run-p", record);
+    await appendPilotRecord(root, "run-p", { ...record, taskId: "t2" });
+    const file = JSON.parse(await fs.readFile(path.join(root, "evidence", "run-p.b12.pilot.json"), "utf8"));
+    expect(file.schema).toBe("b12-pilot/1");
+    expect(file.observations).toHaveLength(2);
+    expect(file.covariateTable).toEqual(PILOT_COVARIATE_TABLE);
+  });
+
+  it("the pilot append REFUSES rather than dropping an observation written under it", async () => {
+    // R31. The pilot rewrites its one file whole and holds only the SESSION
+    // lock, which is keyed by (runId, taskId, arm) — so two pilot tasks never
+    // exclude each other, both read the same prior state, and the second write
+    // silently drops the first. There is no obs dir, no runlog row and no
+    // commit to reconstruct it from: the loss costs a paid session.
+    //
+    // The seam stands in for the writer the lock CANNOT cover — one that did
+    // not take it. Suppress the re-read and `t9` below is simply gone.
+    const { buildPilotRecord, appendPilotRecord } = await import("../scripts/b12-run.mjs");
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const pilotFile = path.join(root, "evidence", "run-r.b12.pilot.json");
+    const recordFor = (taskId: string) =>
+      buildPilotRecord(
+        {
+          taskId,
+          arm: "treatment",
+          sessionId: `s-${taskId}`,
+          outcome: "completed",
+          valid: true,
+          censored: false,
+          accepted: true,
+          invalidReasons: [],
+        },
+        { telemetry: [], lineage: [] }
+      );
+
+    await appendPilotRecord(root, "run-r", recordFor("t1"));
+
+    let staged: string | null = null;
+    await expect(
+      appendPilotRecord(root, "run-r", recordFor("t2"), {
+        beforeWrite: ({ tmp, atRead }) => {
+          staged = tmp;
+          // ATOMIC INSTALL, asserted where it is observable: the full next
+          // state is already complete on disk under another name, and the
+          // target still holds only what this call read. Structural — it
+          // shows the target is never the half-written one, it does not
+          // reproduce an OS-level torn write.
+          const stagedState = JSON.parse(readFileSync(tmp, "utf8"));
+          expect(stagedState.observations.map((o: { taskId: string }) => o.taskId)).toEqual(["t1", "t2"]);
+          expect(JSON.parse(atRead!).observations).toHaveLength(1);
+          // …and now the other writer completes, inside this call's window.
+          const foreign = JSON.parse(atRead!);
+          foreign.observations.push(recordFor("t9"));
+          writeFileSync(pilotFile, JSON.stringify(foreign, null, 2) + "\n", "utf8");
+        },
+      })
+    ).rejects.toThrow(/changed under this write/);
+
+    // The other observation SURVIVED, and this one is recoverable by hand
+    // instead of being re-run.
+    const onDisk = JSON.parse(await fs.readFile(pilotFile, "utf8"));
+    expect(onDisk.observations.map((o: { taskId: string }) => o.taskId)).toEqual(["t1", "t9"]);
+    expect(staged).not.toBeNull();
+    expect(JSON.parse(readFileSync(staged!, "utf8")).observations.map((o: { taskId: string }) => o.taskId)).toEqual([
+      "t1",
+      "t2",
+    ]);
+  });
+
+  it("the pilot append takes the RUN-wide lock, not the per-task one", async () => {
+    // The run lock's own header already said the session lock cannot serialize
+    // a shared file. The pilot path took only the session lock anyway — the
+    // sixth-and-now-seventh time a rule this repository had written down was
+    // missing at a second site.
+    const { acquireRunlogLock, buildPilotRecord, appendPilotRecord } = await import("../scripts/b12-run.mjs");
+    const root = tempRoot();
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const record = buildPilotRecord(
+      {
+        taskId: "t1",
+        arm: "treatment",
+        sessionId: "s1",
+        outcome: "completed",
+        valid: true,
+        censored: false,
+        accepted: true,
+        invalidReasons: [],
+      },
+      { telemetry: [], lineage: [] }
+    );
+    const held = acquireRunlogLock(path.join(root, "evidence"), "run-l");
+    expect(held.ok).toBe(true);
+    await expect(
+      appendPilotRecord(root, "run-l", record, { lockAttempts: 2, lockWaitMs: 1 })
+    ).rejects.toThrow(/holds this run's evidence lock/);
+    // NOTHING was written while the other writer held the run.
+    expect(existsSync(path.join(root, "evidence", "run-l.b12.pilot.json"))).toBe(false);
+    held.release();
+    await appendPilotRecord(root, "run-l", record, { lockAttempts: 2, lockWaitMs: 1 });
+    expect(
+      JSON.parse(await fs.readFile(path.join(root, "evidence", "run-l.b12.pilot.json"), "utf8")).observations
+    ).toHaveLength(1);
+  });
+
+  it("the registration guard: one act, byte-identical bytes, and a prefix-preserved register", async () => {
+    // voidConditions 1 registers a run as the manifest committed AND its row
+    // written "by the same command" — so the guard proves the SAME introducing
+    // commit, holds the manifest byte-identical across disk/HEAD/registration,
+    // and reads MEASUREMENTS.jsonl by PREFIX, because appends after
+    // registration are lawful and whole-file identity would refuse them.
+    const { registrationGuard } = await import("../scripts/b12-run.mjs");
+    const { execFile: ef } = await import("node:child_process");
+    const { promisify: p } = await import("node:util");
+    const sh = p(ef);
+    const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+
+    const root = tempRoot();
+    await git(root, "init", "-q");
+    await git(root, "config", "user.name", "guard-oracle");
+    await git(root, "config", "user.email", "guard@example.invalid");
+    await git(root, "config", "core.autocrlf", "false");
+    await git(root, "config", "commit.gpgsign", "false");
+
+    const manifestRel = "evidence/run-g.b12.tasks.json";
+    const manifestBytes = `{"runId":"run-g","tasks":[{"id":"t1"}]}\n`;
+    const regRow = `{"ts":"2026-08-09T00:00:00Z","b12_registration":true,"run_id":"run-g"}\n`;
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    await fs.writeFile(path.join(root, manifestRel), manifestBytes, "utf8");
+    await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), regRow, "utf8");
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "the registration act");
+
+    // POSITIVE: one act, coherent everywhere.
+    expect(registrationGuard(root, "run-g", manifestBytes)).toEqual([]);
+
+    // POSITIVE with a lawful post-registration append on disk.
+    await fs.appendFile(path.join(root, "MEASUREMENTS.jsonl"), `{"metric":"later","run_id":"other"}\n`, "utf8");
+    expect(registrationGuard(root, "run-g", manifestBytes)).toEqual([]);
+
+    // NEGATIVE: an unregistered run.
+    expect(registrationGuard(root, "run-h", manifestBytes).join(" ")).toMatch(/0 registration row/);
+
+    // NEGATIVE: a manifest and a row born in SEPARATE commits — two acts.
+    const manifest2 = "evidence/run-i.b12.tasks.json";
+    await fs.writeFile(path.join(root, manifest2), `{"runId":"run-i","tasks":[{"id":"t1"}]}\n`, "utf8");
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "manifest alone");
+    await fs.appendFile(
+      path.join(root, "MEASUREMENTS.jsonl"),
+      `{"ts":"2026-08-09T00:01:00Z","b12_registration":true,"run_id":"run-i"}\n`,
+      "utf8"
+    );
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "row alone");
+    expect(registrationGuard(root, "run-i", `{"runId":"run-i","tasks":[{"id":"t1"}]}\n`).join(" ")).toMatch(
+      /two commits are two acts/
+    );
+
+    // NEGATIVE: the working tree rewrites the register instead of appending.
+    await fs.writeFile(path.join(root, "MEASUREMENTS.jsonl"), `{"rewritten":true}\n`, "utf8");
+    expect(registrationGuard(root, "run-g", manifestBytes).join(" ")).toMatch(/does not preserve HEAD's content as a byte prefix/);
+  }, 30_000);
+
+  it("a REFUSED observation leaves no worktree behind — the tree is owned from its first byte", async () => {
+    // R14's second finding: `observe` created the `.b12` worktree BEFORE the
+    // prompt-hash and registration guards, and `refuse()` exits the process,
+    // so no `finally` could reach a cleanup. Every retry leaked a full
+    // checkout plus a live worktree registration. Both refusals below used to
+    // sit past the creation; now they precede it, and an exit hook covers
+    // whatever comes after.
+    const { execFile: ef } = await import("node:child_process");
+    const { promisify: p } = await import("node:util");
+    const { createHash: ch } = await import("node:crypto");
+    const sh = p(ef);
+    const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+
+    const harness = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const harnessSha = ch("sha256").update(await fs.readFile(harness)).digest("hex");
+    const prompt = "Fix the failing check in t1.";
+    const manifestOf = (promptSha: string): Record<string, unknown> => ({
+      runId: "run-w",
+      pinned: {
+        claudeCodeVersion: "2.1.221",
+        claudeBinarySha256: "b".repeat(64),
+        ratesSha256: "a".repeat(64),
+        clientTruncationCap: 30_000,
+        pacingCacheWriteShareCeiling: 0.9,
+        perTaskDenominatorShareCap: 0.25,
+        scoringCommand: "node dist/cost/b12/emit.js run-w",
+        b12RunSha256: harnessSha,
+        claudeMdSha256: "d".repeat(64),
+        settingsSha256s: { settings: null, settingsLocal: null },
+        installedCharsProbe: "evidence/probe.json",
+        installedCharsProbeSha256: "e".repeat(64),
+        policyBlobs: {
+          treatment: { repo: "../b12-policy", commit: "f".repeat(40), path: "treatment.md", sha256: "1".repeat(64) },
+          control: { repo: "../b12-policy", commit: "f".repeat(40), path: "control.md", sha256: "2".repeat(64) },
+        },
+        perArmTimeoutMs: 2_700_000,
+        extraArgs: [],
+      },
+      abPairs: ["t1", "t2", "t3"].map((taskId, i) => ({
+        id: `pair-${i}`,
+        taskId,
+        order: i % 2 === 0 ? "treatment-first" : "control-first",
+      })),
+      tasks: ["t1", "t2", "t3"].map((id) => ({
+        id,
+        prompt,
+        promptSha256: id === "t1" ? promptSha : ch("sha256").update(prompt, "utf8").digest("hex"),
+        baseCommit: "0".repeat(40),
+        verificationStratum: "types-only",
+        expectedSubagentStratum: "solo",
+        acceptance: ['node -e "process.exit(0)"'],
+        acceptanceExpectedExit: 0,
+        verificationCommands: ["npx tsc --noEmit"],
+        gateCategory: "types",
+        repairMaxRounds: 3,
+        fileScope: ["src/tools/"],
+      })),
+    });
+
+    const root = tempRoot();
+    await git(root, "init", "-q");
+    await git(root, "config", "user.name", "worktree-oracle");
+    await git(root, "config", "user.email", "wt@example.invalid");
+    await git(root, "config", "core.autocrlf", "false");
+    await git(root, "config", "commit.gpgsign", "false");
+    await fs.mkdir(path.join(root, "evidence"), { recursive: true });
+    const manifestRel = "evidence/run-w.b12.tasks.json";
+    const manifestAbs = path.join(root, manifestRel);
+    // A WRONG prompt hash — the manifest is otherwise complete and sealed to
+    // this very harness, so the run reaches the prompt check.
+    await fs.writeFile(manifestAbs, JSON.stringify(manifestOf("c".repeat(64)), null, 2) + "\n", "utf8");
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "the manifest, unregistered");
+
+    const observe = async (): Promise<{ code: number; stderr: string }> => {
+      try {
+        await sh(process.execPath, [harness, "observe", "--manifest", manifestRel, "--task", "t1"], { cwd: root });
+        return { code: 0, stderr: "" };
+      } catch (error) {
+        const e = error as { code?: number; stderr?: string };
+        return { code: e.code ?? -1, stderr: e.stderr ?? "" };
+      }
+    };
+    const noWorktree = async (why: string): Promise<void> => {
+      expect({ why, b12: existsSync(path.join(root, ".b12")) }).toEqual({ why, b12: false });
+      // `git worktree list` names the main checkout and nothing else.
+      expect((await git(root, "worktree", "list")).split("\n").filter(Boolean)).toHaveLength(1);
+    };
+
+    const badPrompt = await observe();
+    expect(badPrompt.code).not.toBe(0);
+    expect(badPrompt.stderr).toMatch(/prompt sha256/);
+    await noWorktree("a refused prompt hash");
+
+    // Now the hash is right and the run is simply NOT REGISTERED — the guard
+    // the comment always claimed ran "before any worktree".
+    await fs.writeFile(
+      manifestAbs,
+      JSON.stringify(manifestOf(ch("sha256").update(prompt, "utf8").digest("hex")), null, 2) + "\n",
+      "utf8"
+    );
+    await git(root, "add", "-A");
+    await git(root, "commit", "-q", "-m", "the manifest, still unregistered");
+    const unregistered = await observe();
+    expect(unregistered.code).not.toBe(0);
+    expect(unregistered.stderr).toMatch(/registration guard/);
+    await noWorktree("a refused registration guard");
+
+    // R16's other half: a refusal must not leave a CLAIMED evidence attempt
+    // behind either. The claim is append-only and the scorer reads an empty
+    // one as an observation with no identity — a void bought with a paid
+    // session. No attempt reached the claim here, so evidence/<runId>/ holds
+    // nothing at all.
+    expect(existsSync(path.join(root, "evidence", "run-w"))).toBe(false);
+  }, 60_000);
+
+  describe("policy blob provenance — the seal is {repo, commit, path, sha256} and delivery reads the object store", () => {
+    // CHANNEL 5 says "committed out-of-repo blob"; the previous schema sealed
+    // a live file plus a separate hash, which is committed NOWHERE — editing
+    // file and hash together satisfied it. The resolver now reads
+    // `git cat-file blob <commit>:<path>` from the policy repo, so every
+    // refusal below is a leg of that provenance: shape, containment,
+    // transport, encoding, and the sealed hash itself.
+    const sh = promisify(execFile);
+    const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+    const sha = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
+
+    const TREATMENT = "You are the treatment arm. Delegate mechanical work.\n";
+    const CONTROL = "You are the control arm. Work alone.\n";
+    // 0xff is valid in no UTF-8 sequence, so the utf8 round-trip cannot be exact.
+    const BINARY = Buffer.from([0x59, 0x6f, 0xff, 0x0a]);
+
+    const policyRepo = async () => {
+      const dir = tempRoot();
+      await git(dir, "init", "-q");
+      await git(dir, "config", "user.name", "policy-oracle");
+      await git(dir, "config", "user.email", "policy@example.invalid");
+      await git(dir, "config", "core.autocrlf", "false");
+      await git(dir, "config", "commit.gpgsign", "false");
+      await fs.writeFile(path.join(dir, "treatment.md"), TREATMENT, "utf8");
+      await fs.writeFile(path.join(dir, "control.md"), CONTROL, "utf8");
+      await fs.writeFile(path.join(dir, "binary.md"), BINARY);
+      await git(dir, "add", "-A");
+      await git(dir, "commit", "-q", "-m", "the policy pair");
+      const commit = await git(dir, "rev-parse", "HEAD");
+      return { dir, commit };
+    };
+
+    const manifestFor = (repo: string, commit: string, treatmentOver: Record<string, unknown> = {}) => ({
+      pinned: {
+        policyBlobs: {
+          treatment: { repo, commit, path: "treatment.md", sha256: sha(TREATMENT), ...treatmentOver },
+          control: { repo, commit, path: "control.md", sha256: sha(CONTROL) },
+        },
+      },
+    });
+
+    it("resolves a clean seal to the exact committed bytes, provenance on the blob", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit), "treatment");
+      expect(why).toBeNull();
+      expect(blob).not.toBeNull();
+      expect(blob!.content).toBe(TREATMENT);
+      expect(blob!.sha256).toBe(sha(TREATMENT));
+      expect(blob!.commit).toBe(commit);
+      expect(blob!.path).toBe("treatment.md");
+      expect(blob!.declaredPath).toBe(`${dir}@${commit}:treatment.md`);
+      expect(path.isAbsolute(blob!.repoDir)).toBe(true);
+    }, 30_000);
+
+    it("refuses a sealed sha the delivered bytes do not hash to", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit, { sha256: "f".repeat(64) }), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/moved under the seal/);
+    }, 30_000);
+
+    it("refuses a commit the transported clone does not carry", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, "deadbeef".repeat(5)), "treatment");
+      expect(commit).not.toBe("deadbeef".repeat(5));
+      expect(blob).toBeNull();
+      expect(why).toMatch(/not reachable in the treatment policy repo/);
+    }, 30_000);
+
+    it("refuses a path absent from the sealed commit", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit, { path: "nope.md" }), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/nope\.md is not readable/);
+    }, 30_000);
+
+    it("refuses an abbreviated commit — provenance pins the full id", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit.slice(0, 12)), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/FULL 40-hex commit/);
+    }, 30_000);
+
+    it("refuses a traversing path — git object paths have one spelling", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(dir, commit, { path: "../escape.md" }), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/one spelling/);
+    }, 30_000);
+
+    it("refuses a policy repo inside the repository under test — CHANNEL 5's wall", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(manifestFor(".", commit), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/inside the repository under test/);
+    }, 30_000);
+
+    it("names the transport step when the locator resolves to nothing", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { commit } = await policyRepo();
+      const missing = path.join(tempRoot(), "never-cloned");
+      const { blob, why } = findPolicyBlob(manifestFor(missing, commit), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/transport the hashed policy bundle/);
+    }, 30_000);
+
+    it("refuses a shallow clone — an object store that cannot prove its history", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const dest = path.join(tempRoot(), "shallow-clone");
+      // A plain local-path clone ignores --depth; the file:// form makes git
+      // honour it, which is exactly the clone a careless transport produces.
+      const url = "file://" + (path.sep === "/" ? dir : "/" + dir.replace(/\\/g, "/"));
+      await sh("git", ["clone", "-q", "--depth", "1", url, dest]);
+      const { blob, why } = findPolicyBlob(manifestFor(dest, commit), "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/SHALLOW clone/);
+    }, 30_000);
+
+    it("refuses bytes that are not UTF-8 text — argv delivery cannot carry them exactly", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const { blob, why } = findPolicyBlob(
+        manifestFor(dir, commit, { path: "binary.md", sha256: sha(BINARY) }),
+        "treatment"
+      );
+      expect(blob).toBeNull();
+      expect(why).toMatch(/not valid UTF-8 text/);
+    }, 30_000);
+
+    it("resolving one arm still requires the OTHER arm's declaration — a pair or nothing", async () => {
+      const { findPolicyBlob } = await import("../scripts/b12-run.mjs");
+      const { dir, commit } = await policyRepo();
+      const m = manifestFor(dir, commit) as { pinned: { policyBlobs: Record<string, unknown> } };
+      delete m.pinned.policyBlobs.control;
+      const { blob, why } = findPolicyBlob(m, "treatment");
+      expect(blob).toBeNull();
+      expect(why).toMatch(/policyBlobs\.control/);
+      const none = findPolicyBlob({ pinned: {} }, "treatment");
+      expect(none.blob).toBeNull();
+      expect(none.why).toMatch(/BOTH arms/);
+    }, 30_000);
+
+    it("the manifest gap sweep holds the seal's shape without touching git", async () => {
+      const { manifestDeclarationGaps } = await import("../scripts/b12-run.mjs");
+      const gaps = manifestDeclarationGaps({
+        pinned: {
+          policyBlobs: {
+            treatment: { repo: "../b12-policy", commit: "abc", path: "t.md", sha256: "d" },
+            control: null,
+          },
+        },
+      });
+      expect(gaps.some((g) => /policyBlobs\.treatment must pin a FULL 40-hex commit/.test(g))).toBe(true);
+      expect(gaps.some((g) => /policyBlobs\.control must be a .*provenance tuple/.test(g))).toBe(true);
+    });
+  });
+
+  it("the two admissionRule-7 implementations agree, case for case", async () => {
+    // The harness re-implements the scope grammar because it must run before
+    // dist/ exists. Two copies that are never compared is this project's
+    // signature defect; this is the comparison.
+    const harness = await import("../scripts/b12-run.mjs");
+    const scorer = await import("../src/cost/b12/filescope.js");
+    const cases = [
+      "src/tools/",
+      "src/example.ts",
+      "src/cost/**",
+      "src/cost/",
+      "evidence/**",
+      "PREMISES.md",
+      "scripts/session-token-walk.mjs",
+      "src/../src/cost/**",
+      "src\\cost\\",
+      "C:\\repo\\src",
+      "\\\\server\\share",
+      "/absolute",
+      "a//b",
+      "src/*.ts",
+      "src/?",
+      "src",
+      // CASE ALIASES — Windows and default macOS filesystems alias case, so
+      // these name protected trees wearing different bytes.
+      "SRC/COST/",
+      "Src/Cost/inner.ts",
+      "EVIDENCE/**",
+      "premises.md",
+      // WINDOWS PATH ALIASES (R21) — Win32 strips a component's trailing dots
+      // and spaces, `:` names an NTFS stream, `NAME~1` is an 8.3 short name.
+      // Each of these OPENS a protected path while comparing unequal to it,
+      // so the grammar refuses them rather than the comparison folding them.
+      "src/cost./**",
+      "src/cost /**",
+      "STATE.md.",
+      "STATE.md ",
+      "evidence./",
+      "STATE.md::$DATA",
+      "scripts/SESSIO~1.MJS",
+    ];
+    for (const raw of cases) {
+      expect({ raw, parsed: harness.parseScopeEntry(raw) }).toEqual({ raw, parsed: scorer.parseScopeEntry(raw) });
+    }
+    expect(harness.PROTECTED_SCOPES).toEqual([...scorer.PROTECTED_SCOPES]);
+    const tasks = cases.map((scope, i) => ({ id: `t${i}`, fileScope: [scope] }));
+    expect(harness.fileScopeViolations(tasks)).toEqual(scorer.fileScopeViolations(tasks));
+    // And the aliases FIRE, in both implementations alike: a case-folded name
+    // for the instrument set is the instrument set.
+    for (const impl of [harness, scorer]) {
+      const fired = impl.fileScopeViolations([
+        { id: "alias-dir", fileScope: ["SRC/COST/"] },
+        { id: "alias-file", fileScope: ["Src/Cost/inner.ts"] },
+        { id: "alias-doc", fileScope: ["premises.md"] },
+      ]);
+      expect(fired.join(" ")).toMatch(/alias-dir.*intersects the instrument set at src\/cost/);
+      expect(fired.join(" ")).toMatch(/alias-file.*intersects the instrument set at src\/cost/);
+      expect(fired.join(" ")).toMatch(/alias-doc.*intersects the instrument set at PREMISES\.md/);
+      // R21: the Windows aliases are REFUSED BY THE GRAMMAR, in both copies —
+      // `src/cost./**` opens `src/cost` on Windows (reproduced with
+      // `Get-Item`) and compares unequal to it, so admitting it as
+      // "non-intersecting" would hand a task the scoring instrument.
+      const aliased = impl.fileScopeViolations([
+        { id: "trailing-dot", fileScope: ["src/cost./**"] },
+        { id: "trailing-space", fileScope: ["src/cost /**"] },
+        { id: "doc-dot", fileScope: ["STATE.md."] },
+        { id: "stream", fileScope: ["STATE.md::$DATA"] },
+        { id: "short-name", fileScope: ["scripts/SESSIO~1.MJS"] },
+      ]);
+      expect(aliased.join(" ")).toMatch(/trailing-dot.*dot or space/);
+      expect(aliased.join(" ")).toMatch(/trailing-space.*dot or space/);
+      expect(aliased.join(" ")).toMatch(/doc-dot.*dot or space/);
+      expect(aliased.join(" ")).toMatch(/stream.*colon in a segment/);
+      expect(aliased.join(" ")).toMatch(/short-name.*8\.3 short-name/);
+      expect(aliased).toHaveLength(5);
+      // …and the lawful spellings of the same names still pass the grammar,
+      // so the refusal is aimed at the alias and not at the dot.
+      expect(impl.fileScopeViolations([{ id: "ok", fileScope: ["src/tools/", "docs/notes.md", "a.b.c/d.e"] }])).toEqual([]);
+    }
+  });
+
+  it("mints a UNIQUE session id per attempt and refuses a concurrent same-task acquire — in and across processes", async () => {
+    // R7's finding, closed: `stamp()` has one-second resolution, so the old
+    // hash input minted the SAME id for two attempts inside a second. The
+    // nonce ends it; the lock makes the race a refusal. Both halves here,
+    // including a REAL second process against a held lock — `mkdir` is the
+    // OS's atomicity, and only another process can prove it cross-process.
+    const { mintSessionId, acquireSessionLock } = await import("../scripts/b12-run.mjs");
+    const a = mintSessionId("m".repeat(64), "run-x", "t1", "treatment");
+    const b = mintSessionId("m".repeat(64), "run-x", "t1", "treatment");
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+    const root = tempRoot();
+    const held = acquireSessionLock(root, "run-x", "t1", "treatment");
+    expect(held.ok).toBe(true);
+    // Same process, second acquire: refused.
+    expect(acquireSessionLock(root, "run-x", "t1", "treatment").ok).toBe(false);
+    // A DIFFERENT task/arm is not contested.
+    const other = acquireSessionLock(root, "run-x", "t2", "treatment");
+    expect(other.ok).toBe(true);
+    other.release();
+    // A real second process against the held lock: refused there too.
+    const script = path.join(process.cwd(), "scripts", "b12-run.mjs");
+    const probe = await runNode(process.execPath, [
+      "-e",
+      `import(${JSON.stringify(String(new URL(`file:///${script.split("\\\\").join("/")}`)))}).then(m => process.stdout.write(String(m.acquireSessionLock(${JSON.stringify(root)}, "run-x", "t1", "treatment").ok)))`,
+    ]);
+    expect(probe.stdout.trim()).toBe("false");
+    // Released, the claim is takeable again — by anyone.
+    held.release();
+    expect(acquireSessionLock(root, "run-x", "t1", "treatment").ok).toBe(true);
+  }, 30_000);
+
+  it("rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control", async () => {
+    // TWO WORKTREES, TWO SLUGS, both covered by the pre-snapshot — the frozen
+    // control's own topology. Worktree A's session already carries `rq-inh-x`;
+    // the arm in worktree B RESUMES that session, so B's transcript holds
+    // `rq-inh-x` beside its own new `rq-inh-y`. A snapshot of ONE slug returns
+    // inherited = 0 for an arm that wrote to another — the check that cannot
+    // fail — which is why the fixture must have two.
+    const billable = (requestId: string, sessionId: string, ms: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        uuid: `u-${sessionId}-${requestId}`,
+        requestId,
+        sessionId,
+        timestamp: new Date(1_700_000_000_000 + ms).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 1 } },
+      });
+    const root = tempRoot();
+    const slugA = path.join(root, "worktree-a");
+    const slugB = path.join(root, "worktree-b");
+    await fs.mkdir(slugA, { recursive: true });
+    await fs.mkdir(slugB, { recursive: true });
+    await fs.writeFile(path.join(slugA, "sess-a.jsonl"), `${billable("rq-inh-x", "sess-a", 0)}\n`, "utf8");
+    await fs.writeFile(path.join(slugB, "sess-b.jsonl"), `${billable("rq-b-base", "sess-b", 1)}\n`, "utf8");
+
+    const { takeSnapshot } = await import("../scripts/b12-run.mjs");
+    const before = takeSnapshot(root);
+    expect(before.slugs).toEqual(["worktree-a", "worktree-b"]);
+    expect(before.requestIds).toContain("rq-inh-x");
+
+    // The resume: worktree B gains the inherited lineage plus one new id.
+    await fs.writeFile(
+      path.join(slugB, "sess-resumed.jsonl"),
+      `${billable("rq-inh-x", "sess-resumed", 2)}\n${billable("rq-inh-y", "sess-resumed", 3)}\n`,
+      "utf8"
+    );
+    const after = takeSnapshot(root);
+
+    // The REAL derivation (`observe`'s own line): the inherited id is NOT
+    // originated, BY CONSTRUCTION — the pre-snapshot covered the sibling slug.
+    const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
+    expect(originated).toEqual(["rq-inh-y"]);
+
+    // THE CONTROL: a record that CLAIMS the inherited id anyway reaches the
+    // scorer with these very snapshots archived, and the cumulative union
+    // REJECTS it — `inherited > 0` is void(sibling_inheritance), never scored.
+    const narrowed = (s: { ts: string; slugsWalked: number; files: number; requestIds: string[] }) => ({
+      ts: s.ts,
+      // These machine snapshots were not taken FOR the archived observation,
+      // and a wrong stamp would be the cross-wiring the archive reader fires
+      // on — a typed absence is the honest value here.
+      identity: null,
+      slugsWalked: s.slugsWalked,
+      files: s.files,
+      requestIds: s.requestIds,
+    });
+    const out = assembleRun({
+      archive: archiveOf({
+        tasks: [taskOf("t1"), taskOf("t2")],
+        observations: [
+          // The honest observation: its snapshots are the REAL pair above and
+          // its record claims exactly what the derivation returned.
+          obsOf("t1", {
+            records: [billed("rq-inh-y", "sess-t1-1", 0, { write1h: 100 })],
+            record: { originatedRequestIds: ["rq-inh-y"] },
+            snapshotBefore: narrowed(before),
+            snapshotAfter: narrowed(after),
+          }),
+          // The hostile one: it claims the id the sibling worktree already held.
+          obsOf("t2", {
+            records: [billed("rq-inh-x", "sess-t2-1", 10, { write1h: 100 })],
+            record: { originatedRequestIds: ["rq-inh-x"] },
+          }),
+        ],
+      }),
+      gitAudit: { ran: false },
+      scoringCommandActual: PINNED.scoringCommand,
+    });
+    const cf = (taskId: string) => out.counterfactual.observations.find((o) => o.taskId === taskId);
+    expect(cf("t1")?.disposition).toBe("scored");
+    expect(cf("t2")?.disposition).toBe("void(sibling_inheritance)");
+  });
+
+  it("rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control", async () => {
+    // The frozen predicate compares POPULATIONS: the pre-snapshot's covered
+    // slugs against the slugs the originated ids landed in. The slug COUNT
+    // grows here (1 → 2), so the shrink check reads nothing — which is exactly
+    // why counts cannot carry this clause.
+    const billable = (requestId: string, sessionId: string, ms: number): string =>
+      JSON.stringify({
+        type: "assistant",
+        uuid: `u-${sessionId}-${requestId}`,
+        requestId,
+        sessionId,
+        timestamp: new Date(1_700_000_000_000 + ms).toISOString(),
+        message: { model: "test-model", content: [], usage: { output_tokens: 1 } },
+      });
+    const root = tempRoot();
+    const slugA = path.join(root, "worktree-a");
+    await fs.mkdir(slugA, { recursive: true });
+    await fs.writeFile(path.join(slugA, "sess-a.jsonl"), `${billable("rq-cov-a", "sess-a", 0)}\n`, "utf8");
+
+    const { takeSnapshot, classifyRun } = await import("../scripts/b12-run.mjs");
+    const before = takeSnapshot(root);
+    expect(before.slugs).toEqual(["worktree-a"]);
+
+    // The arm writes into a slug the pre-snapshot never walked.
+    const slugB = path.join(root, "worktree-b");
+    await fs.mkdir(slugB, { recursive: true });
+    await fs.writeFile(path.join(slugB, "sess-b.jsonl"), `${billable("rq-cov-b", "sess-b", 1)}\n`, "utf8");
+    const after = takeSnapshot(root);
+
+    // The attribution `observe` performs, over the snapshot's own populations.
+    const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
+    const originatedSet = new Set(originated);
+    const writtenSlugs = Object.entries(after.slugRequestIds)
+      .filter(([, ids]) => ids.some((id) => originatedSet.has(id)))
+      .map(([slug]) => slug);
+    expect(writtenSlugs).toEqual(["worktree-b"]);
+
+    const base = {
+      exitCode: 0,
+      signal: null,
+      errorCode: null,
+      budgetMs: 1_000,
+      budgetEnforced: true,
+      originatedCount: originated.length,
+      slugsBefore: before.slugsWalked,
+      slugsAfter: after.slugsWalked,
+    };
+    // FIRING: a written slug outside the covered set voids the run — and the
+    // shrink reason stays silent, because 1 → 2 is not a shrink.
+    const fired = classifyRun({ ...base, coveredSlugs: before.slugs, writtenSlugs });
+    expect(fired.valid).toBe(false);
+    expect(fired.reasons.join(" ")).toMatch(/covered fewer slugs than the run wrote to/);
+    expect(fired.reasons.join(" ")).not.toMatch(/scope shrank/);
+    // NOT firing: written ⊆ covered is a clean run.
+    const clean = classifyRun({ ...base, coveredSlugs: after.slugs, writtenSlugs });
+    expect(clean.valid).toBe(true);
+    expect(clean.reasons).toEqual([]);
+    // And the rule fails CLOSED when the populations are not handed to it —
+    // a coverage predicate that silently skips is the vacuous check the
+    // snapshot exists to kill.
+    const unhanded = classifyRun({
+      ...base,
+      coveredSlugs: undefined as unknown as string[],
+      writtenSlugs: undefined as unknown as string[],
+    });
+    expect(unhanded.valid).toBe(false);
+    expect(unhanded.reasons.join(" ")).toMatch(/not handed to the rule/);
+  });
+
   it("cannot report a passing pre-flight without a fresh call to check", async () => {
     // The first version asserted NONE of the five conditions the frozen design
     // names and printed PASSED on a machine where all of them fail: 12 ambiguous
@@ -2613,7 +3451,11 @@ describe("the B12 harness", () => {
           commit: "fixture-commit",
           claudeBinarySha256: "bin-sha",
           mcpConfigSha256: "mcp-sha",
-          policyBlobSha256: null as string | null,
+          // DUAL — both arms deliver their own blob, so both are key components.
+          policyBlobSha256s: {
+            treatment: null as string | null,
+            control: null as string | null,
+          },
           prompt: "Reply with exactly: ok. Do not use any tools.",
           argvShape: {
             treatment: "claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg> --output-format json -- <prompt>",
@@ -2626,7 +3468,10 @@ describe("the B12 harness", () => {
     const live = () => ({
       binarySha256: "bin-sha",
       mcpConfigSha256: "mcp-sha" as string | null,
-      policyBlobSha256: null as string | null,
+      policyBlobSha256s: {
+        treatment: null as string | null,
+        control: null as string | null,
+      },
       extraArgs: [] as string[],
     });
 
@@ -2636,7 +3481,7 @@ describe("the B12 harness", () => {
       expect(rec.value).toBe(310.8);
       expect(rec.deltaTokens).toBe(84);
       expect(rec.probeRunId).toBe("probe-run-id");
-      expect(rec.calibrationKey.policyBlobSha256).toBeNull();
+      expect(rec.calibrationKey.policyBlobSha256s).toEqual({ treatment: null, control: null });
       // The protocol is the artifact's own registered reference, never a
       // fallback — the old default labelled missing provenance as valid.
       expect(rec.calibrationKey.protocol).toBe("PREMISES.md § B12 — test fixture");
@@ -2802,15 +3647,32 @@ describe("the B12 harness", () => {
       );
     });
 
-    it("fires when the manifest seals policy blobs the probe never saw", async () => {
-      // The committed probe pre-dates any sealed blob (`policyBlobSha256: null`),
-      // so the first manifest that carries blobs MUST refuse until a re-probe
-      // exists — this refusal is the mechanism that keeps the re-take rule from
-      // being forgotten, and it is asserted here so it cannot rot silently.
+    it("fires when the manifest seals a TREATMENT blob the probe never saw", async () => {
+      // The committed probe pre-dates any sealed blob, so the first manifest
+      // that carries blobs MUST refuse until a re-probe exists — this refusal
+      // is the mechanism that keeps the re-take rule from being forgotten.
+      // SEPARATE controls per arm: one arm's blob moving shifts the measured
+      // delta without touching the other's, so each mismatch is its own guard.
       const { validateInstalledCharsProbe } = await load();
-      expect(() => validateInstalledCharsProbe(probe(), { ...live(), policyBlobSha256: "sealed-blob-sha" })).toThrow(
-        /policy-blob .* re-probe/
-      );
+      const moved = { ...live(), policyBlobSha256s: { treatment: "sealed-blob-sha", control: null } };
+      expect(() => validateInstalledCharsProbe(probe(), moved)).toThrow(/treatment policy-blob .* re-probe/);
+    });
+
+    it("fires when the manifest seals a CONTROL blob the probe never saw", async () => {
+      const { validateInstalledCharsProbe } = await load();
+      const moved = { ...live(), policyBlobSha256s: { treatment: null, control: "sealed-blob-sha" } };
+      expect(() => validateInstalledCharsProbe(probe(), moved)).toThrow(/control policy-blob .* re-probe/);
+    });
+
+    it("fires on a probe still carrying the SINGULAR pre-dual key — the schema names the re-probe", async () => {
+      // The committed 2026-08-08 evidence artifact has `policyBlobSha256: null`
+      // and no per-arm component; every registrable manifest now seals blobs,
+      // so that artifact can never calibrate again and the validator says WHY.
+      const { validateInstalledCharsProbe } = await load();
+      const p = probe() as { context: Record<string, unknown> };
+      delete p.context.policyBlobSha256s;
+      p.context.policyBlobSha256 = null;
+      expect(() => validateInstalledCharsProbe(p, live())).toThrow(/no per-arm policy-blob component .* re-probe/);
     });
 
     it("fires when the manifest pins extraArgs the probe ran without", async () => {
@@ -2849,6 +3711,10 @@ describe("the B12 harness", () => {
         settingsSha256s: { settings: null, settingsLocal: null },
         installedCharsProbe: "evidence/probe.json",
         installedCharsProbeSha256: "probe-sha",
+        policyBlobs: {
+          treatment: { repo: "../b12-policy", commit: "a".repeat(40), path: "treatment.md", sha256: "b".repeat(64) },
+          control: { repo: "../b12-policy", commit: "a".repeat(40), path: "control.md", sha256: "c".repeat(64) },
+        },
       },
       tasks: [
         {
@@ -2934,6 +3800,7 @@ describe("the B12 harness", () => {
         ["settingsSha256s", /settings and settingsLocal/],
         ["installedCharsProbe", /no provenance/],
         ["installedCharsProbeSha256", /not provenance/],
+        ["policyBlobs", /policyBlobs.*per-arm policy blobs/],
       ];
       for (const [field, expected] of pinnedCases) {
         const m = completeManifest();
@@ -3034,6 +3901,379 @@ describe("the B12 harness", () => {
       expect(committedOrderViolation(manifest, "t2", "not json\n")).toMatch(/not JSON/);
       // An empty log constrains only the first task's first run.
       expect(committedOrderViolation(manifest, "t1", "")).toBeNull();
+    });
+
+    it("holds the next task at artifact 6's barrier until the predecessor's runlog row is COMMITTED", async () => {
+      // A runlog row is appended BEFORE its evidence commit; between the two
+      // it is an apparent predecessor with nothing durable behind it — and a
+      // failed commit leaves it that way forever. The barrier: disk and HEAD
+      // must carry the SAME runlog bytes before any observation spends
+      // anything. Both directions refuse.
+      const { runlogBarrierViolation } = await load();
+      const committed = `{"taskId":"t1","arm":"treatment"}\n`;
+      // The first observation: nothing anywhere — free.
+      expect(runlogBarrierViolation(null, null)).toBeNull();
+      // Between observations: disk equals HEAD — free.
+      expect(runlogBarrierViolation(committed, committed)).toBeNull();
+      // A row appended but never committed — FIRES, naming artifact 6.
+      expect(runlogBarrierViolation(committed + `{"taskId":"t2","arm":"treatment"}\n`, committed)).toMatch(
+        /did not complete/
+      );
+      // The very first row, uncommitted (HEAD has no runlog at all) — FIRES.
+      expect(runlogBarrierViolation(committed, null)).toMatch(/HEAD carries no committed copy/);
+      // A truncated disk copy — FIRES the other direction.
+      expect(runlogBarrierViolation(null, committed)).toMatch(/truncated/);
+    });
+
+    // R18's second finding, and the reason R11's declined per-run lock came
+    // back: the barrier above is checked when an observation STARTS, minutes
+    // before its row exists, so two observations both pass it before either
+    // appends. Then `git commit -- <dir> <runlog>` takes the runlog's WHOLE
+    // content — one process's commit carries the other's ROW WITHOUT ITS
+    // ARCHIVE. These three run the real function against a real repository.
+    const runlogFixture = async () => {
+      const sh = promisify(execFile);
+      const git = async (cwd: string, ...args: string[]) => (await sh("git", args, { cwd })).stdout.trim();
+      const root = tempRoot();
+      await git(root, "init", "-q");
+      await git(root, "config", "user.name", "runlog-oracle");
+      await git(root, "config", "user.email", "runlog@example.invalid");
+      await git(root, "config", "core.autocrlf", "false");
+      await git(root, "config", "commit.gpgsign", "false");
+      const runLogRel = "evidence/run-c.b12.runlog.jsonl";
+      const relDir = "evidence/run-c/obs-t2-treatment";
+      const committed = `{"ts":"2026-08-10T00:00:00Z","runId":"run-c","taskId":"t1","arm":"treatment","sessionId":"s-t1"}\n`;
+      await fs.mkdir(path.join(root, relDir), { recursive: true });
+      await fs.writeFile(path.join(root, runLogRel), committed, "utf8");
+      await fs.writeFile(path.join(root, relDir, "observation.json"), `{"taskId":"t2"}\n`, "utf8");
+      await git(root, "add", "--", runLogRel);
+      await git(root, "commit", "-q", "-m", "t1's evidence");
+      const branchRef = await git(root, "symbolic-ref", "--quiet", "HEAD");
+      const call = async (over: Record<string, unknown> = {}) => {
+        const { commitObservationRow } = await load();
+        return commitObservationRow(root, {
+          branchRef,
+          evidenceDir: path.join(root, "evidence"),
+          runId: "run-c",
+          runLogRel,
+          relDir,
+          written: ["observation.json"],
+          row: { runId: "run-c", taskId: "t2", arm: "treatment", sessionId: "s-t2" },
+          sessionId: "s-t2",
+          message: "evidence: run-c t2/treatment",
+          runlogAtBarrier: committed,
+          lockAttempts: 1,
+          lockWaitMs: 1,
+          ...over,
+        });
+      };
+      return { root, git, runLogRel, relDir, committed, call, branchRef };
+    };
+
+    it("commits the row and its archive as ONE act, then releases the run's lock", async () => {
+      const { root, git, runLogRel, relDir, committed, call } = await runlogFixture();
+      const result = await call();
+      expect(result.ok).toBe(true);
+      // The row is in HEAD, after the predecessor's, and the archive with it.
+      const head = await git(root, "show", `HEAD:${runLogRel}`);
+      expect(head.startsWith(committed.trimEnd())).toBe(true);
+      expect(head).toMatch(/"sessionId":"s-t2"/);
+      expect(await git(root, "show", `HEAD:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      // The `ts` is stamped at the write, not passed in.
+      expect(JSON.parse(head.split("\n")[1]!).ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      // The lock is a claim held across the act, not a file left behind.
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("refuses a FOREIGN uncommitted row instead of committing it without its evidence", async () => {
+      // The exact interleave: the other observation appended and has not yet
+      // committed. The old inline code appended ours and ran `git commit --
+      // <our dir> <runlog>`, which carried THEIR row with only OUR archive —
+      // and if they then died, HEAD held a row with nothing behind it forever.
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      const head0 = await git(root, "rev-parse", "HEAD");
+      const foreign = `{"ts":"2026-08-10T00:01:00Z","runId":"run-c","taskId":"t3","arm":"treatment","sessionId":"s-t3"}\n`;
+      await fs.appendFile(path.join(root, runLogRel), foreign, "utf8");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/re-checked under this run's commit lock/);
+      // NOTHING moved: no commit, no row of ours, and their line untouched.
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await git(root, "show", `HEAD:${runLogRel}`)).toBe(committed.trimEnd());
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed + foreign);
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("refuses when another observation ran INSIDE this one — the window the barrier cannot see", async () => {
+      // Disk and HEAD agree again, so the barrier is silent: the other
+      // observation started AND committed while this one was in flight. That
+      // is what artifact 6 forbids, and byte-equality with what the barrier
+      // saw at the start is the only thing that can tell.
+      const { root, git, runLogRel, call } = await runlogFixture();
+      await fs.appendFile(
+        path.join(root, runLogRel),
+        `{"ts":"2026-08-10T00:02:00Z","runId":"run-c","taskId":"t4","arm":"treatment","sessionId":"s-t4"}\n`,
+        "utf8"
+      );
+      await git(root, "add", "--", runLogRel);
+      await git(root, "commit", "-q", "-m", "t4's evidence, committed inside ours");
+      const head0 = await git(root, "rev-parse", "HEAD");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/ran inside this one/);
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).not.toMatch(/s-t2/);
+    });
+
+    it("writes NOTHING while another observation holds the run's commit lock", async () => {
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      const { acquireRunlogLock } = await load();
+      const held = acquireRunlogLock(path.join(root, "evidence"), "run-c");
+      expect(held.ok).toBe(true);
+      // The same claim, twice — `mkdir` is the mutual exclusion.
+      expect(acquireRunlogLock(path.join(root, "evidence"), "run-c").ok).toBe(false);
+      const head0 = await git(root, "rev-parse", "HEAD");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/commit lock/);
+      expect(result.ok === false && result.why).toMatch(/no live process/);
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed);
+      // The waiter did not steal it.
+      expect(existsSync(held.lockDir)).toBe(true);
+      held.release();
+      expect(existsSync(held.lockDir)).toBe(false);
+    });
+
+    it("refuses when HEAD moved to another branch while the observation ran", async () => {
+      // R26: `git commit` writes to whatever HEAD names NOW, and an
+      // observation runs for minutes. A checkout in this repository — an
+      // operator, another agent — retargets it. On a branch cut from the same
+      // commit the barrier still passes and every HEAD-based check agrees, so
+      // the act reported SUCCESS while the paid observation and its ordering
+      // row lived on a branch the run is not on.
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      const head0 = await git(root, "rev-parse", "HEAD");
+      await git(root, "checkout", "-q", "-b", "someone-elses-work");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/HEAD moved to refs\/heads\/someone-elses-work/);
+      expect(result.ok === false && result.why).toMatch(/nothing was appended/);
+      // NOTHING was written, on either branch.
+      expect(await git(root, "rev-parse", "HEAD")).toBe(head0);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed);
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+    });
+
+    it("installs the evidence at the CAPTURED ref, and a branch that moved first gets NOTHING", async () => {
+      // R27: R26's check is TOCTOU — `git commit` follows HEAD at ITS moment,
+      // so a checkout landing after the check still moved the target, and the
+      // commit was irreversible by the time the verification said so. The
+      // install is now `commit-tree` onto the captured tip plus `update-ref
+      // <ref> <new> <expectedTip>`: git compares and swaps, so either the
+      // branch moves from exactly the commit this act read, or nothing
+      // happens anywhere. Moving the branch BEFORE the install is how the
+      // oracle reaches the window the check cannot see.
+      const { root, git, runLogRel, relDir, committed, call, branchRef } = await runlogFixture();
+      const foreign = `{"ts":"2026-08-10T00:04:00Z","runId":"run-c","taskId":"t8","arm":"treatment","sessionId":"s-t8"}\n`;
+      const result = await call({
+        // The seam fires between the append and the install — the exact gap.
+        beforeInstall: async () => {
+          await fs.writeFile(path.join(root, "unrelated.txt"), "someone else's commit\n", "utf8");
+          await git(root, "add", "--", "unrelated.txt");
+          await git(root, "commit", "-q", "-m", "the branch moved under the act");
+        },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/moved away from/);
+      expect(result.ok === false && result.why).toMatch(/NOT installed anywhere/);
+      // The branch carries the intruder's commit and NOT ours: no evidence
+      // commit exists on any ref.
+      expect(await git(root, "log", "--format=%s", "-1")).toBe("the branch moved under the act");
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toBe(committed.trimEnd());
+      expect(foreign).toMatch(/s-t8/); // (the row this act would have carried)
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
+      // And the archive never reached any tree.
+      const inTree = await git(root, "ls-tree", "-r", "--name-only", branchRef);
+      expect(inTree).not.toMatch(new RegExp(relDir.replace(/[/\\]/g, "\\$&")));
+    });
+
+    it("leaves index, HEAD and working tree agreeing — the operator's NEXT commit undoes nothing", async () => {
+      // The R16 lesson, applied to the observation: a CAS that installs a
+      // commit the real index does not know about turns the operator's next
+      // ordinary commit into a revert. Refreshing the same paths right AFTER
+      // the install — once this worktree is proved to still hold the captured
+      // ref at the new commit (R34) — keeps the three in agreement without a
+      // single destructive write.
+      const { root, git, runLogRel, relDir, call, branchRef } = await runlogFixture();
+      expect((await call()).ok).toBe(true);
+      // Nothing staged, nothing deleted, nothing untracked from the act.
+      expect(await git(root, "status", "--porcelain")).toBe("");
+      await fs.writeFile(path.join(root, "unrelated.txt"), "ordinary work\n", "utf8");
+      await git(root, "add", "--", "unrelated.txt");
+      await git(root, "commit", "-q", "-m", "the operator's next ordinary commit");
+      // The evidence and the row are STILL there afterwards.
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
+    });
+
+    it("a checkout DURING the act never stages evidence on the branch it lands in", async () => {
+      // R34. The act opened by staging into the REAL index — which belongs to
+      // whatever HEAD points at NOW — while `update-ref` installs on the ref
+      // captured minutes ago. A checkout in between (the event R26 already
+      // established as real) left the SIBLING branch's index holding this
+      // observation's evidence, staged, while the commit landed correctly on
+      // the captured ref and the act returned SUCCESS. The operator's next
+      // ordinary commit over there duplicates paid evidence, silently.
+      const { root, git, runLogRel, relDir, call, branchRef } = await runlogFixture();
+      const result = await call({
+        beforeInstall: async () => {
+          await git(root, "checkout", "-q", "-b", "sibling");
+        },
+      });
+      // The evidence still landed where it was captured…
+      expect(result.ok).toBe(true);
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
+      // …and the branch we are standing in was NOT written to. Nothing staged
+      // is the whole claim: an untracked file needs `git add -A` to escape,
+      // a staged one rides out on the next ordinary `git commit`.
+      expect(await git(root, "symbolic-ref", "--quiet", "HEAD")).toBe("refs/heads/sibling");
+      expect(await git(root, "diff", "--cached", "--name-only")).toBe("");
+      expect(await git(root, "ls-tree", "-r", "--name-only", "HEAD")).not.toMatch(/obs-t2-treatment/);
+      // And the operator is TOLD, on a success — the act happened.
+      expect(result.ok === true && result.note).toMatch(/index was left untouched/);
+      expect(result.ok === true && result.note).toMatch(/sibling/);
+      expect(result.ok === true && result.note).toMatch(/UNTRACKED where you now stand/);
+    });
+
+    it("the refresh is bound to the POSITION of HEAD, not to the branch's name", async () => {
+      // The boundary in the other direction, and it is the reason the guard
+      // asks `rev-parse HEAD` instead of `symbolic-ref`. Here the checkout
+      // happens AFTER the install, so the new branch is created AT the
+      // installed commit: every path the refresh would add is already in that
+      // tree at that blob, so the add can only make the index agree with what
+      // is checked out. Refusing here was the first spelling of this guard and
+      // it left a STAGED DELETION behind — the operator's next commit would
+      // have acted on it. Written down so nobody re-tightens it to the name.
+      const { root, git, relDir, call, branchRef } = await runlogFixture();
+      const result = await call({
+        beforeIndexSync: async () => {
+          await git(root, "checkout", "-q", "-b", "sibling-2");
+        },
+      });
+      expect(result.ok).toBe(true);
+      expect(await git(root, "symbolic-ref", "--quiet", "HEAD")).toBe("refs/heads/sibling-2");
+      expect(await git(root, "rev-parse", "HEAD")).toBe(await git(root, "rev-parse", branchRef));
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      // Refreshed, because it was a no-op: nothing staged, nothing pending.
+      expect(await git(root, "status", "--porcelain")).toBe("");
+      expect(result.ok === true && result.note).toBeNull();
+    });
+
+    it("installs from a LINKED WORKTREE, where `.git` is a file and not a directory", async () => {
+      // R28: the CAS built its temporary index at `<root>/.git/...`, which in
+      // a linked worktree is a FILE — so `read-tree` could not create it, and
+      // the failure landed AFTER the row was appended: every observation in
+      // that environment would leave an uncommitted row and hold the run at
+      // the next barrier. This repository is worked from linked worktrees,
+      // and the register had already discarded the same assumption.
+      const { root, git } = await runlogFixture();
+      const linked = path.join(root, "..", `wt-${path.basename(root)}`);
+      await git(root, "worktree", "add", "-q", "-b", "observing", linked);
+      try {
+        // `.git` really is a file here — the whole point of the test.
+        expect((await fs.stat(path.join(linked, ".git"))).isFile()).toBe(true);
+        const relDir = "evidence/run-c/obs-t2-treatment";
+        const runLogRel = "evidence/run-c.b12.runlog.jsonl";
+        await fs.mkdir(path.join(linked, relDir), { recursive: true });
+        await fs.writeFile(path.join(linked, relDir, "observation.json"), `{"taskId":"t2"}\n`, "utf8");
+        const committed = await fs.readFile(path.join(linked, runLogRel), "utf8");
+        const { commitObservationRow } = await load();
+        const result = await commitObservationRow(linked, {
+          evidenceDir: path.join(linked, "evidence"),
+          runId: "run-c",
+          runLogRel,
+          relDir,
+          written: ["observation.json"],
+          row: { runId: "run-c", taskId: "t2", arm: "treatment", sessionId: "s-t2" },
+          sessionId: "s-t2",
+          message: "evidence: run-c t2/treatment",
+          runlogAtBarrier: committed,
+          branchRef: "refs/heads/observing",
+          lockAttempts: 1,
+          lockWaitMs: 1,
+        });
+        expect(result.ok).toBe(true);
+        expect(await git(linked, "show", `refs/heads/observing:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+        expect(await git(linked, "show", `refs/heads/observing:${runLogRel}`)).toMatch(/s-t2/);
+        // The other branch never moved, and the worktree is clean.
+        expect(await git(linked, "status", "--porcelain")).toBe("");
+      } finally {
+        await git(root, "worktree", "remove", "--force", linked);
+      }
+    });
+
+    it("refuses a DETACHED HEAD — evidence no branch holds is evidence the run cannot find", async () => {
+      const { root, git, runLogRel, committed, call } = await runlogFixture();
+      await git(root, "checkout", "-q", "--detach");
+      const result = await call();
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/HEAD is detached now/);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toBe(committed);
+    });
+
+    // R25: the postcondition verified `written` — the per-observation
+    // artifacts — and the runlog is the OTHER path the same commit names. The
+    // threat model is the one the code already writes down for the archive: an
+    // index-mutating `pre-commit` hook. Pointed at the row, it produced a
+    // commit with every archive blob matching, a green result, a released
+    // session lock — and HEAD holding an observation with no ordering row.
+    const hookThatMutatesTheIndex = async (root: string, body: string) => {
+      const hooks = path.join(root, ".git", "hooks");
+      await fs.mkdir(hooks, { recursive: true });
+      await fs.writeFile(path.join(hooks, "pre-commit"), `#!/bin/sh\n${body}\nexit 0\n`, { encoding: "utf8", mode: 0o755 });
+    };
+
+    it("is INERT to an index-mutating pre-commit hook — plumbing runs no hooks (R27)", async () => {
+      // R25's threat closed by construction rather than by a check. The hook
+      // below is the one that used to drop the row from the commit while
+      // leaving the observation staged; the install no longer runs `git
+      // commit`, so it never fires, and the row lands with its archive. The
+      // postcondition stays — it is now about bytes moving under the act, not
+      // about hooks — and the test below it is what proves the postcondition
+      // still fires.
+      const { root, git, runLogRel, relDir, call, branchRef } = await runlogFixture();
+      await hookThatMutatesTheIndex(
+        root,
+        `blob=$(git rev-parse HEAD:${runLogRel})\ngit update-index --cacheinfo 100644,$blob,${runLogRel}\ngit update-index --force-remove ${relDir}/observation.json`
+      );
+      const result = await call();
+      expect(result.ok).toBe(true);
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
+    });
+
+    it("refuses when the runlog is not the bytes this observation appended", async () => {
+      // R25's postcondition, reached through the seam now that no hook can
+      // reach it: anything rewriting the runlog between the append and the
+      // install means the row that lands cannot be attributed to this act.
+      const { root, git, runLogRel, call, branchRef } = await runlogFixture();
+      const foreign = `{"ts":"2026-08-10T00:03:00Z","runId":"run-c","taskId":"t9","arm":"treatment","sessionId":"s-t9"}\n`;
+      const result = await call({
+        beforeInstall: async () => {
+          await fs.appendFile(path.join(root, runLogRel), foreign, "utf8");
+        },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.why).toMatch(/not the bytes this observation appended/);
+      expect(result.ok === false && result.why).toMatch(/rewritten/);
+      // Our row did land; the disk copy is no longer what we appended, which
+      // is exactly the state the next observation's barrier must not inherit
+      // as if this act had succeeded.
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
+      expect(await fs.readFile(path.join(root, runLogRel), "utf8")).toMatch(/s-t9/);
+      expect(existsSync(path.join(root, "evidence", ".runlog-lock-run-c"))).toBe(false);
     });
 
     it("invalidates on drift in EVERY instruction component, with its citation", async () => {
@@ -3613,6 +4853,37 @@ describe("the four B12 scoring seams", () => {
     // horizon is being computed with the positional multiplier and `R_lo⁻ʳ` is
     // ranking rows by the wrong figure.
     expect(row?.unitsLo).not.toBeCloseTo(row?.units ?? 0, 3);
+
+    // F23: the uncapped pair prices `signed` WHOLE on the same row —
+    //   unitsUncapped   = 49000/3.7 x 2.2 = 29135.135135135135
+    //   unitsLoUncapped = 49000/3.7 x 2.0 = 26486.486486486486
+    // — and above the cap the two pairs SPLIT; equality here would mean the
+    // cap was applied to both.
+    const credited = row?.disposition === "credited" ? row : undefined;
+    expect(credited?.unitsUncapped).toBeCloseTo(29_135.135135135135, 6);
+    expect(credited?.unitsLoUncapped).toBeCloseTo(26_486.486486486486, 6);
+    expect(credited?.unitsUncapped).not.toBeCloseTo(credited?.units ?? 0, 3);
+  });
+
+  it("prices the uncapped pair equal to the scored one under the cap — the metamorphic half of F23", async () => {
+    // UNDER the cap `Math.min(bytes_raw, cap)` returns `bytes_raw`, so the two
+    // pairs are the SAME floats through the SAME operations — asserted with
+    // exact equality, not `closeTo`, because any drift means the uncapped path
+    // grew its own arithmetic.
+    const id = "dddddddd-0000-4000-8000-dddddddddddd";
+    const file = await transcriptWithLongSegment(id);
+    const transcript = await readTranscript(file);
+    const result = buildCounterfactual(
+      transcript,
+      [{ ts: at(500), invocation_id: id, tool: "gate", bytes_raw: 10_000, bytes_returned: 1_000, turns_collapsed: 0, latency_ms: 1 }],
+      DEFAULT_RATES,
+      buildSessionReport(transcript, DEFAULT_RATES)
+    );
+    const row = result.rows[0];
+    expect(row?.disposition).toBe("credited");
+    const credited = row?.disposition === "credited" ? row : undefined;
+    expect(credited?.unitsUncapped).toBe(credited?.units);
+    expect(credited?.unitsLoUncapped).toBe(credited?.unitsLo);
   });
 
   it("narrows a credited row's magnitudes by its disposition, so `?? 0` is unwritable", async () => {

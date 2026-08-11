@@ -216,6 +216,8 @@ export function computeTerms(input: TermsInput): ObservationTerms {
   const perDelivery: Record<string, DeliveryTerms> = {};
   let sLo = 0;
   let sHi = 0;
+  let sLoUncapped = 0;
+  let sHiUncapped = 0;
 
   for (const [i, row] of counterfactual.rows.entries()) {
     const key = input.telemetry[i]?.key;
@@ -249,6 +251,11 @@ export function computeTerms(input: TermsInput): ObservationTerms {
     // reachable. `turnsCollapsed` is on the row and in NEITHER sum.
     sHi += row.units;
     sLo += row.unitsLo;
+    // The uncapped pair, in the SAME branch under the SAME narrow — the
+    // uncapped bracket may not be summed over a different row population than
+    // the capped one it sits beside.
+    sHiUncapped += row.unitsUncapped;
+    sLoUncapped += row.unitsLoUncapped;
 
     const bucket = (perDelivery[row.tool] ??= {
       sLo: 0,
@@ -275,6 +282,8 @@ export function computeTerms(input: TermsInput): ObservationTerms {
     aO,
     sLo,
     sHi,
+    sLoUncapped,
+    sHiUncapped,
     oO,
     rows,
     refusals,

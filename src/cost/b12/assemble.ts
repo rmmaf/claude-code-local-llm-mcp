@@ -40,6 +40,7 @@ import { rateKey } from "../rates.js";
 import type { Transcript } from "../transcript.js";
 import { aggregate } from "./aggregate.js";
 import { runCoverage } from "./coverage.js";
+import { fileScopeViolations } from "./filescope.js";
 import { computeTerms } from "./terms.js";
 import type {
   ArchiveCheck,
@@ -236,6 +237,9 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   // bracket is owed either way.
   const suspect = (o: ArchivedObservation): string[] => [
     ...(o.telemetryIntact ? [] : ["the telemetry identity source is not intact"]),
+    ...(o.attributionIntact
+      ? []
+      : ["the archive cannot say which telemetry rows are this arm's, or its lineage is short a file that could not be read"]),
     ...(o.identityIntact
       ? []
       : ["the observation's identity is cross-wired or unshowable — evidence that cannot be bound to its task, arm, run and session may not price anything"]),
@@ -422,6 +426,7 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     checks,
     scoringCommandActual: input.scoringCommandActual,
     duplicatedTaskIds,
+    brackets: { rLo: base.rLo, rHi: base.rHi, uncappedBracket: base.uncappedBracket },
   });
 
   const uncheckedClauses = gitAudit.ran
@@ -452,10 +457,16 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     firedChecks.length > 0 ? `${firedChecks[0]!.clause}: ${firedChecks[0]!.detail}` : base.voidClause;
 
   // ---- artifact 7 ----------------------------------------------------------
-  const admittedSumA = admitted.reduce((sum, t) => sum + t.aO, 0);
+  // The share's denominator is the METRIC'S denominator — Σ(A + S), because
+  // the frozen name is "per-task DENOMINATOR share" and the ratio's
+  // denominator is A + S (aggregate.ts's poolRatio), not A alone (the
+  // seventh adversarial round caught this computing aO / ΣaO). Horizon: the
+  // DECIDING lo horizon, the same convention `aPlusSPositive` registers one
+  // field above and the per-task recomputation already uses.
+  const admittedSumAPlusSLo = admitted.reduce((sum, t) => sum + t.aO + t.sLo, 0);
   const counterfactualObservations = assessed
     .filter((a) => a.terms !== null)
-    .map((a) => counterfactualOf(a, admitted.includes(a.terms!), admittedSumA));
+    .map((a) => counterfactualOf(a, admitted.includes(a.terms!), admittedSumAPlusSLo));
 
   // not_started: lawful, and reported with its disposition (`admissionRule` 2).
   // These are manifest entries with NO observation — they never had terms, so
@@ -477,6 +488,14 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     manifestBlobSha256: archive.git.manifestBlobSha256,
     archiveChecks: checks,
     uncheckedClauses,
+    // THE PRE-DATA RULE, ON THE FACE (R37#1). PREMISES.md: "a verdict emitted
+    // without one is not final". `uncheckedClauses` carried that fact and
+    // nothing SAID it — a reader, a replayer and the CLI all saw an ordinary
+    // `verdict: hold|fall|open` and nothing marking it provisional. Derived
+    // from `uncheckedClauses` rather than from `gitAudit.ran` so there is one
+    // source: any clause no input allowed anyone to check makes the verdict
+    // not final, whatever produced that gap.
+    final: uncheckedClauses.length === 0,
     gitAudit,
     declarationFailures,
     integrityFailures,
@@ -794,7 +813,7 @@ function requestsPerSegment(
 }
 
 /** Artifact 7's per-observation entry, from what was already computed. */
-function counterfactualOf(a: Assessed, isAdmitted: boolean, admittedSumA: number): CounterfactualObservation {
+function counterfactualOf(a: Assessed, isAdmitted: boolean, admittedSumAPlusSLo: number): CounterfactualObservation {
   const terms = a.terms!;
   const record = a.obs.record;
   const classes = ["ambiguous", "unverifiable", "excludedForeign", "unmatched"] as const;
@@ -818,8 +837,13 @@ function counterfactualOf(a: Assessed, isAdmitted: boolean, admittedSumA: number
     subagentShare: terms.subagentShare,
     requestsPerSegment: a.requestsPerSegment,
     rateKeys: terms.rateKeys,
+    // REGISTERED FORMULA (FINDINGS.md, R7#12): share_t = (A_t + S_t,lo) /
+    // Σ_admitted (A + S_lo) — the task's share of the metric's OWN
+    // denominator on the deciding lo horizon. A COVARIATE: reported beside
+    // the manifest's perTaskDenominatorShareCap, deciding nothing — a live
+    // predicate here would mint a void the frozen text never wrote.
     perTaskDenominatorShare:
-      isAdmitted && admittedSumA > 0 ? terms.aO / admittedSumA : null,
+      isAdmitted && admittedSumAPlusSLo > 0 ? (terms.aO + terms.sLo) / admittedSumAPlusSLo : null,
     binaryVersion: record?.binaryVersion ?? null,
     binarySha256: record?.binarySha256 ?? null,
     baseCommit: record?.baseCommit ?? null,
@@ -848,6 +872,12 @@ interface ChecksContext {
   checks: ArchiveCheck[];
   scoringCommandActual: string | null;
   duplicatedTaskIds: ReadonlySet<string>;
+  /**
+   * The four bracket bounds off the aggregate result, for clause 8's live
+   * predicate — checked as VALUES on the constructed result, because NaN
+   * survives every sum and serializes as `null`.
+   */
+  brackets: { rLo: number; rHi: number; uncappedBracket: { rLo: number; rHi: number } };
 }
 
 /**
@@ -970,13 +1000,45 @@ function buildArchiveChecks(ctx: ChecksContext): void {
         : "every observation matches the pinned version and binary sha; DISABLE_AUTOUPDATER is asserted by the harness before each observation"
   );
 
-  // voidConditions 8 — the measured cap, and BOTH BRACKETS (F23: fires until
-  // the second arithmetic pass makes the artifact carry two brackets).
-  const capPinned = typeof pinned.clientTruncationCap === "number" && Number.isFinite(pinned.clientTruncationCap);
+  // admissionRule 7 — every declared scope clear of the instrument set, over
+  // EVERY manifest task: "no manifest task's file scope" is the whole
+  // pre-registered list, not the admitted twenty. The harness carries the
+  // registration-time twin; this is the scorer-side replay of the same rule.
+  const scopeViolations = fileScopeViolations(
+    archive.manifest.tasks.map((t) => ({ id: t.id, fileScope: t.fileScope }))
+  );
+  push(
+    "admissionRule 7 — file scopes clear of the instrument",
+    scopeViolations.length > 0,
+    scopeViolations.length > 0
+      ? scopeViolations.slice(0, 5).join("; ") + (scopeViolations.length > 5 ? "; …" : "")
+      : "every declared scope parses under the grammar and none intersects src/cost/**, the walk script, evidence/**, or the governance documents"
+  );
+
+  // voidConditions 8 — the measured cap, and BOTH BRACKETS. LIVE since F23's
+  // repair: fires iff `!(Number.isFinite(cap) && cap > 0)` OR any of the four
+  // bracket bounds is not a proper finite number ON THE CONSTRUCTED RESULT —
+  // a VALUE check, because NaN survives every sum and serializes as `null`,
+  // and a check on the fields' spelled presence is the theatre
+  // FINDINGS.md:546-553 refused. The same truth table is asserted over the
+  // real serializer's bytes by the test wave.
+  const cap = pinned.clientTruncationCap;
+  const capValid = typeof cap === "number" && Number.isFinite(cap) && cap > 0;
+  const bounds = [
+    ctx.brackets.rLo,
+    ctx.brackets.rHi,
+    ctx.brackets.uncappedBracket.rLo,
+    ctx.brackets.uncappedBracket.rHi,
+  ];
+  const badBound = bounds.some((v) => typeof v !== "number" || !Number.isFinite(v));
   push(
     "voidConditions 8 — measured cap and both brackets",
-    true,
-    `${capPinned ? "the cap is pinned" : "NO measured clientTruncationCap is pinned"}; the artifact carries capped and uncapped BYTE SUMS, not the two BRACKETS the clause demands — FINDINGS.md F23, its own pass; this check fires until that pass lands`
+    !capValid || badBound,
+    !capValid
+      ? "NO measured clientTruncationCap is pinned as a finite positive number — the capped bracket is priced against nothing"
+      : badBound
+        ? "a bracket bound is not a finite number — the artifact cannot carry a bracket it cannot state"
+        : "the cap is pinned and the artifact carries both brackets, capped and uncapped, four finite bounds"
   );
 
   // voidConditions 9 — instrument contamination, run-level.

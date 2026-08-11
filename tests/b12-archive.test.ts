@@ -31,7 +31,8 @@ import {
   telemetryDrift,
 } from "../src/cost/b12/archive.js";
 import { assembleRun } from "../src/cost/b12/assemble.js";
-import { committedAuditCheck, emitRun, invocationString, parseGitAudit } from "../src/cost/b12/emit.js";
+import { AUDIT_INPUT_KEYS, parseGitAudit } from "../src/cost/b12/audit.js";
+import { committedAuditCheck, emitRun, invocationString } from "../src/cost/b12/emit.js";
 import { reduceFile } from "../src/cost/b12/capture.js";
 import { readTranscript } from "../src/cost/transcript.js";
 import { makeScratch, req, at } from "./b12-fixtures.js";
@@ -325,6 +326,70 @@ describe("readRunArchive — the hostile disk", () => {
     // committed-fixture test above via `problems: []`
   });
 
+  it("a swapped or stripped snapshot stamp is caught — the R7 identity controls", async () => {
+    // SWAPPED: a snapshot stamped for another session under this directory's
+    // name is cross-wired evidence — `identityIntact` false, terms refused,
+    // exactly like the record and archive halves of the binding.
+    const swapped = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "snapshot-before.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        parsed.identity.sessionId = "sess-evil";
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(swapped.observations[0]!.identityIntact).toBe(false);
+    expect(swapped.observations[0]!.problems.join(" ")).toMatch(
+      /snapshot-before\.json is stamped for session sess-evil/
+    );
+
+    // STRIPPED: removing the stamp is a swapper's CHEAPEST move, and R13
+    // found it was also the only one that cost nothing — deleting the
+    // snapshot voids through clause 14, while stripping its stamp merely
+    // printed a line. An unshowable binding is now refused terms, exactly as
+    // `observation.json` with no sessionId always was.
+    const stripped = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "snapshot-after.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        delete parsed.identity;
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(stripped.observations[0]!.identityIntact).toBe(false);
+    expect(stripped.observations[0]!.problems.join(" ")).toMatch(
+      /snapshot-after\.json carries no identity stamps/
+    );
+    // end to end: no terms, an integrity failure, nothing scored.
+    const strippedRun = assembleRun({
+      archive: stripped,
+      gitAudit: { ran: false },
+      scoringCommandActual: "node dist/cost/b12/emit.js replay-01",
+    });
+    expect(strippedRun.result.integrityFailures).toHaveLength(1);
+    expect(strippedRun.result.admitted).toBe(0);
+
+    // MIS-PHASED: `phase` was parsed from the first day and compared by
+    // nothing, so an after-snapshot wearing the before-stamp — the exact
+    // swap that makes originated ids look inherited, or the reverse — passed
+    // every other check in the family.
+    const misphased = await readRunArchive(
+      await fixtureCopy(async (root) => {
+        const file = path.join(root, OBS, "snapshot-after.json");
+        const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+        parsed.identity.phase = "before";
+        await fs.writeFile(file, JSON.stringify(parsed), "utf8");
+      }),
+      "replay-01"
+    );
+    expect(misphased.observations[0]!.identityIntact).toBe(false);
+    expect(misphased.observations[0]!.problems.join(" ")).toMatch(
+      /snapshot-after\.json is stamped phase before while the file is the after snapshot/
+    );
+  });
+
   it("an extra directory is reported and a missing runlog is reported", async () => {
     const extra = await readRunArchive(
       await fixtureCopy((root) => fs.mkdir(path.join(root, "evidence", "replay-01", "scratch-notes"))),
@@ -426,6 +491,10 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     expect(cf.oO).toBeCloseTo(168, 9);
     expect(result.rLo).toBeCloseTo(-0.084, 12);
     expect(result.rHi).toBeCloseTo(-0.084, 12);
+    // The uncapped bracket, by the same hand: no telemetry → S = 0 at every
+    // priced form, so capped and uncapped coincide at (0−168)/2,000 exactly.
+    expect(result.uncappedBracket.rLo).toBeCloseTo(-0.084, 12);
+    expect(result.uncappedBracket.rHi).toBeCloseTo(-0.084, 12);
     expect(result.rHiPlus.evaluable).toBe(true);
     if (result.rHiPlus.evaluable) expect(result.rHiPlus.value).toBeCloseTo(-0.084, 12);
     expect(result.recomputations.rLoMinusTask).toBe(0); // the only task dropped → empty pool
@@ -433,11 +502,12 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     expect(result.strata.testRed.evaluable).toBe(false); // 1 admitted < the floor of 5
 
     // The verdict machinery, on the face: the fixture is outside git, so
-    // artifact 1's blob check fires FIRST and names the void; clause 8 fires
-    // behind it until F23 lands; clauses 4–6 are UNCHECKED without an audit.
+    // artifact 1's blob check fires FIRST and names the void; clause 8 is LIVE
+    // since F23's repair and does NOT fire — the cap is pinned and both
+    // brackets carry finite bounds; clauses 4–6 are UNCHECKED without an audit.
     expect(result.verdict).toBe("void");
     expect(result.voidClause).toMatch(/^design\.artifacts 1/);
-    expect(result.archiveChecks.find((c) => c.clause.startsWith("voidConditions 8"))!.fired).toBe(true);
+    expect(result.archiveChecks.find((c) => c.clause.startsWith("voidConditions 8"))!.fired).toBe(false);
     // outside a repository committedness is UNSHOWABLE — fired, never clean —
     // while the terms above still published (the partial bracket is owed)
     const committed = result.archiveChecks.find((c) => c.clause.includes("committed evidence"))!;
@@ -463,17 +533,47 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     expect(counterfactual.schema).toBe("b12-counterfactual/1");
     // the Map serialises as an object, not as {}
     expect(typeof result.coverage.ownedBy).toBe("object");
+    // Clause 8's truth table over the REAL serializer's bytes, not the
+    // constructed object: both brackets survive the round trip as four proper
+    // finite numbers. A NaN here would have serialised as `null`, and the
+    // value check on the parsed artifact is what catches it.
+    for (const v of [
+      result.rLo,
+      result.rHi,
+      result.uncappedBracket.rLo,
+      result.uncappedBracket.rHi,
+    ]) {
+      expect(typeof v).toBe("number");
+      expect(Number.isFinite(v)).toBe(true);
+    }
+    expect(result.uncappedBracket.rLo).toBeCloseTo(-0.084, 12);
+    expect(result.uncappedBracket.rHi).toBeCloseTo(-0.084, 12);
   });
 });
 
 describe("the emitter's small pure pieces", () => {
-  it("parseGitAudit refuses every shape that is not a replayable audit — inputs included", () => {
-    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } })).toEqual({
+  it("parseGitAudit refuses every shape that is not a replayable audit — the WHOLE key set included", () => {
+    // R26: this used to accept ANY artifact carrying one string input, so a
+    // hand-written file with `verdict: "clean"` and a single plausible pair
+    // parsed as a real audit. The producer has always asserted key-set
+    // equality before writing; the consumer asserting the same constant is
+    // what makes that assertion mean anything on the reading end.
+    const full = Object.fromEntries(AUDIT_INPUT_KEYS.map((k) => [k, "x"]));
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: full })).toEqual({
       ran: true,
       verdict: "clean",
       reasons: [],
-      inputs: { head: "abc" },
+      inputs: full,
     });
+    // ONE key short — a partial artifact is no artifact.
+    const { head: _dropped, ...missingOne } = full;
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: missingOne })).toEqual({ ran: false });
+    // …and one key too many: this tool did not write that.
+    expect(
+      parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: { ...full, "clause7.invented": "x" } })
+    ).toEqual({ ran: false });
+    // The old fail-open shape, now refused by name.
+    expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } })).toEqual({ ran: false });
     expect(parseGitAudit({ ran: true, verdict: "maybe", reasons: [] })).toEqual({ ran: false });
     // a verdict whose inputs cannot be replayed is not an audit (artifact 11)
     expect(parseGitAudit({ ran: true, verdict: "clean", reasons: [] })).toEqual({ ran: false });

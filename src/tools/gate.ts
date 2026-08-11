@@ -7,11 +7,12 @@ import { z } from "zod";
 import { loadChecks, type CheckCategory, type CheckSpec } from "../checks/config.js";
 import { dedupe, parseFailures, type Failure } from "../checks/parsers.js";
 import type { Config } from "../config.js";
-import { createCorpusWriter, type CorpusWriter } from "../corpus.js";
+import type { CorpusWriter } from "../corpus.js";
+import { selectCorpusWriter, selectTelemetryWriter, startEmission } from "../cost/emission.js";
 import { defaultProcessRunner, runGit, type ProcessRunner } from "../exec.js";
 import { ToolError } from "../fs-safety.js";
 import { log } from "../logger.js";
-import { createTelemetryWriter, type TelemetryWriter } from "../telemetry.js";
+import type { TelemetryWriter } from "../telemetry.js";
 
 export const gateToolName = "gate";
 
@@ -301,8 +302,10 @@ export async function runGate(
 ): Promise<GateResult> {
   const runner = deps.processRunner ?? defaultProcessRunner;
   const now = deps.now ?? (() => Date.now());
-  const telemetry = deps.telemetry ?? createTelemetryWriter(config.root);
-  const corpus = deps.corpus ?? createCorpusWriter(config.root, { runner });
+  // Selection through the pinned emission wrapper — same fallback, same order;
+  // the module is what B12's clause-5 audit pins, so the lifecycle has ONE home.
+  const telemetry = selectTelemetryWriter(config.root, deps.telemetry);
+  const corpus = selectCorpusWriter(config.root, { runner }, deps.corpus);
   const started = now();
 
   const category = args.checks ?? "all";
@@ -322,6 +325,11 @@ export async function runGate(
       { requested: category, available: specs.map((s) => ({ name: s.name, category: s.category })) }
     );
   }
+
+  // The preflight ACCEPTED — `active` begins HERE, before the check/budget
+  // loop, because an exhausted budget below still emits a row with zero checks
+  // executed. Everything above this line is `not-started` and emits nothing.
+  const emission = startEmission(telemetry);
 
   // Sequential on purpose: checks share the CPU and, more importantly, the
   // build cache. Running tsc and vitest concurrently makes both slower.
@@ -390,9 +398,22 @@ export async function runGate(
     bytes_raw: rawBytes,
     bytes_returned: 0,
   };
+  // b12:emission-begin
+  // WHAT voidConditions 5 MEANS BY "gate's or repair's telemetry emission".
+  // `src/cost/emission.ts` owns the LIFECYCLE — writer selection, write-once,
+  // the abort pair — and `src/cost/**` already pins it. The ROW is built HERE,
+  // and `turns_collapsed` below is not a diagnostic: it IS the definition of
+  // the credited saving. Clause 5 lists the emission as a FOURTH item beside
+  // `src/cost/**` precisely because something of it lives outside that pin.
+  //
+  // The audit hashes the bytes between these markers at the freeze anchor and
+  // at the head it audits, with whole-line comments dropped, so the rest of
+  // this file stays editable — it is what the experiment MEASURES, not what it
+  // freezes. Moving code out of the fence, or deleting the markers, reads as
+  // drift; it does not read as clean.
   result.bytes_returned = JSON.stringify(result).length;
 
-  await telemetry.record({
+  await emission.emit({
     tool: "gate",
     invocation_id: invocationId,
     bytes_raw: rawBytes,
@@ -403,6 +424,7 @@ export async function runGate(
     latency_ms: now() - started,
     detail: { checks: selected.map((s) => s.name), passed: result.passed },
   });
+  // b12:emission-end
 
   // Archive what a red run actually found. Gated on parsed failures rather than
   // on `passed`: a gate can be red because a check could not RUN — a missing

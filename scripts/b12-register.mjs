@@ -1,0 +1,901 @@
+/**
+ * THE OPERATOR'S REGISTER — `check`, `register`, `open-b`, `seal-harness`.
+ * NEVER FROZEN: this file is tooling the operator drives, and freezing it
+ * would freeze the ability to refuse. What it CALLS is frozen — the manifest
+ * sweep and the scope grammar come from `scripts/b12-run.mjs`, the prior-runs
+ * register from the built scorer — and what it WRITES is what the frozen
+ * clauses then hold everyone to.
+ *
+ * THE ACT IS A COMPARE-AND-SWAP, never a working-tree commit. `register`
+ * captures the branch ref, `expectedHead`, and the candidate bytes ONCE and
+ * BEFORE VALIDATION — what is validated is exactly what registers; every OLD
+ * input is read from `<expectedHead>:<path>`; every NEW candidate (the
+ * manifests, the registration row's MEASUREMENTS) is generated or read ONCE,
+ * written into the object store, laid into a TEMPORARY index over
+ * `expectedHead`'s tree, committed with `git commit-tree <tree> -p
+ * <expectedHead>`, and installed with `git update-ref <ref> <new>
+ * <expectedHead>` — so a concurrent commit makes the act FAIL WITHOUT
+ * REGISTERING instead of registering against a head nobody checked. After a
+ * successful `update-ref` the registration EXISTS: any later failure is
+ * reported as "registered; a later step failed", never as "not registered".
+ *
+ * ANTI-STALE-DIST: the prior-runs gate imports the BUILT scorer, and a stale
+ * `dist/` is the registered F24 hole — so the build runs fresh, and a build
+ * that fails refuses the whole act.
+ */
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  appendFileSync,
+  closeSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { fileScopeViolations, manifestDeclarationGaps } from "./b12-run.mjs";
+
+const sha256Text = (text) => createHash("sha256").update(text, "utf8").digest("hex");
+
+/** ISO seconds, read from the clock in the same command that writes the row. */
+const stamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+function fail(why) {
+  process.stderr.write(`b12-register: REFUSED — ${why}\n`);
+  process.exit(1);
+}
+
+function sh(cwd, cmd, args, opts = {}) {
+  const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 1 << 28, shell: opts.shell ?? false });
+  return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "", errorCode: r.error?.code ?? null };
+}
+
+const git = (cwd, args) => sh(cwd, "git", args);
+
+/**
+ * The build, FRESH, before any import from `dist/` — a register that trusted
+ * yesterday's build would gate prior runs on yesterday's rules.
+ */
+export function freshBuild(repoRoot, command = null) {
+  const cmd = command ?? (process.platform === "win32" ? "npm.cmd" : "npm");
+  const r = sh(repoRoot, cmd, ["run", "build"], { shell: process.platform === "win32" });
+  if (r.code !== 0) {
+    throw new Error(`the fresh build failed (exit ${r.code}) — a stale dist/ may not gate a registration:\n${(r.err || r.out).slice(0, 2000)}`);
+  }
+}
+
+/**
+ * The PURE half of `check`: every red reason derivable from the two loaded
+ * manifests and the pilot file, no git and no subprocess — so the oracle can
+ * fire and not-fire each one. The git-coupled steps (prior runs, the seal,
+ * the cert and probe artifacts, the red-at-base verification) live in the CLI
+ * orchestration and refuse in their own words.
+ */
+export function checkCore(manifestA, manifestB, pilot) {
+  const red = [];
+  for (const [name, m] of [["manifest A", manifestA], ["manifest B", manifestB]]) {
+    for (const gap of manifestDeclarationGaps(m)) red.push(`${name}: ${gap}`);
+  }
+  // The frozen CARDINALITIES — `gaps === 0` does not cover them: an ordered
+  // manifest of 30 (design.artifacts 1), exactly 6 A/B pairs (runPlan PHASE
+  // 7: "12 sessions (6 pairs)"), a pilot of exactly 5 pre-declared tasks
+  // excluded from BOTH sealed manifests (design.artifacts 4).
+  for (const [name, m] of [["manifest A", manifestA], ["manifest B", manifestB]]) {
+    const n = Array.isArray(m?.tasks) ? m.tasks.length : 0;
+    if (n !== 30) red.push(`${name}: ${n} task(s) against the frozen ordered 30 (design.artifacts 1)`);
+  }
+  const pairs = Array.isArray(manifestA?.abPairs) ? manifestA.abPairs.length : 0;
+  if (pairs !== 6) red.push(`manifest A: ${pairs} A/B pair(s) against the frozen 6 (runPlan PHASE 7)`);
+  if (pilot === null) {
+    red.push("no pilot file — PHASE 2 precedes PHASE 4, and a register with no pilot is a phase skipped in silence");
+  } else {
+    const pilotIds = [...new Set((pilot.observations ?? []).map((o) => o.taskId))];
+    if (pilotIds.length !== 5) {
+      red.push(`the pilot covers ${pilotIds.length} distinct task(s) against the frozen 5 (design.artifacts 4)`);
+    }
+    for (const [name, m] of [["manifest A", manifestA], ["manifest B", manifestB]]) {
+      const ids = new Set((m?.tasks ?? []).map((t) => t?.id));
+      const overlap = pilotIds.filter((id) => ids.has(id));
+      if (overlap.length > 0) {
+        red.push(`pilot task(s) ${overlap.join(", ")} appear in ${name} — artifact 4 excludes the pilot from both sealed manifests`);
+      }
+    }
+  }
+  // Cross invariants and the per-task hashes.
+  if (manifestA?.runId !== undefined && manifestB?.runId !== undefined && manifestA.runId === manifestB.runId) {
+    red.push("manifests A and B carry the SAME runId — run 2 is a distinct registered run, not a relabel");
+  }
+  for (const [name, m] of [["manifest A", manifestA], ["manifest B", manifestB]]) {
+    for (const t of m?.tasks ?? []) {
+      if (typeof t?.prompt === "string" && typeof t?.promptSha256 === "string" && sha256Text(t.prompt) !== t.promptSha256) {
+        red.push(`${name}: task ${t.id} promptSha256 does not match its prompt — the text moved after writing`);
+      }
+    }
+    // admissionRule 7 over EVERY task, via the frozen predicate.
+    for (const v of fileScopeViolations((m?.tasks ?? []).map((t) => ({ id: t?.id ?? "(unnamed)", fileScope: Array.isArray(t?.fileScope) ? t.fileScope : null })))) {
+      red.push(`${name}: ${v}`);
+    }
+    // The two CHOSEN constants, both, and the explicit budget declarations the
+    // seal refuses to live without.
+    const pinned = m?.pinned ?? {};
+    if (typeof pinned.pacingCacheWriteShareCeiling !== "number") red.push(`${name}: pins no pacingCacheWriteShareCeiling (artifact 1)`);
+    if (typeof pinned.perTaskDenominatorShareCap !== "number") red.push(`${name}: pins no perTaskDenominatorShareCap (artifact 1)`);
+    if (!Number.isFinite(pinned.perArmTimeoutMs)) red.push(`${name}: pins no perArmTimeoutMs — the silent 45-minute fallback never decides a run`);
+    if (!Array.isArray(pinned.extraArgs)) red.push(`${name}: pins no extraArgs — what the probe ran with is what the run must run with, declared`);
+  }
+  return red;
+}
+
+/**
+ * ONE IDENTITY IN THREE PLACES. `voidConditions` 1 registers a run as
+ * "evidence/<run_id>.b12.tasks.json committed AND its run_id written to
+ * MEASUREMENTS.jsonl BY THE SAME COMMAND" — so the path, the row and the
+ * manifest's own `runId` are the same string or the act registers nothing
+ * usable. The CLI argument picks the PATH and fills the ROW; `observe`
+ * derives BOTH its canonical-path check and its registration lookup from the
+ * manifest's INTERNAL `runId`. A typo therefore commits a path and a row
+ * nobody will ever look for: observe refuses the manifest as non-canonical,
+ * and the register keeps a registration row for a run that can never produce
+ * a result — after which the prior-runs gate refuses EVERY later
+ * registration as abandoned, permanently, because an append-only record is
+ * never back-filled.
+ *
+ * `open-b` already takes run 2's id FROM the sealed manifest B; this is what
+ * makes `register` agree. Syntax is `manifestDeclarationGaps`' job, so this
+ * predicate speaks only about agreement, and only when there is a string to
+ * disagree with. Pure.
+ */
+export function runIdMismatch(requestedRunId, manifestA) {
+  const internal = manifestA?.runId;
+  if (typeof internal !== "string" || internal === "") return null; // the gaps predicate owns absence
+  if (internal === requestedRunId) return null;
+  return (
+    `manifest A carries runId ${JSON.stringify(internal)} but the act was asked to register ${JSON.stringify(requestedRunId)} — ` +
+    `the path, the MEASUREMENTS row and the manifest's own id are ONE identity (voidConditions 1), and observe looks the run up ` +
+    `by the manifest's; registering the other name would commit a row no session can ever use and no result can ever close`
+  );
+}
+
+/**
+ * THE CANDIDATE PATHS MUST BE UNBORN. `voidConditions` 1 registers a run as
+ * the manifest committed AND its row written "BY THE SAME COMMAND", and
+ * `registrationGuard` proves that by comparing the commit that INTRODUCED the
+ * manifest with the commit that introduced the row. A manifest already in
+ * history — committed by hand, or committed, deleted and recreated — can
+ * never satisfy it: this act would append the irreversible registration row
+ * to a run every later `observe` refuses, and the prior-runs gate would then
+ * refuse every NEXT registration over the abandoned one.
+ *
+ * So the question is asked BEFORE anything is built, at the captured commit,
+ * and the answer is a refusal rather than a discovery made afterwards by the
+ * guard. History cannot be un-committed, so the repair names the only lawful
+ * exit: a run id whose evidence paths are still unborn.
+ */
+export function priorIntroductionRefusals(repoRoot, atCommit, rels) {
+  const out = [];
+  for (const rel of rels) {
+    const born = git(repoRoot, ["log", atCommit, "--diff-filter=A", "--format=%H", "--", rel]);
+    if (born.code !== 0) {
+      out.push(`git could not ask when ${rel} was introduced — the same-act invariant cannot be established, so nothing is registered`);
+      continue;
+    }
+    const commits = born.out.trim().split("\n").filter((l) => l !== "");
+    if (commits.length > 0) {
+      const birth = commits[commits.length - 1].slice(0, 12);
+      out.push(
+        `${rel} was already introduced by ${birth} — voidConditions 1 seals the manifest and its MEASUREMENTS row in ONE commit, and the observe guard compares those two introducing commits, so registering now would mint a run every observation refuses and leave the register blocking the next one; use a run id whose evidence paths are unborn (history cannot be un-committed)`
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * RUN 2 IS A REGISTRATION, so `open-b` owes the act's own preconditions
+ * (R23). It derives `evidence/<run2Id>.b12.tasks.json` from a runId read out
+ * of the sealed blob and hands it to the same CAS — and `casCommit` stages
+ * with `update-index --add`, which REPLACES the blob at an existing path. A
+ * colliding id would therefore overwrite another run's committed manifest AND
+ * append a second registration row for that id: prior evidence corrupted, and
+ * `registrationGuard` refusing both runs over an ambiguous pair.
+ *
+ * The id also becomes a PATH here, so it is held to the manifest validator's
+ * grammar at the point of use — a check passed at seal time is not a reason
+ * to skip the one where the string is interpolated.
+ */
+export function openBRefusals(repoRoot, expectedHead, run2Id) {
+  const red = [];
+  if (typeof run2Id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(run2Id)) {
+    return [`manifest B's runId ${JSON.stringify(run2Id)} is not a safe path segment — it would name evidence/<runId>/… on disk`];
+  }
+  red.push(...priorIntroductionRefusals(repoRoot, expectedHead, [`evidence/${run2Id}.b12.tasks.json`]));
+  const measurements = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
+  if (measurements.code !== 0) {
+    red.push("expectedHead carries no MEASUREMENTS.jsonl — the append-only register must exist before an append");
+    return red;
+  }
+  for (const line of measurements.out.split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      const r = JSON.parse(line);
+      if (r?.b12_registration === true && r?.run_id === run2Id) {
+        red.push(
+          `${run2Id} already carries a registration row — a second one makes the pair ambiguous, and every observation of that run refuses over "N registration row(s)"`
+        );
+      }
+    } catch {
+      // A corrupt row is the scorer's finding; this guard speaks about ids.
+    }
+  }
+  return red;
+}
+
+/**
+ * THE CAS COMMIT. `candidates` are the NEW bytes, each read or generated
+ * exactly once by the caller; everything else in the tree rides through from
+ * `expectedHead` untouched. Returns without side effects on ANY failure
+ * before `update-ref`; after `update-ref` the act is DONE and the caller must
+ * report later failures as post-registration.
+ *
+ * THE SYNC IS CONDITIONAL. A candidate may carry `diskBefore` — the disk
+ * bytes (or null for absent) at the CALLER'S capture instant; without it the
+ * snapshot is taken here, at entry. After the swap, a path whose disk bytes
+ * moved past that snapshot is NEVER checked out: the ref only guards against
+ * concurrent COMMITS, and an unconditional checkout would silently destroy
+ * bytes nobody validated — a concurrent append to the append-only register
+ * most of all. Drifted paths are preserved and reported as a
+ * post-registration conflict.
+ */
+export function casCommit(
+  repoRoot,
+  { candidates, message, expectedHeadOverride = null, refOverride = null, onSyncEntry = null, afterSwap = null }
+) {
+  const refProbe = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+  if (refProbe.code !== 0) return { ok: false, why: "HEAD is detached — a registration needs a branch to install on" };
+  const ref = refProbe.out.trim();
+  // The BRANCH is part of the captured state: the SHA-guarded swap alone
+  // would install on whatever branch HEAD switched to mid-act (two branches
+  // can share one commit), and the sync would mutate that branch's checkout.
+  if (refOverride !== null && ref !== refOverride) {
+    return {
+      ok: false,
+      why: `HEAD moved from ${refOverride} to ${ref} during the act — the validated branch is not the one checked out; NOTHING was registered`,
+    };
+  }
+  const headProbe = git(repoRoot, ["rev-parse", "HEAD"]);
+  if (headProbe.code !== 0) return { ok: false, why: "HEAD does not resolve" };
+  const expectedHead = expectedHeadOverride ?? headProbe.out.trim();
+
+  // The disk snapshot each candidate is judged against at sync time — the
+  // caller's capture instant when given, entry here otherwise.
+  const readDisk = (rel) => {
+    try {
+      return readFileSync(path.join(repoRoot, rel), "utf8");
+    } catch {
+      return null;
+    }
+  };
+  // The blobs, into the object store — content-addressed, so a candidate
+  // mutated between validation and here would land as DIFFERENT bytes and the
+  // caller's recorded sha would disagree with the commit's.
+  const entries = [];
+  for (const c of candidates) {
+    const w = spawnSync("git", ["-C", repoRoot, "hash-object", "-w", "--stdin"], {
+      input: c.bytes,
+      encoding: "utf8",
+    });
+    if (w.status !== 0) return { ok: false, why: `hash-object failed for ${c.path}` };
+    entries.push({
+      path: c.path,
+      blob: (w.stdout ?? "").trim(),
+      bytes: c.bytes,
+      diskBefore: c.diskBefore === undefined ? readDisk(c.path) : c.diskBefore,
+    });
+  }
+
+  // A TEMPORARY index over expectedHead's tree — the real index and the
+  // working tree are not consulted and not touched. The location comes from
+  // git itself: in a LINKED WORKTREE `.git` is a FILE pointing at the real
+  // per-worktree git dir, so `path.join(repoRoot, ".git", ...)` would be a
+  // path under a file and every read-tree would fail.
+  const gitDirProbe = git(repoRoot, ["rev-parse", "--absolute-git-dir"]);
+  if (gitDirProbe.code !== 0) return { ok: false, why: "the git dir does not resolve" };
+  const tmpIndex = path.join(gitDirProbe.out.trim(), `b12-register-index-${process.pid}`);
+  const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+  const withIndex = (args, input) => {
+    const r = spawnSync("git", ["-C", repoRoot, ...args], { encoding: "utf8", env, input });
+    return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+  };
+  try {
+    if (withIndex(["read-tree", expectedHead]).code !== 0) return { ok: false, why: "read-tree over expectedHead failed" };
+    for (const e of entries) {
+      const upd = withIndex(["update-index", "--add", "--cacheinfo", `100644,${e.blob},${e.path}`]);
+      if (upd.code !== 0) return { ok: false, why: `update-index failed for ${e.path}` };
+    }
+    const tree = withIndex(["write-tree"]);
+    if (tree.code !== 0) return { ok: false, why: "write-tree failed" };
+    const commit = withIndex(["commit-tree", tree.out.trim(), "-p", expectedHead, "-m", message]);
+    if (commit.code !== 0) return { ok: false, why: "commit-tree failed" };
+    const newCommit = commit.out.trim();
+    // THE SWAP: installs only if the branch still points at expectedHead.
+    const swap = git(repoRoot, ["update-ref", ref, newCommit, expectedHead]);
+    if (swap.code !== 0) {
+      return { ok: false, why: `the CAS failed — ${ref} moved past ${expectedHead.slice(0, 12)} while the act was being built; NOTHING was registered` };
+    }
+    // The oracle's second seam: the window a concurrent `git update-ref` owns —
+    // it needs no index lock, so it is the one mover this act cannot exclude.
+    // The CLI never passes it.
+    if (afterSwap) afterSwap(newCommit);
+    // REGISTERED. THE SYNC IS NON-DESTRUCTIVE BY CONSTRUCTION — it does not
+    // run `git checkout` at all, and it never touches the index.
+    //
+    // Three rounds (R10, R14, R15) found holes in a checkout-based sync, each
+    // one a narrower TOCTOU than the last: disk bytes, then index bytes, then
+    // the microseconds between the last precondition and the write. That
+    // sequence is the argument. `git checkout <commit> -- <paths>` OVERWRITES,
+    // and no amount of looking first makes an overwrite safe without a lock
+    // git does not offer. So the operation changed instead of the checking:
+    //
+    //   - a candidate whose disk copy ALREADY equals the registered bytes
+    //     needs nothing (every manifest: the bytes came from that file);
+    //   - a candidate that only GREW — `bytes` extends `diskBefore`, which is
+    //     exactly the append-only register — is synced with an O_APPEND
+    //     write of the suffix. An append adds; it cannot overwrite, so a
+    //     concurrent writer loses nothing even if it wins the race;
+    //   - a candidate whose file did not exist is created with the exclusive
+    //     `wx` flag, which FAILS rather than clobbers if it appeared meanwhile;
+    //   - anything else — a drifted disk copy, a rewrite rather than an
+    //     extension — is left untouched and REPORTED.
+    //
+    // The branch is still re-checked, because appending this run's row to a
+    // register the operator switched away from would write the right bytes in
+    // the wrong place. Failures here are post-registration: the commit exists.
+    const conflicted = [];
+    const post = [];
+    const refNow = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (refNow.code !== 0 || refNow.out.trim() !== ref) {
+      return {
+        ok: true,
+        commit: newCommit,
+        postFailure: `registered as ${newCommit.slice(0, 12)} on ${ref}, but HEAD is now ${refNow.code === 0 ? refNow.out.trim() : "detached"} — NOTHING was synced; the registered bytes live in the commit`,
+      };
+    }
+    // THE INDEX MUST FOLLOW THE BRANCH IT IS THE INDEX OF, AND THE FILE WRITES
+    // BELONG IN THE SAME HELD LOCK. The act builds its tree in a TEMPORARY
+    // index and moves the checked-out branch, which leaves the REAL index
+    // describing `expectedHead`. Against the new HEAD that reads as staged
+    // DELETIONS of the manifests and a staged REVERSION of the register, so
+    // the operator's next ordinary `git add <result>; git commit` would carry
+    // them and undo the registration (reproduced: manifest gone, row gone).
+    //
+    // R16 fixed that with check-then-`read-tree`, which R17 correctly called a
+    // TOCTOU. The primitive that closes it is git's OWN mutex —
+    // `.git/index.lock`, taken with O_EXCL and released by RENAMING it over
+    // `.git/index`, exactly how every git command writes an index — and R19
+    // moved the file sync INSIDE it. That ordering is the whole point: `git
+    // checkout` must write the index, so while this lock is held the branch
+    // cannot be switched underneath the writes. The sync used to run after the
+    // rename released it, which left a window where this act's bytes landed in
+    // a DIFFERENT branch's checkout.
+    //
+    // WHAT THE LOCK DOES NOT COVER, stated rather than implied: it is the INDEX
+    // lock. `git update-ref` (and `git reset --soft`) write a ref without it,
+    // so the branch can still move while we hold it. Everything that would move
+    // it AND touch this working tree — commit, checkout, merge, rebase, reset
+    // --mixed/--hard — needs the index and is blocked. So the ref is re-read
+    // under the lock by NAME AND TARGET (R19: the name alone said nothing about
+    // where it pointed, and an index installed against a branch that moved
+    // describes the wrong commit), and the residual is a plumbing command the
+    // operator runs deliberately inside the milliseconds we hold the lock —
+    // the same residual R11 registered for the ref-plus-symref transaction git
+    // does not offer.
+    //
+    // The index we install is the TEMPORARY one that built the tree: it already
+    // IS `newCommit`'s tree, so no second read-tree exists to race. Every
+    // refusal path writes NOTHING and names its repair (R15's doctrine: never
+    // destroy bytes nobody validated).
+    const interleaved = [];
+    const syncCandidates = () => {
+      for (const e of entries) {
+        const abs = path.join(repoRoot, e.path);
+        const now = readDisk(e.path);
+        // The oracle's seam: the ONLY way to land a concurrent write inside the
+        // read→write window this loop is judged on. The CLI never passes it.
+        if (onSyncEntry) onSyncEntry(e);
+        if (now === e.bytes) continue; // already carries the registered bytes
+        if (now === null && e.diskBefore === null) {
+          try {
+            // Creating the parent directory destroys nothing; the `wx` write
+            // is what refuses to clobber a file that appeared meanwhile.
+            mkdirSync(path.dirname(abs), { recursive: true });
+            writeFileSync(abs, e.bytes, { encoding: "utf8", flag: "wx" });
+          } catch {
+            conflicted.push(`${e.path} (appeared during the act)`);
+          }
+          continue;
+        }
+        if (now === e.diskBefore && e.diskBefore !== null && e.bytes.startsWith(e.diskBefore)) {
+          try {
+            appendFileSync(abs, e.bytes.slice(e.diskBefore.length), "utf8");
+          } catch (error) {
+            conflicted.push(`${e.path} (append failed: ${String(error)})`);
+            continue;
+          }
+          // AN APPEND CANNOT OVERWRITE, BUT IT CANNOT RESERVE EITHER. The read
+          // above and this write are two operations, and a writer that landed
+          // between them puts its bytes FIRST: the file becomes
+          // `old + theirs + ours` while the commit carries `old + ours`. No
+          // bytes are lost — and the check above cannot see it, because it ran
+          // before the interleave existed. What breaks is the invariant every
+          // later `observe` enforces: the working copy must preserve the
+          // COMMITTED register as a byte PREFIX. Only a re-read finds it, and
+          // reporting is the whole remedy — rewriting a file to hoist our row
+          // over bytes nobody validated is the destruction R15 removed.
+          const after = readDisk(e.path);
+          if (after === null || !after.startsWith(e.bytes)) interleaved.push(e.path);
+          continue;
+        }
+        conflicted.push(e.path);
+      }
+    };
+    const gitDir = gitDirProbe.out.trim();
+    const lockPath = path.join(gitDir, "index.lock");
+    // A BOUNDED WAIT, because `git status` takes this same lock to refresh the
+    // stat cache: a neighbour holding it for 50ms must not cost the operator a
+    // hand reconciliation of the register.
+    const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    let holdingLock = false;
+    for (let attempt = 1; attempt <= 4 && !holdingLock; attempt++) {
+      try {
+        closeSync(openSync(lockPath, "wx")); // O_EXCL — git's own mutual exclusion
+        holdingLock = true;
+      } catch {
+        if (attempt < 4) sleepMs(200 * attempt);
+      }
+    }
+    if (!holdingLock) {
+      post.push(
+        `another git process holds ${path.basename(lockPath)} — NOTHING was synced: the index still describes ${expectedHead.slice(0, 12)}, so a plain 'git commit' next would REVERT this registration, and the local files were left untouched because that process may be moving this working tree; run: git reset --mixed ${newCommit.slice(0, 12)}, then reconcile the files against it`
+      );
+    } else {
+      try {
+        const refUnderLock = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+        const targetUnderLock = git(repoRoot, ["rev-parse", ref]);
+        const branchIntact =
+          refUnderLock.code === 0 &&
+          refUnderLock.out.trim() === ref &&
+          targetUnderLock.code === 0 &&
+          targetUnderLock.out.trim() === newCommit;
+        if (!branchIntact) {
+          post.push(
+            `${ref} no longer carries the registration (HEAD is ${refUnderLock.code === 0 ? refUnderLock.out.trim() : "detached"}, ${ref} is at ${targetUnderLock.code === 0 ? targetUnderLock.out.trim().slice(0, 12) : "?"}) — NOTHING was synced, because this working tree is no longer the one the act validated; the registered bytes live in ${newCommit.slice(0, 12)}`
+          );
+        } else {
+          // The files FIRST, then the index — both inside the held lock, so no
+          // checkout can move the branch between them.
+          syncCandidates();
+          const indexUnderLock = git(repoRoot, ["diff-index", "--cached", "--quiet", expectedHead]);
+          if (indexUnderLock.code === 0) {
+            copyFileSync(tmpIndex, lockPath);
+            renameSync(lockPath, path.join(gitDir, "index")); // atomic; releases the lock
+            holdingLock = false;
+          } else {
+            post.push(
+              `the index carries staged work, so it was left describing ${expectedHead.slice(0, 12)} — a plain 'git commit' next would REVERT this registration; run: git reset --mixed ${newCommit.slice(0, 12)} (then restage)`
+            );
+          }
+        }
+      } finally {
+        if (holdingLock) {
+          try {
+            unlinkSync(lockPath);
+          } catch {
+            // The lock outlives us only if the filesystem refused; git will say so.
+          }
+        }
+      }
+    }
+    if (conflicted.length > 0) {
+      post.push(
+        `NOT synced (the local copy moved during the act, or the change was not an append): ${conflicted.join(", ")} — the registered bytes live in ${newCommit.slice(0, 12)}; reconcile the local copies by hand`
+      );
+    }
+    if (interleaved.length > 0) {
+      post.push(
+        `appended, but a CONCURRENT WRITE interleaved ahead of it in: ${interleaved.join(", ")} — no bytes were lost, ` +
+          `but the local copy no longer preserves ${newCommit.slice(0, 12)}'s bytes as a PREFIX, which every later observe refuses; ` +
+          `rewrite the file BY HAND as the committed bytes followed by the foreign suffix`
+      );
+    }
+    if (post.length > 0) {
+      return { ok: true, commit: newCommit, postFailure: `registered as ${newCommit.slice(0, 12)}, but ${post.join("; ")}` };
+    }
+    return { ok: true, commit: newCommit };
+  } finally {
+    try {
+      rmSync(tmpIndex, { force: true });
+    } catch {
+      // Best effort — a leftover pid-suffixed temp index binds nothing.
+    }
+  }
+}
+
+/**
+ * THE SEAL — `evidence/b12-harness-seal.json`, CREATE-ONLY: evidence is
+ * frozen by sha, so a seal that could be re-run over its own path would be a
+ * pin that moves. A new seal means abandoning the prior registration or a new
+ * content-addressed artifact; this command refuses the overwrite either way.
+ */
+export function sealHarness(repoRoot, manifestPath, opts = {}) {
+  const sealRel = "evidence/b12-harness-seal.json";
+  const sealAbs = path.join(repoRoot, sealRel);
+  // The early read is a COURTESY — it names the refusal before the work. The
+  // guarantee is the exclusive create at the end (R21): between this check
+  // and that write sit a git call, a parse and four validations, and a second
+  // invocation crossing that gap used to win too, silently replacing a seal
+  // an operator believed was frozen.
+  if (existsSync(sealAbs)) return { ok: false, why: `${sealRel} already exists on disk — the seal is create-only` };
+  const born = git(repoRoot, ["log", "--diff-filter=A", "--format=%H", "--", sealRel]);
+  if (born.code === 0 && born.out.trim() !== "") {
+    return { ok: false, why: `${sealRel} exists in history — a re-seal abandons the prior registration explicitly or names a new artifact` };
+  }
+  if (!existsSync(manifestPath)) return { ok: false, why: `manifest not found: ${manifestPath}` };
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch {
+    return { ok: false, why: "the manifest does not parse" };
+  }
+  const pinned = manifest?.pinned ?? {};
+  if (!Number.isFinite(pinned.perArmTimeoutMs)) {
+    return { ok: false, why: "the manifest pins no perArmTimeoutMs — the silent 45-minute fallback never decides a run; declare the budget and re-run" };
+  }
+  if (!Array.isArray(pinned.extraArgs)) {
+    return { ok: false, why: "the manifest pins no extraArgs — declare (possibly empty) what every session runs with" };
+  }
+  const runBytesProbe = git(repoRoot, ["show", "HEAD:scripts/b12-run.mjs"]);
+  if (runBytesProbe.code !== 0) return { ok: false, why: "HEAD does not carry scripts/b12-run.mjs — seal COMMITTED bytes, not a working copy" };
+  const onDisk = readFileSync(path.join(repoRoot, "scripts", "b12-run.mjs"), "utf8");
+  if (onDisk !== runBytesProbe.out) {
+    return { ok: false, why: "scripts/b12-run.mjs differs between disk and HEAD — commit the harness before sealing it" };
+  }
+  const seal = {
+    schema: "b12-harness-seal/1",
+    sealedAt: stamp(),
+    b12RunSha256: sha256Text(runBytesProbe.out),
+    perArmTimeoutMs: pinned.perArmTimeoutMs,
+    extraArgs: pinned.extraArgs,
+  };
+  // The oracle's seam: the window a second invocation owns. The CLI never
+  // passes it.
+  if (opts.onBeforeWrite) opts.onBeforeWrite(sealAbs);
+  // CREATE-ONLY IS THE WRITE'S OWN PROPERTY, not a conclusion drawn earlier:
+  // `wx` is O_EXCL, so exactly one of two racing invocations creates the file
+  // and the other is told what happened. Nothing that already exists is
+  // overwritten, whatever the check above concluded a moment ago.
+  try {
+    writeFileSync(sealAbs, JSON.stringify(seal, null, 2) + "\n", { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      return { ok: false, why: `${sealRel} appeared while this seal was being built — the seal is create-only; the bytes on disk are another invocation's` };
+    }
+    return { ok: false, why: `${sealRel} could not be created: ${String(error)}` };
+  }
+  return { ok: true, path: sealRel, seal };
+}
+
+// ---------------------------------------------------------------------------
+// CLI orchestration.
+// ---------------------------------------------------------------------------
+
+function loadJson(p) {
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function priorRunsGate(repoRoot, runId) {
+  freshBuild(repoRoot);
+  const mod = await import(pathToFileURL(path.join(repoRoot, "dist", "cost", "b12", "archive.js")).href);
+  const register = mod.collectRegister(repoRoot, runId);
+  const abandoned = register.priorRuns.filter((r) => r.result === null);
+  const reasons = [...register.discrepancies];
+  for (const r of abandoned) {
+    reasons.push(`prior run ${r.runId} carries no committed result — clause 1 refuses a new registration over an abandoned one`);
+  }
+  return reasons;
+}
+
+/**
+ * The operator's PREVIEW — `check` reads the DISK, because the candidates it
+ * previews are not committed yet and iterating on them is the point. The ACT
+ * never calls this: `registerRun` validates the CAPTURED state only.
+ */
+async function runCheck(repoRoot, runId) {
+  const manifestA = loadJson(path.join(repoRoot, "evidence", `${runId}.b12.tasks.json`));
+  const manifestB = loadJson(path.join(repoRoot, "evidence", `${runId}.b12.manifest-B.tasks.json`));
+  const pilotId = manifestA?.pilotRunId ?? runId;
+  const pilot = loadJson(path.join(repoRoot, "evidence", `${pilotId}.b12.pilot.json`));
+  const red = [];
+  if (manifestA === null) red.push("manifest A is missing or does not parse");
+  if (manifestB === null) red.push("manifest B is missing or does not parse — sealed in the SAME act (design.artifacts 2)");
+  const previewMismatch = runIdMismatch(runId, manifestA);
+  if (previewMismatch !== null) red.push(previewMismatch);
+  red.push(
+    ...priorIntroductionRefusals(repoRoot, "HEAD", [
+      `evidence/${runId}.b12.tasks.json`,
+      `evidence/${runId}.b12.manifest-B.tasks.json`,
+    ])
+  );
+  if (manifestA !== null && manifestB !== null) red.push(...checkCore(manifestA, manifestB, pilot));
+  // The seal, present and naming HEAD's harness bytes.
+  const seal = loadJson(path.join(repoRoot, "evidence", "b12-harness-seal.json"));
+  const headRun = git(repoRoot, ["show", "HEAD:scripts/b12-run.mjs"]);
+  if (seal === null) red.push("no evidence/b12-harness-seal.json — seal-harness is the barrier before any registration");
+  else if (headRun.code !== 0 || seal.b12RunSha256 !== sha256Text(headRun.out)) {
+    red.push("the harness seal does not name HEAD's scripts/b12-run.mjs — the harness moved after sealing");
+  }
+  red.push(...(await priorRunsGate(repoRoot, runId)));
+  return red;
+}
+
+/**
+ * THE ACT. CAPTURE PRECEDES VALIDATION: `expectedHead` and the candidate
+ * bytes are taken FIRST; the check then runs over exactly those — the parsed
+ * candidate buffers, every OLD input from `<expectedHead>:<path>` — and the
+ * SAME buffers go to the CAS. A disk edit after the capture cannot change
+ * what registers (the validated bytes are what lands); a commit after the
+ * capture fails `update-ref` instead of becoming a baseline nobody checked.
+ * The prior-runs gate reads the live repo, but any head movement between the
+ * capture and the swap fails the CAS, so a gate that saw a different head
+ * refuses rather than registers.
+ *
+ * `opts.gate` and `opts.afterCapture` are the ORACLE'S seams — the CLI passes
+ * neither. `afterCapture` runs between validation and the CAS, the exact
+ * window the capture discipline closes.
+ */
+export async function registerRun(repoRoot, runId, opts = {}) {
+  const gate = opts.gate ?? priorRunsGate;
+  // CAPTURE — before any validation: the commit AND the branch, because two
+  // branches can share one commit and the swap must land on the one that was
+  // validated.
+  const refCapture = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+  if (refCapture.code !== 0) return { ok: false, red: ["HEAD is detached — a registration needs a branch to install on"] };
+  const expectedRef = refCapture.out.trim();
+  const head = git(repoRoot, ["rev-parse", "HEAD"]);
+  if (head.code !== 0) return { ok: false, red: ["HEAD does not resolve"] };
+  const expectedHead = head.out.trim();
+  // THE VALIDATOR'S OWN BYTES must be expectedHead's. The prior-runs gate
+  // builds and imports the WORKING TREE's scorer, and `checkCore`'s frozen
+  // predicates were imported from the working tree's `b12-run.mjs` — so a
+  // dirty validator input would judge the act with code the act does not
+  // register. Candidates live under `evidence/` and stay writable.
+  const validatorPathspecs = ["src", "scripts", "package.json", "package-lock.json", "tsconfig.json"];
+  const dirt = git(repoRoot, ["status", "--porcelain", "--", ...validatorPathspecs]);
+  if (dirt.code !== 0) return { ok: false, red: ["git status over the validator inputs failed — their cleanliness cannot be inspected"] };
+  const dirtEntries = dirt.out.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  if (dirtEntries.length > 0) {
+    return {
+      ok: false,
+      red: [
+        `validator input(s) dirty against expectedHead (${dirtEntries.slice(0, 5).join(", ")}${dirtEntries.length > 5 ? ", …" : ""}) — the gate would judge with code the act does not register; commit or revert them`,
+      ],
+    };
+  }
+  const aRel = `evidence/${runId}.b12.tasks.json`;
+  const bRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
+  let aBytes = null;
+  let bBytes = null;
+  try {
+    aBytes = readFileSync(path.join(repoRoot, aRel), "utf8");
+  } catch {
+    // Red below — the missing candidate is a check failure, not a crash.
+  }
+  try {
+    bBytes = readFileSync(path.join(repoRoot, bRel), "utf8");
+  } catch {
+    // Red below.
+  }
+  // The MEASUREMENTS disk snapshot, at the SAME instant — the sync judges
+  // drift against this, and uncommitted rows already on disk are refused
+  // below (the registered blob is built from expectedHead's bytes, so an
+  // uncommitted suffix would be orphaned by the very act that succeeds).
+  let measurementsDisk = null;
+  try {
+    measurementsDisk = readFileSync(path.join(repoRoot, "MEASUREMENTS.jsonl"), "utf8");
+  } catch {
+    // Red below via the expectedHead probe.
+  }
+  // VALIDATE the captured state, nothing else.
+  const parse = (text) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  };
+  const red = [];
+  const manifestA = aBytes === null ? null : parse(aBytes);
+  const manifestB = bBytes === null ? null : parse(bBytes);
+  if (manifestA === null) red.push("manifest A is missing or does not parse");
+  if (manifestB === null) red.push("manifest B is missing or does not parse — sealed in the SAME act (design.artifacts 2)");
+  // The identity, before anything is built from it: the act is about to write
+  // `evidence/<runId>.b12.tasks.json` and a row saying `run_id: <runId>`.
+  const mismatch = runIdMismatch(runId, manifestA);
+  if (mismatch !== null) red.push(mismatch);
+  // …and the paths must be UNBORN at the captured commit, or "the same
+  // command" is already impossible and this act would only mint the refusal.
+  red.push(...priorIntroductionRefusals(repoRoot, expectedHead, [aRel, bRel]));
+  if (manifestA !== null && manifestB !== null) {
+    const pilotId = manifestA?.pilotRunId ?? runId;
+    const pilotRel = `evidence/${pilotId}.b12.pilot.json`;
+    const pilotProbe = git(repoRoot, ["show", `${expectedHead}:${pilotRel}`]);
+    const pilot = pilotProbe.code === 0 ? parse(pilotProbe.out) : null;
+    if (pilotProbe.code !== 0 && existsSync(path.join(repoRoot, pilotRel))) {
+      red.push("the pilot exists on disk but not at expectedHead — commit it; the act reads OLD inputs from the captured head only");
+    }
+    red.push(...checkCore(manifestA, manifestB, pilot));
+  }
+  const sealProbe = git(repoRoot, ["show", `${expectedHead}:evidence/b12-harness-seal.json`]);
+  const seal = sealProbe.code === 0 ? parse(sealProbe.out) : null;
+  const harness = git(repoRoot, ["show", `${expectedHead}:scripts/b12-run.mjs`]);
+  if (seal === null) red.push("no evidence/b12-harness-seal.json at expectedHead — seal-harness is the barrier before any registration");
+  else if (harness.code !== 0 || seal.b12RunSha256 !== sha256Text(harness.out)) {
+    red.push("the harness seal does not name expectedHead's scripts/b12-run.mjs — the harness moved after sealing");
+  }
+  const oldMeasurementsProbe = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
+  if (oldMeasurementsProbe.code !== 0) {
+    red.push("expectedHead carries no MEASUREMENTS.jsonl — the append-only register must exist before an append");
+  } else if (measurementsDisk !== oldMeasurementsProbe.out) {
+    red.push(
+      "MEASUREMENTS.jsonl on disk differs from expectedHead's — commit the append-only register before the act; an uncommitted suffix would be orphaned by the registration's own sync"
+    );
+  }
+  red.push(...(await gate(repoRoot, runId)));
+  if (red.length > 0) return { ok: false, red };
+  if (opts.afterCapture) await opts.afterCapture();
+  const row =
+    JSON.stringify({
+      ts: stamp(),
+      b12_registration: true,
+      run_id: runId,
+      manifestSha256: sha256Text(aBytes),
+      manifestBSha256: sha256Text(bBytes),
+    }) + "\n";
+  return casCommit(repoRoot, {
+    expectedHeadOverride: expectedHead,
+    refOverride: expectedRef,
+    message: `b12 registration: ${runId}`,
+    candidates: [
+      { path: aRel, bytes: aBytes, diskBefore: aBytes },
+      { path: bRel, bytes: bBytes, diskBefore: bBytes },
+      { path: "MEASUREMENTS.jsonl", bytes: oldMeasurementsProbe.out + row, diskBefore: measurementsDisk },
+    ],
+  });
+}
+
+const isMain = (() => {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return import.meta.url === pathToFileURL(entry).href;
+  } catch {
+    return false;
+  }
+})();
+
+if (isMain) {
+  const [cmd, runId] = process.argv.slice(2);
+  const repoRoot = process.cwd();
+  if (cmd === "seal-harness") {
+    const manifestPath = process.argv[4] === undefined ? path.join(repoRoot, "evidence", `${runId}.b12.tasks.json`) : process.argv[4];
+    if (!runId) fail("usage: node scripts/b12-register.mjs seal-harness <runId> [manifestPath]");
+    const r = sealHarness(repoRoot, manifestPath);
+    if (!r.ok) fail(r.why);
+    process.stdout.write(`${r.path}\n(commit it; register compares it against expectedHead's harness)\n`);
+  } else if (cmd === "check") {
+    if (!runId) fail("usage: node scripts/b12-register.mjs check <runId>");
+    const red = await runCheck(repoRoot, runId);
+    for (const r of red) process.stdout.write(`  RED  ${r}\n`);
+    if (red.length > 0) fail(`${red.length} red item(s) — nothing may register`);
+    process.stdout.write("check: GREEN\n");
+  } else if (cmd === "register") {
+    if (!runId) fail("usage: node scripts/b12-register.mjs register <runId>");
+    const result = await registerRun(repoRoot, runId);
+    if (!result.ok) {
+      if (result.red !== undefined) {
+        for (const r of result.red) process.stdout.write(`  RED  ${r}\n`);
+        fail(`${result.red.length} red item(s) — nothing may register`);
+      }
+      fail(result.why);
+    }
+    if (result.postFailure) process.stderr.write(`b12-register: WARNING — ${result.postFailure}\n`);
+    process.stdout.write(`registered: ${result.commit}\n(push is the operator's act; the debt is the run itself)\n`);
+  } else if (cmd === "open-b") {
+    if (!runId) fail("usage: node scripts/b12-register.mjs open-b <runId>");
+    // CAPTURE FIRST — commit AND branch: every input below is read at
+    // `expectedHead`, a commit landing after this line fails the CAS, and a
+    // branch switch fails the ref check instead of landing elsewhere.
+    const refCapture = git(repoRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (refCapture.code !== 0) fail("HEAD is detached — a registration needs a branch to install on");
+    const expectedRef = refCapture.out.trim();
+    const head = git(repoRoot, ["rev-parse", "HEAD"]);
+    if (head.code !== 0) fail("HEAD does not resolve");
+    const expectedHead = head.out.trim();
+    // Lawful ONLY on a committed `open` — design.artifacts 2: "opened only if
+    // run 1 returns `open`".
+    const resultProbe = git(repoRoot, ["show", `${expectedHead}:evidence/${runId}.b12.result.json`]);
+    if (resultProbe.code !== 0) fail(`expectedHead carries no evidence/${runId}.b12.result.json — run 1 has no committed result`);
+    let run1;
+    try {
+      run1 = JSON.parse(resultProbe.out);
+    } catch {
+      fail("run 1's committed result does not parse");
+    }
+    if (run1.verdict !== "open") fail(`run 1's committed verdict is ${JSON.stringify(run1.verdict)} — manifest B opens only on 'open'`);
+    // The SEALED B blob, byte-identical from the registration commit.
+    const bRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
+    const born = git(repoRoot, ["log", expectedHead, "--diff-filter=A", "--format=%H", "--", bRel]);
+    const regCommit = born.code === 0 ? born.out.trim().split("\n").filter(Boolean).pop() : undefined;
+    if (regCommit === undefined) fail(`${bRel} has no introducing commit at expectedHead`);
+    const sealed = git(repoRoot, ["show", `${regCommit}:${bRel}`]);
+    const atHead = git(repoRoot, ["show", `${expectedHead}:${bRel}`]);
+    if (sealed.code !== 0 || atHead.code !== 0 || sealed.out !== atHead.out) {
+      fail("manifest B at expectedHead is not byte-identical to the sealed blob — the replication drifted");
+    }
+    let manifestB;
+    try {
+      manifestB = JSON.parse(sealed.out);
+    } catch {
+      fail("the sealed manifest B does not parse");
+    }
+    const run2Id = manifestB.runId;
+    if (typeof run2Id !== "string" || run2Id === runId) fail("manifest B names no distinct runId for run 2");
+    const run2Rel = `evidence/${run2Id}.b12.tasks.json`;
+    const openBRed = openBRefusals(repoRoot, expectedHead, run2Id);
+    if (openBRed.length > 0) fail(openBRed.join("; "));
+    const oldMeasurements = git(repoRoot, ["show", `${expectedHead}:MEASUREMENTS.jsonl`]);
+    if (oldMeasurements.code !== 0) fail("expectedHead carries no MEASUREMENTS.jsonl");
+    let measurementsDisk = null;
+    try {
+      measurementsDisk = readFileSync(path.join(repoRoot, "MEASUREMENTS.jsonl"), "utf8");
+    } catch {
+      // Compared below — an unreadable register is a mismatch by definition.
+    }
+    if (measurementsDisk !== oldMeasurements.out) {
+      fail("MEASUREMENTS.jsonl on disk differs from expectedHead's — commit the append-only register before open-b; an uncommitted suffix would be orphaned by the sync");
+    }
+    const row =
+      JSON.stringify({
+        ts: stamp(),
+        b12_registration: true,
+        run_id: run2Id,
+        manifestSha256: sha256Text(sealed.out),
+        openedFrom: runId,
+      }) + "\n";
+    const result = casCommit(repoRoot, {
+      expectedHeadOverride: expectedHead,
+      message: `b12 registration: ${run2Id} (manifest B of ${runId}, opened on 'open')`,
+      refOverride: expectedRef,
+      candidates: [
+        { path: run2Rel, bytes: sealed.out },
+        { path: "MEASUREMENTS.jsonl", bytes: oldMeasurements.out + row, diskBefore: measurementsDisk },
+      ],
+    });
+    if (!result.ok) fail(result.why);
+    if (result.postFailure) process.stderr.write(`b12-register: WARNING — ${result.postFailure}\n`);
+    process.stdout.write(`run 2 registered: ${result.commit}\n`);
+  } else {
+    fail("usage: node scripts/b12-register.mjs <check|register|open-b|seal-harness> <runId>");
+  }
+}

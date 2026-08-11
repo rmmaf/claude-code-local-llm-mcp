@@ -190,6 +190,53 @@ describe("repair loop", () => {
     expect(await fs.readFile(path.join(root, "src/math.ts"), "utf8")).toBe(BROKEN);
   });
 
+  it("restores the tree even when the abort telemetry row cannot be written", async () => {
+    // R30: the abort row was awaited BARE, ahead of the rollback, so a
+    // rejecting telemetry writer exited the catch before `restore` ran.
+    //
+    // HONEST SCOPE, because this test cannot show otherwise: every path that
+    // reaches that catch TODAY has already restored on its way out — the loop
+    // restores whenever it does not apply, and the gate turns a runner error
+    // into a failed check rather than a throw. So the fix makes the stated
+    // contract true independently of which path arrives, and this test proves
+    // the end-to-end invariant (tree restored, error surfaced) rather than
+    // pre-fix damage. Suppressing the fix leaves it GREEN, and that is
+    // recorded rather than dressed up as a firing control.
+    const root = tempRoot();
+    await setup(root);
+    const { fetchImpl } = queuedFetch([chatBody(fileBlock("src/math.ts", WORSE))]);
+
+    // The checks go away AFTER the model has written — the only shape in
+    // which the tree is left dirty when the catch block is entered. (A loop
+    // that merely fails to reach green restores on its own way out, so it
+    // cannot show this.)
+    let calls = 0;
+    const gateThenVanish: ProcessRunner = async () => {
+      calls += 1;
+      if (calls === 1) return { stdout: tscErrors(3), stderr: "", code: 2, timedOut: false };
+      throw new Error("the checks went away mid-repair");
+    };
+
+    await expect(
+      runRepair({ ...baseArgs, max_rounds: 1 }, testConfig(root), {
+        processRunner: gateThenVanish,
+        fetchImpl,
+        runner: noLmsRunner(),
+        vcsRunner: NOT_A_REPO,
+        // Down for the whole call: the normal row's failure is what aborts
+        // the loop, and the abort row's failure is what used to swallow the
+        // rollback with it.
+        telemetry: {
+          record: async () => {
+            throw new Error("telemetry is down");
+          },
+        },
+      })
+    ).rejects.toThrow(/telemetry is down/);
+    // THE INVARIANT: the tree is as it was found, whatever telemetry did.
+    expect(await fs.readFile(path.join(root, "src/math.ts"), "utf8")).toBe(BROKEN);
+  });
+
   it("keeps the best attempt when a later round makes things worse", async () => {
     const root = tempRoot();
     await setup(root);

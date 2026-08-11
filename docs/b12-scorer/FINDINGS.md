@@ -24,14 +24,16 @@ all of them — `coverage.ts` joined the three when the run-level ledger landed 
 which is exactly why they need writing down: an oracle that cannot fail on a
 defect is not evidence the defect is absent.
 
-## Twenty-five findings, and only two of them are work
+## Twenty-six findings, and only two of them are work
 
-**F1–F25, one number per finding except F2, which split. F18 does not exist and
+**F1–F26, one number per finding except F2, which split. F18 does not exist and
 never did** — the numbering skipped it, and that is recorded here rather than
 back-filled, because renumbering would break every citation in `git log`.
 
-The count says less than the split does. **Seventeen are closed. Of the eight
-open, two are code owed, one is a decision, and five will never close** — each of
+The count says less than the split does. **Nineteen are closed — F23 repaired
+2026-08-09, in its own pass as its entry demanded, and F26 found and closed
+the same day the audit computer pinned the control registry. Of the seven
+open, one is code owed, one is a decision, and five will never close** — each of
 those five is a place the frozen design underdetermines what an implementer needs,
 every closing route was adjudicated and REFUSED, and what shipped is the literal
 reading plus enough published detail that a reader of a committed artifact can see
@@ -54,7 +56,8 @@ ready, rather than one decaying.
 
 ## OPEN — code owed
 
-Two, both with a known fix and a known owner.
+One — F24. The second, F23, was repaired 2026-08-09; its record stays below,
+where every citation to it points, with the repair on the entry itself.
 
 ### F24 — the archive the assembler must read is not the archive the harness writes
 
@@ -747,7 +750,7 @@ file, paths differ, so `JSON.stringify([source, ordinal])` is unique without
 making concatenation order load-bearing. What step 2 actually forbids — restarting
 ordinals inside a SCOPED SLICE of one source — is untouched.
 
-### F23 — `voidConditions` 8 wants two BRACKETS and the artifact carries two byte sums
+### F23 — `voidConditions` 8 wants two BRACKETS and the artifact carries two byte sums — REPAIRED 2026-08-09
 
 Found by the same gate. Unlike F24 and F25 this one is a defect in UNIT 3, not in
 the assembler, and it was invisible until a spec had to promise clause 8 could be
@@ -771,6 +774,32 @@ permissive on the result" (`thresholdArgument`).
 Satisfying it is a second full pass of the arithmetic with the cap applied and
 without — `poolRatio` over rows priced both ways at both horizons — which changes
 `B12Result` and belongs in its own pass with its own controls. Not fixed here.
+
+**REPAIRED 2026-08-09, in that pass.** The reading registered first, then the
+arithmetic:
+
+- **The registered reading.** A bracket is `[R_lo, R_hi]`, and detector 2 asks
+  for THAT bracket "published both capped and uncapped" — ONE
+  `uncappedBracket { rLo, rHi }` beside the capped pair, nothing else. No
+  uncapped variant of `rHiPlus`, the strata, the recomputations, the hold or
+  the deliveries exists, and `cappedVsUncapped` stays what `design.metric`
+  says it is: a byte-sum pair on the face, reported, deciding nothing.
+- **Summed from rows priced whole, never reconstructed from byte totals.**
+  `CreditedLedgerRow` carries `unitsUncapped`/`unitsLoUncapped` — `signed`
+  through the same multiplier and write component, with the `Math.min` absent —
+  and `ObservationTerms` accumulates `sLoUncapped`/`sHiUncapped` in the same
+  credited branch under the same narrow. `aggregate` publishes the bracket
+  through the four-form `PricedForm` selector; the jackknife, strata and
+  delivery figures keep the narrow `"lo" | "hi"` union, so a caller reaching
+  for an uncapped recomputation is refused at compile time. `reinstate` zeroes
+  all four sums together; `withoutLargestRow` removes the chosen row from all
+  four while RANKING on the capped pair.
+- **Clause 8 went LIVE.** Fires iff `!(Number.isFinite(cap) && cap > 0)` OR
+  any of the four bracket bounds is not a proper finite number, evaluated on
+  the CONSTRUCTED result — a VALUE check, because NaN survives every sum and
+  serializes as `null` — and the replay tests assert the same truth table over
+  the real serializer's bytes. The default assemble oracle now expects ZERO
+  fired checks, with the default void owned by the arithmetic's clause 3.
 
 ---
 
@@ -1049,9 +1078,1636 @@ expression in two days is the whole argument: a citation that has to be re-check
 every time the file moves is a citation nobody re-checks. The pre-registration is
 frozen and stays as written.
 
+### THE PILOT'S "No units" READING — registered 2026-08-09, BEFORE any pilot ran
+
+`design.artifacts` 4 demands the covariate vector AND says "No units, no
+bracket" — and the frozen covariate list itself contains unit-VALUED
+quantities (per-row byte deltas, an excluded observation's `A_o`,
+`unitsAddedByInstallation`). The two cannot both be read literally, and the
+gap had to be adjudicated before the first pilot rather than inside it.
+
+**The registered reading: "No units" forbids AGGREGATES — any A/S/R sum, any
+bracket, any verdict — never the per-observation unit-valued covariates the
+list demands.** The rationale is artifact 4's own: the pilot is "mechanically
+incapable of optional stopping" because "the verdict command cannot produce
+[a bracket] on fewer than the manifest's N" — what must not exist is anything
+a stopping decision could read, and a per-row byte count decides nothing while
+an aggregate is precisely what would. Encoded with teeth: `assertPilotShape`
+(`scripts/b12-run.mjs`) refuses every aggregate/bracket spelling at any depth
+on every pilot write, and the negative controls hold it there.
+
+### THE "per-task DENOMINATOR share" FORMULA — registered 2026-08-10, BEFORE the seal
+
+The frozen name (`thresholdArgument`) is "per-task DENOMINATOR share", and the
+metric's denominator is `A + S` (`aggregate.ts`'s `poolRatio`: `(S + refused −
+O) / (A + S + refused)`) — but `assemble.ts` computed `aO / Σ aO`, a share of
+A alone (the seventh adversarial round, finding 12). Adjudicated before any
+seal, never inside a run:
+
+**The registered formula: `share_t = (A_t + S_t,lo) / Σ_admitted (A + S_lo)`
+— the task's share of the metric's OWN denominator, on the DECIDING lo
+horizon** (the same horizon `aPlusSPositive` registers one field above, and
+the one the per-task recomputation in `aggregate.ts` already uses). The
+manifest's `perTaskDenominatorShareCap` (0.25 — one of the two CHOSEN
+constants artifact 1 requires, beside `pacingCacheWriteShareCeiling` 0.9)
+stays a DECLARED covariate: reported beside the share, deciding nothing — a
+live predicate here would mint a void the frozen text never wrote. Encoded
+with teeth: the unequal-S test in `tests/b12-assemble.test.ts` pins two
+observations whose A-only shares and registered shares disagree, hand-derived.
+
+### PASSE C SUPERSESSIONS — dated 2026-08-10
+
+Two 2026-08-08 shapes recorded above are superseded (the old text stays as
+the record of when it was true):
+
+- **The policy blob is no longer a live file beside a hash map.** The
+  manifest seals GIT PROVENANCE — `{repo, commit, path, sha256}` per arm —
+  and delivery reads the policy repo's object store (`git cat-file blob
+  <commit>:<path>`), so no working-tree file exists to move mid-arm at all.
+  Missing clone (the bundle-transport step, named), shallow clone,
+  unreachable commit or path, non-UTF-8 bytes and a moved hash are each their
+  own refusal; the in-base-tree shadow check retired with nothing left to
+  guard, and the pre/post instruction hash re-reads the object store (drift
+  there means the STORE moved).
+- **The calibration key's policy-blob component is DUAL** —
+  `policyBlobSha256s {treatment, control}` — because BOTH arms deliver their
+  own blob via `--append-system-prompt` inside the measured delta. The
+  committed 2026-08-08 probe artifact carries the singular pre-dual key and
+  can never calibrate a registrable manifest again; the validator refuses it
+  BY NAME, and the Mac re-probe under the sealed blobs is on the calendar
+  beside the new `clientTruncationCap` probe
+  (`scripts/b12-truncationcap-probe-mac.sh`, voidConditions 8's measurement).
+
+### POST-IMPLEMENTATION ADVERSARIAL ROUND (R8) — adjudicated 2026-08-10
+
+Codex reviewed the full branch diff (38 files) and returned two high
+findings, BOTH confirmed against the repo and fixed with controls:
+
+- **R8#1 — the CAS was unusable from a linked worktree.** `casCommit` built
+  its temporary index at `path.join(repoRoot, ".git", ...)`, but in a linked
+  worktree `.git` is a FILE pointing at the per-worktree git dir — every
+  `read-tree` failed (fail-closed, but the register could never act from the
+  layout this repo itself uses). The index location now comes from
+  `git rev-parse --absolute-git-dir`; the control registers from a real
+  `git worktree add` checkout and asserts the premise (`.git` is a file).
+- **R8#2 — validation ran OUTSIDE the state the CAS captured.** `register`
+  validated via a disk/HEAD `runCheck`, then re-read the candidate bytes,
+  then captured `expectedHead` — so a disk edit could swap a validated
+  manifest before the read, and a commit landing before the capture became
+  the accepted baseline unchecked. The header's own promise ("captured ONCE",
+  "OLD inputs from `<expectedHead>:<path>`") was not what the code did. The
+  act is now `registerRun`: capture `expectedHead` and the candidate buffers
+  FIRST, validate exactly those (pilot, seal, harness and MEASUREMENTS read
+  from `<expectedHead>:<path>`; an on-disk-only pilot is refused by name),
+  and pass the SAME buffers to the CAS — any later ref movement fails
+  `update-ref`, so every race is fail-closed. `open-b` got the same
+  capture-first reordering. Controls sit in the exact window (`afterCapture`
+  seam, CLI never passes it): a disk mutation between validation and the act
+  registers the VALIDATED bytes; a concurrent commit fails the CAS with
+  nothing installed. `check` remains the DISK preview, documented as such.
+
+### SECOND POST-IMPLEMENTATION ROUND (R9) — adjudicated 2026-08-10
+
+Three high findings, all confirmed: the instrument could certify state it
+never validated. All three are one disease — fail-open where the doctrine
+says fail-closed:
+
+- **R9#1 — the attestation ran DISK code under HEAD's name.**
+  `--attest-suite` recorded `subjectCommit = HEAD` and ran vitest over the
+  working tree; a dirty edit could pass the suite, be attested under an
+  untouched commit, and be discarded — invisible to the audit's
+  `subjectCommit..HEAD` drift check, which sees commits only. Now
+  `workingTreeDirtOutsideEvidence` refuses ANY porcelain entry outside
+  `evidence/**` (which stays writable — the attestation is born there)
+  before the suite runs. The isolated-worktree alternative was considered
+  and declined: the refusal is the honest primitive, and the operator loop
+  already commits between steps.
+- **R9#2 — failed git probes wore a clean answer's clothes.** A non-zero
+  `git log` over the pinned paths became an empty `commitsTouchingPinned`;
+  a failed `git diff subjectCommit..HEAD` became "no drift"; an unanswerable
+  `isAncestor` silently unmarked an offender. Each is now `AuditRefused` —
+  "an empty answer is not a clean one". Fixing this exposed a LATENT hole
+  the control caught in my own first fix: the clause-6 `try/catch` meant for
+  `JSON.parse` swallowed everything thrown inside it (including a gitIn
+  refusal mid-`merge-base`) into `attestation = null`; the catch is now the
+  parse's alone. Controls inject a failing runner via the new
+  `gitRunner` collector seam.
+- **R9#3 — the register's gate judged with code the act does not register.**
+  `priorRunsGate` builds and imports the WORKING TREE's scorer, and
+  `checkCore`'s frozen predicates come from the working tree's
+  `b12-run.mjs` — while the act anchors at `expectedHead`. `registerRun` now
+  refuses when `git status --porcelain -- src scripts package.json
+  package-lock.json tsconfig.json` shows anything: clean tree at the
+  captured head ⇒ validator bytes ≡ expectedHead's ≡ what the CAS commit
+  carries. (An isolated checkout of expectedHead was considered and
+  declined for the same reason as R9#1 — the machine is the operator's own,
+  the threat is accident, and the CAS still seals every ref race.)
+
+### THIRD POST-IMPLEMENTATION ROUND (R10) — adjudicated 2026-08-10
+
+One high finding, confirmed, and it was the instrument's one DESTRUCTIVE
+defect: the post-swap `git checkout newCommit -- <paths>` was unconditional,
+so a concurrent append to the append-only `MEASUREMENTS.jsonl` (or any disk
+edit) landing during the validation window was silently overwritten by a
+registration that then reported success. The CAS guards the REF; it never
+guarded the WORKING TREE. Codex's suggested conditional sync alone would not
+have covered a second variant found during adjudication: a LAWFUL
+uncommitted suffix already on disk at capture time equals its own snapshot
+and would still be destroyed. The fix is both halves:
+
+- `casCommit`'s sync is now CONDITIONAL — every candidate carries
+  `diskBefore` (the caller's capture-instant disk snapshot; entry-time when
+  omitted), and a path whose disk bytes moved past it is NEVER checked out:
+  preserved on disk, reported as "NOT synced (disk moved during the act)"
+  on the act's face. The registered bytes are always in the commit; only
+  the disk copy waits for hand reconciliation.
+- `registerRun` and `open-b` REFUSE at capture when disk
+  `MEASUREMENTS.jsonl` differs from `expectedHead`'s — an uncommitted
+  suffix must be committed before the act, or the registration built from
+  the committed bytes would orphan it.
+
+Controls: the concurrent append survives on disk while the registration row
+is committed and the conflict is reported; the R8 mutation control now also
+asserts the garbage is preserved, not overwritten; the uncommitted-suffix
+red fires. The serialize-every-writer lock alternative was declined: the
+writers span processes and machines, and a lock nobody else honors is a
+comment — the conditional sync refuses destructively instead.
+
+### FOURTH POST-IMPLEMENTATION ROUND (R11) — adjudicated 2026-08-10
+
+Two high, one medium, all confirmed:
+
+- **R11#1 — the branch was not part of the captured state.** `casCommit`
+  resolved `symbolic-ref HEAD` at its own entry — AFTER the long
+  validation/build — so a branch switch onto the SAME commit mid-act would
+  pass the SHA-guarded swap and install the registration (and mutate the
+  checkout) on the wrong branch. `registerRun` and `open-b` now capture the
+  full symbolic ref at the capture instant and pass it as `refOverride`;
+  `casCommit` refuses a mismatch by name. The residual window between the
+  re-check and `update-ref` is acknowledged: git offers no ref-plus-symref
+  transaction, the swap still lands only on the CAPTURED ref with the
+  captured old value, and the threat is the operator's own checkout.
+- **R11#2 — a runlog row was an ordering predecessor before its commit.**
+  The row is appended BEFORE the evidence commit that carries it (the commit
+  includes the row), so between append and commit — or forever, after a
+  failed commit — the next task's order check read it as completed progress,
+  breaking artifact 6's "committed at each task's end, BEFORE the next task
+  starts". New `runlogBarrierViolation` (pure, both directions): observe now
+  refuses, for BOTH arms and before anything is spent, unless the disk
+  runlog is byte-identical to HEAD's committed copy. The refusal IS the
+  cross-process serialization — the second process stops instead of ordering
+  itself against evidence that may never exist. The per-run lock held
+  through append+commit+verify was declined: a lock spanning a multi-second
+  retrying git commit is a liveness hazard, and equality gives the same
+  guarantee refusal-shaped.
+- **R11#3 — case aliases pierced admissionRule 7.** Scope intersection
+  compared segments byte-exactly, so `SRC/COST/` was "non-intersecting"
+  while naming `src/cost/**`'s tree on the case-insensitive filesystems this
+  run actually uses (Windows box, Mac). Both implementations (scorer
+  `filescope.ts` + harness `b12-run.mjs`) now compare CASE-FOLDED (ASCII;
+  the protected set is ASCII, so the fold is exact); the declared form is
+  preserved everywhere it is shown. The registered grammar reading gains
+  this clause pre-seal. Conformance cases: the alias dir/file/doc each fire
+  in both implementations, and the agreement sweep carries the aliases.
+
+### FIFTH POST-IMPLEMENTATION ROUND (R12) — adjudicated 2026-08-10
+
+Two high findings, both confirmed, both inside clause 6 — the clause whose
+whole job is to prove the conformance suite ran:
+
+- **R12#1 — a passing REPORT was taken for a passing RUN.** `--attest-suite`
+  checked only `run.error`; `run.status` and `run.signal` were never read, so
+  vitest exiting non-zero on an unhandled rejection, a teardown failure or a
+  runner-level error — while its JSON still said every test passed — wrote a
+  passing attestation, and the audit then read it as clause 6 satisfied. New
+  pure `suiteRunRefusal` refuses on error, signal, non-zero status, and a
+  report-less stdout, in that order; the CLI's only door to
+  `attestationFromVitest` is its `jsonLine`. **This does not contradict the
+  R6#4 reading** that global vitest exit 0 is neither required nor reachable
+  on the Windows baseline: the attestation invokes ONLY the two named
+  conformance files, and the baseline's four known failures live in other
+  files, so exit 0 is both required and reachable HERE.
+- **R12#2 — malformed counters walked past the full-suite check.** The
+  decider assumed numbers over bytes it re-read from a commit: a file entry
+  of `{ "file": "tests/cost-meter.test.ts" }` satisfied
+  `f.failed > 0 || f.skipped > 0 || f.passed !== f.total` — `undefined > 0`
+  is false twice and `undefined !== undefined` is false — so a
+  schema-drifted or hand-edited attestation with the six control names
+  marked passed certified a suite never shown to run. New pure
+  `attestationProblems` validates the committed shape: one entry per named
+  file, all four counters non-negative safe integers, `total > 0`,
+  `passed + failed + skipped === total`, and `{file, fullName, status}`
+  strings in `tests`. A malformed attestation is a VOID, not a refusal —
+  git answered, the bytes are committed, and their inadequacy is the run's
+  real state; so `auditInputs` gained `Array.isArray` guards to keep
+  producing the artifact that REPORTS the void instead of crashing before
+  it. Controls: the counter-less bypass, zero-test files, non-adding
+  counters, duplicate entries, non-integer and negative counters, non-array
+  `files`/`tests` (verdict void AND the artifact still serializes), and
+  silence on the well-formed attestation the e2e writes.
+
+### SIXTH POST-IMPLEMENTATION ROUND (R13) — adjudicated 2026-08-10
+
+One high finding, confirmed — and it SUPERSEDES a reading this repository
+had registered in a comment, a type docstring's neighbour and a passing
+test:
+
+**A snapshot with its identity stamp STRIPPED was scored.** `identityIntact`
+is computed from `identityProblems`, but an absent stamp went to the
+informational `problems` list — so evidence that could not be shown bound to
+its directory priced terms and could reach a clean verdict. The `phase`
+field, parsed by `narrowSnapshot` from the first day, was compared against
+nothing, so an after-snapshot wearing the before-stamp passed every other
+check in the family.
+
+The lenient reading was not an oversight: the old test asserted it, on the
+argument that absence is not proof of cross-wiring. Three things overrule
+it, and the third decides:
+
+1. `ArchivedObservation.identityIntact`'s own docstring has always said
+   FALSE when the evidence carries "no identity to check" — the type
+   promised the strict reading while the code did the lenient one, and
+   `archive.ts`'s own header comment promised it too, two lines above the
+   code that did the opposite.
+2. `observation.json` with an empty `sessionId` was ALREADY an identity
+   problem ("the session binding is unshowable"). The snapshot was the one
+   member of the binding judged by a softer rule, with no argument for the
+   asymmetry.
+3. **The incentive ran backwards.** DELETING a snapshot voids the run
+   through `voidConditions` 14 (assemble's snapshot-scope check), while
+   STRIPPING its stamp printed a line and scored — the cheapest tampering
+   was also the safest. That is the shape of a hole, not of a limit.
+
+Now an absent stamp and a wrong phase are both `identityProblems`: terms
+refused, integrity failure, no scored bracket. Cost measured BEFORE
+committing to the change: the committed fixture already carries both stamps
+with correct phases and the harness stamps `before`/`after` explicitly, so
+no lawful evidence changes verdict. Controls: stripped stamp →
+`identityIntact` false END TO END (integrity failure, `admitted === 0`);
+after-snapshot stamped `before` → refused by name.
+
+### SEVENTH POST-IMPLEMENTATION ROUND (R14) — adjudicated 2026-08-10
+
+Two findings, both confirmed, both about state the act touches WITHOUT
+having validated it:
+
+- **R14#1 (high) — R10's doctrine stopped at the disk.** The conditional
+  sync compared working-tree bytes, then ran `git checkout <newCommit> --
+  <paths>`, which writes the INDEX too. Content that was `git add`ed and
+  then reverted on disk passed the disk test and was destroyed silently —
+  the same class of loss R10 closed, one layer down, and mine to have
+  missed. The ref check also happened only before `commit-tree`, so a branch
+  switch afterwards would stage the registration into a checkout nobody
+  validated (the swap itself stays correct — it names the captured ref and
+  old value). The sync now re-earns BOTH permissions: symbolic HEAD must
+  still be the captured ref, and each path's index entry must already be
+  expectedHead's blob or the registered blob. Anything else keeps its bytes
+  and is reported. Controls: staged-then-reverted bytes survive with the
+  index blob unchanged and the conflict named; a sibling branch checked out
+  on the same commit refuses.
+- **R14#2 (medium) — refusals leaked whole worktrees.** `observe` created
+  the `.b12` checkout before the prompt-hash and registration guards, and
+  `refuse()` calls `process.exit`, so no `finally` could clean up. The
+  comment above the guard had claimed "before the lock, before the session
+  id, before any worktree" while the creation sat above it — the R13
+  signature again: the prose was right and the code was not. The
+  prompt-hash check and the registration guard now genuinely precede
+  creation, and the tree is owned from its first byte by an exit hook
+  (the only shape that survives `process.exit`) that removes it and prunes
+  the registration unless `--keep` or a completed observation says
+  otherwise. The LOCK is deliberately not cleaned up: it claims a session
+  may have been spent, and only a human can say it was not. Control: a real
+  `observe` process refused on each guard, asserting `.b12` absent and
+  `git worktree list` still one line.
+
+### EIGHTH POST-IMPLEMENTATION ROUND (R15) — adjudicated 2026-08-10
+
+Two high findings, both RECURRENCES, and the recurrence is the finding:
+
+- **R15#1 — the sync stopped being a checkout.** Codex recommended removing
+  the automatic `git checkout` in R10, again in R14, and again here; twice I
+  kept it and narrowed the window instead (disk bytes, then index bytes,
+  then a re-checked ref). R15 named the residual window — the microseconds
+  between the last precondition and the write — and that sequence IS the
+  argument: `git checkout` overwrites, and no amount of looking first makes
+  an overwrite safe without a lock git does not offer. **The operation
+  changed instead of the checking.** A candidate whose disk copy already
+  equals the registered bytes needs nothing (every manifest — the bytes came
+  from that file). The one candidate that must move is the APPEND-ONLY
+  register, and it is synced with an O_APPEND write of the suffix: an append
+  ADDS, so a concurrent writer loses nothing even when it wins the race. An
+  absent file is created with the exclusive `wx` flag, which fails rather
+  than clobbers. Anything else — a drifted copy, a rewrite rather than an
+  extension — is left alone and reported. The index is never touched at all,
+  so R14's index rule became unnecessary rather than merely correct. The
+  branch is still re-checked, because appending this run's row to a register
+  the operator switched away from would write the right bytes in the wrong
+  place. Controls: staged bytes survive with the index blob unchanged; a
+  concurrent append and the registration row BOTH survive on disk.
+- **R15#2 — the attestation now runs from an immutable checkout.** R9's
+  dirty-tree guard covers the state BEFORE the suite; the suite then runs for
+  minutes, and an edit made after the check and reverted before the commit
+  leaves no drift for the audit to find. I declined the worktree in R9 on
+  the argument that a refusal is the honest primitive — true of the window it
+  covered, and irrelevant to this one. `--attest-suite` now creates a
+  detached worktree at `subjectCommit` under `.b12/` (ignored, inside the
+  repo, so node_modules resolves upward as the arm worktrees already rely
+  on), and vitest loads committed bytes or nothing.
+  **Validated by running it, not by reasoning about it** — which is how the
+  one real obstacle surfaced: `dist/` is derived and ignored, so a fresh
+  checkout has none, and six conformance tests invoke the built CLI. The
+  worktree therefore BUILDS before it tests, and that is not a workaround:
+  it makes the attested `dist/` the compilation of the attested commit,
+  closing the registered F24 `dist/` hole for this path. The real run
+  produced `subjectCommit === HEAD`, 147 + 14 tests passed with none
+  skipped, all six controls present and passing, and removed its worktree.
+
+### NINTH POST-IMPLEMENTATION ROUND (R16) — adjudicated 2026-08-10
+
+Two high findings. The first was REPRODUCED in a scratch repository before
+it was believed, and it is the worst defect any round has found: the act
+could undo itself one commit later.
+
+- **R16#1 — the index did not follow the branch it indexes.** The act builds
+  its tree in a TEMPORARY index and moves the checked-out branch, which
+  leaves the REAL index describing `expectedHead`. Against the new HEAD that
+  index reads as staged DELETIONS of both manifests and a staged REVERSION
+  of the register — so the operator's very next ordinary
+  `git add <result>; git commit` carries them. Reproduced end to end: after
+  the registration, one unrelated commit later, `manifest: GONE`,
+  `row: GONE`. Every guard in the instrument would then be reading a run
+  whose registration a routine act had silently withdrawn. The fix retargets
+  the real index with `read-tree <newCommit>` — safe PRECISELY because the
+  index still equals `expectedHead`'s tree, so an index carrying nothing of
+  its own loses nothing by being retargeted. When it DOES carry staged work
+  it is not touched (R15's doctrine holds: never destroy unvalidated bytes)
+  and the hazard is named with the `git reset --mixed` that repairs it.
+  Controls: a real `git add <result>; git commit` after registering,
+  asserting both manifests and the row survive; and a staged index left
+  byte-identical with the warning on the act's face.
+- **R16#2 — a paid session could be voided by a fallible capture.** The
+  evidence directory was CLAIMED before `captureObservation`, which reads
+  transcripts, telemetry and worktree files and can throw. A failure left an
+  EMPTY claimed attempt in append-only `evidence/`, which the scorer reads as
+  an observation with no identity — integrity failure, run void, after the
+  session was already spent; a retry then claimed `-r2` beside the ruined
+  `-r1`. The claim now happens immediately before the writes, once every
+  fallible step has succeeded, and the exit hook that owns the worktree also
+  owns the claim: on any non-completion it removes the claimed directory
+  **only while uncommitted** — append-only governs the COMMITTED record, and
+  a claim nobody made good on is not evidence. A committed directory is
+  never touched. Control: the refusal-path test now also asserts that
+  `evidence/<runId>/` does not exist.
+
+### TENTH POST-IMPLEMENTATION ROUND (R17) — adjudicated 2026-08-10
+
+One high finding, and it is R16's own fix reviewed: the index retarget was
+`diff-index` (check) followed by `read-tree` (write), which is a TOCTOU —
+between the two, another process can stage work or switch branches, and the
+`read-tree` would overwrite it. The same gap sat under the `symbolic-ref`
+re-check.
+
+The primitive that closes it is **git's own mutex**: `.git/index.lock`,
+created with O_EXCL and released by RENAMING it over `.git/index` — exactly
+how every git command writes an index. Holding it also blocks a concurrent
+`git checkout` (checkout must write the index), so ONE lock closes both the
+index gap and the branch gap. Under the lock the ref and the index are
+re-validated, and the index installed is the TEMPORARY one that built the
+tree — it already IS `newCommit`'s tree, so no second `read-tree` exists to
+race. A held lock, or state that moved before we took it, writes nothing and
+names the `git reset --mixed` that repairs it.
+
+This is the fourth round on this surface, and the arc is worth recording:
+disk bytes (R10) → index bytes (R14) → the operation itself became an
+append (R15) → the index had to follow the branch (R16) → and that follow
+had to happen under a lock (R17). Each round the answer moved further from
+"check more carefully" and closer to "use the primitive that cannot race".
+Controls: a foreign `index.lock` leaves the index byte-identical and the
+lock untouched, with the repair reported; the R16 control — a real
+`git add <result>; git commit` after registering — still finds both
+manifests and the row.
+
+### ELEVENTH POST-IMPLEMENTATION ROUND (R18) — adjudicated 2026-08-10
+
+Two high findings, both confirmed, and both are the same sentence about two
+different files: **a check and the write it licenses are two operations, and
+a shared file is not held between them.**
+
+- **R18#1 — the register's append was licensed by a stale read.** The sync
+  reads the disk copy, concludes it still equals `diskBefore`, and THEN
+  appends. A writer that lands between the two puts its bytes FIRST: the file
+  becomes `old + theirs + ours` while the commit carries `old + ours`. No
+  bytes are lost — R15's append guarantees that — but the working copy stops
+  preserving the COMMITTED register as a byte PREFIX, which is exactly what
+  `registrationGuard` refuses in every later `observe`, and `casCommit`
+  reported the act clean. A lock is not available here: the register's other
+  writers are hands, not processes, and the act's own capture already refuses
+  an uncommitted suffix. So the remedy is the re-read the old code never did
+  — the interleave is REPORTED, with the repair named, and nothing is
+  rewritten (hoisting our row over bytes nobody validated is the destruction
+  R15 removed). Control: a seam fires a foreign append inside the
+  read→write window; both lines survive, the committed bytes are proved NOT
+  to be a prefix, and `postFailure` names the file, the PREFIX, and the hand
+  repair.
+- **R18#2 — the runlog row and its evidence were not one act, and R11's
+  declination was the reason.** The row is appended to a SHARED file and the
+  commit that carries it names that file, so `git commit -- <dir> <runlog>`
+  takes the runlog's WHOLE content: with two observations in flight, A's
+  commit carries B's ROW WITHOUT B'S ARCHIVE, and if B then dies, HEAD holds
+  a row with nothing durable behind it — the runlog↔evidence bijection the
+  audit's clause-5 anchor joins on.
+
+  **R11 declined exactly this lock**, on the reasoning that the barrier's
+  equality "gives the same guarantee refusal-shaped". That premise was false
+  and this round named it: the barrier is checked when an observation STARTS,
+  minutes before its row exists, so BOTH processes pass it before EITHER
+  appends. Equality serializes only a process that starts after another has
+  appended. The liveness objection that motivated the declination survives
+  and is answered by the SHAPE rather than by the decision — the lock spans
+  seconds (a bounded, retrying commit), never a session, waiting for it is
+  bounded, and a held lock refuses with its path.
+
+  `commitObservationRow` is now one named act under a run-wide `mkdir` claim
+  (the session lock cannot do this job: keyed by (runId, taskId, arm), it
+  lets two observations of different tasks interleave freely). Inside: the
+  barrier again, byte-equality with what the barrier saw at the START — a
+  different value means another observation began AND finished inside this
+  one, which artifact 6 forbids and the barrier cannot see, since disk and
+  HEAD agree again — the sessionId bijection, the O_APPEND row with its `ts`
+  stamped at the write, the bounded commit, and the blob-by-blob verify.
+  Everything fallible RETURNS its reason: a `process.exit` in there would
+  strand the lock for the whole run. The session lock is now released after
+  the commit rather than after the append.
+
+  **Reproduced before it was believed**, the R16 way: with both guards
+  disabled the control's act returns `ok: true` — it commits, carrying the
+  foreign row. Controls: the foreign uncommitted row refuses and moves
+  NOTHING (HEAD, the committed blob and the disk bytes all unchanged); an
+  observation that committed inside ours refuses naming artifact 6; a held
+  lock writes nothing, is not stolen, and names the "no live process" rule;
+  and the happy path commits row and archive together and releases the lock.
+
+### TWELFTH POST-IMPLEMENTATION ROUND (R19) — adjudicated 2026-08-10
+
+One high finding, and it is R17's mutex read for what it actually is: **an
+INDEX lock, asked to stand for a branch lock.** Two halves, both confirmed.
+
+- **The name was checked, the target was not.** Under the lock the act
+  compared `symbolic-ref HEAD` to the captured ref and the index to
+  `expectedHead` — and never asked where the ref POINTED. `git update-ref`
+  takes no index lock, so a concurrent one can move the branch off the
+  registration while we hold the mutex, and the index we install then
+  describes a commit the branch no longer carries. `rev-parse <ref>` is now
+  read under the lock too, and a moved target syncs NOTHING.
+- **The lock was released before the file writes.** The `rename` that
+  installs the index is also what releases the mutex, so the candidate sync
+  ran unprotected: a `git checkout` could switch branches immediately after
+  it and receive this act's bytes in a working tree the act never validated.
+  The sync moved INSIDE the lock, and BEFORE the index install — the
+  ordering is the fix, since a checkout must write the index to switch.
+
+**The residual is now stated instead of implied**, which is the part worth
+keeping. `.git/index.lock` blocks everything that would move the branch AND
+touch this working tree — commit, checkout, merge, rebase, `reset
+--mixed/--hard`. It does not block the pure-ref commands (`update-ref`,
+`reset --soft`), so a deliberate plumbing command run inside the
+milliseconds we hold it stays outside the guarantee: the same residual R11
+registered for the ref-plus-symref transaction git does not offer. Codex's
+alternative — abandon the sync entirely and require an explicit
+reconciliation — was DECLINED, and the reason recorded: the register's row
+would then be missing from the working copy after every act, so the
+committed-prefix invariant would fail until a human fixed it, trading a
+millisecond-wide window for a manual step on every single registration.
+
+Also here: taking the lock now WAITS, bounded (four tries, 200/400/600ms),
+because `git status` itself takes this lock to refresh the stat cache and a
+50ms neighbour must not cost the operator a hand reconciliation. And a lock
+held by someone else no longer syncs the files either — that process may be
+a checkout moving this very tree.
+
+**The control fires**: with the target check weakened to the name alone, the
+act reports no `postFailure` at all — it installs the index and writes the
+files against a branch that no longer carries the registration. With it, a
+seam fires `git update-ref` in the one window the mutex cannot own; the
+register file, the index and HEAD are all proved unchanged, and the failure
+names what happened. The held-lock control gained the same file assertion.
+
+### THIRTEENTH POST-IMPLEMENTATION ROUND (R20) — adjudicated 2026-08-10
+
+One high finding, and it leaves the concurrency surface entirely: **the run's
+IDENTITY was never checked against the manifest that carries it.**
+
+`registerRun` validated each manifest's `runId` SYNTAX (`manifestDeclaration
+Gaps`) and that A and B differ (`checkCore`), and then took the path
+`evidence/<cliId>.b12.tasks.json` and the row's `run_id` from the CLI
+argument — never asking whether manifest A's own `runId` was that string.
+`observe` derives BOTH its canonical-path check and its `registrationGuard`
+lookup from the manifest's INTERNAL id, so a typo registers a path and a row
+nobody will ever look for. The severity is in what happens next: the register
+is APPEND-ONLY and is never back-filled, so the bogus row sits there as a
+registered run with no committed result, and `priorRunsGate` then refuses
+EVERY later registration — "clause 1 refuses a new registration over an
+abandoned one" — permanently, with no lawful repair.
+
+`voidConditions` 1 already said it: a run is registered as
+"evidence/<run_id>.b12.tasks.json committed AND its run_id written to
+MEASUREMENTS.jsonl BY THE SAME COMMAND". One identity, three places. And the
+repo already had the right shape one function away — **`open-b` takes run 2's
+id FROM the sealed manifest B** and builds both its path and its row from
+that. New pure `runIdMismatch` makes `register` agree; both the ACT and the
+`check` preview call it, so the operator sees it before spending anything.
+
+Deliberately narrow: absence and grammar stay `manifestDeclarationGaps`'
+findings (the predicate returns null for a missing or empty id) — two voices
+saying one thing is how a reader learns to skim reds.
+
+**The control fires**: with the red suppressed, `registerRun` returns
+`ok: true` and commits run-r9's manifest under run-r1's path and row. With
+it, the refusal is the ONLY red on an otherwise green fixture, and HEAD, the
+register on disk, HEAD's register, the working tree and the would-be second
+path are all proved unchanged.
+
+This is the third finding of the eleven-round arc that lived where a rule was
+already written down and the code did something else (R13, R14#2, R16#1) —
+here the frozen text names the identity, and only the syntax was enforced.
+
+### FOURTEENTH POST-IMPLEMENTATION ROUND (R21) — adjudicated 2026-08-10
+
+Two findings, both confirmed: a filesystem alias the scope grammar did not
+model, and a create-only rule that was a conclusion rather than a property.
+
+- **R21#1 (high) — Windows path aliases walked past admissionRule 7.** The
+  grammar accepted a segment ending in a dot or a space, and intersection
+  compares segments. Win32 STRIPS trailing dots and spaces from a path
+  component, so `src/cost./**` opens the real `src/cost` tree — Codex
+  reproduced it with `Get-Item` — while comparing unequal to `src/cost/**`
+  and therefore reading as NON-intersecting. `STATE.md.` does the same to a
+  governance document. Adjudicating past what was reported: the same family
+  contains `:` (`STATE.md::$DATA` is an NTFS data stream of the protected
+  file, and the drive check only looked at position 0) and the 8.3 short
+  name `NAME~1.EXT` — which two protected entries actually have, since
+  `DECISIONS.md` and `session-token-walk.mjs` are both long names. All
+  three shapes are now REFUSED BY THE GRAMMAR in both implementations.
+
+  **Refused, not folded, and the difference is the argument.** R11#3 folded
+  CASE because `SRC/COST/` is a lawful way to write the path — refusing it
+  would refuse honest declarations. Nothing honest ends a path component in
+  a dot or a space, hides a colon in it, or spells a name in 8.3. A refusal
+  is total, needs no second mechanism inside the comparison, and gives the
+  two copies one less thing to agree about. The lawful spellings that merely
+  CONTAIN dots (`docs/notes.md`, `a.b.c/d.e`) are asserted still green, so
+  the rule is aimed at the alias rather than at the character.
+
+  Known residual, named rather than implied: 8.3 aliasing is detected by
+  SHAPE (`~` followed by a digit), because whether a volume even generates
+  short names is a per-volume setting no string can answer.
+
+- **R21#2 (medium) — the create-only seal was create-only by conclusion.**
+  `sealHarness` called `existsSync`, then made a git call, parsed a
+  manifest, ran four validations, and only then wrote — without an exclusive
+  flag. Two invocations crossing that gap both saw an absent path and both
+  reported success, the later silently replacing a seal an operator believed
+  was frozen, and with it the `perArmTimeoutMs` and `extraArgs` the
+  registration is checked against. The write is now `wx` (O_EXCL) and
+  `EEXIST` is a refusal in its own words; the early check stays as what it
+  always was — a courtesy that names the refusal before the work.
+
+**Both controls fire.** With the three grammar rules removed from BOTH
+copies, `fileScopeViolations` returns EMPTY for all five aliases — the
+instrument set admitted as non-intersecting, which is the defect. With the
+`wx` removed, the seal returns `ok: true` and the other invocation's bytes
+are gone. The twin-agreement sweep carries the new cases, so the harness copy
+cannot drift away from the scorer's.
+
+### FIFTEENTH POST-IMPLEMENTATION ROUND (R22) — adjudicated 2026-08-10
+
+Two high findings, and both are about a proof that was never asked for.
+
+- **R22#1 — the act could mint a run that was already impossible.**
+  `registerRun` read the candidate manifests from disk and never asked
+  whether their canonical paths ALREADY had an introducing commit. But
+  `voidConditions` 1 seals the manifest and its MEASUREMENTS row in ONE
+  commit, and `registrationGuard` proves it by comparing the two introducing
+  commits — so a manifest committed by hand, or committed, deleted and
+  recreated, can never satisfy it. The act would still append the
+  IRREVERSIBLE row, and then every `observe` refuses and the prior-runs gate
+  refuses every NEXT registration over the abandoned one. Same doom loop as
+  R20, entered from a different door. Asked now at the captured commit,
+  before anything is built, in the act and in the `check` preview; the
+  repair names the only lawful exit, since history cannot be un-committed.
+
+- **R22#2 — a committed clean audit was trusted forever.** `emitRun` proved
+  the artifact was committed evidence at the run's path and then took its
+  verdict, without ever asking WHAT it judged. A clean audit could be kept —
+  or cherry-picked — while the pinned sources, the manifests or the suite
+  attestation moved underneath it, and clauses 4–6 would publish clean over
+  facts nobody audited.
+
+  The binding reuses the rule the audit computer already applies to clause
+  6's `subjectCommit`, turned on the audit itself: the artifact's `runId` is
+  this run; `inputs.head` is a real commit and an ANCESTOR of HEAD; the diff
+  `inputs.head..HEAD` touches ONLY `evidence/**`; and the inputs read from
+  INSIDE evidence — prereg, both manifests, the attestation — are RE-HASHED
+  at HEAD against what the artifact recorded. ~~Those two halves are complete
+  over the audit's own input set~~ — **THAT CLAIM WAS FALSE and R24 says so:
+  the evidence clause 5 is COMPUTED FROM (runlog, counterfactual,
+  per-observation archives) is also inside `evidence/`, was named by no key,
+  and is now covered by `clause5.evidenceDigest`.** What stands: everything
+  outside evidence is frozen by the confined diff (the clause-5 pinned paths,
+  the tool's own source), and what is inside it is re-hashed. Codex's literal
+  recommendation — recompute the audit and require the input set to match
+  EXACTLY — is not implementable: `head` necessarily differs, since
+  committing the audit is what moved HEAD.
+
+  A refusal keeps clauses 4–6 UNCHECKED, never "clean" — the same
+  fail-closed shape as an unparseable audit.
+
+**A third defect fell out of writing the control**, and it is the recurring
+one: `CollectorOptions` says "the artifact records what was used, so a
+divergence is on its face", and `auditInputs` recorded the CONSTANTS
+`PREREG_PATH`/`PREREG_FROZEN_COMMIT` no matter what the collector read. The
+artifact's `prereg.headSha256` therefore described a file its own
+`prereg.path` did not name — unreplayable by anyone, including this binding.
+`AuditFacts.prereg` now carries the path and freeze commit actually read, and
+clause 4's reasons name them too. That is the fourth finding of this arc
+where a comment already stated the rule and the code did something else
+(R13, R14#2, R16#1, R20).
+
+**Both controls fire.** Suppressed, the register returns `ok: true` over a
+manifest already in history — the irreversible row appended to a run every
+observation refuses; suppressed, emission keeps `gitAudit.ran === true` after
+the attestation it judged was edited. The binding control also proves the
+refusal is NOT sticky: restore the bytes and the audit counts again, which is
+what makes it a binding rather than a tripwire.
+
+### SIXTEENTH POST-IMPLEMENTATION ROUND (R23) — adjudicated 2026-08-10
+
+Two high findings: one command that skipped the act's preconditions, and one
+identity that was a string when it needed to be a pair.
+
+- **R23#1 — `open-b` is a REGISTRATION and did not check like one.** It
+  derives `evidence/<run2Id>.b12.tasks.json` from the runId inside the sealed
+  manifest B and hands it to the same CAS — and `casCommit` stages with
+  `update-index --add`, which REPLACES the blob at an existing path. A
+  colliding id would overwrite another run's committed manifest AND append a
+  second registration row for that id: prior evidence corrupted, and
+  `registrationGuard` refusing both runs over an ambiguous pair. R22 had just
+  given `register` the unborn-path check; run 2 never got it. New
+  `openBRefusals` applies the same preconditions plus the register's own
+  duplicate-row scan, and re-checks the id's GRAMMAR at the point of use —
+  the string becomes a path here, and a check passed at seal time is not a
+  reason to skip the one where it is interpolated.
+
+- **R23#2 — a control was identified by its TITLE.** Clause 6 found each
+  required control with `att.tests.find(x => x.fullName === title)`: no file,
+  no uniqueness. A vitest fullName is not unique across files, so the NAME
+  could satisfy the clause from a trivial test anywhere — the control gone,
+  the audit clean. This repository had already decided the question once: the
+  gate oracle keys its four Windows failures by `{file, fullName}` for
+  exactly this reason. `CONTROL_TESTS` is now (file, fullName) pairs, matched
+  by both, requiring EXACTLY ONE — a duplicated title cannot say which one
+  passed, and a moved one is named as moved. All six live in
+  `tests/cost-meter.test.ts`; the file is a pin of what IS, like the titles.
+
+**The residual is named, not closed, and it is the user's to decide before
+the seal.** A control gutted BEFORE the attestation is invisible to this
+audit: the attestation honestly describes the gutted tree, and no drift
+exists after it. What would catch it is clause 5's pinned-path set — and the
+conformance test files are not in it. Codex's alternative was to add them.
+DECLINED here on the ground that `PINNED_PATHS` is a REGISTERED READING of
+frozen text (recorded in this file: `src/cost/`, `src/telemetry.ts`, the
+emission wrapper, `scripts/b12-run.mjs`), and widening it post-hoc would mint
+a new voiding condition — precisely what the O-bracket and the VOID-21 hash
+were refused for. The honest options are (a) leave it, with the residual on
+the record, or (b) a NEW pre-data amendment naming the conformance files as
+pinned. **This belongs on the pre-seal decision list.** — **CLOSED by (b) on
+2026-08-10; see "R23's residual, decided" below.**
+
+**Both controls fire.** With `openBRefusals` neutered, a colliding id yields
+no refusal at all; with the file dropped from the control match, a control
+attested from `tests/somewhere-else.test.ts` satisfies the clause.
+
+### SEVENTEENTH POST-IMPLEMENTATION ROUND (R24) — adjudicated 2026-08-10
+
+Two findings. The first is R22's own fix reviewed, and it falsifies a claim
+written in this file two rounds ago.
+
+- **R24#1 (high) — the binding named four evidence files and called it
+  `evidence/**`.** R22 bound a committed audit to HEAD by refusing any change
+  OUTSIDE `evidence/**` and re-hashing the inputs read from inside it —
+  prereg, both manifests, the attestation — and this document then claimed
+  "those two halves are complete over the audit's own input set". **They were
+  not.** Clause 5's facts are derived from the runlog (row order and the
+  sessionId join), the counterfactual (which observation is the freeze
+  anchor) and every per-observation archive. All of those live under
+  `evidence/`, so an observation appended after a clean audit changes the
+  anchor's population and the archive being SCORED while the verdict rides
+  along unchanged. New `runEvidenceDigest` enumerates that set at HEAD,
+  hashes each blob, and digests the canonical `"<path> <sha256>"` lines; the
+  artifact records the digest AND the path list, and the emission binding
+  recomputes it. Paths are inside the hashed lines on purpose — an added file
+  moves the digest exactly as an edited one does. A failed enumeration is a
+  REFUSAL in the collector, never "no evidence".
+
+  It lives in `archive.ts` rather than `audit.ts` because `audit.ts` already
+  imports `parseGitAudit` from `emit.ts`; putting it where both import from
+  keeps the cycle from existing at all.
+
+- **R24#2 (medium) — the attestation ran on dependencies from outside the
+  commit it attested.** The detached worktree lives under `.b12/`, so node
+  resolution walks UP into the enclosing repository's `node_modules`: a
+  newer, staler or hand-modified installation could carry the conformance
+  suite past a commit whose own lockfile does not even build, and the
+  artifact recorded only `subjectCommit` — the skew invisible. `--attest-
+  suite` now runs `npm ci` INSIDE the worktree from the checked-out
+  `package-lock.json` (the nearer `node_modules` wins every resolution
+  afterwards), refuses a subject commit that carries no lockfile or does not
+  install, and records `lockfileSha256` in the attestation. An attestation
+  that cannot say which dependency tree it ran on is an `attestationProblem`
+  — the shape check that already voids a malformed artifact.
+
+**Controls.** With the digest comparison suppressed, an observation appended
+after the audit leaves `gitAudit.ran === true` — the archive scored is not
+the archive audited. With it, the refusal names what moved ("1 added") and
+UN-refuses when the file is removed again. On the attestation: the producer
+records the lockfile sha, and an attestation without one is a problem.
+
+### EIGHTEENTH POST-IMPLEMENTATION ROUND (R25) — adjudicated 2026-08-10
+
+One finding, and it is R18's own fix reviewed: the act that made the row and
+its evidence ONE act proved only half of it.
+
+- **R25#1 (high) — a successful commit did not prove the ROW reached HEAD.**
+  `commitObservationRow` verifies, blob by blob, that HEAD carries every file
+  in `written` — the per-observation artifacts. The runlog is the OTHER path
+  the same commit names, and NOTHING checked it. The threat model is not
+  hypothetical here; it is the one this function already writes down for the
+  archive: an index-mutating `pre-commit` hook. Pointed at the row, it drops
+  or rewrites the runlog entry while `observation.json` stays staged — the
+  `git add` succeeds, the staged-emptiness wall passes (it looks under the
+  observation directory), the commit succeeds, every archive blob matches,
+  the act returns `ok: true`, the caller releases the session lock and prints
+  success. HEAD then holds an observation with NO ordering row while the disk
+  copy carries one, so the run believes it is fine and the NEXT observation's
+  barrier refuses — a state only an operator can reconcile by hand.
+
+  Two comparisons close it, because they fail differently. The disk copy must
+  equal the bytes the barrier accepted PLUS this observation's single row —
+  a value fixed BEFORE the commit, so a hook that rewrote the working copy is
+  caught (and `git commit -- <paths>` takes the working tree's content, so
+  that hook decides what lands). And HEAD's runlog blob must equal the disk
+  copy — `git hash-object` and `git rev-parse HEAD:<path>` being the same
+  function of the same bytes, as in the artifact loop above it. Together they
+  say HEAD carries exactly the predecessor's bytes and exactly this session's
+  row: stronger than counting the sessionId, which a rewritten row could
+  still satisfy.
+
+**Controls.** All three fire. With the postcondition suppressed and a hook
+that resets the runlog index entry to HEAD's blob, the act returns `ok: true`
+with the archive committed and the row gone; same with a hook that removes
+the path outright; same with a hook that appends a foreign row to the working
+copy. Restored, each refuses by its own name — "HEAD carries a different …
+runlog", "HEAD does not carry … runlog", "not the bytes this observation
+appended" — and the run's commit lock is released in every case.
+
+**One observation, recorded rather than absorbed.** The registered
+KNOWN_FLAKY class says those three fs/git-heavy files fail only in the FULL
+suite. In this round one SOLO run of `tests/b12-register.test.ts` failed 1/29
+(the message was not captured before the process exited) and four consecutive
+solo runs on the same bytes were 29/29. The class is not being widened on one
+uncaptured line; it is written down so the next occurrence is the second, not
+the first.
+
+### THE TARGETED ROUNDS (R35, R36, R37) — adjudicated 2026-08-11
+
+**Why these three are different, and what that says about the twenty-seven
+before them.** R8–R34 were generic: the same prompt against the same branch
+diff, twenty-seven times, for forty-five findings — almost all of them in git
+plumbing, locks, IO and atomicity. Seven consecutive rounds landed on ONE
+surface, the harness's commit act, and the last four produced exactly one
+finding each. That is not a codebase running out of defects; it is a review
+running out of places it was willing to look.
+
+Two structural reasons, both measured rather than supposed:
+
+1. **The review target is the branch diff**, and the diff is
+   `scripts/b12-run.mjs` +1580, `src/cost/b12/audit.ts` +1384,
+   `scripts/b12-register.mjs` +901 against `src/cost/b12/aggregate.ts` +61,
+   `assemble.ts` +69 and `src/cost/report.ts` +16. The reviewer goes where the
+   mass is, and the mass is plumbing.
+2. **The prompt template's own `<attack_surface>`** names auth, data loss,
+   rollback, races, re-entrancy and degraded dependencies. It never says
+   "arithmetic" and never says "does the code match the frozen text".
+
+So three rounds were run with the SAME target and different lenses, each
+explicitly told that findings on the already-hardened surfaces were worthless:
+R35 the arithmetic, R36 attribution, R37 conformance of code to the
+pre-registration. **Nine findings, seven of them high, none in plumbing** —
+against one per round for the four rounds before. The bottleneck was never how
+much review; it was where it pointed.
+
+- **R35#1 and R35#2 (both high) — two guards written for the EMPTY population
+  answered the CANCELLING one with the same 0.** `poolRatio` carried
+  `if (A + S === 0) return 0` under a comment reading "An empty set has no
+  ratio"; `rHiPlus` carried `if (denominator === 0) return { evaluable: true,
+  value: 0 }`. Both are correct for an empty population and wrong for a
+  nonempty one whose signed sums cancel — and cancellation is not a malformed
+  input here. `poolRatio`'s OWN note records the only live reading this project
+  has: `gate` came back at **-467.1 units**. Negative credited rows are
+  supported by design, so `A + S` can reach zero with twenty real observations
+  underneath it.
+
+  **What each fabricated number does.** For `rHiPlus`, `{ evaluable: true,
+  value: 0 }` is not a missing answer — it is the STRONGEST fall-side answer
+  the scale has: no doubt-credited saving at all. `decide` reads it as evidence
+  FOR a fall, and an undefined quantity becomes `fallen` where an unevaluable
+  one would have produced `open`. For `poolRatio`, F23's uncapped forms now
+  flow through the same guard, and clause 8 checks the four bracket bounds for
+  **finiteness** — so a fabricated `0` passes and the artifact publishes a
+  bracket that does not exist, with clause 8 reporting both brackets present.
+
+  **Fix: two nothings, two answers.** The empty population still reads 0 — the
+  recomputations legitimately drop rows until none is left, and NaN there would
+  propagate into every figure downstream. The nonempty cancelling population
+  reads `NaN` from `poolRatio` (which is exactly what clause 8 CAN see) and
+  `{ evaluable: false, reason }` from `rHiPlus`.
+
+  **Controls, three, all shown firing by mutation.** The `rHiPlus` control
+  builds Codex's own input — twenty observations at `aO=1, oO=1, sLo=-0.5,
+  sHi=-1`, so `A + S + refused` cancels exactly — and asserts the refusal by
+  its reason; restoring `{ evaluable: true, value: 0 }` gives `expected true to
+  be false`. The `poolRatio` control cancels ONLY the uncapped pair
+  (`sLoUncapped = sHiUncapped = -1` against `sLo = sHi = -2`), so the capped
+  bounds stay finite at 2.1 and the defect is isolated to F23's pair rather
+  than to the bracket as a whole; restoring the `0` gives `expected false to be
+  true`. The third pins the boundary in the other direction — the EMPTY set
+  still reads 0 on both — so nobody later "fixes" the empty case into NaN and
+  breaks every recomputation.
+
+  **Not asserted, and why.** A decider-level assertion that the cancelling
+  twenty produce `open` rather than `fallen` was written and thrown away: with
+  `terms()`'s default stratum every observation lands in one cell, so the
+  strata floor produces `open` for a reason that has nothing to do with this
+  defect. A control that passes against the defect is the R32 trap, and one
+  was not shipped here to make the section look stronger.
+
+- **R37#2 (high) — clause 5 pinned the emission WRAPPER and not the emission.**
+  `PINNED_PATHS` is `["src/cost/", "src/telemetry.ts", "scripts/b12-run.mjs"]`,
+  and the constant's own comment argued the case: `src/cost/emission.ts` owns
+  "gate's or repair's telemetry emission", so the tool files may stay editable
+  because they are what the experiment MEASURES. Half of that is true. The
+  wrapper owns the LIFECYCLE — writer selection, the write-once rule, the
+  abort pair. It does not own the ROW. `bytes_raw`, `bytes_returned` and
+  `turns_collapsed` are built in `src/tools/gate.ts` and `src/tools/repair.ts`,
+  outside every pinned path, and `turns_collapsed: Math.max(0, selected.length
+  - 1)` is not a diagnostic: **it is the definition of the credited saving.**
+  Editing it after the first scored observation redefines every scored
+  observation's saving, and the audit returns CLEAN.
+
+  **The textual argument is what settles it.** Clause 5 lists the emission as a
+  FOURTH item beside `src/cost/**`. If the path pin reached it, the frozen
+  sentence would not name it separately. It names it because something of it
+  lives outside — which is exactly what the code confirms. So this is a
+  CORRECTION, not a widening, and needs no amendment: an amendment is for text
+  the frozen sentence does not carry, and this sentence carries it. (Had it
+  been a widening, the window would have been closing: amendments are pre-data
+  and the freeze anchor is the first scored observation.)
+
+  **The fix is a fence, not a path.** Pinning `src/tools/gate.ts` whole would
+  freeze the subject of the experiment — the objection in `emission.ts`'s
+  header is right about that. What is pinned is the region between
+  `// b12:emission-begin` and `// b12:emission-end`: the row construction and
+  the handover, three fences across the two files (gate's normal emission,
+  repair's normal emission, repair's ABORT emission — its zeroes are a claim
+  about the measurement, not the absence of one). Clause 5 compares the
+  canonical digest of that region AT THE FREEZE ANCHOR against the same region
+  at the audited head, names the commits that moved it, and grants them the
+  same re-emission escape the path probe grants. Editing those files anywhere
+  else stays lawful.
+
+  **Comments are dropped from the digest, deliberately.** This repository
+  rewrites its prose constantly; hashing prose would VOID a paid run over a
+  typo fix, and prose is not the measurement. Commenting a field out still
+  removes its line. A separator that survives the filter sits between fenced
+  regions, so moving a line from one region into another still reads as drift.
+
+  **Fail-closed in three places, none of which existed before:** a fenced file
+  absent at the anchor, a fence unreadable at either end (absent marker,
+  unclosed region, stray `END`), and digests that disagree with no commit in
+  the history owning the difference. Each is a reason, not a silence — a pin
+  that cannot be read is not a pin.
+
+  **Controls, both directions.** The firing one edits `turns_collapsed` after
+  the anchor and asserts, on the SAME bytes, that the pre-R37 configuration
+  (`emissionFencedFiles: []`) audits **clean** while the fence makes it
+  **void** — the damage and the fix in one test, rather than a disable-and-look
+  by hand. Shown firing by mutation: forcing `fencedEmission` to a constant
+  gives `expected [] to have a length of 1`. The second control pins the
+  boundary in the OTHER direction — the same file edited outside the fence, and
+  a comment rewritten inside it, stay clean — so nobody later "simplifies" the
+  fence into a whole-file pin.
+
+  **Residual, written down and not fixed.** The re-emission escape is granted
+  to emission drift because the frozen sentence grants it to the whole clause,
+  and narrowing it would mint a stricter condition than the text carries. It is
+  substantively weak here: re-emitting `result.json` from the archive re-reads
+  telemetry rows that the OLD emission wrote, so the escape can excuse a drift
+  it does not actually neutralise. Recorded rather than repaired, because the
+  repair is an amendment and amendments are pre-data.
+
+  Eighth occurrence of the recurring pattern, and the first INVERTED one: the
+  rule was written down, and the code narrowed it with an argument.
+
+- **R37#3 (high) — DECLINED on its central claim, UPHELD on a narrower one,
+  and its third part was already written down.** This is the one finding of the
+  nine whose headline does not survive reading the code.
+
+  **The claim: the fifth registered control is a SUBSTITUTE that proves the
+  opposite topology.** The frozen requirement is *"a per-session scoring
+  invocation REFUSING where the full-set invocation credits"*, and Codex read
+  the registered test's `alone` / `ambiguous` contrast — per-session credits,
+  full-set refuses — as the inverse of it. That contrast is in the test, and it
+  is not the control. The control is at `tests/cost-meter.test.ts:1054-1065`:
+  `invocationOwners([parent, child])` groups PER TRANSCRIPT and returns
+  `[shared]` — the per-session invocation REFUSING — while
+  `invocationOwners([parent, child], lineagesOf([parent, child]))` groups by
+  LINEAGE and returns `[]` — the full-set invocation CREDITING. That is the
+  frozen sentence, in the frozen order. The `alone` line proves something
+  else: that the pre-fix caller, knowing nothing, credited once.
+
+  **What IS true, and narrower.** The refusing half ran end to end, through
+  `buildCounterfactual`. The crediting half stopped at `invocationOwners`
+  returning an empty set — an ownership fact, not a SCORED one — and the frozen
+  sentence says "invocation", meaning the scorer. Closed: the full-set
+  ambiguity set is now handed to `buildCounterfactual` and the same row is
+  shown credited (`ambiguous: 0`, `refusedRows: 0`, one call, positive units,
+  and `savedFraction` STATED where the per-session side withholds it). Shown
+  firing: making `invocationOwners` ignore its lineage argument gives
+  `expected [ Array(1) ] to deeply equal []`.
+
+  **The third part is not new.** "Present-and-passing proves identity and
+  runner status, not firing" is the residual R23 recorded on 2026-08-10 and
+  `STATE.md` still carries as STILL OPEN, with the mutation harness named as
+  the fix. Codex restating it is confirmation, not discovery, and it is not
+  closed here: every control in this pass was shown firing BY HAND, which is
+  evidence about these controls and not a mechanism.
+
+- **R36#1, #2 and #3 — three ways the archive was WRONG rather than fragile.**
+  All three read, before this pass, as a clean and slightly shorter
+  observation; none of them left a mark a reader could find.
+
+  **#2 (high) — a byte count has no identity.** R33's boundary is the log's
+  SIZE the moment before acceptance, and the capture clamps it to the file's
+  current length. An acceptance command that TRUNCATES or REPLACES the log
+  therefore moves the cut backwards, every acceptance row lands in the arm's
+  own segment, `scopeTelemetry`'s ±60 s window admits it, and the arm gains a
+  saving it never made. Fixed by taking the boundary as an IDENTITY: the
+  harness now reads the bytes once and passes their sha256 with the count
+  (`telemetryBoundaryIn`), and the capture verifies the prefix still hashes to
+  it. On mismatch — or a log now SHORTER than the count — the split is not
+  trusted; it is recorded in `attributionProblems`. **The control carries its
+  own damage:** on the same bytes, the pre-R36 boundary credits the arm with
+  the acceptance row (`[ACC]`, 999 raw bytes) and reports nothing.
+
+  **#1 (high) — the parser dropped what it should have counted.**
+  `parseTelemetryText` skipped any line that would not parse, under a comment
+  reading "a partially written last line is expected while a tool is running".
+  That is true of a LIVE log's last line and of nothing else: the capture reads
+  the log after the tool exited, so a partial line there is a row something
+  stopped mid-write, and the saving it carried is gone. `parseTelemetryLines`
+  now returns the count, and a malformed line in the ARM's own segment is an
+  attribution problem.
+
+  **What was NOT built, with the counter-example.** Codex asked for "every
+  local invocation in the archived transcript has exactly one telemetry row".
+  That rule is FALSE on a path the design intends: `emission.ts`'s state
+  machine emits NOTHING for a refused preflight (`not-started`), while the tool
+  result is still in the transcript. A guard on it would refuse lawful
+  observations. The gap is published as `invocationsWithoutRow` — reported,
+  deciding nothing — so a reader can see it and ask.
+
+  **#3 (medium) — "will not parse" and "will not open" shared one silence.**
+  `readTranscript`'s catch omitted the file under a comment that is only true
+  of parse failures ("a file yielding none relates to nothing"). A file that
+  could not be READ takes its billed requests and its tool-result ownership out
+  of the archive with no trace, while the surviving files keep `lineage`
+  non-empty so the harness's empty-lineage guard never fires. Now separated by
+  ERRNO — `ENOENT`/`EACCES`/`EPERM`/`EBUSY`/`EISDIR`/`EMFILE`/`ENFILE`/`EIO`,
+  not by message — recorded in `unreadableTranscripts`, and an attribution
+  problem. A real `EACCES` cannot be produced deterministically on Windows, so
+  the control uses a NEW TEST SEAM (`readTranscriptFor`), documented as never
+  passed by the harness, and its other half pins the lawful case: a `.jsonl`
+  full of junk is still omitted in silence.
+
+  **Where the three land.** `ArchivedObservation.attributionIntact`, beside
+  `telemetryIntact` rather than inside it — these bytes can agree perfectly
+  with the sealed copy and still be unattributable — and `assemble`'s
+  `suspect()` refuses terms on it. That rides on the EXISTING
+  "design.artifacts 6 — archive integrity" check, whose own words already
+  cover "a corrupt, drifted or missing telemetry.jsonl"; no new clause is
+  minted. **Shown firing:** forcing `attributionProblems` to `[]` fails all
+  three controls at once.
+
+- **R37#1 (high) — the artifact carried the fact and never said it.** The
+  pre-data rule is in `PREMISES.md`, added before registration precisely so it
+  could not be minted mid-game: *"The scoring invocation requires a COMMITTED
+  clause 4–6 audit artifact … Anything short of that is NO audit: `assemble`
+  publishes clauses 4–6 as UNCHECKED — never as 'clean' — and **a verdict
+  emitted without one is not final**."*
+
+  `emitRun` sets `gitAudit = { ran: false }`, and with no `--audit` it goes
+  straight on to `assembleRun`, writes `result.json` and returns
+  `verdict: hold|fall|open`. `uncheckedClauses` recorded WHICH clauses nobody
+  checked — but nothing on the artifact, in the return value or on the CLI's
+  line said the verdict was provisional. An operator reading `verdict: hold`
+  off a terminal had no way to know.
+
+  **Fix: say it.** `B12RunResult.final` and `EmitResult.final`, derived from
+  `uncheckedClauses.length === 0` rather than from `gitAudit.ran` — one source,
+  so a gap of any origin marks the verdict. The CLI prints `NOT FINAL —
+  clauses 4–6 UNCHECKED (no committed audit bound to this tree)` BEFORE the
+  verdict line, not after it.
+
+  **What was NOT done, and why.** Codex asked that a preliminary emission "not
+  expose an ordinary final verdict". Minting a fourth verdict value would
+  change the artifact's grammar, and the frozen sentence qualifies the verdict
+  rather than suppressing it. The rule as written is implemented; a stronger
+  rule would be a new one.
+
+  **Control shown firing:** forcing `final: true` gives `expected true to be
+  false` on the unchecked emission, and the bound-audit e2e asserts the other
+  side (`final === true` out of the emission and on the artifact).
+
+- **R37#4 (medium) — PARTLY UPHELD, and the part declined is written down.**
+  The frozen sentence is *"VOID if … changed after the first scored
+  observation **without every existing evidence/ artifact for the run being
+  re-emitted from the archive**"*, and the escape asked about exactly two
+  hard-coded paths.
+
+  **The literal reading is declined, with a reason.** The frozen artifact
+  inventory for a run contains manifest A, manifest B, the preflight, the
+  pilot, every snapshot, every `obs-<NN>/`, the counterfactual and the result.
+  The register seals both manifests CREATE-ONLY (`wx`), and clause 4 makes a
+  commit touching manifest A its own VOID. So "re-emit every existing evidence/
+  artifact" cannot be satisfied by any lawful sequence: under the literal
+  reading the escape is unobtainable and half the sentence is dead letter. The
+  reading applied is the only one under which it has content — the population
+  is what re-emission PRODUCES.
+
+  **The part upheld is the real one.** The list was TWO HARD-CODED STRINGS,
+  disconnected from the emission that writes them. That is R24's defect again
+  in miniature: a population named by hand is not a population. `emitRun` now
+  derives its own two write paths from `runEmittedArtifacts`, so escape and
+  emission are ONE list and a third emitted artifact cannot appear without
+  landing in it. The reading itself is now an audit INPUT
+  (`clause5.reemission.reading` and `.population`), so a replayer can see it
+  and argue with it instead of inferring it from two strings.
+
+  **Control shown firing:** adding a third path to the population makes the
+  binding test report `expected [ …(2) ] to deeply equal [
+  'replay-01.b12.MUTANT.json', …(2) ]`.
+
+  **His call, not mine, and not taken:** narrowing the frozen quantifier to
+  "every DERIVED artifact" is a pre-data amendment. None exists, so the
+  sentence and the code agree in effect and disagree in wording, and that is
+  recorded rather than papered over.
+
+### TWENTY-SEVENTH POST-IMPLEMENTATION ROUND (R34) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED — the seventh round on the same surface,
+and the one place the CAS still wrote outside its own act.
+
+- **R34#1 (high) — a checkout during the act staged paid evidence on the
+  branch it landed in.** `installEvidenceCommit` opened with
+  `git add -- <relDir> <runlog>` into the REAL index. That index belongs to
+  whatever HEAD points at NOW; `update-ref` installs on the ref captured
+  minutes earlier. A checkout in between — the event R26 already established
+  as real, and the reason `branchRef` exists at all — left the SIBLING
+  branch's index holding this observation's evidence, STAGED, while the commit
+  landed correctly on the captured ref and the act returned SUCCESS. Nothing
+  warned, because every verification reads the captured ref. The operator's
+  next ordinary commit over there duplicates paid evidence.
+
+  Reproduced with the old order restored: on `sibling`, `git diff --cached`
+  lists both `evidence/run-c.b12.runlog.jsonl` and the observation, while the
+  evidence sits correctly on the captured branch.
+
+  Nothing is staged before the act any more. The index is refreshed AFTER the
+  install, and the staged-emptiness wall went with the add — not missed, since
+  the temp-index path already proves the stronger thing (each named file
+  hashed into the tree, `hash-object -w` failing on a missing one, a tree
+  equal to the tip's refused) and R25's blob comparison proves it a third
+  time. A side effect worth having: a failed CAS now leaves the paths
+  UNTRACKED rather than staged, so the exit hook's removal of an uncommitted
+  claim no longer leaves a staged deletion behind it.
+
+  **The refresh is bound to the POSITION of HEAD, not to the branch's name,
+  and the first spelling of that guard was wrong.** Binding to the ref name
+  refused a worktree sitting on a different branch AT the installed commit —
+  which left a STAGED DELETION the operator's next commit would have acted
+  on. The condition that is actually correct is `rev-parse HEAD` == the
+  installed commit: then every path being added is already in that tree at
+  that blob, so the add can only make the index agree with what is checked
+  out. Anywhere else, the same add would put this run's evidence into a tree
+  that does not have it. Both directions are now pinned by tests, the second
+  one written specifically so nobody re-tightens it to the name.
+
+  **A note, never a failure.** The refresh is housekeeping and the evidence is
+  committed either way, so `commitObservationRow` returns `{ok: true, note}`
+  and `observe` prints the note on stderr. R30's lesson applied where it
+  belongs: bookkeeping may not invalidate work that already happened.
+
+  **The residual is written down, not implied:** the position is proved before
+  the add and again after it, because `git add` is not instantaneous. A
+  checkout landing INSIDE the add itself is REPORTED, not prevented — the same
+  shape as the residual R19 recorded for its own mutex.
+
+### TWENTY-SIXTH POST-IMPLEMENTATION ROUND (R33) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED at the scorer — a measurement boundary
+the tree already had and the log did not.
+
+- **R33#1 (high) — the acceptance command's telemetry was archived as the
+  arm's.** Acceptance runs in the arm's own throwaway worktree, AFTER the arm
+  and BEFORE the capture. `captureObservation` read the whole
+  `.local-coder/telemetry.jsonl`, so an acceptance command that reaches gate
+  or repair — directly, or through the very `npm test` the task declares —
+  appends rows that land inside `archive.telemetry`.
+
+  The old justification is quoted in the field's own doc: a fresh
+  `git worktree add` starts with no log, "so every row present at the task's
+  end was written by this observation". True about the WORKTREE, false about
+  the measured SESSION — and the harness had already drawn this exact
+  distinction for the tree, reading `endCommit` BEFORE acceptance and
+  `endPorcelain` after precisely so "did the arm commit its work" and "did
+  acceptance write into the tree" stay different questions. The log had no
+  such line.
+
+  **`scopeTelemetry` does not save it, and the test proves that rather than
+  assuming it.** Its ±60,000 ms window admits any row near the session's
+  requests whether or not the transcript names the row's `invocation_id` — and
+  the header explains why that branch has to exist (a long `repair` can finish
+  after the last billed request). Acceptance rows are always seconds away and
+  are never named. Reproduced: over the unsplit log `scopeTelemetry` returns
+  both ids; over the archived arm rows it returns one.
+
+  The boundary is now the log's SIZE IN BYTES taken the moment before
+  acceptance starts — `endCommit`'s timing, applied to the log. Rows past it
+  are archived as `telemetryAfterAcceptance`, REPORTED and deciding nothing:
+  acceptance running the tool under measurement is a fact worth keeping, and
+  deleting evidence to fix an attribution bug would be the wrong trade. A cut
+  landing mid-line gives the partial row to the ARM (a row being written when
+  acceptance starts was started by the arm), and an absent boundary means NO
+  split — the pre-R33 reading, said out loud rather than defaulted into.
+
+  Codex also suggested filtering the archive to invocation ids proven to
+  belong to the session. **Declined, with the reason:** that is the branch
+  `scopeTelemetry` deliberately does not stand on. Ids skip the window because
+  the join is exact for them; the window exists for the arm's OWN rows the
+  transcript never named. Filtering to ids would drop real arm work — a
+  boundary in time is the right instrument, and it is the one the harness
+  already uses next door.
+
+  **Operational note, not a defect:** `capture.ts` changing moves
+  `dist/cost/b12/capture.js`'s sha, which `loadCapture` refuses against a
+  manifest's `pinned.captureSha256`. Nothing is sealed yet; re-pinning is part
+  of the seal step already on the calendar.
+
+### TWENTY-FIFTH POST-IMPLEMENTATION ROUND (R32) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED — and it inverts the two outcomes that
+must never be swapped.
+
+- **R32#1 (high) — a mandatory git failure was relabelled and published as a
+  VOID.** The clause-5 anchor derivation sat inside one broad `try/catch`
+  whose handler pushed `the committed counterfactual does not parse`. The
+  MANDATORY directory probe — **R29's own fail-closed guard**, whose comment
+  reads "a probe that cannot answer may not wear the empty list a clean answer
+  wears" — throws `AuditRefused` from INSIDE that block. So a git that could
+  not answer was caught by the enclosing handler, recorded as a claim about a
+  file that parses perfectly, and handed to `decideAudit`, which turned the
+  fabricated anchor problem into a **void**. Reproduced: with the probe
+  blinded, the collector returns facts and the decider prints
+  `void | the committed counterfactual does not parse`.
+
+  A refusal and a VOID are not neighbours. A refusal writes NO artifact and is
+  retryable; a VOID is a committable verdict that kills a run of paid
+  sessions. Transient git may not spend the run. The catch now covers the
+  counterfactual's `JSON.parse` and nothing else — including `null` and
+  scalars, which parse without throwing and carry no observations, said out
+  loud rather than read as an empty population. Every `AuditRefused` below it
+  propagates.
+
+  The same edit removed an unguarded `JSON.parse(git(["show", …]).out)` in the
+  anchor step: `started` is now CARRIED from the join instead of shown and
+  parsed a second time. That re-read was a `SyntaxError` wearing the
+  counterfactual's name if HEAD moved under the audit.
+
+  **The control fires — but its first version did not, and that is worth
+  recording.** The seam blinded every `ls-tree` over `evidence/<runId>/`, and
+  there are TWO: R29's `-d` inside the block, and R24's evidence digest with
+  `-r` OUTSIDE it. Blinding both let the second refusal stand in for the
+  first, so the test passed against the defect. Discriminating on `-d` is what
+  makes it a control rather than a coincidence — and the test says so in
+  place, because the next person to widen that seam will re-break it.
+
+### TWENTY-FOURTH POST-IMPLEMENTATION ROUND (R31) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED: a completed, paid observation is
+deleted, in silence, by a call that returns success.
+
+- **R31#1 (high) — the pilot's only artifact lost observations under a
+  concurrent or interrupted write.** `appendPilotRecord` read the whole
+  `evidence/<runId>.b12.pilot.json`, pushed one record in memory, and
+  `writeFileSync`'d the file back — with **no lock at all**. The only claim
+  the pilot path holds is the SESSION lock, and the run lock's own header had
+  already written down why that one cannot serialize a shared file: it is
+  keyed by (runId, taskId, arm), so two pilot TASKS take different locks and
+  interleave freely. Both read the same prior state; the second write drops
+  the first observation. The pilot has no obs dir, no runlog row and no
+  commit — artifact 4 says its one file is the only output — so nothing on
+  disk can reconstruct what was dropped. The unit of loss is a paid session.
+  A kill or a full disk mid-`writeFileSync` is the same wound with a wider
+  blast radius: the truncated file takes EVERY earlier observation with it.
+
+  **Seventh occurrence of the pattern** this loop keeps finding: the rule was
+  already written, in the header of the very lock that exists to fix exactly
+  this, and the second site did not apply it. That lock is now what its
+  header always said it was — ONE run-wide claim over the run's evidence
+  write, taken by the scored path's [row, commit] act and by the pilot's
+  read-modify-write alike. A second lock of the pilot's own would have
+  excluded nothing from the first.
+
+  Three teeth, not one: the run-wide lock, so lawful writers serialize; a
+  RE-READ immediately before the write, so a writer that never took the lock
+  turns a silent lost update into a refusal; and temp-file + rename, so a
+  torn or failed install cannot truncate the only copy. The temp carries the
+  FULL next state and is consumed by the rename; on any refusal past that
+  point it is left behind ON PURPOSE and named in the message, because it is
+  that session's work and the alternative is re-running a paid observation.
+  Same doctrine as the leaked lock dir: the operator removes it, the harness
+  never guesses.
+
+  **Both controls fire.** Suppressing the re-read and replaying the scenario
+  outside vitest prints `on disk: t1,t2` — `t9`, a completed observation
+  written inside the window, is simply gone and the function returns the file
+  path as if it had succeeded. Restored, the same script refuses by name and
+  points at the staged temp. Suppressing the lock acquisition turns the
+  second control green-to-red the same way.
+
+  Codex also proposed durable per-observation artifacts with the aggregate
+  derived from them. **Declined, with the reason:** artifact 4 registers that
+  ONE file as the pilot's only output, and the code already refuses to claim
+  an obs dir here because an empty claimed dir in append-only `evidence/` is
+  a permanent void at scoring time. Minting a second evidence class
+  pre-registration to fix a locking defect trades a bug for an unregistered
+  surface. The lock, the re-read and the atomic install give the durability
+  without touching the registered artifact set.
+
+  **One honest scope note.** The temp+rename half is asserted STRUCTURALLY —
+  the seam shows the full next state complete on disk under another name
+  while the target still holds only what this call read, so the target is
+  never the half-written one. It does not reproduce an OS-level torn write,
+  which is not injectable from a test. The two firing controls above are the
+  lock and the re-read.
+
+### TWENTY-THIRD POST-IMPLEMENTATION ROUND (R30) — adjudicated 2026-08-10
+
+Two findings. One is confirmed and reproduced arithmetically; the other is
+confirmed as a contract violation whose damage **is not reachable today**,
+and that distinction is written down rather than smoothed over.
+
+- **R30#1 (high) — the audit CLI let a run id escape `evidence/` and
+  overwrite.** The entry point checked only that the argument existed and did
+  not begin with `--`, then interpolated it into
+  `evidence/<runId>.b12.audit.json` (or the attestation's equivalent) and
+  wrote with overwrite semantics. From this worktree, `../../target` resolves
+  to `…/.claude/worktrees/target.b12.audit.json` — outside the repository,
+  replacing whatever sits there. A destructive boundary failure reachable by
+  a typo or a paste.
+
+  The id is now held to the register's own grammar
+  (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) at the point where it BECOMES a
+  filename, and `evidenceArtifactPath` resolves the result and refuses
+  anything not landing directly under `evidence/`. **Sixth occurrence of the
+  same pattern**: the rule was already written down — R23 applied this exact
+  grammar in `b12-register.mjs`, at its own point of use — and the second
+  place that turns an id into a path did not apply it.
+
+  Codex also suggested create-only writes. **Declined, with the reason:** the
+  audit artifact is REGENERATED before it is committed (fix something, run
+  the audit again), and what makes it evidence is `committedAuditCheck`, not
+  the write mode. Create-only belongs to the seal, which is frozen by sha
+  (R21). Confining the path is the property that was missing.
+
+- **R30#2 (medium) — a telemetry failure could skip the rollback.** In
+  `repair`'s catch, `emission.abort(...)` was awaited BARE, ahead of
+  `restore(snapshots)`: a rejecting writer exited the block before the undo
+  and replaced the repair's own error with the telemetry's, so the caller
+  learned neither. Telemetry is best-effort; the tree is not. The abort is
+  now wrapped, its failure kept and REPORTED (`abort_telemetry_error`, plus a
+  sentence in the message), and the rollback runs regardless.
+
+  **The control does not fire, and here is why.** Every path that reaches
+  that catch today has already restored on its way out: the loop restores
+  whenever it does not apply, and the gate turns a runner error into a failed
+  check rather than a throw. I built the "checks vanish mid-repair" scenario
+  specifically to leave the tree dirty, and it still arrived at the catch
+  clean. So the fix makes the stated contract true independently of which
+  path arrives — defense in depth for a sentence the code already claimed —
+  and the new test proves the end-to-end invariant (tree restored, error
+  surfaced) rather than pre-fix damage. Suppressing the fix leaves that test
+  GREEN. Recorded here so nobody later reads it as a firing control.
+
+### TWENTY-SECOND POST-IMPLEMENTATION ROUND (R29) — adjudicated 2026-08-10
+
+Two high findings, both in the audit computer, and both of the same family:
+a fact the artifact ASSERTS and nobody checks.
+
+- **R29#1 (high) — a stale counterfactual switched clause 5 off.** The anchor
+  walked `counterfactual.observations` and nothing ever proved that list
+  covers the committed evidence. The counterfactual is written by the
+  EMITTER, so the ordinary sequence — an early unchecked emit, then more
+  observations, then the audit — leaves a stale one committed. `joinedObs`
+  comes out empty, NO anchor problem is raised, and `decideAudit` reads the
+  clause's own "before the first scored observation these are free". **A
+  pinned-path change made after the run's real first scored observation
+  therefore got a CLEAN audit** — and the emission's re-derivation (R26)
+  agrees with it, because it re-derives from the same stale file.
+
+  The committed observation directories are now enumerated (`ls-tree -d`,
+  fail-closed: a probe that cannot answer may not wear the empty list a clean
+  answer wears) and every one of them must be DECLARED. One undeclared
+  directory is an anchor problem — which is a VOID, never a freedom. A
+  malformed counterfactual entry, which used to be skipped in silence, is an
+  anchor problem too.
+
+- **R29#2 (high) — the attestation's lockfile was asserted, never verified.**
+  R24 made `--attest-suite` install from the subject commit's own
+  `package-lock.json` and RECORD its sha256; the reader only ever checked
+  that the recorded value was 64 hex digits. So a copied or hand-edited
+  attestation could name any dependency tree and satisfy clause 6 — the
+  guarantee R24 was written to give ("the suite ran on the dependencies that
+  commit pins") was a sentence the artifact said about itself. The collector
+  now hashes `<subjectCommit>:package-lock.json` and the decider requires
+  equality; a subject commit with no readable lockfile is a reason, not a
+  free pass. Both numbers ride in the artifact's inputs.
+
+**Controls.** #1: with the population check suppressed, the e2e — a scored
+run, its counterfactual emptied, a pinned path touched, and the attestation
+naming the drift commit so clause 6 stays silent — audits **`clean`**. That
+is the finding, reproduced exactly. Restored, it is void and names the
+undeclared directory. #2: changing ONLY the recorded lockfile hash voids and
+says the suite did not run on the dependencies the commit pins; a null
+lockfile at the subject voids with its own sentence. The e2e's scratch
+repository now commits a real lockfile and attests its real hash.
+
+### TWENTY-FIRST POST-IMPLEMENTATION ROUND (R28) — adjudicated 2026-08-10
+
+One finding, and it is the CAS from one round earlier failing in the
+environment this repository is actually worked in.
+
+- **R28#1 (high) — the temporary index was built at `<root>/.git/…`, which in
+  a linked worktree is a FILE.** `git read-tree` cannot create an index
+  inside a non-directory, so in a linked worktree every observation would
+  fail — and fail AFTER the row was appended, leaving an uncommitted row and
+  an archive in no tree, which holds the run at the next barrier until an
+  operator reconciles by hand. The register already resolves
+  `--absolute-git-dir` and has a test named "registers from a LINKED
+  WORKTREE, where `.git` is a file, not a directory"; **the observation path
+  re-derived the assumption the register had already discarded.** That is the
+  fifth time in this loop a defect lived where the repository had already
+  written down the rule.
+
+  The git directory is now resolved with `git rev-parse --absolute-git-dir`,
+  and resolved BEFORE the append — beside the tip capture, for the same
+  reason: everything fallible the install needs is asked for while a refusal
+  still costs nothing (R16's lesson, R28's occasion).
+
+**Control.** The new integration test runs the real `commitObservationRow`
+from a real `git worktree add` checkout, asserting first that `.git` there IS
+a file. With the path put back under `<root>/.git`, it fails; with the
+resolved git directory it installs, the branch carries the archive and the
+row, and the worktree is clean.
+
+### TWENTIETH POST-IMPLEMENTATION ROUND (R27) — adjudicated 2026-08-10
+
+One finding, and it is the previous round's own fix reviewed — the third time
+in this loop that a repair turned out to be half of one.
+
+- **R27#1 (high) — the branch check was TOCTOU, and the damage was
+  irreversible.** R26 made the act refuse when HEAD no longer named the
+  captured branch. But the check is one process reading a file and `git
+  commit` is another process reading it again: a checkout landing in between
+  still moved the target, and by the time the ref-based verification said so,
+  **the commit already existed on someone else's branch with the run's row
+  inside it.** A refusal that arrives after an irreversible write is a report,
+  not a guard.
+
+  The install is now the same act the register performs: the tree is built in
+  a TEMPORARY index seeded from the tip this act read (so an operator's
+  unrelated staged work cannot ride in), `commit-tree` parents it on that tip,
+  and `update-ref <ref> <new> <expectedTip>` compares and swaps. Git decides:
+  either the branch moves from exactly the commit this act read its barrier
+  against, or nothing happens anywhere. The tip is captured WITH the barrier
+  bytes, before the append — not re-read at the last instant, which would
+  reintroduce the same window one line lower.
+
+  **What it deliberately does not do, and why the R14–R19 saga does not
+  repeat here:** it never checks anything out, and it never installs an index
+  over the real one. The tree it commits is `expectedTip`'s tree plus these
+  paths — exactly what `git commit -- <paths>` produced — so staging the same
+  paths in the real index BEFORE the swap leaves index, HEAD and working tree
+  agreeing with no destructive write. Staging first is also what makes a
+  failed CAS safe: the paths are staged, nothing is committed, and that is
+  the state the old failure path left too.
+
+  **A threat closed by construction, and the tests changed to say so.** The
+  install no longer runs `git commit`, so `pre-commit` hooks never fire on the
+  evidence commit — the exact mechanism R25's controls used. Two of those
+  controls now assert the opposite and stronger fact: with the hook that used
+  to drop the row still installed, the act SUCCEEDS and the row lands with its
+  archive. R25's postcondition stays and is reached through the seam instead:
+  anything rewriting the runlog between the append and the install still
+  refuses by name.
+
+**Controls.** With the install made to follow the mutable branch (a fresh tip
+read at install time — the shape R26 shipped), a ref that moved between the
+append and the install lands `ok: true` and the evidence stacks on top of the
+intruder's commit. Restored, the same race refuses with "moved away from …
+NOT installed anywhere", the branch carries only the intruder's commit, and
+`ls-tree` shows the observation directory reached no tree at all. Separately,
+the R16 lesson is re-proved for this path: after a successful act `git status`
+is empty and the operator's next ordinary commit leaves the archive and the
+row exactly where they are.
+
+### NINETEENTH POST-IMPLEMENTATION ROUND (R26) — adjudicated 2026-08-10
+
+Two high findings. The first is the whole clause 4–6 apparatus reviewed at
+its weakest joint, and it is the most serious thing this loop has found: the
+verdict was not the audit's, it was the artifact's.
+
+- **R26#1 (high) — a hand-authored audit could certify clauses 4–6 as
+  clean.** `parseGitAudit` accepted ANY committed object with `ran: true`, a
+  valid verdict, an array of reasons and **one** string input. Every binding
+  check added since (R22, R24) re-hashes what the artifact SAYS about a
+  handful of paths; **none of them ever asked whether the verdict beside
+  those hashes is the verdict those facts produce.** So an operator could
+  write `evidence/<runId>.b12.audit.json` by hand, read the four hashes and
+  the evidence digest straight out of the repository, commit it, and the
+  emission would publish clauses 4–6 as CHECKED with no audit ever having
+  run. Everything the audit computer does — the anchor derivation, the
+  offender union, the six controls — was decorative against one JSON file.
+
+  Two changes. `parseGitAudit` now requires **exactly `AUDIT_INPUT_KEYS`**,
+  the same constant the producer has always asserted before writing: a
+  producer-side assertion nobody checks on the reading end is a wish. And the
+  emission **RE-DERIVES the whole judgement** from the repository and
+  requires the artifact to agree: same verdict, every canonical input equal —
+  except `head`, which MUST differ, because committing the audit is what
+  moved HEAD. That is the exact objection R22 raised against a naive exact
+  match, answered by naming the one key that may move; the confinement proved
+  immediately above (`audited..HEAD` touches `evidence/` only) is what makes
+  every other difference illegitimate. The committed artifact is still the
+  evidence and still required — this is a cross-check on its claim, never a
+  substitute for it.
+
+  `parseGitAudit` moved from `emit.ts` to `audit.ts` to make that possible:
+  the emitter has to import the audit computer, and a parse living on the
+  consumer's side made it a module cycle. It belongs beside the constant it
+  enforces anyway.
+
+- **R26#2 (high) — the evidence commit went wherever HEAD pointed.** The
+  observation ran `git add`/`git commit` against the current branch and
+  captured nothing. An observation takes minutes; a checkout in this
+  repository — an operator, another agent — retargets HEAD inside that
+  window. On a branch cut from the same commit the runlog barrier still
+  passes (the committed runlog is identical), the commit succeeds, and every
+  HEAD-based verification agrees, **so the act reported SUCCESS while the
+  paid observation and its ordering row lived on a branch the run is not
+  on.** Back on the run's branch they simply do not exist. The register's CAS
+  captured its ref for exactly this reason; the observation captured nothing.
+
+  The branch is now captured WITH the barrier's bytes, at the start: a
+  detached HEAD is refused outright (evidence no branch holds is evidence the
+  run cannot find), the act re-checks under the run's lock **before anything
+  is appended**, and every post-commit verification reads that ref instead of
+  `HEAD` — because if something moved after the commit, the branch is still
+  where the evidence has to be, so the branch is what the claim is about.
+
+**Controls.** #1: with the re-derivation suppressed, a hand-authored artifact
+naming `clause5.anchor.taskId: "a-task-that-never-ran"` lands `ran: true,
+verdict: clean`; so does the real artifact with only its VERDICT flipped over
+a run whose control genuinely failed. Restored, each is refused by name —
+"does not survive re-derivation", "the verdict was not produced by these
+facts" — and the lawful e2e still lands `ran: true`. #2: with the capture and
+the ref-verification both suppressed (they are complementary — the pre-check
+prevents the wrong commit, the ref-verification catches it), a checkout to a
+sibling branch mid-observation returns `ok: true`. Restored, it refuses
+before appending, and a detached HEAD refuses too.
+
+### R23'S RESIDUAL, DECIDED — 2026-08-10
+
+The user asked for the decision to be worked through with Codex
+(`gpt-5.6-sol`, xhigh, read-only) and then made. **The consultation moved the
+frame, and the frame was wrong in this file.**
+
+**Clause 6 already carries the rule.** "Shown FIRING" is frozen text, and a
+test that keeps its name while losing its assertions is not firing, however
+green it reports. What was missing was never a rule — it was the PROOF. This
+computer verifies present-and-passing by (file, fullName): identity and
+runner status, not firing. **The hole was evidentiary, not normative**, and
+saying "clause 5 doesn't name the test files" described the symptom.
+
+**Byte-pinning is therefore an amendment, and for a better reason than the
+one recorded here.** It is at once too strong — an edit may STRENGTHEN a
+control and would still void — and too weak: unchanged bytes can stop proving
+anything if a fixture beside them moved. Pinning rejects trees clause 6
+permits and accepts trees it does not. It is a fence, not a proof, so it
+cannot be derived as a reading of either clause.
+
+**Decided: both halves.**
+
+- **Reported, deciding nothing.** The audit artifact now carries each
+  conformance file's sha256 at the registration commit and at the
+  attestation's `subjectCommit`, with `same` / `DIFFERS` / `(unknown)` beside
+  it — the same standing as the capped/uncapped pair and the per-task
+  denominator share. It makes drift conspicuous, INCLUDING drift the
+  amendment's clock cannot reach, and `decideAudit` deliberately does not
+  read it: a difference is not a defect, and reading it as one later would be
+  a void wearing a disguise. That sentence is in the code, where the next
+  reader will be tempted.
+- **A pre-data amendment, committed alone**
+  (`evidence/2026-08-10-b12-amendment-conformance-paths.json`, its own
+  commit — the platform and Phase-3 amendments stay separate). It is
+  PROSPECTIVE and read that way: the collector widens clause 5's pinned set
+  only when the amendment's own INTRODUCING commit is an ancestor of the
+  run's freeze-anchor commit. The frozen artifact is not edited, clause 5's
+  clock does not move, and the re-emission escape is untouched — which is
+  what makes the cost bearable: a legitimate test edit mid-run does not void,
+  it obliges a re-emission the tooling already performs.
+
+**The window this closes, exactly one:** after the first scored observation,
+before the attestation. Earlier is free by clause 5's own text and the
+amendment does not pretend otherwise; later was already caught by R22's
+`subjectCommit..HEAD` confinement; an uncommitted edit never reaches the
+attestation, which runs from a detached checkout of `subjectCommit`.
+
+**The artifact records which regime decided.** `clause5.pinnedPaths` is now
+the set that was PROBED, not the constant beside it — the same defect R22
+found in the prereg fields — plus the amendment's path, introducing commit,
+sha256, added paths and `governs: yes|no`.
+
+**Not done, on purpose:** `b12-register.mjs` does NOT refuse a registration
+without the amendment. Its absence cannot produce a false clean — it produces
+a run governed by the original clause 5, which is what the pre-registration
+says — so a refusal there would be strictness with no soundness behind it.
+What matters is that the verdict says which regime it ran under, and it does.
+
+**Controls.** Same repository twice, with the gutting committed BEFORE the
+attestation and the attestation's subject set to the gutted commit — the only
+shape in which the window is real. With the amendment born in the
+registration act: `governs: true`, the file is in the pinned set, the commit
+is an offender, verdict VOID — and clause 6 is silent, so the amendment is
+demonstrably the only thing standing there. Without the amendment: `governs:
+false`, no offender, verdict CLEAN — **that is the pre-amendment damage,
+kept as a test** — while the reported hashes still say `DIFFERS` for the file
+that moved and `same` for the one that did not.
+
+**What stays open, written down rather than closed:** a control gutted BEFORE
+the first scored observation, which no clock here reaches; and mechanical
+proof of firing (a mutation harness, one seam per control) — the only real
+closure of clause 6, deliberately out of this session, and dangerous if
+fragile, since a harness that cannot attest is a run that cannot be scored.
+
 ---
 
 ## CLOSED
+
+### F26 — clause 6's FIRST control had no test anywhere, and only the registry noticed — FIXED 2026-08-09
+
+`voidConditions` 6 names six negative controls that must be "shown FIRING" in
+the conformance suite. The audit computer's `CONTROL_TESTS` registry
+(`src/cost/b12/audit.ts`) pins each one to an exact vitest fullName — copied
+AFTER the tests exist, per the plan's own rule — and the copying is what found
+this: **"a failed repair row crediting zero units" had NO satisfying test** in
+either named file. Seven adversarial plan rounds had counted the missing
+controls at two (the two-worktree fixture and the slug-coverage predicate);
+the third absence survived them all because every near-miss LOOKED like
+coverage — the turn-collapse control credits a repair row at exactly zero for
+a DIFFERENT reason, and the scoring-seam test carries the abort row's shape
+but asserts no units. A content-level sweep of both files against each frozen
+control description, not the titles, is what separated them.
+
+Closed the same day: `tests/cost-meter.test.ts` now carries "credits a failed
+repair row at zero units — clause 6's failed-repair control" — the abort row's
+exact shape (`bytes_raw: 0, bytes_returned: 0`, `detail.aborted`), CREDITED at
+exactly zero units, never a refusal, never a closure. The registry's other
+adjudications, recorded so the mapping is citable: control 2 = "keeps a call
+that ADDED bytes as the negative it is"; control 3 = "counts a refusal it
+cannot size instead of summing the unknown as zero" (the null observable
+through the `unsized` channel, never summed as zero); control 5 = "refuses a
+call whose invocation id two sessions both carry, on both sides".
 
 ### F19 — the hold arithmetic was scored over observations the rule bars from it — FIXED
 

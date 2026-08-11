@@ -64,6 +64,23 @@ describe("poolRatio — the one arithmetic every figure in the artifact goes thr
   it("returns 0 rather than NaN when there is nothing to divide", () => {
     expect(poolRatio([], "lo")).toBe(0);
   });
+
+  it("reads the uncapped forms off their own sums — the bracket beside the bracket (F23)", () => {
+    // Same ratio family, its own S: `poolRatio` at an uncapped form divides by
+    // `A + S(form)`. By hand: A = 1,000; capped sums 50/60 against signed
+    // sums of 300/400.
+    //   loUncapped: (300 − 0) / 1,300 = 0.230769...
+    //   hiUncapped: (400 − 0) / 1,400 = 0.285714...
+    const set = [terms({ aO: 1_000, sLo: 50, sHi: 60, sLoUncapped: 300, sHiUncapped: 400 })];
+    expect(poolRatio(set, "loUncapped")).toBeCloseTo(300 / 1_300, 12);
+    expect(poolRatio(set, "hiUncapped")).toBeCloseTo(400 / 1_400, 12);
+    // METAMORPHIC: an all-under-cap set (the fixture derives uncapped FROM
+    // capped when not overridden) collapses the four forms into two coinciding
+    // pairs — exact equality, same floats through the same operations.
+    const underCap = [terms({ aO: 1_000, sLo: 50, sHi: 60 })];
+    expect(poolRatio(underCap, "loUncapped")).toBe(poolRatio(underCap, "lo"));
+    expect(poolRatio(underCap, "hiUncapped")).toBe(poolRatio(underCap, "hi"));
+  });
 });
 
 describe("rHiPlus — the fall-side figure, and the one thing that makes it refuse", () => {
@@ -521,6 +538,28 @@ describe("aggregate — the artifact publishes the banned form and decides on th
     const result = aggregate(aggregateInput(set));
     expect(result.strata.testRed.evaluable).toBe(false);
     expect(result.strata.solo.evaluable).toBe(false);
+  });
+
+  it("publishes the uncapped bracket beside the capped one, and it decides NOTHING (F23)", () => {
+    // By hand: A = 1,000; capped sums 50/60; signed sums 300/400.
+    const set = [terms({ aO: 1_000, sLo: 50, sHi: 60, sLoUncapped: 300, sHiUncapped: 400 })];
+    const result = aggregate(aggregateInput(set));
+    expect(result.uncappedBracket.rLo).toBeCloseTo(300 / 1_300, 12);
+    expect(result.uncappedBracket.rHi).toBeCloseTo(400 / 1_400, 12);
+    // DECIDING NOTHING: the same set under a wildly different uncapped pair
+    // reaches the same verdict, the same clause, and the same capped bracket —
+    // presence is the requirement, influence would be a defect.
+    const wild = [terms({ aO: 1_000, sLo: 50, sHi: 60, sLoUncapped: 900_000, sHiUncapped: 900_000 })];
+    const wildResult = aggregate(aggregateInput(wild));
+    expect(wildResult.verdict).toBe(result.verdict);
+    expect(wildResult.voidClause).toBe(result.voidClause);
+    expect(wildResult.rLo).toBe(result.rLo);
+    expect(wildResult.rHi).toBe(result.rHi);
+    // METAMORPHIC: all-under-cap → the two brackets coincide exactly.
+    const underCap = [terms({ aO: 1_000, sLo: 50, sHi: 60 })];
+    const underResult = aggregate(aggregateInput(underCap));
+    expect(underResult.uncappedBracket.rLo).toBe(underResult.rLo);
+    expect(underResult.uncappedBracket.rHi).toBe(underResult.rHi);
   });
 
   it("publishes the coverage on the artifact's face even when it is what refused", () => {
@@ -1196,5 +1235,60 @@ describe("the hold arithmetic — admissionRule 6 gives the run two domains", ()
     expect(result.hold.recomputations.rLoMinusTask).toBe(result.recomputations.rLoMinusTask);
     expect(result.hold.recomputations.rAll).toBe(result.recomputations.rAll);
     expect(result.verdict).toBe("holding (unvalidated)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R35 — TWO DIFFERENT NOTHINGS. Both guards below were written for the EMPTY
+// population and answered the CANCELLING one with the same 0. Negative
+// credited rows are not hypothetical: `poolRatio`'s own note records `gate`
+// measured at -467.1 units, so signed sums can cancel against A.
+// ---------------------------------------------------------------------------
+
+describe("a cancelling denominator is undefined, not zero", () => {
+  /** A = 20, S = -20, no refusals: `A + S + refused` cancels exactly. */
+  const cancelling = (): ObservationTerms[] =>
+    Array.from({ length: 20 }, (_, i) =>
+      terms({ taskId: `t-${i + 1}`, aO: 1, oO: 1, sLo: -0.5, sHi: -1 })
+    );
+
+  it("R_hi+ REFUSES rather than publishing 0 as the doubt-credited figure", () => {
+    // THE DAMAGE this replaces: `{ evaluable: true, value: 0 }` is not a
+    // missing answer, it is the STRONGEST fall-side answer there is — no
+    // doubt-credited saving at all. `decide` reads it as evidence FOR a fall
+    // while the quantity behind it does not exist.
+    const r = fallSide(cancelling());
+    expect(r.evaluable).toBe(false);
+    if (r.evaluable) throw new Error("unreachable: the cancelling set must not be evaluable");
+    expect(r.reason).toMatch(/cancels to zero over a NONEMPTY observation set/);
+  });
+
+  it("an EMPTY set still reads 0 — the boundary pinned in the other direction", () => {
+    // Not an oversight: the recomputations legitimately drop rows until none
+    // is left, and NaN there would propagate into every figure downstream.
+    expect(fallSide([])).toEqual({ evaluable: true, value: 0 });
+  });
+
+  it("poolRatio hands clause 8 a NaN it can SEE, where 0 passed the finiteness check", () => {
+    // F23's uncapped pair cancels while the capped pair stays finite, which
+    // isolates the defect to the uncapped forms rather than to the bracket as
+    // a whole: capped is (-40 - 2)/(20 - 40) = 2.1, uncapped is (-20 - 2)/0.
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      terms({
+        taskId: `t-${i + 1}`,
+        aO: 1,
+        oO: 0.1,
+        sLo: -2,
+        sHi: -2,
+        sLoUncapped: -1,
+        sHiUncapped: -1,
+      })
+    );
+    expect(Number.isNaN(poolRatio(rows, "loUncapped"))).toBe(true);
+    expect(Number.isNaN(poolRatio(rows, "hiUncapped"))).toBe(true);
+    expect(Number.isFinite(poolRatio(rows, "lo"))).toBe(true);
+    expect(Number.isFinite(poolRatio(rows, "hi"))).toBe(true);
+    // Empty stays 0, same reason as above.
+    expect(poolRatio([], "lo")).toBe(0);
   });
 });

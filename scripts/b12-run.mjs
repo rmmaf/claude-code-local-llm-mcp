@@ -28,8 +28,8 @@
  * `PREMISES.md` B12 and `evidence/2026-08-05-b12-preregistration.json`.
  */
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
@@ -65,32 +65,171 @@ function git(args, cwd = REPO) {
 }
 
 /**
- * The shared-index half of the concurrency story (the sixth diff round's
- * first finding): each observation runs in its own worktree, but the evidence
- * commit runs in THIS repository, and two concurrent observations contend on
- * `.git/index.lock`. Git's own lock already prevents corruption; what it
- * hands the loser is a visible failure — so the loser RETRIES, bounded,
- * instead of refusing an observation that already paid for its session. Any
- * failure that is not lock contention still refuses immediately, and the
- * staged-emptiness wall inside the loop is the same wall as before.
+ * THE EVIDENCE COMMIT, INSTALLED AT A REF THE ACT CAPTURED (R27).
+ *
+ * It used to be `git add` + `git commit`, which write to whatever `HEAD`
+ * names AT THAT MOMENT. R26 put a branch check before the append; R27 named
+ * the window that check cannot close — a checkout landing between the check
+ * and git's own start still moves the target, and by the time the
+ * verification says so the commit is IRREVERSIBLE, sitting on someone else's
+ * branch with the run's row inside it.
+ *
+ * So the install is a CAS, the same act the register performs: build the tree
+ * in a TEMPORARY index seeded from the captured tip, `commit-tree` onto that
+ * tip, and `update-ref <ref> <new> <expectedTip>`. Git compares and swaps the
+ * ref itself — either the branch moves from exactly the commit this act read,
+ * or nothing happens anywhere.
+ *
+ * Two things it deliberately does NOT do, both learned the hard way in the
+ * register (R14–R19): it never checks anything out, and it never installs an
+ * index over the real one. The tree it commits is `expectedTip`'s tree plus
+ * these paths — precisely what `git commit -- <paths>` produced — so staging
+ * the same paths in the REAL index beforehand leaves index, HEAD and working
+ * tree agreeing without a single destructive write. Staging first is also why
+ * a failed CAS is safe: the paths are staged and NOTHING is committed, which
+ * is the state the old failure path left too.
+ *
+ * The shared-index retry survives for the `git add` alone — two concurrent
+ * observations still contend on `.git/index.lock`, and the loser waits rather
+ * than losing a session it already paid for. Everything below the add is
+ * plumbing that never takes that lock.
+ *
+ * It RETURNS the reason (null = installed) rather than calling `refuse`,
+ * because it runs inside the run's commit lock and `process.exit` would
+ * strand that lock (R18). The caller refuses.
  */
-async function gitCommitEvidenceRetrying(relDir, relLog, message) {
+async function installEvidenceCommit(repoRoot, { relDir, relLog, message, ref, expectedTip, files, gitDir, beforeIndexSync }) {
+  // NOTHING IS STAGED BEFORE THE ACT (R34). This function used to open with
+  // `git add -- <dir> <log>` into the REAL index, on the argument that staging
+  // the same paths leaves index, HEAD and worktree agreeing after the CAS.
+  // But `git add` writes the index of whatever HEAD points at NOW, while
+  // `update-ref` installs on the ref captured minutes ago. A checkout in
+  // between — the event R26 already established as real — left the SIBLING
+  // branch's index holding this observation's evidence, staged, while the
+  // commit landed correctly on the captured ref and the act returned success.
+  // The operator's next ordinary commit there duplicates paid evidence.
+  //
+  // The staged-emptiness wall went with it, and is not missed: it asked
+  // whether the archive reached the index, and the temp-index path below
+  // proves the stronger thing by hashing each named file into the tree
+  // (`hash-object -w` fails on a missing one) and refusing a tree equal to
+  // the tip's. R25's post-commit blob comparison proves it a third time.
+  //
+  // The TEMPORARY index: seeded from the tip this act captured, never from
+  // whatever the real index happens to hold, so an operator's unrelated
+  // staged work cannot ride into the run's evidence commit.
+  //
+  // It lives in the git directory GIT ITSELF names (R28), not in
+  // `<root>/.git`: in a LINKED WORKTREE — which is how this repository is
+  // worked, and how the register's own test exercises the act — `.git` is a
+  // FILE, and a path under it cannot be created at all. The register already
+  // resolves `--absolute-git-dir` for exactly this reason; the observation
+  // path had re-derived the assumption the register had already discarded.
+  const tmpIndex = path.join(gitDir, `b12-obs-index-${process.pid}-${Date.now()}`);
+  const withIndex = { env: { ...process.env, GIT_INDEX_FILE: tmpIndex } };
+  try {
+    const seed = run("git", ["-C", repoRoot, "read-tree", expectedTip], withIndex);
+    if (seed.code !== 0) return { reason: `read-tree ${expectedTip.slice(0, 12)} failed: ${(seed.err.trim() || seed.out.trim()).slice(0, 200)}` };
+    for (const rel of files) {
+      const blob = run("git", ["-C", repoRoot, "hash-object", "-w", "--", path.join(repoRoot, rel)]);
+      if (blob.code !== 0) return { reason: `hash-object failed for ${rel}: ${(blob.err.trim() || blob.out.trim()).slice(0, 200)}` };
+      const staged2 = run(
+        "git",
+        ["-C", repoRoot, "update-index", "--add", "--cacheinfo", `100644,${blob.out.trim()},${rel}`],
+        withIndex
+      );
+      if (staged2.code !== 0) return { reason: `update-index failed for ${rel}: ${(staged2.err.trim() || staged2.out.trim()).slice(0, 200)}` };
+    }
+    const tree = run("git", ["-C", repoRoot, "write-tree"], withIndex);
+    if (tree.code !== 0) return { reason: `write-tree failed: ${(tree.err.trim() || tree.out.trim()).slice(0, 200)}` };
+    const before = run("git", ["-C", repoRoot, "rev-parse", `${expectedTip}^{tree}`]);
+    if (before.code === 0 && before.out.trim() === tree.out.trim()) {
+      return { reason: `the evidence tree equals ${expectedTip.slice(0, 12)}'s — nothing of this observation reached it` };
+    }
+    const commit = run("git", ["-C", repoRoot, "commit-tree", tree.out.trim(), "-p", expectedTip, "-m", message]);
+    if (commit.code !== 0) return { reason: `commit-tree failed: ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}` };
+    // THE ATOMIC INSTALL. A failure here means the branch moved under us and
+    // NOTHING was installed — nothing is committed and nothing is staged,
+    // and the caller says so.
+    const install = run("git", ["-C", repoRoot, "update-ref", ref, commit.out.trim(), expectedTip]);
+    if (install.code !== 0) {
+      return {
+        reason:
+          `${ref} moved away from ${expectedTip.slice(0, 12)} while this observation committed — the evidence was NOT installed ` +
+          `anywhere (${(install.err.trim() || install.out.trim()).slice(0, 200)})`,
+      };
+    }
+    // The evidence is installed. Everything past this line is HOUSEKEEPING,
+    // and housekeeping may not turn a paid, committed observation into a
+    // failure (R30's lesson, applied where it belongs).
+    if (typeof beforeIndexSync === "function") await beforeIndexSync();
+    return { reason: null, note: await syncRealIndex(repoRoot, { ref, commit: commit.out.trim(), relDir, relLog }) };
+  } finally {
+    try {
+      rmSync(tmpIndex, { force: true });
+    } catch {
+      // A leftover temp index is inert — it is never read again, and losing
+      // the observation over the cleanup would be the wrong trade.
+    }
+  }
+}
+
+/**
+ * Bring the REAL index up to the commit just installed — ONLY while this
+ * worktree still owns it.
+ *
+ * The commit is already on `ref`; this only spares the operator a `git status`
+ * that reads the new files as staged deletions plus untracked copies. So it
+ * NEVER returns a failure: it returns null, or a note the caller reports
+ * beside a success. A checkout that happened during the act is the operator's
+ * to reconcile, and the harness telling them beats the harness writing into a
+ * branch it never captured.
+ *
+ * Proved twice — before the add and after it — because `git add` is not
+ * instantaneous and the window it opens is the same one this exists to close.
+ * The residual it cannot cover is written down rather than implied: a checkout
+ * landing INSIDE the add itself is reported, not prevented, exactly as R19
+ * recorded the residual its own mutex could not reach.
+ */
+async function syncRealIndex(repoRoot, { ref, commit, relDir, relLog }) {
+  // THE CONDITION IS THE POSITION, NOT THE NAME. Refreshing is lawful exactly
+  // when it is a NO-OP against what is checked out: if HEAD resolves to the
+  // commit just installed, every path being added is already in that tree at
+  // that blob, so the add can only make the index agree with HEAD. Anywhere
+  // else — another branch, an older commit, a detached head — the same add
+  // would put this run's paid evidence into a tree that does not have it.
+  //
+  // Binding to the ref NAME was the first spelling and it was wrong in both
+  // directions: it refused a worktree sitting on a different branch AT the
+  // installed commit (leaving a staged deletion behind, which the operator's
+  // next commit would act on), and the name alone never proved the position.
+  const foreignHead = () => {
+    const at = run("git", ["-C", repoRoot, "rev-parse", "HEAD"]);
+    if (at.code !== 0) return "an unreadable HEAD";
+    if (at.out.trim() === commit) return null;
+    const name = run("git", ["-C", repoRoot, "symbolic-ref", "--quiet", "HEAD"]);
+    const where = name.code === 0 && name.out.trim() !== "" ? name.out.trim() : "a detached HEAD";
+    return `${where} at ${at.out.trim().slice(0, 12)}`;
+  };
+  const installed = `the evidence IS installed on ${ref} at ${commit.slice(0, 12)}`;
+  const before = foreignHead();
+  if (before !== null) {
+    return `the index was left untouched: this worktree is on ${before}, which does not carry the commit just installed — ${installed}, and these files are UNTRACKED where you now stand; do not commit them there`;
+  }
   const LOCKED = /index\.lock|Another git process|could not lock/i;
   for (let attempt = 1; ; attempt++) {
-    const add = run("git", ["-C", REPO, "add", "--", relDir, relLog]);
-    if (add.code === 0) {
-      const staged = git(["diff", "--cached", "--name-only", "--", relDir]);
-      if (staged.trim() === "") refuse(`nothing staged under ${relDir} — the archive did not reach the index`);
-      const commit = run("git", ["-C", REPO, "commit", "-m", message, "--", relDir, relLog]);
-      if (commit.code === 0) return;
-      if (!LOCKED.test(`${commit.err}\n${commit.out}`) || attempt >= 5) {
-        refuse(`git commit failed after ${attempt} attempt(s): ${(commit.err.trim() || commit.out.trim()).slice(0, 300)}`);
-      }
-    } else if (!LOCKED.test(`${add.err}\n${add.out}`) || attempt >= 5) {
-      refuse(`git add failed after ${attempt} attempt(s): ${(add.err.trim() || add.out.trim()).slice(0, 300)}`);
+    const add = run("git", ["-C", repoRoot, "add", "--", relDir, relLog]);
+    if (add.code === 0) break;
+    if (!LOCKED.test(`${add.err}\n${add.out}`) || attempt >= 5) {
+      return `${installed}, but the index could not be refreshed after ${attempt} attempt(s): ${(add.err.trim() || add.out.trim()).slice(0, 200)}`;
     }
     await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
   }
+  const after = foreignHead();
+  if (after !== null) {
+    return `HEAD became ${after} WHILE the index was being refreshed — the evidence paths may be staged there; ${installed}`;
+  }
+  return null;
 }
 
 function sha256File(file) {
@@ -104,6 +243,348 @@ function sha256Text(text) {
 /** ISO seconds, read from the clock in the same command that writes the row. */
 function stamp() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
+ * The session id, UNIQUE PER ATTEMPT BY CONSTRUCTION. `stamp()` has ONE-SECOND
+ * resolution, so the old `manifestSha:task:arm:stamp` input minted the SAME id
+ * for two attempts of one task/arm inside a second — and for two processes
+ * racing the same task. The nonce ends the collision; `acquireSessionLock`
+ * below makes the race itself a refusal instead of an interleaving. The audit
+ * computer's clause-5 anchor joins runlog rows by sessionId + (runId, taskId,
+ * arm) and REQUIRES that join bijective, so uniqueness here is load-bearing,
+ * not hygiene.
+ */
+export function mintSessionId(manifestSha, runId, taskId, arm) {
+  return createHash("sha256")
+    .update(`${manifestSha}:${runId}:${taskId}:${arm}:${stamp()}:${randomUUID()}`)
+    .digest("hex")
+    .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, "$1-$2-$3-$4-$5");
+}
+
+/**
+ * One (runId, taskId, arm) in flight at a time, CROSS-PROCESS: `mkdir` is the
+ * OS's own atomic claim, the same primitive `claimObsDir` stands on. A crash
+ * or a mid-observation refusal leaves the lock behind ON PURPOSE — the next
+ * invocation refuses with the path in hand, and the operator removes it only
+ * after confirming no live process. Stealing a lock silently is how two
+ * observations end up interleaved in one runlog.
+ */
+export function acquireSessionLock(evidenceDir, runId, taskId, arm) {
+  const lockDir = path.join(evidenceDir, `.session-lock-${runId}-${taskId}-${arm}`);
+  try {
+    mkdirSync(lockDir);
+  } catch (error) {
+    if (error?.code === "EEXIST") return { ok: false, lockDir, release: () => {} };
+    throw error;
+  }
+  return {
+    ok: true,
+    lockDir,
+    release: () => {
+      try {
+        rmdirSync(lockDir);
+      } catch {
+        // Released is released; a second release or an already-removed lock
+        // must not fail the observation that finished its work.
+      }
+    },
+  };
+}
+
+/**
+ * ONE RUN-WIDE claim, held only across [re-check, append, commit, verify] —
+ * `mkdir` again, the same atomic primitive as the session lock and the obs
+ * dir. The session lock cannot do this job: it is keyed by (runId, taskId,
+ * arm), so two observations of DIFFERENT tasks hold different locks and
+ * interleave freely, which is exactly the case R18 found.
+ *
+ * ONE lock for the run's whole evidence write, not one per writer: the scored
+ * path's [row, commit] act and the pilot's read-modify-write of artifact 4
+ * both take THIS lock. A second lock of its own would exclude nothing from
+ * the first — and the reason above is not about the runlog, it is about the
+ * session lock's key, which the pilot shares (R31).
+ */
+export function acquireRunlogLock(evidenceDir, runId) {
+  const lockDir = path.join(evidenceDir, `.runlog-lock-${runId}`);
+  try {
+    mkdirSync(lockDir);
+  } catch (error) {
+    if (error?.code === "EEXIST") return { ok: false, lockDir, release: () => {} };
+    throw error;
+  }
+  return {
+    ok: true,
+    lockDir,
+    release: () => {
+      try {
+        rmdirSync(lockDir);
+      } catch {
+        // Same doctrine as the session lock: released is released.
+      }
+    },
+  };
+}
+
+/**
+ * THE ROW AND ITS EVIDENCE, AS ONE ACT (R18's second finding).
+ *
+ * The row is appended to a SHARED file and the commit that carries it names
+ * that file, so `git commit -- <dir> <runlog>` takes the runlog's WHOLE
+ * current content. Two observations in flight together therefore had this
+ * shape: A appends, B appends, A commits — and A's commit carries B's ROW
+ * WITHOUT B'S ARCHIVE. If B then dies, HEAD holds a row with nothing durable
+ * behind it forever, which is the runlog↔evidence bijection the audit's
+ * clause-5 anchor joins on.
+ *
+ * R11 declined exactly this lock, reasoning that the barrier's equality gives
+ * the same guarantee "refusal-shaped". That premise was false and R18 named
+ * it: the barrier is checked at the START of an observation, minutes before
+ * the row exists, so BOTH processes pass it before EITHER appends. Equality
+ * serializes only a process that starts after another has appended. The
+ * liveness objection survives and is answered by the shape rather than the
+ * decision — the lock spans seconds (a bounded, retrying commit), never the
+ * session, and waiting for it is bounded too, with the path named on refusal.
+ *
+ * Everything fallible inside RETURNS its reason: a `process.exit` in here
+ * would strand the lock for the whole run.
+ */
+export async function commitObservationRow(
+  repoRoot,
+  {
+    evidenceDir,
+    runId,
+    runLogRel,
+    relDir,
+    written,
+    row,
+    sessionId,
+    message,
+    runlogAtBarrier,
+    branchRef,
+    /** Test seam: fired between the append and the CAS install — the only
+     * place from which the oracle can reach the window a pre-check cannot
+     * see. The CLI never passes it. */
+    beforeInstall,
+    beforeIndexSync,
+    lockAttempts = 20,
+    lockWaitMs = 250,
+  }
+) {
+  const runLogPath = path.join(repoRoot, runLogRel);
+  const readRunlog = () => (existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null);
+  // THE BRANCH IS PART OF THE ACT (R26). `git commit` writes to whatever HEAD
+  // names NOW, and an observation runs for minutes: a checkout in this
+  // repository — an operator, another agent — moves that target. On a branch
+  // cut from the same commit the runlog barrier still passes, the commit
+  // succeeds, and every HEAD-based verification agrees, so the act reports
+  // success while the paid observation and its ordering row live on a branch
+  // the run is not on. The register's CAS captured its ref for exactly this
+  // reason; the observation captured nothing.
+  const refNow = () => {
+    const r = run("git", ["-C", repoRoot, "symbolic-ref", "--quiet", "HEAD"]);
+    return r.code === 0 ? r.out.trim() : null;
+  };
+  let lock = acquireRunlogLock(evidenceDir, runId);
+  for (let attempt = 1; !lock.ok && attempt < lockAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, lockWaitMs));
+    lock = acquireRunlogLock(evidenceDir, runId);
+  }
+  if (!lock.ok) {
+    return {
+      ok: false,
+      why:
+        `another observation holds this run's commit lock (${lock.lockDir}) and did not release it — its row and evidence ` +
+        `commit as one act; remove the lock only after confirming no live process`,
+    };
+  }
+  try {
+    // BEFORE ANYTHING IS WRITTEN: the branch this observation started on must
+    // still be the one a commit would land on. Refusing here costs the
+    // session and nothing else; discovering it afterwards costs the run.
+    if (typeof branchRef === "string" && branchRef !== "") {
+      const here = refNow();
+      if (here === null) {
+        return {
+          ok: false,
+          why: `HEAD is detached now and this observation started on ${branchRef} — its evidence commit would belong to no branch; nothing was appended`,
+        };
+      }
+      if (here !== branchRef) {
+        return {
+          ok: false,
+          why: `HEAD moved to ${here} while this observation ran on ${branchRef} — the evidence commit would land on another branch and the run would silently lose it; nothing was appended`,
+        };
+      }
+    }
+    // EVERY QUESTION FROM HERE IS ASKED OF THE BRANCH, NOT OF `HEAD` (R26/R27).
+    // They are the same thing only while nothing moves; the branch is where
+    // the evidence has to be either way, so the branch is what the act reads,
+    // commits onto and verifies against.
+    const verifyRef = typeof branchRef === "string" && branchRef !== "" ? branchRef : "HEAD";
+    // THE TIP THIS ACT WILL COMMIT ONTO, read HERE — with the barrier state,
+    // before anything is appended. It is the CAS's `expected`, so the install
+    // is atomic against everything that happens after this line, which is the
+    // window a pre-check cannot see (R27).
+    const tipProbe = run("git", ["-C", repoRoot, "rev-parse", verifyRef]);
+    if (tipProbe.code !== 0) {
+      return { ok: false, why: `${verifyRef} does not resolve — the evidence commit has no tip to install onto; nothing was appended` };
+    }
+    const expectedTip = tipProbe.out.trim();
+    // AND THE GIT DIRECTORY, resolved HERE for the same reason the tip is:
+    // everything fallible that the install needs is asked for BEFORE the row
+    // is appended, so a failure costs a refusal and not an uncommitted row
+    // the next observation's barrier would hold the run over (R16's lesson,
+    // R28's occasion).
+    const gitDirProbe = run("git", ["-C", repoRoot, "rev-parse", "--absolute-git-dir"]);
+    if (gitDirProbe.code !== 0 || gitDirProbe.out.trim() === "") {
+      return {
+        ok: false,
+        why: `git could not name this checkout's git directory — the evidence commit has nowhere to build its tree; nothing was appended`,
+      };
+    }
+    const gitDir = gitDirProbe.out.trim();
+    const headProbe = run("git", ["-C", repoRoot, "show", `${verifyRef}:${runLogRel}`]);
+    const headText = headProbe.code === 0 ? headProbe.out : null;
+    const diskText = readRunlog();
+    // THE BARRIER AGAIN, now inside the mutex: an uncommitted row belonging to
+    // another observation would be swept into OUR commit without its archive.
+    const barrier = runlogBarrierViolation(diskText, headText);
+    if (barrier) return { ok: false, why: `${barrier} — re-checked under this run's commit lock, before any row was appended` };
+    // AND STRICTER THAN THE BARRIER: byte-equality with what the barrier saw
+    // when this observation STARTED. Disk and HEAD agreeing again would also
+    // describe another observation that began and finished inside this one —
+    // legal-looking bytes, and precisely what artifact 6 ("committed at each
+    // task's END, BEFORE THE NEXT TASK STARTS") forbids. Nothing else writes
+    // this file, so a difference has exactly one cause.
+    if (diskText !== runlogAtBarrier) {
+      return {
+        ok: false,
+        why:
+          `the runlog changed while this observation was in flight — another observation ran inside this one, which ` +
+          `design.artifacts 6 forbids (committed at each task's END, BEFORE the next task starts); nothing was appended`,
+      };
+    }
+    // THE BIJECTION HALF: a sessionId may appear in the runlog ONCE. The nonce
+    // makes a collision astronomically unlikely; asserting it makes a collision
+    // — or a copied row — a refusal instead of a silently ambiguous join in the
+    // audit's clause-5 anchor.
+    for (const line of (diskText ?? "").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        if (JSON.parse(line).sessionId === sessionId) {
+          return { ok: false, why: `sessionId ${sessionId} already appears in the runlog — the (runId, taskId, arm, attempt) ↔ sessionId bijection would break` };
+        }
+      } catch {
+        // A corrupt line is the scorer's finding, not this guard's.
+      }
+    }
+    // APPEND, never read-concat-write: the old shape lost rows under two
+    // concurrent observes (both read, both write, one row gone) — and a missing
+    // row is what the scorer's replay now refuses the whole order over. A
+    // single-line O_APPEND write is the atomic unit the log was designed around.
+    // `design.artifacts` 10: the `ts` is read from the clock in the same
+    // command that writes the row — and read HERE, not before the wait for
+    // the lock, so it stamps the write rather than the intention.
+    const appended = JSON.stringify({ ts: stamp(), ...row }) + "\n";
+    appendFileSync(runLogPath, appended, "utf8");
+    // What the runlog MUST read afterwards, on disk and in HEAD alike: the
+    // bytes the barrier accepted, plus this one row. Held here so the
+    // postcondition below compares against a value fixed BEFORE the commit
+    // rather than against whatever the commit left behind.
+    const expectedRunlog = (runlogAtBarrier ?? "") + appended;
+    if (typeof beforeInstall === "function") await beforeInstall();
+    const { reason: failure, note: indexNote = null } = await installEvidenceCommit(repoRoot, {
+      relDir,
+      relLog: runLogRel,
+      message,
+      ref: verifyRef,
+      expectedTip,
+      gitDir,
+      beforeIndexSync,
+      files: [...written.map((name) => `${relDir}/${name}`), runLogRel],
+    });
+    if (failure) {
+      return {
+        ok: false,
+        why: `${failure} — the row is on disk UNCOMMITTED and the archive is not on ${verifyRef}; the next observation's barrier will refuse until an operator reconciles both`,
+      };
+    }
+    // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
+    //
+    // It asked `git ls-tree` whether ANYTHING sat under the directory. An
+    // index-mutating `pre-commit` hook can drop `archive.json` while leaving
+    // `observation.json` staged: the add succeeds, the staged check succeeds
+    // because files are staged, the commit succeeds with what is left, and
+    // `ls-tree` succeeds because something is there. The archive is not committed
+    // and every guard is green. A `post-commit` hook that moves `HEAD` back to an
+    // older commit containing an older copy of the directory passes it too.
+    //
+    // So each file is compared BY BLOB HASH against what `HEAD` now carries.
+    // `git hash-object` on the file and `git rev-parse HEAD:<path>` on the tree
+    // are the same function of the same bytes, so equality is exact rather than
+    // circumstantial, and a stale `HEAD` fails on content instead of on presence.
+    for (const name of written) {
+      const rel = `${relDir}/${name}`;
+      const onDisk = run("git", ["-C", repoRoot, "hash-object", "--", path.join(repoRoot, relDir, name)]);
+      if (onDisk.code !== 0) return { ok: false, why: `hash-object failed for ${rel}` };
+      const inHead = run("git", ["-C", repoRoot, "rev-parse", `${verifyRef}:${rel}`]);
+      if (inHead.code !== 0) return { ok: false, why: `${verifyRef} does not carry ${rel} after the commit` };
+      if (inHead.out.trim() !== onDisk.out.trim()) {
+        return { ok: false, why: `${verifyRef} carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.out.trim().slice(0, 12)}` };
+      }
+    }
+    // AND THE ROW ITSELF, WHICH THE LOOP ABOVE COULD NOT REACH (R25).
+    //
+    // `written` holds the per-observation artifacts; the runlog is the OTHER
+    // path this commit names, and nothing verified it. The very hook the
+    // comment above accounts for can drop or rewrite the runlog entry in the
+    // index while leaving `observation.json` staged: the add succeeds, the
+    // staged wall passes (it looks under `relDir`), the commit succeeds, every
+    // blob above matches — and HEAD holds an observation with NO ORDERING ROW,
+    // while the disk copy carries one. The caller would then release the
+    // session lock and report success, and the next observation's barrier
+    // would refuse a run that believes it is fine. "The row and its evidence
+    // as ONE act" has to be provable of the row too, or it is a claim about
+    // half the act.
+    //
+    // Two comparisons, because they fail differently: disk against the bytes
+    // the barrier accepted PLUS this one row (a hook that rewrote the working
+    // copy), and HEAD's blob against disk (a hook that rewrote only the
+    // index). Together they say HEAD carries exactly the predecessor bytes and
+    // exactly this session's row — stronger than counting the sessionId, and
+    // the same function of the same bytes on both sides.
+    const diskAfter = readRunlog();
+    if (diskAfter !== expectedRunlog) {
+      return {
+        ok: false,
+        why:
+          `the runlog on disk is not the bytes this observation appended — ${diskAfter === null ? "the file is gone" : "it was rewritten"} ` +
+          `between the append and the commit's verification, so the committed row cannot be attributed to this act`,
+      };
+    }
+    const runlogOnDisk = run("git", ["-C", repoRoot, "hash-object", "--", runLogPath]);
+    if (runlogOnDisk.code !== 0) return { ok: false, why: `hash-object failed for ${runLogRel}` };
+    const runlogInHead = run("git", ["-C", repoRoot, "rev-parse", `${verifyRef}:${runLogRel}`]);
+    if (runlogInHead.code !== 0) {
+      return {
+        ok: false,
+        why: `${verifyRef} does not carry ${runLogRel} after the commit — the evidence committed WITHOUT its ordering row (design.artifacts 6)`,
+      };
+    }
+    if (runlogInHead.out.trim() !== runlogOnDisk.out.trim()) {
+      return {
+        ok: false,
+        why:
+          `${verifyRef} carries a different ${runLogRel}: ${runlogInHead.out.trim().slice(0, 12)} != ${runlogOnDisk.out.trim().slice(0, 12)} — ` +
+          `the evidence committed without this observation's row, or with a rewritten one (design.artifacts 6)`,
+      };
+    }
+    // The note rides on a SUCCESS. The act happened; the index is a courtesy.
+    return { ok: true, note: indexNote };
+  } finally {
+    lock.release();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +657,12 @@ function admittedRequestIds(files) {
   // already in hand, and two loops over one corpus is how a file count and a
   // hash list come to disagree about which files there were.
   const fileHashes = [];
+  // Per-file id PRESENCE, for the slug-coverage predicate. Collected in the
+  // same loop, BEFORE the uuid dedup: a resumed session's copy in a second
+  // file carries the same uuid and the same requestId, and the dedup exists to
+  // count billable records once — the id is still PRESENT in that file, and
+  // presence in a slug is exactly what "the run wrote to it" means.
+  const perFileIds = new Map();
   let records = 0;
   for (const file of files) {
     let text;
@@ -186,6 +673,8 @@ function admittedRequestIds(files) {
       throw error;
     }
     fileHashes.push({ path: file, sha256: sha256Text(text) });
+    const fileIds = new Set();
+    perFileIds.set(file, fileIds);
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
       let r;
@@ -197,6 +686,7 @@ function admittedRequestIds(files) {
       if (r.type !== "assistant") continue;
       if (r.message?.usage === undefined) continue;
       if (r.isApiErrorMessage === true || r.message?.model === "<synthetic>") continue;
+      if (typeof r.requestId === "string") fileIds.add(r.requestId);
       if (typeof r.uuid === "string") {
         if (seenUuid.has(r.uuid)) continue;
         seenUuid.add(r.uuid);
@@ -205,20 +695,38 @@ function admittedRequestIds(files) {
       if (typeof r.requestId === "string") ids.add(r.requestId);
     }
   }
-  return { ids, records, fileHashes };
+  return { ids, records, fileHashes, perFileIds };
 }
 
-export function takeSnapshot(rootOverride) {
+export function takeSnapshot(rootOverride, identity = null) {
   const dirs = projectSlugDirs(rootOverride);
-  const files = dirs.flatMap((d) => jsonlUnder(d));
-  const { ids, records, fileHashes } = admittedRequestIds(files);
+  // ONE walk per directory, reused for the flat file list AND the slug
+  // attribution below — two walks over one corpus is how two quantities come
+  // to describe different sets of files.
+  const dirFiles = dirs.map((d) => ({ slug: path.basename(d), files: jsonlUnder(d) }));
+  const files = dirFiles.flatMap((s) => s.files);
+  const { ids, records, fileHashes, perFileIds } = admittedRequestIds(files);
   if (dirs.length === 0 || ids.size === 0) {
     refuse(`snapshot covered ${dirs.length} slug(s) and collected ${ids.size} ids — a zero here is a scoping error, not an empty machine`);
   }
+  // WHICH slugs carry WHICH ids — the populations of `voidConditions` 6/14's
+  // "covered fewer slugs than it wrote to". A count cannot express it: a write
+  // into a NEW slug while another slug vanished leaves the count level.
+  const slugRequestIds = {};
+  for (const { slug, files: slugFiles } of dirFiles) {
+    const set = new Set();
+    for (const f of slugFiles) for (const id of perFileIds.get(f) ?? []) set.add(id);
+    slugRequestIds[slug] = [...set].sort();
+  }
   return {
     ts: stamp(),
+    // WHOSE snapshot this is (R7: written stamps that nothing parses detect
+    // nothing — the scorer CHECKS these against directory, runlog and record,
+    // so a snapshot swapped between attempts is a firing, not a guess).
+    ...(identity === null ? {} : { identity }),
     slugsWalked: dirs.length,
-    slugs: dirs.map((d) => path.basename(d)),
+    slugs: dirFiles.map((s) => s.slug),
+    slugRequestIds,
     files: files.length,
     billableRecords: records,
     // Sorted by path so two snapshots of one machine are diffable line for line.
@@ -255,6 +763,8 @@ export function classifyRun({
   originatedCount,
   slugsBefore,
   slugsAfter,
+  coveredSlugs,
+  writtenSlugs,
 }) {
   // AN ENUMERATION, NOT A CHAIN OF CONDITIONS.
   //
@@ -312,6 +822,25 @@ export function classifyRun({
   }
   if (slugsAfter < slugsBefore) {
     reasons.push(`snapshot scope shrank mid-observation, ${slugsBefore} slugs to ${slugsAfter}`);
+  }
+  // `voidConditions` 6/14's OWN predicate: "a run whose snapshot covered fewer
+  // slugs than it wrote to". The populations are SETS, not counts — a write
+  // into a new slug while another vanished leaves the count level, and the
+  // shrink check above is a different fact. Handed, never inferred; a rule not
+  // handed its populations REFUSES rather than assumes them disjoint — fields
+  // this rule was never handed are the first defect family named at the top.
+  if (!Array.isArray(coveredSlugs) || !Array.isArray(writtenSlugs)) {
+    reasons.push(
+      "the covered/written slug populations were not handed to the rule — refused rather than assumed covered"
+    );
+  } else {
+    const covered = new Set(coveredSlugs);
+    const outside = writtenSlugs.filter((s) => !covered.has(s));
+    if (outside.length > 0) {
+      reasons.push(
+        `snapshot covered fewer slugs than the run wrote to: ${outside.join(", ")} carr${outside.length === 1 ? "ies" : "y"} originated ids outside the pre-snapshot's coverage`
+      );
+    }
   }
   // A fact the harness holds, never inferred from the clock.
   if (budgetEnforced === false) {
@@ -548,6 +1077,22 @@ export function manifestDeclarationGaps(manifest) {
     str(pinned.installedCharsProbeSha256),
     "pinned.installedCharsProbeSha256 is absent — required, not compared-if-present: a self-asserted probe file is not provenance"
   );
+  // Artifact 1: "the sha256 of ... the out-of-repo per-arm policy blobs" —
+  // sealed as git provenance, `{repo, commit, path, sha256}` per arm (the
+  // tuple schema is this harness's; the required content is the frozen
+  // text's). SHAPE only here — this sweep is pure, so reachability of the
+  // sealed object belongs to `findPolicyBlob`, which may run git.
+  if (pinned.policyBlobs === null || typeof pinned.policyBlobs !== "object") {
+    need(
+      false,
+      'pinned.policyBlobs is absent — artifact 1: "the sha256 of ... the out-of-repo per-arm policy blobs"; voidConditions 12 voids any record without its arm\'s blob hash'
+    );
+  } else {
+    for (const armName of ["treatment", "control"]) {
+      const parsed = parsePolicyBlobSpec(pinned.policyBlobs[armName], armName);
+      if (!parsed.ok) need(false, parsed.why);
+    }
+  }
   // The pair list is VALIDATED, not merely present — a fourth adversarial
   // round found `Array.isArray` letting an empty or malformed list through.
   // Fewer than 3 pairs can never validate (`voidConditions` 21: "fewer than 3
@@ -631,7 +1176,105 @@ export function manifestDeclarationGaps(manifest) {
       'declares no fileScope (artifact 1: "the file scope"; admissionRule 7\'s intersection check is vacuous over an undeclared scope)'
     );
   }
+  // admissionRule 7's OWN predicate, over EVERY declared scope — "no manifest
+  // task's file scope may intersect" the instrument set, and "no manifest
+  // task's" is the whole pre-registered list, not the admitted twenty. The
+  // scorer carries the TypeScript twin (`src/cost/b12/filescope.ts`); the
+  // conformance suite compares the two case-for-case.
+  for (const violation of fileScopeViolations(
+    (Array.isArray(manifest?.tasks) ? manifest.tasks : []).map((t) => ({
+      id: str(t?.id) ? t.id : "(unnamed)",
+      fileScope: Array.isArray(t?.fileScope) ? t.fileScope : null,
+    }))
+  )) {
+    gaps.push(violation);
+  }
   return gaps;
+}
+
+/** The instrument set admissionRule 7 protects, spelled once. */
+export const PROTECTED_SCOPES = [
+  "src/cost/**",
+  "scripts/session-token-walk.mjs",
+  "evidence/**",
+  "PREMISES.md",
+  "ROADMAP.md",
+  "DECISIONS.md",
+  "STATE.md",
+];
+
+/**
+ * admissionRule 7's grammar and intersection, the harness's copy. Exactly
+ * three accepted forms — literal file, directory prefix ending `/`, recursive
+ * suffix `/**` — with the prohibited shapes (drive, UNC, absolute) rejected
+ * BEFORE `\` normalizes to `/` and the terminal marker detached BEFORE the
+ * core segments are judged, so the lawful trailing `/` never reads as the
+ * empty segment the grammar forbids. `dir/` and `dir/**` cover alike ON
+ * PURPOSE. The scorer's TypeScript twin lives in `src/cost/b12/filescope.ts`;
+ * two copies exist because this file must run before `dist/` does, and the
+ * conformance suite is what keeps them from drifting.
+ */
+export function parseScopeEntry(raw) {
+  if (typeof raw !== "string" || raw.length === 0) return { ok: false, error: "not a non-empty string" };
+  if (/^[A-Za-z]:/.test(raw)) return { ok: false, error: `drive-qualified path: ${raw}` };
+  if (raw.startsWith("\\\\") || raw.startsWith("//")) return { ok: false, error: `UNC path: ${raw}` };
+  if (raw.startsWith("/") || raw.startsWith("\\")) return { ok: false, error: `absolute path: ${raw}` };
+  let s = raw.split("\\").join("/");
+  let kind = "file";
+  if (s.endsWith("/**")) {
+    kind = "recursive";
+    s = s.slice(0, -3);
+  } else if (s.endsWith("/")) {
+    kind = "dir";
+    s = s.slice(0, -1);
+  }
+  if (s === "") return { ok: false, error: `no core segments: ${raw}` };
+  const segments = s.split("/");
+  for (const seg of segments) {
+    if (seg === "") return { ok: false, error: `empty segment: ${raw}` };
+    if (seg === "." || seg === "..") return { ok: false, error: `dot segment: ${raw}` };
+    // WINDOWS ALIASES — REFUSED, not folded. Win32 strips TRAILING dots and
+    // spaces from a component, so `src/cost./**` opens `src/cost` while
+    // comparing unequal to it; `:` names an NTFS stream or a drive-relative
+    // path; `NAME~1.EXT` is the 8.3 short name of a long one. Case is folded
+    // because a case-shifted path is lawful; these are degenerate spellings.
+    if (/[. ]$/.test(seg)) return { ok: false, error: `segment ends in a dot or space, which Windows strips: ${raw}` };
+    if (seg.includes(":")) return { ok: false, error: `colon in a segment (NTFS stream or drive-relative): ${raw}` };
+    if (/~[0-9]/.test(seg)) return { ok: false, error: `8.3 short-name alias shape: ${raw}` };
+    if (/[*?[\]{}]/.test(seg)) return { ok: false, error: `glob outside a trailing /**: ${raw}` };
+  }
+  return { ok: true, kind, segments };
+}
+
+export function scopesIntersect(a, b) {
+  // CASE-FOLDED comparison (ASCII): Windows and default macOS filesystems
+  // alias case, so `SRC/COST/` is `src/cost/**`'s tree wearing different
+  // bytes. The declared form is preserved; only the comparison folds.
+  const isPrefix = (x, y) => x.length <= y.length && x.every((seg, i) => seg.toLowerCase() === y[i].toLowerCase());
+  const covers = (x, y) => x.kind !== "file" && isPrefix(x.segments, y.segments);
+  if (covers(a, b) || covers(b, a)) return true;
+  return a.kind === "file" && b.kind === "file" && a.segments.length === b.segments.length && isPrefix(a.segments, b.segments);
+}
+
+export function fileScopeViolations(tasks) {
+  const out = [];
+  const protectedParsed = PROTECTED_SCOPES.map((p) => ({ raw: p, parsed: parseScopeEntry(p) }));
+  for (const task of tasks) {
+    if (task.fileScope === null || task.fileScope === undefined) continue;
+    for (const raw of task.fileScope) {
+      const parsed = parseScopeEntry(raw);
+      if (!parsed.ok) {
+        out.push(`task ${task.id}: file scope entry rejected by the grammar — ${parsed.error} (admissionRule 7)`);
+        continue;
+      }
+      for (const p of protectedParsed) {
+        if (p.parsed.ok && scopesIntersect(parsed, p.parsed)) {
+          out.push(`task ${task.id}: file scope ${String(raw)} intersects the instrument set at ${p.raw} (admissionRule 7)`);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -686,6 +1329,36 @@ export function committedOrderViolation(manifest, taskId, runlogText) {
     }
   }
   return null;
+}
+
+/**
+ * ARTIFACT 6'S BARRIER, checked where the NEXT task starts: the runlog on
+ * disk must be byte-identical to HEAD's committed copy before any new
+ * observation spends anything. A runlog row is appended BEFORE its evidence
+ * commit (the commit includes the row), so between append and commit the row
+ * exists on disk as an apparent predecessor with nothing durable behind it —
+ * and a FAILED commit leaves it that way forever. Equality makes a row
+ * visible as an ordering predecessor only once it is committed; both
+ * directions refuse (an uncommitted suffix AND a truncated disk copy), and
+ * the refusal is the cross-process serialization — the second process stops
+ * instead of ordering itself against evidence that may never exist.
+ */
+export function runlogBarrierViolation(diskText, headText) {
+  if (diskText === null && headText === null) return null; // the first observation
+  if (diskText === headText) return null;
+  if (headText === null) {
+    return (
+      "the runlog exists on disk but HEAD carries no committed copy — a previous observation's evidence commit " +
+      "did not complete (design.artifacts 6: committed at each task's end, BEFORE the next task starts)"
+    );
+  }
+  if (diskText === null) {
+    return "HEAD carries a committed runlog but the disk copy is missing — the persisted progress record was truncated";
+  }
+  return (
+    "the runlog on disk differs from HEAD's committed copy — a previous observation's evidence commit did not " +
+    "complete or failed (design.artifacts 6's barrier holds every next task until the predecessor is committed)"
+  );
 }
 
 /**
@@ -761,6 +1434,42 @@ export function committedEvidenceCheck(declaredPath) {
 }
 
 /**
+ * One arm's policy-blob declaration parsed against the seal grammar, PURE — no
+ * git, no disk — so `manifestDeclarationGaps` can hold the shape in the
+ * pre-registration window while `findPolicyBlob` holds the object store.
+ */
+function parsePolicyBlobSpec(raw, arm) {
+  const bad = (why) => ({ ok: false, why: `pinned.policyBlobs.${arm} ${why}` });
+  if (raw === null || typeof raw !== "object") {
+    return bad(
+      'must be a {repo, commit, path, sha256} provenance tuple — artifact 1: "the sha256 of ... the out-of-repo per-arm policy blobs", and a bare path seals no history for that hash to live in'
+    );
+  }
+  const { repo, commit, path: blobPath, sha256 } = raw;
+  if (typeof repo !== "string" || repo.length === 0) return bad("declares no repo — the policy repository's locator");
+  if (typeof commit !== "string" || !/^[0-9a-f]{40}$/.test(commit)) {
+    return bad(
+      `must pin a FULL 40-hex commit (got ${JSON.stringify(commit ?? null)}) — an abbreviation can become ambiguous as the policy repo grows`
+    );
+  }
+  if (typeof blobPath !== "string" || blobPath.length === 0) return bad("declares no path inside the policy repo");
+  if (
+    blobPath.includes("\\") ||
+    blobPath.startsWith("/") ||
+    /^[A-Za-z]:/.test(blobPath) ||
+    blobPath.split("/").some((s) => s === "" || s === "." || s === "..")
+  ) {
+    return bad(
+      `path ${JSON.stringify(blobPath)} is not a plain forward-slash path relative to the policy repo root — git object paths have one spelling`
+    );
+  }
+  if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) {
+    return bad("must carry the blob's 64-hex sha256 — required, not compared-if-present (design.artifacts 1)");
+  }
+  return { ok: true, spec: { repo, commit, path: blobPath, sha256 } };
+}
+
+/**
  * The per-arm policy blob, or why not. `operatorConfound` CHANNEL 5's resolution:
  * "the policy is delivered per arm through `--append-system-prompt` from a
  * committed out-of-repo blob whose sha256 is recorded per arm" — and
@@ -769,15 +1478,27 @@ export function committedEvidenceCheck(declaredPath) {
  * is refused before anything is spent. BOTH arms must be declared even though
  * one is resolved: a pair whose other arm cannot run was never a pair.
  *
- * The property names (`policyBlobs`, `policyBlobSha256s`) are THIS HARNESS'S
- * schema, not frozen text. What the frozen text fixes is the content: the
- * manifest carries "the sha256 of ... the out-of-repo per-arm policy blobs"
- * (`design.artifacts` 1), so the hashes are REQUIRED, not compared-if-present —
- * the `mcpConfigSha256` shape.
+ * "COMMITTED out-of-repo blob" is taken at its word: the policy lives in its
+ * OWN git repository and the manifest seals `{repo, commit, path, sha256}` per
+ * arm — the provenance model `committedEvidenceCheck` applies to the probe,
+ * pointed at a foreign object store. The previous schema (a live file path
+ * plus a separate hash) was committed NOWHERE: the seal could be satisfied by
+ * editing file and hash together, and nothing tied the bytes an arm received
+ * to bytes anyone reviewed. Delivery now reads the object store directly
+ * (`git -C <repo> cat-file blob <commit>:<path>`), so no working-tree file
+ * exists to move mid-arm at all; the sha256 stays REQUIRED and is re-verified
+ * against the delivered bytes (`design.artifacts` 1).
+ *
+ * Transport is part of the check: pushing the repository under test does NOT
+ * carry `../b12-policy`, so the run machine receives the policy repo as a
+ * hashed git bundle (or its own remote) BEFORE the probes and clones it to
+ * the manifest's locator. A missing repo names that step; a SHALLOW clone is
+ * refused because an object store that cannot prove its history cannot prove
+ * the sealed commit either.
  */
-function findPolicyBlob(manifest, arm) {
+export function findPolicyBlob(manifest, arm) {
   const blobs = manifest.pinned?.policyBlobs;
-  if (!blobs || typeof blobs.treatment !== "string" || typeof blobs.control !== "string") {
+  if (!blobs || typeof blobs !== "object") {
     return {
       blob: null,
       why:
@@ -786,30 +1507,108 @@ function findPolicyBlob(manifest, arm) {
         "so a manifest without blobs cannot produce a compliant observation",
     };
   }
-  const shas = manifest.pinned?.policyBlobSha256s;
-  if (!shas || typeof shas.treatment !== "string" || typeof shas.control !== "string") {
+  // BOTH arms parse before EITHER resolves: a pair whose other arm cannot run
+  // was never a pair.
+  const specs = {};
+  for (const armName of ["treatment", "control"]) {
+    const parsed = parsePolicyBlobSpec(blobs[armName], armName);
+    if (!parsed.ok) return { blob: null, why: parsed.why };
+    specs[armName] = parsed.spec;
+  }
+  const spec = specs[arm];
+  const repoDir = path.resolve(REPO, spec.repo);
+  // "The delegation policy leaves the repository under test entirely" (CHANNEL
+  // 5). A policy repo resolving INSIDE this repository — which contains every
+  // `.b12/` arm worktree — is in-repo policy wearing an out-of-repo name.
+  const relToRepo = path.relative(REPO, repoDir);
+  if (!relToRepo.startsWith("..") && !path.isAbsolute(relToRepo)) {
+    return {
+      blob: null,
+      why: `the ${arm} policy repo resolves to ${repoDir}, inside the repository under test — the policy must leave it entirely (CHANNEL 5)`,
+    };
+  }
+  if (!existsSync(repoDir)) {
     return {
       blob: null,
       why:
-        "manifest.pinned.policyBlobSha256s must carry BOTH arms' hashes — " +
-        'design.artifacts 1: "the sha256 of ... the out-of-repo per-arm policy blobs"; required, not compared-if-present',
+        `the ${arm} policy repo ${spec.repo} resolves to ${repoDir}, which does not exist — ` +
+        "transport the hashed policy bundle and clone it there BEFORE the probes; pushing the repository under test does not carry it",
     };
   }
-  const declared = blobs[arm];
-  const file = path.isAbsolute(declared) ? declared : path.join(REPO, declared);
-  if (!existsSync(file)) return { blob: null, why: `policy blob for ${arm} points at ${file}, which does not exist` };
-  const content = readFileSync(file, "utf8");
-  const got = sha256File(file);
-  if (got !== shas[arm]) {
-    return { blob: null, why: `policy blob (${arm}) sha256 ${got} != pinned ${shas[arm]} — the policy moved under the run` };
+  const shallow = run("git", ["-C", repoDir, "rev-parse", "--is-shallow-repository"]);
+  if (shallow.code !== 0) {
+    return {
+      blob: null,
+      why: `the ${arm} policy repo at ${repoDir} is not a git repository (${(shallow.err.trim() || shallow.out.trim()).slice(0, 200)}) — the seal is git provenance, so delivery must read a git object store`,
+    };
   }
-  return { blob: { path: file, declaredPath: declared, sha256: got, content }, why: null };
+  if (shallow.out.trim() === "true") {
+    return {
+      blob: null,
+      why: `the ${arm} policy repo at ${repoDir} is a SHALLOW clone — an object store that cannot prove its history cannot prove the sealed commit; clone the full bundle`,
+    };
+  }
+  const commitExists = run("git", ["-C", repoDir, "cat-file", "-e", `${spec.commit}^{commit}`]);
+  if (commitExists.code !== 0) {
+    return {
+      blob: null,
+      why: `sealed commit ${spec.commit} is not reachable in the ${arm} policy repo at ${repoDir} — the transported clone does not carry the sealed history`,
+    };
+  }
+  // RAW BYTES, not the utf8-decoding `run` helper: the sealed sha256 is over
+  // the blob's bytes, and hashing a re-encoding would let a byte the decoder
+  // repaired slip between the seal and the hash.
+  const shown = spawnSync("git", ["-C", repoDir, "cat-file", "blob", `${spec.commit}:${spec.path}`], { maxBuffer: 1 << 28 });
+  if (shown.status !== 0) {
+    const detail = (shown.stderr ? shown.stderr.toString("utf8").trim() : "") || String(shown.error?.code ?? "unknown error");
+    return {
+      blob: null,
+      why: `${spec.commit.slice(0, 12)}:${spec.path} is not readable in the ${arm} policy repo (${detail.slice(0, 200)})`,
+    };
+  }
+  const bytes = shown.stdout ?? Buffer.alloc(0);
+  const content = bytes.toString("utf8");
+  if (!Buffer.from(content, "utf8").equals(bytes)) {
+    return {
+      blob: null,
+      why: `the ${arm} policy blob at ${spec.commit.slice(0, 12)}:${spec.path} is not valid UTF-8 text — delivery is an argv string (--append-system-prompt), which cannot carry these bytes exactly`,
+    };
+  }
+  const got = createHash("sha256").update(bytes).digest("hex");
+  if (got !== spec.sha256) {
+    return { blob: null, why: `policy blob (${arm}) sha256 ${got} != sealed ${spec.sha256} — the policy moved under the seal` };
+  }
+  return {
+    blob: {
+      repo: spec.repo,
+      repoDir,
+      commit: spec.commit,
+      path: spec.path,
+      sha256: got,
+      content,
+      declaredPath: `${spec.repo}@${spec.commit}:${spec.path}`,
+    },
+    why: null,
+  };
 }
 
 function resolvePolicyBlob(manifest, arm) {
   const { blob, why } = findPolicyBlob(manifest, arm);
   if (blob === null) refuse(why);
   return blob;
+}
+
+/**
+ * The live re-read for the pre/post instruction-hash pair: the same object,
+ * fetched again, hashed again. Git objects are immutable, so a drift here does
+ * not mean a FILE moved — none exists — it means the OBJECT STORE did (repo
+ * deleted, replaced, or pruned mid-arm), which breaks `voidConditions` 12's
+ * one-hash-per-record requirement exactly the way a moved file did.
+ */
+function policyBlobLiveSha256(blob) {
+  const shown = spawnSync("git", ["-C", blob.repoDir, "cat-file", "blob", `${blob.commit}:${blob.path}`], { maxBuffer: 1 << 28 });
+  if (shown.status !== 0 || shown.stdout == null) return null;
+  return createHash("sha256").update(shown.stdout).digest("hex");
 }
 
 /**
@@ -916,12 +1715,14 @@ function restoreMemory(snapshotDir, memoryDir) {
  * statistic is the paired first-request TOTAL prompt-token delta on the pinned
  * binary; `installedChars := tokens × 3.7`, an adapter, so the frozen divisor
  * cancels; the calibration key is binary sha256 × arm × MCP-config hash ×
- * policy-blob hash × protocol; "Any component moves, the value is re-taken";
- * "a value with no provenance is refused". So a mismatch on ANY component
- * throws rather than degrades — including the null-blob case: the committed
- * probe ran before any policy blob was sealed (`policyBlobSha256: null`), so a
- * manifest that declares blobs is refused until a re-probe under those blobs
- * exists. The refusal is what keeps the re-take rule from being forgotten.
+ * the DUAL per-arm policy-blob hashes × protocol; "Any component moves, the
+ * value is re-taken"; "a value with no provenance is refused". So a mismatch
+ * on ANY component throws rather than degrades — including the pre-blob case:
+ * the committed 2026-08-08 probe ran before any policy blob was sealed and
+ * carries the SINGULAR pre-dual key, so a manifest that seals blobs (every
+ * registrable manifest now does) is refused until a re-probe under those
+ * blobs exists. The refusal is what keeps the re-take rule from being
+ * forgotten.
  *
  * ONLY THE TREATMENT ARM CARRIES A VALUE. The probe measured ONE delta
  * (treatment − control); the control arm is the baseline INSIDE that
@@ -1081,11 +1882,28 @@ export function validateInstalledCharsProbe(probe, live) {
   if ((ctx.mcpConfigSha256 ?? null) !== (live.mcpConfigSha256 ?? null)) {
     fail(`calibration key moved: probe MCP-config sha256 ${String(ctx.mcpConfigSha256 ?? null)} != live ${String(live.mcpConfigSha256 ?? null)}`);
   }
-  if ((ctx.policyBlobSha256 ?? null) !== (live.policyBlobSha256 ?? null)) {
+  // THE POLICY-BLOB COMPONENT IS DUAL — {treatment, control} — because BOTH
+  // arms deliver their own blob via `--append-system-prompt`, so both blobs
+  // sit INSIDE the delta the probe measured: treatment − control includes
+  // (treatment blob − control blob) alongside the MCP installation. One arm's
+  // blob moving shifts the delta without touching the other's, so each arm is
+  // compared separately and each mismatch is named separately.
+  if (ctx.policyBlobSha256s === undefined) {
     fail(
-      `calibration key moved: probe policy-blob sha256 ${String(ctx.policyBlobSha256 ?? null)} != live ${String(live.policyBlobSha256 ?? null)} — ` +
-        "the committed probe pre-dates any sealed blob, so sealed blobs demand a re-probe"
+      "the probe's calibration key carries no per-arm policy-blob component (policyBlobSha256s) — " +
+        "it pre-dates the dual {treatment, control} key, and every registrable manifest now seals blobs, " +
+        "so a re-probe under the sealed blobs is required (the re-take rule, not a schema nicety)"
     );
+  }
+  for (const armName of ["treatment", "control"]) {
+    const probeSha = ctx.policyBlobSha256s?.[armName] ?? null;
+    const liveSha = live.policyBlobSha256s?.[armName] ?? null;
+    if (probeSha !== liveSha) {
+      fail(
+        `calibration key moved: probe ${armName} policy-blob sha256 ${String(probeSha)} != live ${String(liveSha)} — ` +
+          "the blob sits inside the measured delta, so a moved blob demands a re-probe"
+      );
+    }
   }
   const probeExtra = JSON.stringify(ctx.extraArgs ?? []);
   const liveExtra = JSON.stringify(live.extraArgs ?? []);
@@ -1101,7 +1919,10 @@ export function validateInstalledCharsProbe(probe, live) {
     calibrationKey: {
       binarySha256: ctx.claudeBinarySha256,
       mcpConfigSha256: ctx.mcpConfigSha256 ?? null,
-      policyBlobSha256: ctx.policyBlobSha256 ?? null,
+      policyBlobSha256s: {
+        treatment: ctx.policyBlobSha256s?.treatment ?? null,
+        control: ctx.policyBlobSha256s?.control ?? null,
+      },
       extraArgs: ctx.extraArgs ?? [],
       // Never defaulted — validated above; a fallback here would label missing
       // provenance as the registered protocol.
@@ -1110,7 +1931,7 @@ export function validateInstalledCharsProbe(probe, live) {
   };
 }
 
-function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
+function findInstalledChars(manifest, binary, mcp, policyBlobs) {
   const declared = manifest.pinned?.installedCharsProbe;
   if (!declared) {
     return {
@@ -1134,7 +1955,13 @@ function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
   if (!want) return { record: null, why: "manifest.pinned.installedCharsProbeSha256 is absent — required, not compared-if-present" };
   if (want !== sha) return { record: null, why: `probe artifact sha256 ${sha} != pinned ${want}` };
   if (mcp === null) return { record: null, why: "cannot validate the probe's calibration key without a resolved treatment MCP config" };
-  if (treatmentBlob === null) return { record: null, why: "cannot validate the probe's calibration key without a resolved treatment policy blob" };
+  // BOTH arms' blobs, because the calibration key is dual: each arm's argv
+  // carries its own blob, so each blob sits inside the measured delta.
+  for (const armName of ["treatment", "control"]) {
+    if ((policyBlobs?.[armName] ?? null) === null) {
+      return { record: null, why: `cannot validate the probe's calibration key without a resolved ${armName} policy blob` };
+    }
+  }
   let probe;
   try {
     probe = JSON.parse(readFileSync(file, "utf8"));
@@ -1145,7 +1972,10 @@ function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
     const record = validateInstalledCharsProbe(probe, {
       binarySha256: binary.sha256,
       mcpConfigSha256: mcp.sha256,
-      policyBlobSha256: treatmentBlob.sha256,
+      policyBlobSha256s: {
+        treatment: policyBlobs.treatment.sha256,
+        control: policyBlobs.control.sha256,
+      },
       extraArgs: manifest.pinned?.extraArgs ?? [],
     });
     return { record: { ...record, probeArtifact: declared, probeArtifactSha256: sha }, why: null };
@@ -1154,8 +1984,8 @@ function findInstalledChars(manifest, binary, mcp, treatmentBlob) {
   }
 }
 
-function resolveInstalledChars(manifest, binary, mcp, treatmentBlob) {
-  const { record, why } = findInstalledChars(manifest, binary, mcp, treatmentBlob);
+function resolveInstalledChars(manifest, binary, mcp, policyBlobs) {
+  const { record, why } = findInstalledChars(manifest, binary, mcp, policyBlobs);
   if (record === null) refuse(why);
   return record;
 }
@@ -1203,7 +2033,302 @@ function loadManifest(file) {
   const text = readFileSync(file, "utf8");
   const manifest = JSON.parse(text);
   if (!Array.isArray(manifest.tasks) || manifest.tasks.length === 0) refuse("manifest carries no tasks");
-  return { manifest, sha256: sha256Text(text), path: file };
+  return { manifest, sha256: sha256Text(text), path: file, text };
+}
+
+/**
+ * THE REGISTRATION GUARD — every reason `observe` may not spend a session,
+ * enumerated rather than the first one found. `voidConditions` 1 registers a
+ * run as "evidence/<run_id>.b12.tasks.json committed AND its run_id written to
+ * MEASUREMENTS.jsonl BY THE SAME COMMAND", so the guard demands:
+ *
+ * (a) the manifest at its canonical path, byte-identical on disk, in HEAD, and
+ *     in the REGISTRATION commit's blob — the bytes about to drive a session
+ *     are the registered bytes, not a working-copy cousin;
+ * (b) "the same command", PROVEN: the commit that introduced the manifest IS
+ *     the commit that introduced the exact registration row — two separate
+ *     commits are two separate acts, whatever their author intended;
+ * (c) MEASUREMENTS.jsonl by PREFIX PRESERVATION, never whole-file identity —
+ *     appends after registration are lawful (`.gitattributes` pins the file
+ *     LF for exactly this reason): the registration commit's content must be
+ *     a BYTE prefix of HEAD's, HEAD's a byte prefix of the disk's, and the
+ *     disk's suffix beyond HEAD must be newline-terminated JSONL. Raw bytes,
+ *     no textual normalization — LF is already fixed by attribute.
+ *
+ * Returns every violated condition; empty means registered and coherent.
+ */
+export function registrationGuard(repoRoot, runId, manifestBytesOnDisk) {
+  const reasons = [];
+  const probe = (args) => run("git", ["-C", repoRoot, ...args]);
+  const manifestRel = `evidence/${runId}.b12.tasks.json`;
+
+  const headMeasurements = probe(["show", "HEAD:MEASUREMENTS.jsonl"]);
+  if (headMeasurements.code !== 0) {
+    reasons.push("HEAD carries no MEASUREMENTS.jsonl — nothing is registered");
+    return reasons;
+  }
+  const regLines = headMeasurements.out
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .filter((l) => {
+      try {
+        const r = JSON.parse(l);
+        return r.b12_registration === true && r.run_id === runId;
+      } catch {
+        return false;
+      }
+    });
+  if (regLines.length !== 1) {
+    reasons.push(
+      `${regLines.length} registration row(s) for ${runId} in HEAD's MEASUREMENTS.jsonl — exactly one row with b12_registration:true registers a run`
+    );
+    return reasons;
+  }
+  const regRow = regLines[0];
+
+  // Introducing commits: `--diff-filter=A` newest-first, so the LAST line is
+  // the birth. `-S` over the exact row text finds the commit that added it.
+  const introducing = (logArgs) => {
+    const r = probe(["log", "--diff-filter=A", "--format=%H", ...logArgs]);
+    if (r.code !== 0) return null;
+    const lines = r.out.trim().split("\n").filter(Boolean);
+    return lines.length === 0 ? null : lines[lines.length - 1];
+  };
+  const manifestIntro = introducing(["--", manifestRel]);
+  if (manifestIntro === null) {
+    reasons.push(`${manifestRel} has no introducing commit — the manifest was never committed`);
+  }
+  const rowLog = probe(["log", "-S", regRow, "--format=%H", "--", "MEASUREMENTS.jsonl"]);
+  const rowCommits = rowLog.code === 0 ? rowLog.out.trim().split("\n").filter(Boolean) : [];
+  const rowIntro = rowCommits.length === 0 ? null : rowCommits[rowCommits.length - 1];
+  if (rowIntro === null) {
+    reasons.push("the registration row's introducing commit cannot be found — a row HEAD carries must have been added somewhere");
+  }
+  if (manifestIntro !== null && rowIntro !== null && manifestIntro !== rowIntro) {
+    reasons.push(
+      `the manifest was introduced by ${manifestIntro} and the registration row by ${rowIntro} — two commits are two acts, not "the same command" (voidConditions 1)`
+    );
+  }
+
+  // (a) byte identity across the three copies of the manifest.
+  const headManifest = probe(["show", `HEAD:${manifestRel}`]);
+  if (headManifest.code !== 0) {
+    reasons.push(`HEAD does not carry ${manifestRel}`);
+  } else {
+    if (headManifest.out !== manifestBytesOnDisk) {
+      reasons.push(`the on-disk manifest differs from HEAD's blob — the bytes about to run are not the registered bytes`);
+    }
+    if (manifestIntro !== null) {
+      const regManifest = probe(["show", `${manifestIntro}:${manifestRel}`]);
+      if (regManifest.code !== 0 || regManifest.out !== headManifest.out) {
+        reasons.push(`HEAD's manifest differs from the registration commit's blob — the manifest moved after the act`);
+      }
+    }
+  }
+
+  // (c) prefix preservation, in raw bytes.
+  if (rowIntro !== null) {
+    const regMeasurements = probe(["show", `${rowIntro}:MEASUREMENTS.jsonl`]);
+    if (regMeasurements.code !== 0) {
+      reasons.push(`the registration commit does not carry MEASUREMENTS.jsonl — the act cannot be replayed`);
+    } else if (!headMeasurements.out.startsWith(regMeasurements.out)) {
+      reasons.push(
+        "HEAD's MEASUREMENTS.jsonl does not preserve the registration commit's content as a byte prefix — the append-only register was rewritten"
+      );
+    }
+  }
+  const diskPath = path.join(repoRoot, "MEASUREMENTS.jsonl");
+  const disk = existsSync(diskPath) ? readFileSync(diskPath, "utf8") : null;
+  if (disk === null) {
+    reasons.push("MEASUREMENTS.jsonl is missing from the working tree");
+  } else if (!disk.startsWith(headMeasurements.out)) {
+    reasons.push("the working tree's MEASUREMENTS.jsonl does not preserve HEAD's content as a byte prefix");
+  } else {
+    const suffix = disk.slice(headMeasurements.out.length);
+    if (suffix !== "") {
+      if (!suffix.endsWith("\n")) {
+        reasons.push("the uncommitted MEASUREMENTS.jsonl suffix is not newline-terminated");
+      }
+      for (const line of suffix.split("\n")) {
+        if (line.trim() === "") continue;
+        try {
+          JSON.parse(line);
+        } catch {
+          reasons.push(`the uncommitted MEASUREMENTS.jsonl suffix carries a non-JSON line: ${line.slice(0, 60)}`);
+          break;
+        }
+      }
+    }
+  }
+  return reasons;
+}
+
+/**
+ * ARTIFACT 4 — the pilot's field→source→applicability table, covering the
+ * FULL frozen covariate list (`design.metric.covariates`, preregistration
+ * lines 44–59; line 57's two halves split here because one is per-arm and the
+ * other is A/B-only). `not-applicable` appears ONLY on the 2×2/ABBA/partner
+ * -arm entries — the pilot has no pair, and everything else is either carried
+ * on the record or re-derivable from the RAW meter inputs it embeds.
+ *
+ * THE REGISTERED READING OF "No units, no bracket" (the pre-pilot
+ * adjudication, FINDINGS.md): artifact 4 forbids AGGREGATES — A/S/R sums,
+ * any bracket, any verdict — not per-observation unit-VALUED covariates,
+ * which the frozen covariate list itself demands (per-row bytes, an excluded
+ * observation's A_o). `assertPilotShape` enforces exactly that boundary.
+ */
+export const PILOT_COVARIATE_TABLE = [
+  { covariate: "subagent share, continuous and solo/multi", source: "derived at reading from record.lineage (sidechain flags), published raw", applicability: "recorded" },
+  { covariate: "per credited row: id, tool, ts, thread, t, T, ttl, multiplier, bytes, capped/uncapped, signed", source: "record.telemetry verbatim + record.lineage — the meter's own inputs, re-derivable", applicability: "recorded" },
+  { covariate: "turns_collapsed per call, gate category, repair max_rounds and passed", source: "record.telemetry rows (turns_collapsed, detail)", applicability: "recorded" },
+  { covariate: "refusal ledger; per-excluded A_o, billed count, gate/repair calls", source: "derived at reading from record.telemetry + record.lineage", applicability: "recorded" },
+  { covariate: "unitsAddedByInstallation and the per-arm system-prompt delta", source: "record.observation.installedChars (provenance-carrying)", applicability: "recorded" },
+  { covariate: "requests-per-segment and segment count", source: "derived at reading from record.lineage", applicability: "recorded" },
+  { covariate: "max inter-request gap and cacheWrite share", source: "derived at reading from record.lineage", applicability: "recorded" },
+  { covariate: "Claude Code version, binary sha256, DISABLE_AUTOUPDATER", source: "record.observation.binary", applicability: "recorded" },
+  { covariate: "rate keys, model id, speed, /model and /fast toggles", source: "derived at reading from record.lineage usage", applicability: "recorded" },
+  { covariate: "base commit, worktree, tree hash, porcelain at start, end commit", source: "record.observation.{baseCommit,treeHashAtStart,endCommit,armLeftUncommitted}", applicability: "recorded" },
+  { covariate: "instruction-component hashes, pre and post", source: "record.observation.instructionHashes", applicability: "recorded" },
+  { covariate: "slug list walked, directory count, id count", source: "record.observation.snapshotBefore/After (stamped)", applicability: "recorded" },
+  { covariate: "governance_bytes_read", source: "derived at reading from record.lineage tool results", applicability: "recorded" },
+  { covariate: "acceptance predicate exit code per arm", source: "record.observation.acceptance", applicability: "recorded" },
+  { covariate: "the A/B acceptance 2x2 (concordant/discordant)", source: "no pair exists in the pilot", applicability: "not-applicable (A/B)" },
+  { covariate: "per A/B arm: turns, wall-clock, files read, tool bytes, billed count, ABBA position", source: "no pair exists in the pilot", applicability: "not-applicable (A/B)" },
+  { covariate: "wall-clock per task/arm and local-model token counts", source: "record.observation.wallClockMs + record.telemetry details", applicability: "recorded" },
+];
+
+/** The aggregate/bracket spellings artifact 4 forbids, at ANY depth. */
+export const PILOT_FORBIDDEN_KEYS = [
+  "rLo",
+  "rHi",
+  "rHiPlus",
+  "uncappedBracket",
+  "bracket",
+  "verdict",
+  "admitted",
+  "recomputations",
+  "strata",
+  "hold",
+];
+
+/** Refuse any pilot value carrying a forbidden key — the write-time teeth. */
+export function assertPilotShape(value) {
+  const walk = (v, trail) => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x, trail);
+      return;
+    }
+    if (v === null || typeof v !== "object") return;
+    for (const [k, val] of Object.entries(v)) {
+      if (PILOT_FORBIDDEN_KEYS.includes(k)) {
+        throw new Error(
+          `the pilot artifact may carry NO aggregate and NO bracket — forbidden key "${k}" under ${trail.join(".")} (design.artifacts 4)`
+        );
+      }
+      walk(val, [...trail, k]);
+    }
+  };
+  walk(value, ["pilot"]);
+}
+
+/** One pilot observation: the disposition, the covariates, the raw inputs. */
+export function buildPilotRecord(observation, archiveData) {
+  const record = {
+    taskId: observation.taskId,
+    arm: observation.arm,
+    sessionId: observation.sessionId,
+    disposition: {
+      outcome: observation.outcome,
+      valid: observation.valid,
+      censored: observation.censored,
+      accepted: observation.accepted,
+      invalidReasons: observation.invalidReasons,
+    },
+    observation,
+    telemetry: archiveData.telemetry,
+    lineage: archiveData.lineage,
+  };
+  assertPilotShape(record);
+  return record;
+}
+
+/**
+ * Read-modify-write of the ONE pilot file, shape-checked before every write —
+ * UNDER THE RUN'S LOCK, THROUGH A TEMP FILE, AND VERIFIED (R31).
+ *
+ * This block used to read, push and `writeFileSync` the whole file with no
+ * lock at all. The only claim the pilot path holds is the SESSION lock, and
+ * the run lock's own header already says why that one cannot serialize this:
+ * it is keyed by (runId, taskId, arm), so two pilot tasks hold DIFFERENT
+ * locks and interleave freely. Both read the same prior state, the second
+ * write silently drops the first observation — and the pilot has no obs dir,
+ * no runlog row and no commit, so nothing on disk can reconstruct it. The
+ * cost of that loss is a paid session.
+ *
+ * Three teeth, not one:
+ *   - the RUN-WIDE lock, so lawful writers serialize;
+ *   - a re-read immediately before the write, so a writer that did NOT take
+ *     the lock turns a silent lost update into a refusal;
+ *   - temp file + rename, so a torn or failed write cannot truncate the only
+ *     copy of every earlier observation.
+ *
+ * The temp carries the FULL next state, and is consumed by the rename. On any
+ * refusal past that point it is left behind ON PURPOSE and named in the
+ * message: it is this session's work, mergeable by hand, and the alternative
+ * is re-running a paid observation. Same doctrine as the leaked lock dir —
+ * the operator removes it, the harness never guesses.
+ */
+export async function appendPilotRecord(repoRoot, runId, record, opts = {}) {
+  const { lockAttempts = 20, lockWaitMs = 250, beforeWrite = null } = opts;
+  const evidenceDir = path.join(repoRoot, "evidence");
+  const file = path.join(evidenceDir, `${runId}.b12.pilot.json`);
+  const readFile = () => (existsSync(file) ? readFileSync(file, "utf8") : null);
+
+  let lock = acquireRunlogLock(evidenceDir, runId);
+  for (let attempt = 1; !lock.ok && attempt < lockAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, lockWaitMs));
+    lock = acquireRunlogLock(evidenceDir, runId);
+  }
+  if (!lock.ok) {
+    throw new Error(
+      `another pilot observation holds this run's evidence lock (${lock.lockDir}) and did not release it — the pilot ` +
+        `file is rewritten whole, so two writers lose an observation; remove the lock only after confirming no live process`
+    );
+  }
+  const tmp = path.join(evidenceDir, `.${runId}.b12.pilot.json.tmp-${process.pid}-${Date.now()}`);
+  try {
+    const atRead = readFile();
+    const current =
+      atRead === null
+        ? { schema: "b12-pilot/1", runId, covariateTable: PILOT_COVARIATE_TABLE, observations: [] }
+        : JSON.parse(atRead);
+    current.observations.push(record);
+    assertPilotShape(current);
+    const next = JSON.stringify(current, null, 2) + "\n";
+    writeFileSync(tmp, next, "utf8");
+    if (beforeWrite) beforeWrite({ file, tmp, atRead });
+    // THE WINDOW, CLOSED. Everything above read a snapshot; this asks the disk
+    // whether that snapshot is still what is there. A writer outside the lock
+    // is the one case the lock cannot cover, and overwriting it here would be
+    // exactly the silent loss this function exists to stop.
+    if (readFile() !== atRead) {
+      throw new Error(
+        `the pilot file changed under this write — refusing to overwrite ${path.basename(file)} with a state read before ` +
+          `that change; this observation's full state is staged at ${tmp} and can be merged by hand (do not re-run the session)`
+      );
+    }
+    renameSync(tmp, file);
+    const after = readFile();
+    if (after !== next) {
+      throw new Error(
+        `the pilot file on disk is not the bytes this observation wrote — something wrote ${path.basename(file)} between ` +
+          `the rename and this read; every earlier observation is at risk`
+      );
+    }
+  } finally {
+    lock.release();
+  }
+  return file;
 }
 
 /**
@@ -1282,7 +2407,11 @@ function preflight(args) {
     for (const arm of ["treatment", "control"]) {
       const { blob, why } = findPolicyBlob(manifest, arm);
       blobs[arm] = blob;
-      check(`policy blob resolves against its pin (${arm})`, blob !== null, blob !== null ? blob.sha256.slice(0, 12) : why);
+      check(
+        `policy blob resolves against its seal (${arm})`,
+        blob !== null,
+        blob !== null ? `${blob.sha256.slice(0, 12)} @ ${blob.declaredPath}` : why
+      );
     }
 
     const { snapshot: memSnap, why: memWhy } = findMemorySnapshot(manifest);
@@ -1295,7 +2424,7 @@ function preflight(args) {
     if (binary === null) {
       check("installedChars probe calibrates to this machine", false, "no claude binary to compare the calibration key against");
     } else {
-      const { record, why } = findInstalledChars(manifest, binary, mcp, blobs.treatment);
+      const { record, why } = findInstalledChars(manifest, binary, mcp, blobs);
       check(
         "installedChars probe calibrates to this machine",
         record !== null,
@@ -1402,8 +2531,8 @@ function preflight(args) {
  * than merges any other MCP configuration, so "server off" is a fact rather than
  * an intention.
  */
-async function observe(args) {
-  const { manifest, sha256: manifestSha } = loadManifest(args.manifest);
+async function observe(args, pilotMode = false) {
+  const { manifest, sha256: manifestSha, text: manifestText } = loadManifest(args.manifest);
   // FIRST, before anything spends: the declaration gaps. See
   // `manifestDeclarationGaps` for the three classes and the timing constraint —
   // this refusal is designed for the pre-registration window, and hitting it on
@@ -1425,12 +2554,37 @@ async function observe(args) {
   const arm = args.arm ?? "treatment";
   if (arm !== "treatment" && arm !== "control") refuse(`--arm must be treatment or control, got ${arm}`);
 
+  // ARTIFACT 6'S BARRIER, both arms, BEFORE the order check reads the disk
+  // runlog as progress: disk and HEAD must carry the same runlog bytes, or a
+  // predecessor's evidence commit is still pending (or failed) and its row is
+  // not yet a predecessor anyone may order themselves against.
+  const runLogRel = `evidence/${manifest.runId ?? "b12-unnamed"}.b12.runlog.jsonl`;
+  const runLogPath = path.join(REPO, runLogRel);
+  // KEPT, not just checked: the bytes the barrier accepted here are compared
+  // again under the run's commit lock at the end. Anything else having written
+  // this file in between is another observation that ran INSIDE this one.
+  const runlogAtBarrier = existsSync(runLogPath) ? readFileSync(runLogPath, "utf8") : null;
+  // THE BRANCH, CAPTURED WITH THE BYTES (R26). Everything this observation
+  // commits must land where it started; `git commit` obeys HEAD at commit
+  // time, which is minutes from now. A detached HEAD is refused outright —
+  // evidence that no branch holds is evidence the run cannot find.
+  const branchRef = (() => {
+    const r = run("git", ["-C", REPO, "symbolic-ref", "--quiet", "HEAD"]);
+    if (r.code !== 0 || r.out.trim() === "") {
+      refuse("HEAD is detached — an observation's evidence commit would belong to no branch; check out the run's branch first");
+    }
+    return r.out.trim();
+  })();
+  {
+    const headProbe = run("git", ["-C", REPO, "show", `${branchRef}:${runLogRel}`]);
+    const barrier = runlogBarrierViolation(runlogAtBarrier, headProbe.code === 0 ? headProbe.out : null);
+    if (barrier) refuse(barrier);
+  }
   // The committed order, enforced against the persisted runlog BEFORE the
   // session is spent — see `committedOrderViolation` for the treatment-only
   // scoping and the duplicate-task adjudication it deliberately leaves to
   // scoring.
   if (arm === "treatment") {
-    const runLogPath = path.join(REPO, "evidence", `${manifest.runId ?? "b12-unnamed"}.b12.runlog.jsonl`);
     const violation = committedOrderViolation(
       manifest,
       args.task,
@@ -1439,22 +2593,55 @@ async function observe(args) {
     if (violation) refuse(violation);
   }
 
+  // THE INSTRUCTION IS READ, NEVER RETYPED, and the check costs nothing —
+  // so it happens before anything is created. (It used to sit after the
+  // worktree, which is how a bad prompt hash left a full checkout behind.)
+  if (typeof task.prompt !== "string" || task.prompt.length === 0) refuse(`task ${task.id} carries no prompt`);
+  const promptSha = sha256Text(task.prompt);
+  if (task.promptSha256 && task.promptSha256 !== promptSha) {
+    refuse(`task ${task.id} prompt sha256 ${promptSha} != manifest ${task.promptSha256} — the text moved after sealing`);
+  }
+
+  const runId = manifest.runId ?? "b12-unnamed";
+  // THE REGISTRATION GUARD: a session may only be spent on a REGISTERED run
+  // whose registration is still coherent — the canonical path, the same-act
+  // proof, the append-only register's byte prefix. Before the lock, before
+  // the session id, and — since R14 — genuinely BEFORE ANY WORKTREE, which
+  // is what this comment always claimed while the creation sat above it.
+  // The PILOT is the one lawful exception — it runs BEFORE registration by
+  // design (artifact 4: declared not to consume the attempt cap, its tasks
+  // excluded from both sealed manifests), and writes none of the registered
+  // artifacts the guard protects.
+  if (!pilotMode) {
+    const canonicalManifest = path.join(REPO, "evidence", `${runId}.b12.tasks.json`);
+    if (path.resolve(args.manifest) !== path.resolve(canonicalManifest)) {
+      refuse(
+        `observe runs the CANONICAL manifest evidence/${runId}.b12.tasks.json, not ${args.manifest} — a session may not be spent on an unregistered copy`
+      );
+    }
+    const guardReasons = registrationGuard(REPO, runId, manifestText);
+    if (guardReasons.length > 0) refuse(`registration guard: ${guardReasons.join("; ")}`);
+  }
+
   const binary = claudeBinary();
   assertPinned(manifest, binary);
   // Every refusal BEFORE the worktree and before the session id, so a manifest
   // that cannot produce a compliant observation costs nothing to discover.
   const mcp = arm === "treatment" ? resolveMcpConfig(manifest) : null;
   const policyBlob = resolvePolicyBlob(manifest, arm);
-  // The other arm's blob is not carried further, but a pair whose other arm
-  // cannot run was never a pair — so it must resolve too.
-  resolvePolicyBlob(manifest, arm === "treatment" ? "control" : "treatment");
+  // The other arm's blob resolves too — a pair whose other arm cannot run was
+  // never a pair, and the calibration key is DUAL, so the other arm's blob
+  // participates in probe validation even on the arm that never delivers it.
+  const otherBlob = resolvePolicyBlob(manifest, arm === "treatment" ? "control" : "treatment");
+  const policyBlobs =
+    arm === "treatment" ? { treatment: policyBlob, control: otherBlob } : { treatment: otherBlob, control: policyBlob };
   const memorySnapshot = resolveMemorySnapshot(manifest);
   // ONE `O_o`, treatment only. The control arm records a named absence, not a
   // second value — see `validateInstalledCharsProbe`'s header for why 0 would
   // be the two-valued `O` the boundary refuses.
   const installedChars =
     arm === "treatment"
-      ? resolveInstalledChars(manifest, binary, mcp, policyBlob)
+      ? resolveInstalledChars(manifest, binary, mcp, policyBlobs)
       : {
           value: null,
           reason:
@@ -1500,36 +2687,74 @@ async function observe(args) {
   if (existsSync(treeDir)) rmSync(treeDir, { recursive: true, force: true });
   mkdirSync(path.dirname(treeDir), { recursive: true });
   git(["worktree", "add", "--detach", treeDir, task.baseCommit]);
+  // THE TREE IS OWNED FROM ITS FIRST BYTE. `refuse()` calls `process.exit`,
+  // so no `try/finally` can reach a cleanup — an exit hook is the only shape
+  // that covers EVERY refusal below (and every crash). A leaked `.b12`
+  // checkout is a full repository copy plus a live worktree registration, and
+  // a retried task would leak another; the operator would find the disk full
+  // before finding the cause. `--keep` still keeps, and a COMPLETED
+  // observation removes the tree in its own line below rather than here.
+  let observationCompleted = false;
+  // Set the moment the evidence directory is CLAIMED, far below — the hook
+  // removes it on any non-completion, but ONLY while it is uncommitted: the
+  // append-only rule governs the committed record, and an empty or partial
+  // attempt that was never committed is a claim nobody made good on, not
+  // evidence. A committed one is never touched.
+  let claimedDir = null;
+  process.on("exit", () => {
+    if (observationCompleted || args.keep) return;
+    try {
+      rmSync(treeDir, { recursive: true, force: true });
+    } catch {
+      // Best effort — the prune below still unregisters it.
+    }
+    spawnSync("git", ["-C", REPO, "worktree", "prune"], { encoding: "utf8" });
+    if (claimedDir === null) return;
+    const rel = path.relative(REPO, claimedDir).split(path.sep).join("/");
+    const committed = spawnSync("git", ["-C", REPO, "cat-file", "-e", `HEAD:${rel}`], { encoding: "utf8" });
+    if (committed.status === 0) return; // committed evidence is never removed
+    try {
+      rmSync(claimedDir, { recursive: true, force: true });
+      process.stderr.write(`  (removed the uncommitted claim ${rel} — the attempt was never completed)\n`);
+    } catch {
+      // Best effort; a leftover empty dir is reported by the scorer's sweep.
+    }
+  });
   const treeHash = git(["rev-parse", "HEAD"], treeDir);
   const dirty = run("git", ["-C", treeDir, "status", "--porcelain"]).out.trim();
   if (dirty) refuse(`fresh worktree is not clean: ${dirty.slice(0, 200)}`);
   const ratesSha = assertRatesFrozen(manifest, treeDir);
 
-  // The instruction is READ, never retyped. This is the whole reason the file
-  // exists: "the prompt was used verbatim" is otherwise unfalsifiable.
-  if (typeof task.prompt !== "string" || task.prompt.length === 0) refuse(`task ${task.id} carries no prompt`);
-  const promptSha = sha256Text(task.prompt);
-  if (task.promptSha256 && task.promptSha256 !== promptSha) {
-    refuse(`task ${task.id} prompt sha256 ${promptSha} != manifest ${task.promptSha256} — the text moved after sealing`);
+  // The prompt hash and the registration guard ran BEFORE the worktree — a
+  // refusal there costs nothing, which is what those checks are for.
+  //
+  // The lock is taken HERE — after every cheap refusal above, and
+  // immediately before the session id exists, so no two processes can hold
+  // the same (runId, taskId, arm). A refusal PAST this point leaves the lock
+  // deliberately: something died mid-observation and the operator should
+  // look before anything re-runs. (The WORKTREE is not left behind — the
+  // exit hook above owns it — but the lock is a different claim: it says a
+  // session may have been spent, and only a human can say it was not.)
+  const sessionLock = acquireSessionLock(path.join(REPO, "evidence"), runId, task.id, arm);
+  if (!sessionLock.ok) {
+    refuse(
+      `another observe holds ${task.id}/${arm} (lock ${sessionLock.lockDir}) — one (runId, taskId, arm) may be in flight at a time; remove the lock only after confirming no live process`
+    );
   }
-
-  const sessionId = createHash("sha256")
-    .update(`${manifestSha}:${task.id}:${arm}:${stamp()}`)
-    .digest("hex")
-    .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, "$1-$2-$3-$4-$5");
+  const sessionId = mintSessionId(manifestSha, runId, task.id, arm);
 
   // "The delegation policy leaves the repository under test entirely" (CHANNEL
-  // 5). The repository under test is THIS worktree at the task's base commit —
-  // a blob physically inside it, or committed at the same relative path in the
-  // base tree, is in-repo policy wearing an out-of-repo name.
+  // 5). `findPolicyBlob` already refused a policy repo resolving inside the
+  // repository under test — which contains every `.b12/` arm worktree — so
+  // this re-asserts the same wall against THIS arm's just-created tree, the
+  // first moment the tree exists to compare against. The previous schema also
+  // checked the base tree for a file at the blob's relative path; with
+  // delivery reading a foreign object store there is no path in the worktree
+  // for the base commit to shadow, so that check has nothing left to guard.
   {
-    const rel = path.relative(treeDir, policyBlob.path);
+    const rel = path.relative(treeDir, policyBlob.repoDir);
     if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
-      refuse(`the ${arm} policy blob resolves INSIDE the arm's worktree (${policyBlob.path}) — the policy must leave the repository under test entirely`);
-    }
-    const inBaseTree = path.join(treeDir, policyBlob.declaredPath);
-    if (!path.isAbsolute(policyBlob.declaredPath) && existsSync(inBaseTree)) {
-      refuse(`the base commit carries ${policyBlob.declaredPath} inside the worktree — the policy must not exist in the tree the arms run in`);
+      refuse(`the ${arm} policy repo resolves INSIDE the arm's worktree (${policyBlob.repoDir}) — the policy must leave the repository under test entirely`);
     }
   }
 
@@ -1561,7 +2786,7 @@ async function observe(args) {
     settings: shaOrNull(path.join(treeDir, ".claude", "settings.json")),
     settingsLocal: shaOrNull(path.join(treeDir, ".claude", "settings.local.json")),
     mcpConfigPassed: mcp ? shaOrNull(mcp.path) : null,
-    policyBlob: shaOrNull(policyBlob.path),
+    policyBlob: policyBlobLiveSha256(policyBlob),
     memory: memorySha,
     // The seventh is not measurable from outside the session — a registered
     // limit (FINDINGS.md F24), recorded as a named fact instead of a hash that
@@ -1570,7 +2795,13 @@ async function observe(args) {
   });
   const instructionPre = instructionHashesAt(memoryRestored.sha256);
 
-  const before = takeSnapshot();
+  const before = takeSnapshot(undefined, {
+    runId,
+    taskId: task.id,
+    arm,
+    sessionId,
+    phase: "before",
+  });
 
   // BOTH arms are strict, and that is a measured correction (2026-08-08), not
   // a style choice. The first probe run on the Mac found ~30 claude.ai ACCOUNT
@@ -1644,7 +2875,13 @@ async function observe(args) {
   // wrote afterwards.
   const instructionPost = instructionHashesAt(hashMemoryDir(memoryDir).sha256);
 
-  const after = takeSnapshot();
+  const after = takeSnapshot(undefined, {
+    runId,
+    taskId: task.id,
+    arm,
+    sessionId,
+    phase: "after",
+  });
   const originated = after.requestIds.filter((id) => !before.requestIds.includes(id));
 
   // THE END COMMIT IS MADE HERE, BEFORE ACCEPTANCE, AND THAT IS THE FROZEN RULE
@@ -1681,6 +2918,23 @@ async function observe(args) {
   const stillDirty = run("git", ["-C", treeDir, "status", "--porcelain"]).out.trim();
   if (stillDirty) refuse(`worktree still dirty after the end-state commit: ${stillDirty.slice(0, 200)}`);
 
+  // THE TELEMETRY BOUNDARY, TAKEN HERE FOR THE SAME REASON `endCommit` IS
+  // (R33). Acceptance runs in the arm's own worktree, so an `npm test` that
+  // reaches gate or repair appends rows to the very log the capture reads —
+  // and `scopeTelemetry`'s ±60,000 ms window admits rows near the session
+  // whether or not the transcript names their invocation_id, which acceptance
+  // rows, written seconds later, always are. The tree already had its
+  // boundary (`endCommit` before, `endPorcelain` after); the log had none.
+  //
+  // AND THE PREFIX'S IDENTITY WITH IT (R36). A count alone survives an
+  // acceptance command that TRUNCATES or REPLACES the log: the capture clamps
+  // the boundary to the new, shorter length and every acceptance row lands in
+  // the arm's segment. The digest of the bytes the count was taken over is
+  // what makes the two comparable afterwards.
+  const acceptanceBoundary = await capture.module.telemetryBoundaryIn(treeDir);
+  const telemetryBytesAtAcceptance = acceptanceBoundary.bytes;
+  const telemetryPrefixSha256AtAcceptance = acceptanceBoundary.sha256;
+
   // The acceptance predicate decides whether this is a TASK or an ATTEMPT.
   // Without it the numerator is earned at a verification step and the
   // denominator is croppable by quitting, so every fraction rises by giving up.
@@ -1710,6 +2964,13 @@ async function observe(args) {
   // The artifact is still written. Refusing to write would hide the failure from
   // the very record that is supposed to make a run re-adjudicable; what is
   // refused is calling it valid, and the exit code stops a driver.
+  // The slugs the arm WROTE to: those whose transcripts carry an originated
+  // id. Derived from the post-snapshot's own attribution, so the rule below
+  // compares the pre-snapshot's coverage against writes the same walk saw.
+  const originatedSet = new Set(originated);
+  const writtenSlugs = Object.entries(after.slugRequestIds)
+    .filter(([, slugIds]) => slugIds.some((id) => originatedSet.has(id)))
+    .map(([slug]) => slug);
   const verdict = classifyRun({
     // A fact, not an inference: this is the same `budgetMs` handed to spawnSync.
     budgetEnforced: Number.isFinite(budgetMs) && budgetMs > 0,
@@ -1720,6 +2981,8 @@ async function observe(args) {
     originatedCount: originated.length,
     slugsBefore: before.slugsWalked,
     slugsAfter: after.slugsWalked,
+    coveredSlugs: before.slugs,
+    writtenSlugs,
   });
   const censored = verdict.censored;
   const invalid = verdict.reasons;
@@ -1732,7 +2995,6 @@ async function observe(args) {
   // `instructionDriftReasons` for the per-component citations.
   invalid.push(...instructionDriftReasons(instructionPre, instructionPost));
 
-  const runId = manifest.runId ?? "b12-unnamed";
   // A RE-RUN GETS ITS OWN DIRECTORY, `obs-<taskId>-<arm>-r<N>`. `admissionRule`
   // 12 says "Both attempts are archived and both fractions published", and one
   // directory per task/arm cannot hold two attempts — the second write would
@@ -1742,7 +3004,17 @@ async function observe(args) {
   // the same grammar back — the round trip is pinned in `cost-meter.test.ts`.
   // Which attempt SCORES is the scorer's registered convention, not decided
   // here. The claim is ATOMIC — see `claimObsDir`.
-  const { dir } = claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
+  // The pilot claims NO evidence directory — artifact 4's only output is the
+  // pilot file, and an empty claimed dir in append-only evidence/ would be a
+  // permanent void at scoring time.
+  //
+  // THE CLAIM ITSELF MOVED (R16). It used to happen HERE, before the capture
+  // below — and the capture is fallible: an unreadable transcript, a missing
+  // telemetry file, a dependency that throws. A failure then left an EMPTY
+  // claimed attempt in append-only `evidence/`, which the scorer reads as an
+  // observation with no identity: integrity failure, run void, after the
+  // session was already paid for. The claim now happens immediately before
+  // the writes, once everything fallible has succeeded.
 
   // `design.artifacts` 6, TAKEN WHILE THE WORKTREE STILL EXISTS. This is the
   // only window in which the tree and its `.local-coder/telemetry.jsonl` are
@@ -1759,6 +3031,8 @@ async function observe(args) {
     slugDirs: projectSlugDirs(),
     porcelain: endPorcelain,
     declaredFileScope: task.fileScope ?? null,
+    telemetryBytesAtAcceptance,
+    telemetryPrefixSha256AtAcceptance,
   });
 
   // AN EMPTY LINEAGE BESIDE ORIGINATED IDS IS A CONTRADICTION, AND IT IS THE
@@ -1808,7 +3082,7 @@ async function observe(args) {
      * compares a pair's "MCP-config hashes" and the frozen text does not say
      * which of the two facts it means; see the note at `instructionHashesAt`. */
     mcpConfigPinned: manifest.pinned?.mcpConfigSha256 ?? null,
-    policyBlob: { path: policyBlob.declaredPath, sha256: policyBlob.sha256 },
+    policyBlob: { repo: policyBlob.repo, commit: policyBlob.commit, path: policyBlob.path, sha256: policyBlob.sha256 },
     /** ONE `O_o` with provenance on the treatment arm; a NAMED absence on the
      * control arm. Never a defaulted number — see PREMISES.md § B12. */
     installedChars,
@@ -1862,6 +3136,36 @@ async function observe(args) {
     }
   }
 
+  // ARTIFACT 4 — THE PILOT PATH. The pilot's ONLY output is its one file: the
+  // disposition and the covariate vector with the RAW meter inputs embedded
+  // (telemetry verbatim, reduced lineage), so every scoring-time covariate is
+  // re-derivable — and NO aggregate, NO bracket, enforced by shape at every
+  // write. No obs-dir, no runlog row, no MEASUREMENTS line, no commit:
+  // committing is the session's act, and registration has not happened.
+  if (pilotMode) {
+    const pilotFile = await appendPilotRecord(REPO, runId, buildPilotRecord(observation, archive));
+    sessionLock.release();
+    process.stdout.write(
+      `  pilot  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  outcome ${verdict.outcome}  ` +
+        `accepted ${observation.accepted}  → ${path.relative(REPO, pilotFile).split(path.sep).join("/")}\n`
+    );
+    if (!args.keep) git(["worktree", "remove", "--force", treeDir]);
+    observationCompleted = true; // the tree is gone (or kept on purpose)
+    if (!observation.valid) {
+      for (const reason of invalid) process.stderr.write(`  INVALID: ${reason}\n`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // THE ATOMIC CLAIM, now that nothing fallible remains between it and the
+  // bytes. `claimedDir` is also handed to the exit hook: a partial write —
+  // a full disk, a killed process — would otherwise leave a half-populated
+  // attempt behind, and removing an UNCOMMITTED directory violates nothing,
+  // because append-only is a property of the committed record.
+  const { dir } = claimObsDir(path.join(REPO, "evidence", runId), task.id, arm);
+  claimedDir = dir;
+
   // NAMED AS THEY ARE WRITTEN, because the commit barrier below verifies THIS
   // list against `HEAD` blob by blob. A hand-maintained second list is how a new
   // artifact comes to be written and never checked.
@@ -1886,17 +3190,28 @@ async function observe(args) {
     archive.telemetry.map((row) => JSON.stringify(row)).join("\n") + (archive.telemetry.length > 0 ? "\n" : "")
   );
 
-  // A machine-written row per observation, `design.artifacts` 10: "whose `ts` is
-  // read from the system clock in the same command that writes it".
-  // APPEND, never read-concat-write: the old shape lost rows under two
-  // concurrent observes (both read, both write, one row gone) — and a missing
-  // row is what the scorer's replay now refuses the whole order over. A
-  // single-line O_APPEND write is the atomic unit the log was designed around.
-  const runLog = path.join(REPO, "evidence", `${runId}.b12.runlog.jsonl`);
-  appendFileSync(
-    runLog,
-    JSON.stringify({
-      ts: stamp(),
+  // THE ROW AND ITS COMMIT, AS ONE ACT — `design.artifacts` 10 ("whose `ts` is
+  // read from the system clock in the same command that writes it") and
+  // artifact 6's barrier ("committed at each task's END, BEFORE THE NEXT TASK
+  // STARTS") are one critical section, held under this run's commit lock. It
+  // is enforced HERE rather than left to a driver: a driver could lawfully
+  // commit between calls, but then the timing obligation is checked by
+  // nothing, which is the shape of every guard this project has had to delete.
+  //
+  // Everything the old inline code refused on now comes back as a reason, so
+  // the lock is released before this process exits.
+  const relDir = path.relative(REPO, dir).split(path.sep).join("/");
+  const rowCommit = await commitObservationRow(REPO, {
+    evidenceDir: path.join(REPO, "evidence"),
+    runId,
+    runLogRel,
+    relDir,
+    written,
+    sessionId,
+    runlogAtBarrier,
+    branchRef,
+    message: `evidence: ${runId} ${task.id}/${arm}`,
+    row: {
       runId,
       taskId: task.id,
       arm,
@@ -1905,47 +3220,16 @@ async function observe(args) {
       valid: observation.valid,
       accepted: observation.accepted,
       originated: originated.length,
-    }) + "\n",
-    "utf8"
-  );
-
-  // THE COMMIT BARRIER. `design.artifacts` 6 says "committed at each task's END,
-  // BEFORE THE NEXT TASK STARTS", and the same inventory keys a VOID to a commit
-  // DATE on artifact 1 — a word that is unintelligible about a mere file write.
-  //
-  // Enforced HERE rather than left to a driver. A driver could lawfully commit
-  // between calls, but then the timing obligation is checked by nothing, which
-  // is the shape of every guard this project has had to delete. The verify step
-  // after it is the same rule: a `git commit` that silently committed nothing
-  // (an empty diff, a path outside the repo, a gitignore rule nobody expected)
-  // would leave the archive uncommitted and the run looking clean.
-  const relDir = path.relative(REPO, dir).split(path.sep).join("/");
-  const relLog = path.relative(REPO, runLog).split(path.sep).join("/");
-  await gitCommitEvidenceRetrying(relDir, relLog, `evidence: ${runId} ${task.id}/${arm}`);
-
-  // EXISTENCE PROVED NOTHING, AND THAT WAS THE FIRST VERSION OF THIS CHECK.
-  //
-  // It asked `git ls-tree` whether ANYTHING sat under the directory. An
-  // index-mutating `pre-commit` hook can drop `archive.json` while leaving
-  // `observation.json` staged: the add succeeds, the staged check succeeds
-  // because files are staged, the commit succeeds with what is left, and
-  // `ls-tree` succeeds because something is there. The archive is not committed
-  // and every guard is green. A `post-commit` hook that moves `HEAD` back to an
-  // older commit containing an older copy of the directory passes it too.
-  //
-  // So each file is compared BY BLOB HASH against what `HEAD` now carries.
-  // `git hash-object` on the file and `git rev-parse HEAD:<path>` on the tree
-  // are the same function of the same bytes, so equality is exact rather than
-  // circumstantial, and a stale `HEAD` fails on content instead of on presence.
-  for (const name of written) {
-    const rel = `${relDir}/${name}`;
-    const onDisk = git(["hash-object", "--", path.join(dir, name)]);
-    const inHead = run("git", ["-C", REPO, "rev-parse", `HEAD:${rel}`]);
-    if (inHead.code !== 0) refuse(`HEAD does not carry ${rel} after the commit`);
-    if (inHead.out.trim() !== onDisk) {
-      refuse(`HEAD carries a different ${rel}: ${inHead.out.trim().slice(0, 12)} != ${onDisk.slice(0, 12)}`);
-    }
-  }
+    },
+  });
+  if (!rowCommit.ok) refuse(rowCommit.why);
+  // A note is NOT a failure — the evidence is installed either way. It is on
+  // stderr because it is the operator's to act on, not the run's.
+  if (rowCommit.note) process.stderr.write(`  NOTE: ${rowCommit.note}\n`);
+  // The row and its evidence are in HEAD; only now has the in-flight claim
+  // done its work. (It used to be released right after the append — which
+  // handed the next attempt a window where the commit had not happened yet.)
+  sessionLock.release();
 
   process.stdout.write(
     `  ${observation.valid ? "ok  " : "INVALID"}  ${task.id}/${arm}  session ${sessionId.slice(0, 8)}  ` +
@@ -1956,6 +3240,7 @@ async function observe(args) {
       `  committed ${relDir}\n`
   );
   if (!args.keep) git(["worktree", "remove", "--force", treeDir]);
+  observationCompleted = true; // the tree is gone (or kept on purpose)
   if (!observation.valid) {
     for (const reason of invalid) process.stderr.write(`  INVALID: ${reason}` + String.fromCharCode(10));
     process.exit(1);
@@ -1997,6 +3282,12 @@ if (!invokedDirectly) {
     // while the archive was still being written — a run that looks clean and
     // committed nothing.
     await observe(args);
+    break;
+  case "pilot":
+    // The same session machinery as `observe`, with artifact 4's outputs and
+    // exemptions — see the pilot branch inside `observe` and the covariate
+    // table beside `appendPilotRecord`.
+    await observe(args, true);
     break;
   case "snapshot": {
     const snap = takeSnapshot(args.root);
