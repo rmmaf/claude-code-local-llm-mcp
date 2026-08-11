@@ -277,6 +277,36 @@ export function applyMutation(treeDir, subject) {
  * has already told us the control did not fire and is passed through so the
  * evaluator can say so by name.
  */
+/** The JSON line vitest printed, or null. Never throws — this is diagnostics. */
+function parsedReport(run) {
+  const line = (run.stdout ?? "").split("\n").find((l) => l.trimStart().startsWith("{"));
+  if (line === undefined) return null;
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null;
+  }
+}
+
+/** Every test the report marks failed, as `file > fullName`. */
+export function failedTestsIn(report) {
+  const out = [];
+  const suites =
+    typeof report === "object" && report !== null && Array.isArray(report.testResults) ? report.testResults : [];
+  for (const suite of suites) {
+    const file = (typeof suite?.name === "string" ? suite.name : "").split("\\").join("/").split("/").pop();
+    for (const t of Array.isArray(suite?.assertionResults) ? suite.assertionResults : []) {
+      if (t?.status === "failed") {
+        out.push({
+          test: `${file} > ${typeof t.fullName === "string" ? t.fullName : "?"}`,
+          message: Array.isArray(t.failureMessages) ? String(t.failureMessages[0] ?? "").split("\n").slice(0, 3).join(" | ") : null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 export function runConformance(treeDir, controlFile, { expectFailures }) {
   const run = spawnSync(
     process.platform === "win32" ? "npx.cmd" : "npx",
@@ -290,7 +320,16 @@ export function runConformance(treeDir, controlFile, { expectFailures }) {
     return { ok: false, why: `vitest was killed by ${run.signal} — a signalled run measures nothing`, report: null };
   }
   if (!expectFailures && run.status !== 0) {
-    return { ok: false, why: `the unmutated suite exited ${String(run.status)} — the baseline must be green`, report: null };
+    // R44: this used to discard the payload and return `report: null`, so a red
+    // bookend was recorded as "exited 1" and NOTHING else. That made the one
+    // red bookend of run 1 unexplainable by construction — the harness threw
+    // away the only thing that could have named it. The refusal stands; the
+    // evidence for it travels with it now.
+    return {
+      ok: false,
+      why: `the unmutated suite exited ${String(run.status)} — the baseline must be green`,
+      report: parsedReport(run),
+    };
   }
   // R40#1: `expectFailures` was licence for ANY non-zero exit, so a worker
   // crash, an OOM or a bail still handed a parseable report to the evaluator as
@@ -362,7 +401,15 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
       const pristine = makePristine(treeDir);
       if (!pristine.ok) throw new Error(`before ${entry.id}: ${pristine.why}`);
       const bookend = runConformance(treeDir, controlFile, { expectFailures: false });
-      bookends.push({ id: entry.id, green: bookend.ok, why: bookend.why });
+      bookends.push({
+        id: entry.id,
+        green: bookend.ok,
+        why: bookend.why,
+        // R44: a red bookend NAMES itself now. Run 1's single red one was
+        // recorded as "exited 1" and nothing more, which is why it could only
+        // be called intermittency — the harness had discarded the evidence.
+        failed: bookend.ok ? [] : failedTestsIn(bookend.report),
+      });
       if (!bookend.ok) {
         mutants[entry.id] = { applied: false, notApplied: `the pristine bookend was not green: ${bookend.why}`, report: null };
         continue;
