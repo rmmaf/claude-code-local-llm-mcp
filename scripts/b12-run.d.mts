@@ -290,10 +290,24 @@ export function commitObservationRow(
     branchRef?: string;
     /** Test seam: fired between the append and the CAS install. */
     beforeInstall?: () => Promise<void> | void;
+    /** Test seam: fired after the ref is installed, before the index refresh. */
+    beforeIndexSync?: () => Promise<void> | void;
     lockAttempts?: number;
     lockWaitMs?: number;
   }
-): Promise<{ ok: true } | { ok: false; why: string }>;
+): Promise<
+  | {
+      ok: true;
+      /**
+       * Housekeeping the act declined to do, never a failure: the real index
+       * is only refreshed while this worktree still holds the captured ref at
+       * the installed commit. A checkout during the act leaves the index
+       * alone and says so here.
+       */
+      note: string | null;
+    }
+  | { ok: false; why: string }
+>;
 
 /**
  * Invalidity reasons for pre/post instruction-hash drift — every component

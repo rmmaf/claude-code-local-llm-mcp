@@ -4078,9 +4078,10 @@ describe("the B12 harness", () => {
     it("leaves index, HEAD and working tree agreeing — the operator's NEXT commit undoes nothing", async () => {
       // The R16 lesson, applied to the observation: a CAS that installs a
       // commit the real index does not know about turns the operator's next
-      // ordinary commit into a revert. Staging the same paths BEFORE the
-      // install is what keeps the three in agreement without a single
-      // destructive write.
+      // ordinary commit into a revert. Refreshing the same paths right AFTER
+      // the install — once this worktree is proved to still hold the captured
+      // ref at the new commit (R34) — keeps the three in agreement without a
+      // single destructive write.
       const { root, git, runLogRel, relDir, call, branchRef } = await runlogFixture();
       expect((await call()).ok).toBe(true);
       // Nothing staged, nothing deleted, nothing untracked from the act.
@@ -4091,6 +4092,60 @@ describe("the B12 harness", () => {
       // The evidence and the row are STILL there afterwards.
       expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
       expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
+    });
+
+    it("a checkout DURING the act never stages evidence on the branch it lands in", async () => {
+      // R34. The act opened by staging into the REAL index — which belongs to
+      // whatever HEAD points at NOW — while `update-ref` installs on the ref
+      // captured minutes ago. A checkout in between (the event R26 already
+      // established as real) left the SIBLING branch's index holding this
+      // observation's evidence, staged, while the commit landed correctly on
+      // the captured ref and the act returned SUCCESS. The operator's next
+      // ordinary commit over there duplicates paid evidence, silently.
+      const { root, git, runLogRel, relDir, call, branchRef } = await runlogFixture();
+      const result = await call({
+        beforeInstall: async () => {
+          await git(root, "checkout", "-q", "-b", "sibling");
+        },
+      });
+      // The evidence still landed where it was captured…
+      expect(result.ok).toBe(true);
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      expect(await git(root, "show", `${branchRef}:${runLogRel}`)).toMatch(/s-t2/);
+      // …and the branch we are standing in was NOT written to. Nothing staged
+      // is the whole claim: an untracked file needs `git add -A` to escape,
+      // a staged one rides out on the next ordinary `git commit`.
+      expect(await git(root, "symbolic-ref", "--quiet", "HEAD")).toBe("refs/heads/sibling");
+      expect(await git(root, "diff", "--cached", "--name-only")).toBe("");
+      expect(await git(root, "ls-tree", "-r", "--name-only", "HEAD")).not.toMatch(/obs-t2-treatment/);
+      // And the operator is TOLD, on a success — the act happened.
+      expect(result.ok === true && result.note).toMatch(/index was left untouched/);
+      expect(result.ok === true && result.note).toMatch(/sibling/);
+      expect(result.ok === true && result.note).toMatch(/UNTRACKED where you now stand/);
+    });
+
+    it("the refresh is bound to the POSITION of HEAD, not to the branch's name", async () => {
+      // The boundary in the other direction, and it is the reason the guard
+      // asks `rev-parse HEAD` instead of `symbolic-ref`. Here the checkout
+      // happens AFTER the install, so the new branch is created AT the
+      // installed commit: every path the refresh would add is already in that
+      // tree at that blob, so the add can only make the index agree with what
+      // is checked out. Refusing here was the first spelling of this guard and
+      // it left a STAGED DELETION behind — the operator's next commit would
+      // have acted on it. Written down so nobody re-tightens it to the name.
+      const { root, git, relDir, call, branchRef } = await runlogFixture();
+      const result = await call({
+        beforeIndexSync: async () => {
+          await git(root, "checkout", "-q", "-b", "sibling-2");
+        },
+      });
+      expect(result.ok).toBe(true);
+      expect(await git(root, "symbolic-ref", "--quiet", "HEAD")).toBe("refs/heads/sibling-2");
+      expect(await git(root, "rev-parse", "HEAD")).toBe(await git(root, "rev-parse", branchRef));
+      expect(await git(root, "show", `${branchRef}:${relDir}/observation.json`)).toBe(`{"taskId":"t2"}`);
+      // Refreshed, because it was a no-op: nothing staged, nothing pending.
+      expect(await git(root, "status", "--porcelain")).toBe("");
+      expect(result.ok === true && result.note).toBeNull();
     });
 
     it("installs from a LINKED WORKTREE, where `.git` is a file and not a directory", async () => {

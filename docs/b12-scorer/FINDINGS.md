@@ -1878,6 +1878,56 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### TWENTY-SEVENTH POST-IMPLEMENTATION ROUND (R34) — adjudicated 2026-08-10
+
+One finding, confirmed and REPRODUCED — the seventh round on the same surface,
+and the one place the CAS still wrote outside its own act.
+
+- **R34#1 (high) — a checkout during the act staged paid evidence on the
+  branch it landed in.** `installEvidenceCommit` opened with
+  `git add -- <relDir> <runlog>` into the REAL index. That index belongs to
+  whatever HEAD points at NOW; `update-ref` installs on the ref captured
+  minutes earlier. A checkout in between — the event R26 already established
+  as real, and the reason `branchRef` exists at all — left the SIBLING
+  branch's index holding this observation's evidence, STAGED, while the commit
+  landed correctly on the captured ref and the act returned SUCCESS. Nothing
+  warned, because every verification reads the captured ref. The operator's
+  next ordinary commit over there duplicates paid evidence.
+
+  Reproduced with the old order restored: on `sibling`, `git diff --cached`
+  lists both `evidence/run-c.b12.runlog.jsonl` and the observation, while the
+  evidence sits correctly on the captured branch.
+
+  Nothing is staged before the act any more. The index is refreshed AFTER the
+  install, and the staged-emptiness wall went with the add — not missed, since
+  the temp-index path already proves the stronger thing (each named file
+  hashed into the tree, `hash-object -w` failing on a missing one, a tree
+  equal to the tip's refused) and R25's blob comparison proves it a third
+  time. A side effect worth having: a failed CAS now leaves the paths
+  UNTRACKED rather than staged, so the exit hook's removal of an uncommitted
+  claim no longer leaves a staged deletion behind it.
+
+  **The refresh is bound to the POSITION of HEAD, not to the branch's name,
+  and the first spelling of that guard was wrong.** Binding to the ref name
+  refused a worktree sitting on a different branch AT the installed commit —
+  which left a STAGED DELETION the operator's next commit would have acted
+  on. The condition that is actually correct is `rev-parse HEAD` == the
+  installed commit: then every path being added is already in that tree at
+  that blob, so the add can only make the index agree with what is checked
+  out. Anywhere else, the same add would put this run's evidence into a tree
+  that does not have it. Both directions are now pinned by tests, the second
+  one written specifically so nobody re-tightens it to the name.
+
+  **A note, never a failure.** The refresh is housekeeping and the evidence is
+  committed either way, so `commitObservationRow` returns `{ok: true, note}`
+  and `observe` prints the note on stderr. R30's lesson applied where it
+  belongs: bookkeeping may not invalidate work that already happened.
+
+  **The residual is written down, not implied:** the position is proved before
+  the add and again after it, because `git add` is not instantaneous. A
+  checkout landing INSIDE the add itself is REPORTED, not prevented — the same
+  shape as the residual R19 recorded for its own mutex.
+
 ### TWENTY-SIXTH POST-IMPLEMENTATION ROUND (R33) — adjudicated 2026-08-10
 
 One finding, confirmed and REPRODUCED at the scorer — a measurement boundary

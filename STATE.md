@@ -17,7 +17,7 @@ the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
 
 ## Next action
 
-R8–R33 (post-implementation adversarial rounds) are ADJUDICATED — forty-four
+R8–R34 (post-implementation adversarial rounds) are ADJUDICATED — forty-five
 findings, all confirmed, fixed with firing controls (FINDINGS.md carries them
 round by round): the CAS act's capture, the fail-closed probes, clause 6's
 holes, the snapshot stamps, the attestation worktree, and — six rounds on one
@@ -92,6 +92,14 @@ archived as the arm's telemetry — the tree had `endCommit` before and
 `endPorcelain` after, the log had no line at all, and scopeTelemetry's ±60s
 window admits them (REPRODUCED at the scorer). The boundary is now the log's
 byte size taken before acceptance; the rows past it are REPORTED, not scored.**
+**R34, seventh round on the same surface: the CAS still opened with `git add`
+into the REAL index, which belongs to whatever HEAD points at NOW — a checkout
+mid-act left a SIBLING branch's index holding paid evidence STAGED while the
+commit landed correctly and the act returned ok (REPRODUCED). Nothing is
+staged before the act; the index is refreshed after, bound to the POSITION of
+HEAD (== the installed commit), never the branch's NAME — the name spelling
+left a staged DELETION on a branch sitting at that same commit. A note, never
+a failure: the evidence is committed either way.**
 **R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
 only the EVIDENCE — a pre-commit hook (the threat model already written down
 for the archive) could drop the runlog row and the act still returned ok. The
