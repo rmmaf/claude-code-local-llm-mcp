@@ -18,26 +18,49 @@ export interface ControlRef {
   fullName: string;
 }
 
-/** One declaration in a test file and the line range it owns, `endLine` exclusive. */
+/**
+ * One declaration and the EXACT line range of its callback body, inclusive.
+ *
+ * R39#2: this comes from a TypeScript parse, not a line scanner. The scanner it
+ * replaced matched commented-out declarations on purpose and truncated the
+ * enclosing test; a comment is not a CallExpression.
+ */
 export interface Boundary {
-  kind: "it" | "test" | "describe" | "beforeEach" | "beforeAll" | "afterEach" | "afterAll";
+  kind: string;
   title: string | null;
   startLine: number;
-  endLine: number;
+  bodyStart: number;
+  bodyEnd: number;
 }
 
-export function testBoundaries(sourceText: string): Boundary[];
-export function hookRanges(sourceText: string): Boundary[];
+export function testBoundaries(sourceText: string, fileName?: string): Boundary[];
+export function hookRanges(sourceText: string, fileName?: string): Boundary[];
 
 /**
  * A duplicated title returns `ok: false` rather than a winner. `audit.ts:672`
  * already decided that question, and the probe confirmed vitest really does
  * report two distinct tests under one identical fullName.
+ *
+ * `endLine` is INCLUSIVE and is the body's last line.
  */
 export function rangeOfTest(
   sourceText: string,
-  title: string
+  title: string,
+  fileName?: string
 ): { ok: true; startLine: number; endLine: number } | { ok: false; reason: string };
+
+/**
+ * A path — stack frame, `file://` URL, or reporter suite name — reduced to its
+ * repo-relative form, or null when it lies outside the root.
+ *
+ * R39#3: suffix matching both missed real frames (Windows separators, file
+ * URLs) and matched wrong ones, and this repository really does carry a
+ * `tests/fixtures/` tree whose paths end in the same suffix.
+ */
+export function relativeTo(root: string, raw: string): string | null;
+
+/** One `at …:line:col` stack frame. */
+export function parseFrame(line: string): { path: string; line: number } | null;
 
 export interface IndexedTest {
   file: string;
@@ -51,7 +74,10 @@ export interface IndexedTest {
  * Duplicates are kept as a LIST, never collapsed — collapsing silently picks a
  * winner, which is the one thing the duplicate case forbids.
  */
-export function indexRun(vitestJson: unknown): { byKey: Map<string, IndexedTest[]>; total: number };
+export function indexRun(
+  vitestJson: unknown,
+  repoRoot?: string
+): { byKey: Map<string, IndexedTest[]>; total: number };
 
 export function lookupControl(
   index: { byKey: Map<string, IndexedTest[]> },
@@ -68,7 +94,8 @@ export function classifyFailure(
   entry: IndexedTest,
   controlFile: string,
   range: { startLine: number; endLine: number },
-  hooks: Boundary[]
+  hooks: Boundary[],
+  repoRoot: string
 ): { outcome: "fired" | "refused"; detail: string };
 
 /** One registered (control, mutation) pair. */
@@ -112,6 +139,13 @@ export interface FiringArtifact {
   schema: "b12-firing/1";
   baseCommit: string;
   generatedAt: string;
+  /**
+   * What the audit-side reader compares against `CONTROL_TESTS`. R39#1:
+   * `allFired` quantifies over the controls it was HANDED, so on its own it
+   * cannot say the six frozen controls fire — the set is published so the check
+   * can live where the clause's own list lives.
+   */
+  controlsEvaluated: ControlRef[];
   baseline: { allGreen: boolean; problems: string[] };
   pairs: PairVerdict[];
   firedCount: number;
@@ -134,4 +168,6 @@ export function evaluateMatrix(input: {
   sources: Record<string, string>;
   baseCommit: string;
   generatedAt: string;
+  /** Frames and suite names are resolved against this, never suffix-matched. */
+  repoRoot: string;
 }): FiringArtifact;

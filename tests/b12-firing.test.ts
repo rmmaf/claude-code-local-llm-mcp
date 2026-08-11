@@ -26,9 +26,12 @@ import {
   classifyFailure,
   hookRanges,
   evaluateMatrix,
+  relativeTo,
+  parseFrame,
 } from "../scripts/b12-firing.mjs";
 import type { RegistryEntry } from "../scripts/b12-firing.mjs";
 
+const REPO = "C:/repo";
 const FILE = "tests/fake.test.ts";
 const ALPHA = { file: FILE, fullName: "suite alpha" };
 const BETA = { file: FILE, fullName: "suite beta" };
@@ -113,6 +116,7 @@ const evaluate = (
     sources: SOURCES,
     baseCommit: "0".repeat(40),
     generatedAt: "2026-08-11T00:00:00Z",
+    repoRoot: REPO,
   });
 
 /** The whole matrix green: each mutation kills its own control and only its own. */
@@ -130,15 +134,128 @@ const BOTH_FIRE = {
 const pairOf = (out: ReturnType<typeof evaluateMatrix>, id: string) => out.pairs.find((p) => p.id === id);
 
 describe("the mutation harness evaluator", () => {
-  it("parses declaration boundaries without counting braces", () => {
-    const b = testBoundaries(SOURCE);
-    expect(b.map((x) => `${x.kind}@${x.startLine}..${x.endLine - 1}`)).toEqual([
-      "describe@1..1",
-      "beforeEach@2..4",
-      "it@5..7",
-      "it@8..11",
+  it("parses declaration bodies from the AST, exactly", () => {
+    const b = testBoundaries(SOURCE, FILE);
+    expect(b.map((x) => `${x.kind}:${x.title ?? "-"}@${x.bodyStart}..${x.bodyEnd}`)).toEqual([
+      "describe:suite@1..11",
+      "beforeEach:-@2..4",
+      "it:alpha@5..7",
+      "it:beta@8..10",
     ]);
-    expect(hookRanges(SOURCE).map((h) => h.kind)).toEqual(["beforeEach"]);
+    expect(hookRanges(SOURCE, FILE).map((h) => h.kind)).toEqual(["beforeEach"]);
+  });
+
+  // ---- R39#2: the three layouts that broke the line scanner this replaced
+
+  it("does not treat a COMMENTED-OUT declaration as a boundary", () => {
+    // The scanner matched `// it(` on purpose, so a commented declaration inside
+    // a body truncated the real test and excluded every assertion after it.
+    const src = [
+      'describe("s", () => {',
+      '  it("solo", () => {',
+      "    // it(\"dead\", () => {});",
+      "    expect(a).toBe(1);",
+      "  });",
+      "});",
+    ].join("\n");
+    const r = rangeOfTest(src, "solo", FILE);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.endLine).toBe(5); // NOT truncated at the comment on line 3
+  });
+
+  it("does not treat a template literal opening with it( as a boundary", () => {
+    const src = [
+      'describe("s", () => {',
+      '  it("solo", () => {',
+      "    const snippet = `",
+      'it("not a test", () => {});',
+      "`;",
+      "    expect(snippet).toBeTruthy();",
+      "  });",
+      "});",
+    ].join("\n");
+    const r = rangeOfTest(src, "solo", FILE);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.endLine).toBe(7);
+  });
+
+  it("finds a title declared on the line AFTER the call opens", () => {
+    const src = ['describe("s", () => {', "  it(", '    "wrapped",', "    () => {", "      expect(a).toBe(1);", "    }", "  );", "});"].join("\n");
+    const r = rangeOfTest(src, "wrapped", FILE);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect([r.startLine, r.endLine]).toEqual([4, 6]);
+  });
+
+  // ---- R39#3: paths resolve, they are not suffix-matched
+
+  it("REFUSES a frame from a nested tests/ directory that merely ENDS the same way", () => {
+    // This repository really carries tests/fixtures/**, so the collision is live.
+    expect(relativeTo(REPO, `${REPO}/tests/fixtures/x/tests/fake.test.ts`)).toBe("tests/fixtures/x/tests/fake.test.ts");
+    const collide = report([
+      t("suite alpha", "alpha", "failed", [
+        ["AssertionError: expected 1 to be 2", `    at ${REPO}/tests/fixtures/x/tests/fake.test.ts:6:15`].join("\n"),
+      ]),
+      t("suite beta", "beta", "passed"),
+    ]);
+    const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: collide } });
+    expect(pairOf(out, "m-alpha")?.fired).toBe(false);
+    expect(pairOf(out, "m-alpha")?.detail).toContain("names no frame in");
+  });
+
+  it("resolves Windows backslash frames and file:// URLs", () => {
+    expect(relativeTo(REPO, "C:\\repo\\tests\\fake.test.ts")).toBe(FILE);
+    expect(relativeTo(REPO, `file:///${REPO}/tests/fake.test.ts`)).toBe(FILE);
+    expect(relativeTo(REPO, "D:/elsewhere/tests/fake.test.ts")).toBeNull();
+    expect(parseFrame(`    at ${REPO}/tests/fake.test.ts:6:15`)).toEqual({ path: `${REPO}/tests/fake.test.ts`, line: 6 });
+    expect(parseFrame(`    at wrapper (file:///${REPO}/x.js:722:10)`)).toEqual({ path: `file:///${REPO}/x.js`, line: 722 });
+  });
+
+  it("credits an assertion raised inside a helper the test called", () => {
+    // ANY frame in the body, not the first: the chain reaches back into the
+    // test. A hook's chain never does, which is what keeps the two apart.
+    const viaHelper = report([
+      t("suite alpha", "alpha", "failed", [
+        [
+          "AssertionError: expected 1 to be 2",
+          `    at helper (${REPO}/${FILE}:2:5)`,
+          `    at ${REPO}/${FILE}:6:15`,
+        ].join("\n"),
+      ]),
+      t("suite beta", "beta", "passed"),
+    ]);
+    const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: viaHelper } });
+    expect(pairOf(out, "m-alpha")?.fired).toBe(true);
+  });
+
+  // ---- R39#1: nothing may collapse, and allFired does not stand alone
+
+  it("REFUSES duplicate mutation ids — two pairs cannot consume one report", () => {
+    const out = evaluate(BOTH_FIRE, [M_ALPHA, { ...M_BETA, id: "m-alpha" }]);
+    expect(out.problems.join(" ")).toContain("duplicate mutation id");
+    expect(out.allFired).toBe(false);
+  });
+
+  it("REFUSES the same control registered twice", () => {
+    const out = evaluate(BOTH_FIRE, [M_ALPHA, { ...M_BETA, control: ALPHA }]);
+    expect(out.problems.join(" ")).toContain("duplicate registered control");
+  });
+
+  it("publishes the control set it evaluated, so the audit can check it against CONTROL_TESTS", () => {
+    // allFired quantifies over the controls it was HANDED. A one-control matrix
+    // is still allFired: true, which is exactly why the set is on the artifact's
+    // face and the six-ness is decided where CONTROL_TESTS lives.
+    const out = evaluateMatrix({
+      registry: [M_ALPHA],
+      controls: [ALPHA],
+      baseline: report([t("suite alpha", "alpha", "passed")]),
+      mutants: { "m-alpha": BOTH_FIRE["m-alpha"] },
+      sources: SOURCES,
+      baseCommit: "0".repeat(40),
+      generatedAt: "2026-08-11T00:00:00Z",
+      repoRoot: REPO,
+    });
+    expect(out.allFired).toBe(true);
+    expect(out.controlsEvaluated).toEqual([{ file: FILE, fullName: "suite alpha" }]);
   });
 
   it("accepts the whole matrix when each mutation kills its own control and only its own", () => {
@@ -308,7 +425,7 @@ describe("the mutation harness evaluator", () => {
     if (!range.ok) return;
     const hooks = hookRanges(SOURCE);
     const entry = { file: FILE, fullName: "suite alpha", title: "alpha", status: "failed", failureMessages: [assertionAt(6)] };
-    expect(classifyFailure(entry, FILE, range, hooks).outcome).toBe("fired");
-    expect(classifyFailure({ ...entry, failureMessages: [] }, FILE, range, hooks).outcome).toBe("refused");
+    expect(classifyFailure(entry, FILE, range, hooks, REPO).outcome).toBe("fired");
+    expect(classifyFailure({ ...entry, failureMessages: [] }, FILE, range, hooks, REPO).outcome).toBe("refused");
   });
 });

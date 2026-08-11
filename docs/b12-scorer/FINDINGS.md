@@ -1878,6 +1878,56 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R39 — the evaluator, reviewed the day it was written — adjudicated 2026-08-11
+
+Targeted at `scripts/b12-firing.mjs` and its self-test, six named claims. NO-SHIP
+again, four findings, three `high`. Two of the six claims I asked Codex to attack
+came back saying I was wrong to worry, which is worth as much as the rest:
+`indexRun`'s normalisation IS byte-identical to `attestationFromVitest`'s, so the
+harness and the audit key alike; and all six real controls use ordinary `expect`
+matchers, so the `AssertionError` prefix rule breaks none of them.
+
+**R39#1 — `allFired` quantified over the wrong set.** `evaluateMatrix` trusted
+the `controls` array it was handed and only checked set equality against the
+registry, so a one-control matrix with a green baseline returns `allFired: true`.
+Worse, the self-test NORMALISED the defect by asserting `allFired` over two
+synthetic controls — a reduced-coverage bug would have passed all twenty. Fixed
+in two places rather than one: the evaluator now refuses duplicate mutation ids
+and duplicate control keys (either lets two pairs consume one report), and the
+artifact publishes `controlsEvaluated` so the six-ness is decided by the
+audit-side reader, where `CONTROL_TESTS` actually lives.
+
+**R39#2 — the line scanner's central claim was false, and the defect was
+deliberate.** Its header said next-declaration ranges "can never exclude a real
+in-body assertion". `BOUNDARY_RE` matched `// it(` **on purpose**, so a
+commented-out declaration inside a body truncated the enclosing test and dropped
+every assertion after it; a template literal opening with `it(` did the same; a
+title on the line after the call recorded no title at all. Replaced with a real
+TypeScript parse, which has none of those failure modes because a comment is not
+a `CallExpression` — and which yields the EXACT body range, so hooks are
+naturally disjoint rather than carved out by hand.
+
+**R39#3 — the stack matcher was unsafe in both directions.** It searched for the
+substring `/<controlFile>:`, which missed Windows backslash frames and `file://`
+URLs (a false "did not fire") and matched
+`…/tests/fixtures/x/tests/cost-meter.test.ts` (an assertion in another file
+credited to the frozen control). The collision is not hypothetical: this
+repository carries `tests/fixtures/**`. Now resolved against the repository root
+with exact equality. One improvement beyond the finding: ANY frame in the body
+counts, not the first, so an assertion raised inside a helper the test calls
+still credits the test — while a hook's chain still never reaches the body.
+
+**R39#4 — recorded, not fixed.** The shared `tests/[^/]+` expression cannot
+express `tests/<dir>/<file>`. Both conformance files are direct children of
+`tests/` and pinned under the 2026-08-10 amendment, so the nested case cannot
+arise for the six; changing it would move the attestation's keys too, which is a
+bigger act than this branch. Written down so the next person meets it as a known
+limit rather than a surprise.
+
+All four fixes were shown FIRING by hand with byte-identical restores: restoring
+the suffix matcher reddens exactly 1 test, inverting `classifyFailure` reddens 5,
+collapsing duplicates reddens 1. Sensitivity and specificity, on the watchman.
+
 ### R38 — the first round against a PLAN, and the first NO-SHIP — adjudicated 2026-08-11
 
 Every round before this one reviewed a diff. R38 reviewed
