@@ -384,6 +384,35 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
       ],
       bookends,
       runsSpent: 1 + 2 * registry.length,
+      /**
+       * REPORTED, DECIDING NOTHING — the toolchain the matrix actually ran on.
+       *
+       * The artifact recorded a commit and digests and nothing about the
+       * machine, which is inconsistent with the rest of this system by my own
+       * hand: the suite attestation records `lockfileSha256` precisely because
+       * R29 found nobody checked which dependency tree it claimed. A control
+       * can fire on one platform and not another, and firing evidence produced
+       * on a different machine than the scored sessions would hide that.
+       *
+       * It decides nothing here and nothing in the audit: turning a platform
+       * difference into a void would mint a condition, and WHICH platform the
+       * run is entitled to is the separate pre-data platform amendment that is
+       * still owed. This only makes the question answerable from the artifact's
+       * face instead of from someone's memory of who ran it.
+       */
+      toolchain: {
+        platform: process.platform,
+        arch: process.arch,
+        nodeVersion: process.version,
+        vitest: (() => {
+          const r = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vitest", "--version"], {
+            cwd: treeDir,
+            encoding: "utf8",
+            shell: process.platform === "win32",
+          });
+          return r.status === 0 ? (r.stdout ?? "").trim().split("\n").pop() : null;
+        })(),
+      },
     };
   } finally {
     if (!keepTree) releaseTree(repoRoot, treeDir);

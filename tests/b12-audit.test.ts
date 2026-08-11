@@ -1452,6 +1452,20 @@ describe("clause 6 — the word FIRING", () => {
     expect(inputs["clause6.firingPath"]).toBe("evidence/replay-01.b12.firing.json");
     expect(inputs["clause6.firingPairs"]).toContain("m1=fired");
     expect(inputs["clause6.firingSubjects"]).toContain("src/cost/subject-1.ts");
+    // REPORTED, DECIDING NOTHING: absent in the default facts, and its absence
+    // is not a reason — an artifact written before the field existed is not
+    // thereby void, and WHICH platform is entitled is the owed amendment.
+    expect(inputs["clause6.firingToolchain"]).toBe("(none)");
+    expect(decideAudit(factsOf()).verdict).toBe("clean");
+    const withTool = factsOf();
+    const shown = auditInputs({
+      ...withTool,
+      clause6: {
+        ...withTool.clause6,
+        firing: firingOf("s".repeat(40), { toolchain: { platform: "darwin", arch: "arm64", nodeVersion: "v22.0.0", vitest: "4.1.10" } }),
+      },
+    });
+    expect(shown["clause6.firingToolchain"]).toBe("darwin arm64 v22.0.0 4.1.10");
   });
 
   it("VOIDS a forged matrix that lists the six and reports on NONE of them", () => {

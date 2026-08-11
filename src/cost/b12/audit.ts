@@ -275,6 +275,7 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause6.firingBaseCommit",
   "clause6.firingPairs",
   "clause6.firingSubjects",
+  "clause6.firingToolchain",
   "tool.srcSha256",
 ];
 
@@ -490,6 +491,15 @@ export interface FiringEvidence {
   subjects: Array<{ id: string; path: string; sha256AtBase: string | null }>;
   problems: string[];
   allFired: boolean;
+  /**
+   * REPORTED, DECIDING NOTHING: the toolchain the matrix ran on. A control can
+   * fire on one platform and not another, and evidence produced on a different
+   * machine than the scored sessions would hide that. Turning a difference into
+   * a void would mint a condition, and WHICH platform the run is entitled to is
+   * the separate pre-data platform amendment that is still owed. Optional,
+   * because an artifact written before this field existed is not thereby void.
+   */
+  toolchain?: { platform?: string; arch?: string; nodeVersion?: string; vitest?: string | null };
 }
 
 /** `evidence/<runId>.b12.suite.json` — what `--attest-suite` writes. */
@@ -980,6 +990,19 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
       (facts.clause6.firing?.pairs ?? [])
         .map((p) => `${p.id}=${p.fired ? "fired" : "NOT-FIRED"}`)
         .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    ),
+    // REPORTED, DECIDING NOTHING — see FiringEvidence.toolchain. It is on the
+    // artifact's face so a reader can ask which machine the controls fired on
+    // without asking a person, and it voids nothing.
+    "clause6.firingToolchain": orNone(
+      facts.clause6.firing?.toolchain === undefined
+        ? null
+        : [
+            facts.clause6.firing.toolchain.platform ?? "?",
+            facts.clause6.firing.toolchain.arch ?? "?",
+            facts.clause6.firing.toolchain.nodeVersion ?? "?",
+            facts.clause6.firing.toolchain.vitest ?? "?",
+          ].join(" ")
     ),
     "clause6.firingSubjects": joined(
       facts.clause6.firingSubjectsAtBase
