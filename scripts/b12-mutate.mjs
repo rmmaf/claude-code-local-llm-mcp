@@ -63,6 +63,19 @@ export const REGISTRY = [
     },
     kind: "historical",
     why: "an aborted repair writes bytes_raw:0/bytes_returned:0 and the meter must CREDIT it at exactly zero, never drop it",
+    // MEASURED by the 2026-08-11 dry run, not guessed — R40 caught me declaring
+    // collateral I had not seen. Dropping every zero-byte row necessarily moves
+    // any test whose fixture carries one, and both of these do.
+    collateral: [
+      {
+        fullName: "telemetry and the counterfactual prices a subagent's tool call against the subagent's own thread",
+        reason: "its subagent row is zero-byte, so skipping zero rows removes the call it prices",
+      },
+      {
+        fullName: "telemetry and the counterfactual values a collapsed turn as the context re-read it avoided",
+        reason: "a collapsed turn is credited at zero bytes by construction — the same row this mutation drops",
+      },
+    ],
     subject: {
       path: "src/cost/report.ts",
       find: "    const signed = entry.bytes_raw - entry.bytes_returned;",
@@ -101,6 +114,12 @@ export const REGISTRY = [
     },
     kind: "historical",
     why: "folding an unsizeable refusal in as 0 reads as 'we refused nothing worth having'",
+    collateral: [
+      {
+        fullName: "telemetry and the counterfactual does not borrow another thread's request to size a subagent's refusal",
+        reason: "it asserts on the same `unsized` channel this mutation empties — the one that must not read 0",
+      },
+    ],
     subject: {
       path: "src/cost/report.ts",
       find: "    if (magnitude === null) into.unsized++;",
@@ -117,6 +136,26 @@ export const REGISTRY = [
     },
     kind: "historical",
     why: "dropping the inherited>0 rejection lets a resumed session claim ids a sibling worktree already held",
+    // All three are F24-pass guards that assemble a run and assert on its
+    // DISPOSITIONS. Removing a disposition necessarily moves them — which is
+    // why the reason is written per test rather than as one blanket excuse.
+    collateral: [
+      {
+        fullName:
+          "the B12 harness the F24 pass: every new guard shown FIRING a checkout DURING the act never stages evidence on the branch it lands in",
+        reason: "it asserts a run's dispositions end-to-end, and this mutation deletes one of them",
+      },
+      {
+        fullName:
+          "the B12 harness the F24 pass: every new guard shown FIRING the refresh is bound to the POSITION of HEAD, not to the branch's name",
+        reason: "same end-to-end assembly, same deleted disposition",
+      },
+      {
+        fullName:
+          "the B12 harness the F24 pass: every new guard shown FIRING is INERT to an index-mutating pre-commit hook — plumbing runs no hooks (R27)",
+        reason: "same end-to-end assembly, same deleted disposition",
+      },
+    ],
     subject: {
       path: "src/cost/b12/assemble.ts",
       find: "  if (inherited.length > 0) {",
@@ -156,6 +195,16 @@ export const REGISTRY = [
     },
     kind: "historical",
     why: "counts instead of populations — the control's own comment says the slug COUNT grows 1→2 here, so a count reads nothing",
+    // Five, and every one is a `classifyRun` test. The mutation rewrites that
+    // function's coverage predicate, so its own suite moves with it. Five of
+    // 162 is a narrow blast radius, which is the fact the declaration records.
+    collateral: [
+      { fullName: "the B12 harness keeps a budget timeout as a censored observation, not an invalid one", reason: "a classifyRun test — the mutated predicate is inside its subject" },
+      { fullName: "the B12 harness refuses an arm the CLI abandoned partway, however much it had already done", reason: "a classifyRun test — the mutated predicate is inside its subject" },
+      { fullName: "the B12 harness gives a failure the same verdict however late it happened", reason: "a classifyRun test — the mutated predicate is inside its subject" },
+      { fullName: "the B12 harness does not censor a child that finished, whatever the timer says", reason: "a classifyRun test — the mutated predicate is inside its subject" },
+      { fullName: "the B12 harness names every outcome, so an unhandled combination cannot become a default", reason: "a classifyRun test — the mutated predicate is inside its subject" },
+    ],
     subject: {
       path: "scripts/b12-run.mjs",
       find: "    const outside = writtenSlugs.filter((s) => !covered.has(s));",
