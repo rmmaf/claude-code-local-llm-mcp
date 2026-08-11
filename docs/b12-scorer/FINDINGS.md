@@ -1878,6 +1878,43 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R42 — the harness RAN, twice, and R23 closes — 2026-08-11
+
+Not a review round: the first EXECUTION of the mutation harness against the real
+controls, and the thing R23 left open since it asked for mechanical proof of
+firing.
+
+**Run 1 (efe53b4).** Five of six diagonals fired, each with its assertion inside
+the control's own body. Only m2 COUNTED, because the other four carried
+collateral nobody had declared — precisely what R40's whole-file specificity
+check was built to surface, working on its first outing. m5 was never tested at
+all: its pristine bookend came back RED, so the pair was refused before the
+mutation was applied.
+
+**The collateral, then declared from the measurement.** Eleven tests across four
+pairs, each with its own reason: m1 moves two fixtures carrying zero-byte rows,
+m3 the one other test asserting on the `unsized` channel, m4 three F24 guards
+that assert on run dispositions, m6 five `classifyRun` tests — its own subject's
+suite. Five of 162 is the widest blast radius of the six, and that narrowness is
+what the declaration records. R40 caught me declaring collateral I had NOT seen;
+this is the opposite order, and the order is the whole difference.
+
+**Run 2 (b3731da). ALL SIX FIRED** over 13 runs: zero problems, six green
+bookends, clean off-diagonal, every declaration honoured exactly. m5 fired at
+`:1055` — its first real measurement.
+
+**The red bookend was intermittency.** Same commit, same machine, same pristine
+cycle, green on the second pass. ONE occurrence, recorded and NOT absorbed into
+the KNOWN_FLAKY class: that class requires reproduction, and one is not
+reproduction. If it returns it is the second, not the first.
+
+**What this does not establish**, none of it a surprise: the controls are not
+shown to cover the defect space AROUND them (R38#4, declined deliberately); the
+artifact stays self-asserted; and this is not evidence of record — the runId says
+`dryrun` and the run came from win32 while the scored sessions come from the Mac.
+The toolchain field added the same day is what makes that legible on the
+artifact's own face.
+
 ### R41 — clause 6's firing reader, and an argument that wanted both sides — adjudicated 2026-08-11
 
 Five findings. Three mechanical, one about coverage, and one about a sentence.
