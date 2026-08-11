@@ -1861,6 +1861,36 @@ defect, and it pinned four of them in place.
     sustained rule and the give-up branch are untouched. No delta existed
     when this was written: the probe refused at replicate 1, treatment,
     before any pair completed, and that refusal transcript is the evidence.
+- **Pre-declared, 2026-08-11, before any run exists — TWO OWNER DECISIONS on
+  what this measurement is allowed to be.** Both were put and answered AFTER the
+  reachability estimate below was on the table and BEFORE the first paid
+  session, which is the only ordering under which they are declarations rather
+  than rationalisations. `git log -p` proves the ordering independently.
+  1. **`open` IS AN ACCEPTED OUTCOME, and no power analysis gates the run.**
+     The thresholds cannot move — `thresholdArgument` defends 30% and 15% by
+     PROVENANCE, not magnitude, and says "neither moves" — so the only thing an
+     analysis could report is the probability of landing between them. The
+     owner was shown `holdsIf`'s own estimate (a 25-request task suppressing
+     200 KB gives `R_lo` ≈ 26%, BELOW the hold line, so "a hold requires either
+     heavier suppression or shorter denominators than this project's median")
+     and answered: run anyway, `open` is a real result. That is `runPlan`'s own
+     stance — the recorded conclusion may be that G-stop "is not evaluable in
+     this venue… That is a real result" — reaffirmed with the number in view.
+     **An analysis whose result changes no decision is not evidence.**
+  2. **THE ACCEPTANCE PREDICATE IS THE WHOLE QUALITY FLOOR, and that is
+     sufficient.** The scored quantity rewards an arm for returning FEWER
+     bytes, so the floor is what stops a degenerate tool from scoring well.
+     That floor is `runPlan` phase 4's: each task enters the manifest with its
+     acceptance predicate **verified to FAIL at the base commit**, so a no-op
+     task cannot be scored. What it does not cover was put to the owner in
+     those words — a task that passes its own command while the work is worse
+     in a dimension the command does not read (legibility, breakage outside
+     the check, a solution that satisfies the test without solving the
+     problem) — and the answer was that the predicate is sufficient. **No
+     further quality dimension may be introduced after the first scored
+     observation**; doing so would be a condition minted mid-game, which is
+     what this entry exists to prevent.
+
 - **Pre-declared, 2026-08-08, before any run exists — the ANALYSIS SESSION and
   the clause 4–6 AUDIT.** Three obligations the UNIT 5 pass surfaced
   (`UNIT-5.md` "What it creates"; the plan gate's R7/R9, `FINDINGS.md`), added

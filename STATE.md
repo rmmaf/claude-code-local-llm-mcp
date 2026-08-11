@@ -5,178 +5,35 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**THE PLAN'S THREE PASSES SHIPPED AND SURVIVED R8** on
-`claude/b12-f23-audit-register`: F23's uncapped bracket; the clause-6
-controls, emission wrapper and audit computer; pilot, register (CAS,
-create-only seal, cardinalities 30/5/6), admissionRule 7's grammar, the
-observe registration guard, sessionId nonce+lock, snapshot identity stamps;
-policy blobs as GIT PROVENANCE with the DUAL calibration key (the 2026-08-08
-singular probe refused by name); the hardened Mac probes (+ NEW
-`b12-truncationcap-probe-mac.sh`); `b12-author.mjs` with five named checks;
-the R7#12 share formula registered. Details: FINDINGS.md, this file's log.
+**The plan's three passes shipped and survived thirty adversarial rounds** on
+`claude/b12-f23-audit-register`: F23's uncapped bracket; clause 6's controls,
+emission wrapper and audit computer; pilot; register (CAS); policy blobs as GIT
+PROVENANCE, DUAL key. PR #18 open — the merge is the user's act.
 
 ## Next action
 
-R8–R37 (post-implementation adversarial rounds) are ADJUDICATED — fifty-four
-findings, all but two confirmed, fixed with firing controls (FINDINGS.md carries them
-round by round): the CAS act's capture, the fail-closed probes, clause 6's
-holes, the snapshot stamps, the attestation worktree, and — six rounds on one
-surface — the post-registration sync, from disk bytes to an APPEND to an
-index installed under git's own mutex. **R16 was the worst: the real index
-stayed on `expectedHead`, so the operator's next ordinary commit UNDID the
-registration (reproduced).** **R18: the register's append is now RE-READ, and
-the runlog row + its evidence commit became ONE act under a run-wide lock —
-OVERTURNING R11's declination, whose premise (the barrier serializes) is
-false, since both processes pass it before either appends.** **R19: that
-mutex is an INDEX lock — the ref is now read by NAME AND TARGET under it, the
-writes moved INSIDE it, and the residual it cannot cover is written down.**
-**R20 leaves concurrency entirely: the act took the run's IDENTITY from the
-CLI argument and never asked the manifest, so a typo would register a row no
-session can use and no result can close.** **R21: `src/cost./**` OPENS
-`src/cost` on Windows and compared unequal to it — trailing dots/spaces,
-colons and the 8.3 `NAME~1` shape are now REFUSED by admissionRule 7's
-grammar in both copies (case stays FOLDED: that spelling is lawful, these are
-not); and the create-only seal became create-only by its WRITE (`wx`).**
-**R22: a manifest ALREADY in history can never satisfy "the same command", so
-the act now asks before minting the irreversible row; and a committed clean
-audit no longer counts forever — ANCESTOR of HEAD, diff confined to
-`evidence/**`, evidence-borne inputs RE-HASHED. That control found a third:
-the artifact recorded the prereg CONSTANTS, not the path it read.** **R23:
-`open-b` is a registration and skipped the act's preconditions; a clause-6
-control was identified by TITLE alone — now (file, fullName), exactly one.**
-**R24 falsified R22's own completeness claim: naming four evidence files is
-not covering `evidence/**`, so the runlog + counterfactual + every
-observation archive now ride in ONE recorded digest the emission recomputes;
-and the attestation stopped borrowing the enclosing repo's node_modules —
-`npm ci` from the SUBJECT commit's lockfile, whose sha it records.**
-**R26 is the worst of the loop: the verdict was the ARTIFACT'S, not the
-audit's — any committed JSON with one input and `verdict: clean` published
-clauses 4–6 as CHECKED. The parse now demands the WHOLE key set and the
-emission RE-DERIVES the judgement, every input equal except `head` (the one
-R22 named). And the evidence commit went wherever HEAD pointed: a checkout
-mid-observation put a paid observation on another branch with the act
-reporting success — the branch is now captured at the barrier and every
-verification reads IT, not HEAD. **R27: that check was TOCTOU and the damage
-irreversible, so the install became a CAS — temp index from the captured tip,
-`commit-tree`, `update-ref <ref> <new> <expectedTip>`. No checkout, no index
-install: the tree is the tip's plus these paths, staged first, so the R14–R19
-saga does not repeat. Side effect worth knowing: plumbing runs NO hooks, so
-R25's pre-commit threat is closed by construction and two of its controls now
-assert that. R28: that CAS built its temp index at `<root>/.git`, a FILE in a
-linked worktree — every observation here would have failed AFTER the append.
-`--absolute-git-dir`, resolved BEFORE the append; the register had discarded
-that assumption rounds ago. R29, both in the auditor and both the same shape
-— a fact ASSERTED and never checked: a STALE counterfactual (an early emit,
-then more observations) made a scored run read anchorless, so clause 5 went
-FREE and pinned-path drift audited CLEAN (reproduced); and the attestation's
-lockfile sha was validated as 64 hex and never compared to
-`<subjectCommit>:package-lock.json`.** **R30: the audit CLI let a run id
-ESCAPE `evidence/` and overwrite (`../../target` lands outside the repo) —
-the register's grammar, applied where the id becomes a filename, SIXTH time a
-written-down rule was missing at a second site; and repair's abort telemetry
-could skip the rollback — fixed, but its control does NOT fire (every path
-reaching that catch already restored), which is recorded, not dressed up.**
-**R31: the PILOT's one artifact — no obs dir, no row, no commit behind it —
-was rewritten whole with NO lock, so two pilot tasks (different session locks,
-by that lock's own header) both read the prior state and the second silently
-deleted a paid observation; REPRODUCED. Run-wide lock + re-read before the
-write + temp-and-rename; per-observation artifacts DECLINED (artifact 4
-registers the one file, and an unregistered evidence surface is not a fix).**
-**R32 inverts the two outcomes that may never swap: R29's fail-closed probe
-threw INSIDE a broad catch, so a git that could not answer was relabelled "the
-counterfactual does not parse" and published as a VOID — a refusal is
-retryable and writes nothing; a VOID kills a run of paid sessions
-(REPRODUCED). The catch is now the counterfactual's parse and nothing else.**
-**R33: acceptance runs in the arm's OWN worktree, so its gate/repair rows were
-archived as the arm's telemetry — the tree had `endCommit` before and
-`endPorcelain` after, the log had no line at all, and scopeTelemetry's ±60s
-window admits them (REPRODUCED at the scorer). The boundary is now the log's
-byte size taken before acceptance; the rows past it are REPORTED, not scored.**
-**R34, seventh round on the same surface: the CAS still opened with `git add`
-into the REAL index, which belongs to whatever HEAD points at NOW — a checkout
-mid-act left a SIBLING branch's index holding paid evidence STAGED while the
-commit landed correctly and the act returned ok (REPRODUCED). Nothing is
-staged before the act; the index is refreshed after, bound to the POSITION of
-HEAD (== the installed commit), never the branch's NAME — the name spelling
-left a staged DELETION on a branch sitting at that same commit. A note, never
-a failure: the evidence is committed either way.**
-**R35–R37 ARE THE TARGETED ROUNDS, and they are why the generic ones stopped
-paying: same branch diff, three lenses (arithmetic, attribution, conformance to
-the frozen text), each told the hardened plumbing was worthless — NINE findings,
-seven high, none in git. R35: `poolRatio` and `rHiPlus` answered a CANCELLING
-denominator with the EMPTY one's 0, so an undefined R_hi+ read as the strongest
-fall-side answer there is and an undefined uncapped bracket passed clause 8's
-finiteness check. R37#2: clause 5 pinned `src/cost/emission.ts` (the LIFECYCLE)
-and never the ROW — `turns_collapsed` IS the saving's definition and lives in
-`src/tools/`, outside every pinned path; the frozen sentence names the emission
-as a FOURTH item because something of it lives there, so this is a CORRECTION
-and not an amendment. Fixed with a FENCE (`// b12:emission-begin`), digest
-compared anchor-vs-head, comments dropped, tools otherwise still editable.
-R37#1: `PREMISES.md` says a verdict without a committed audit is NOT FINAL, and
-nothing said it — `final` now on the artifact and before the CLI's verdict line.
-R36: the acceptance boundary was a byte COUNT with no identity (a truncating
-acceptance command handed its rows to the arm), unparseable telemetry lines were
-dropped as "a tool still running" when the log is read after the tool exits, and
-"will not parse" shared a catch with "will not open". R37#4 partly declined —
-the literal quantifier is unsatisfiable (manifests are create-only) — and R37#3
-DECLINED on its claim: the fifth control's topology IS the frozen one, only its
-crediting half stopped one layer below the scorer.**
-**R25 reviewed R18's own fix: "the row and its evidence as ONE act" verified
-only the EVIDENCE — a pre-commit hook (the threat model already written down
-for the archive) could drop the runlog row and the act still returned ok. The
-row is now held to the same blob standard: disk == barrier bytes + this one
-row, HEAD == disk.**
+**R8–R37 are ADJUDICATED — fifty-four findings, all but two confirmed, each
+fixed with a control shown FIRING. `FINDINGS.md` is the record round by round;
+this file does not duplicate it.** R16 and R26 were the worst: the real index
+stayed on `expectedHead`, so the next ordinary commit UNDID the registration;
+and the verdict was the ARTIFACT'S, not the audit's. After seven rounds on ONE
+surface, R35–R37 retargeted the same diff at arithmetic, attribution and
+conformance — nine findings, seven high, **none in git**.
 
-**R23's residual is DECIDED (2026-08-10), and the frame was wrong here:
-cláusula 6 ALREADY forbids a gutted control ("shown FIRING"); what was
-missing was the PROOF, since the audit checks present-and-passing. So
-byte-pinning is an amendment — and it is a FENCE, not a proof: an edit may
-STRENGTHEN a control, unchanged bytes may stop proving anything. Both halves
-shipped: the conformance hashes at registration and at subjectCommit, REPORTED
-and deciding nothing; and a pre-data amendment, COMMITTED ALONE, widening
-clause 5 only when its own introducing commit precedes the freeze anchor. The
-window closed is the only outcome-aware one: after the first score, before
-the attestation. STILL OPEN, written down: gutting BEFORE the first score
-(no clock reaches it) and mechanical proof of firing (a mutation harness).**
-PR to main is open — merge is the user's act.
+**Two owner decisions are PRE-DECLARED in `PREMISES.md` (2026-08-11), not
+here:** `open` is accepted and no power analysis gates the run; the acceptance
+predicate, verified FAILING at base, is the WHOLE quality floor — nothing added
+after the first scored observation.
 
 ## Still blocking a run
 
-The A/B pass (scorer + VOID 21 and VOID 12 adjudications — **NO A/B before
-both are registered**); the 65-sibling corpus (b12-author compresses it);
-the Mac trips: policy-bundle transport, dual-key re-probe, cap probe, formal
-preflight, pilot; the platform amendment (pre-data, after the exploratory
-cert, before the formal preflight); the Phase-3 1/3 amendment (gate-only is
-CUT; only a NEW pre-data amendment seals); contract-stability re-run (F23
-grew report.ts); then seal-harness → register (CAS) → the 20–26 supervised
-sessions → the clause-6 sequence → verdict → A/B.
-
-**ONE review the Codex rounds cannot do, and it gates paid sessions: METRIC
-VALIDITY — the treatment arm wins by returning FEWER bytes, the only quality
-floor is the task's acceptance command, and nothing has ever asked whether the
-scored quantity is the one worth knowing. Not a code review; Rodrigo's call,
-owed before the first paid session.**
-
-**POWER ANALYSIS: DROPPED 2026-08-11, and the reason is recorded so the silence
-is not read later as an oversight.** The thresholds cannot move (30% and 15% are
-defended by PROVENANCE, not magnitude — "neither moves"), so the only thing an
-analysis could report is the probability of landing in `open`. Shown the
-pre-registration's OWN reachability estimate — `holdsIf`: a 25-request task
-suppressing 200 KB gives `R_lo` ≈ 26%, below the hold line, so "a hold requires
-either heavier suppression or shorter denominators than this project's median" —
-Rodrigo's answer was **"rodo assim mesmo, `open` é um resultado real"**. That is
-the frozen text's own stance (`runPlan`: the recorded conclusion may be that
-G-stop "is not evaluable in this venue... That is a real result"), reaffirmed
-PRE-DATA and after seeing the estimate, which is what separates it from a
-post-`open` rationalisation. An analysis whose result changes no decision is not
-evidence, and it is not run.
-
-**STILL OPEN, due before the manifest is SEALED: the task mix.** With `open`
-accepted, the question is no longer "can the run be rescued" but "which question
-do you want 26 sessions to answer" — a favourable-but-real set measures *the
-tool CAN pay*; a set representative of ordinary work measures *the tool DOES pay
-here*. Both are legitimate, they are different premises, and only one fits in
-one manifest.
+The A/B pass (scorer + VOID 21 and VOID 12 adjudications — **NO A/B before both
+are registered**); the task MIX, owed before the manifest is sealed; the
+65-sibling corpus; the Mac trips (policy transport, dual-key re-probe, cap probe,
+formal preflight, pilot); the platform amendment; the Phase-3 1/3 amendment
+(gate-only is CUT); contract-stability re-run; then seal → register (CAS) → 20–26
+sessions → clause-6 → verdict → A/B. **At the seal, re-pin
+`pinned.captureSha256`: editing `capture.ts` moves it.**
 
 ## Do not redo
 
@@ -184,3 +41,4 @@ one manifest.
   `installedChars`, no minted VOID-21 hash, no minted verdict-precedence RULE.
 - Never back-fill an append-only record; three phase-3 run ids stay row-less.
 - `tests/fixtures/b12-run/` is TEST MATERIAL, never evidence.
+- The `// b12:emission-begin` fences ARE clause 5's fourth item.
