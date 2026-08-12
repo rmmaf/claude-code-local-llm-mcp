@@ -1876,9 +1876,58 @@ defect, and it pinned four of them in place.
      was declined on the record: with `holdsIf`'s own ~26% estimate already
      known, it lands in `open` too readily, and `open` there means "could not
      tell", not "does not pay".
-  2. **TASKS COME FROM THIS REPOSITORY'S REAL BACKLOG** — work that would happen
-     anyway, whose acceptance criteria are the project's own tests, and which
-     were not designed by the party doing the measuring.
+  2. **WITHDRAWN 2026-08-12. It read: "TASKS COME FROM THIS REPOSITORY'S REAL
+     BACKLOG — work that would happen anyway, whose acceptance criteria are the
+     project's own tests, and which were not designed by the party doing the
+     measuring."** The text is kept above the retraction rather than deleted,
+     because a pre-data record that quietly loses a clause is worth less than one
+     that shows what it gave up.
+
+     **IT CONTRADICTED THE SEALED DESIGN, WHICH HAD ALREADY DECIDED THE SAME
+     QUESTION SIX DAYS EARLIER AND IN THE OPPOSITE DIRECTION.**
+     `evidence/2026-08-05-b12-preregistration.json` resolves it by name —
+     `conflictsResolved` MANIFEST SOURCE: "enumerated from this repository's git
+     history (precedent) versus **authored** and sealed (minimal, adversarial):
+     **authored**, stratified, with the enumeration claim deleted, because the
+     enumeration rule was MEASURED to fail here". `unrepairedFindings` item 2
+     states the ground: "There is no enumerable population of tasks here… 13 of
+     the last 20 closed items touch only governance documents, all 7 code items
+     touch `src/cost/**`, which is the instrument." **The word "backlog" occurs
+     ZERO times in the sealed document.** This clause was added 2026-08-11, after
+     the seal, and it re-decided a question the seal had closed.
+
+     **THE ENUMERATION ROUTE WAS RE-MEASURED ON 2026-08-12 AND FAILED AGAIN**, by
+     someone who did not know it had already been measured — of 381 commits only
+     35 touch eligible `src/`, 8 revert cleanly, and 3 qualify by running their
+     own tests at the reverted base. Agreement with the 08-05 finding is
+     corroboration, not new information, and the second run cost a day.
+
+     **THE SEALED TEXT ALSO NAMES A HAZARD THIS CLAUSE WOULD HAVE WALKED INTO:**
+     "Enumerating from history also puts the solutions inside the checkout the
+     arms run in." A task built by reverting a historical fix leaves the real fix
+     reachable by `git log -S` from inside the arm's own worktree. The corpus
+     would have shipped the answer with the question.
+
+     **WHAT REPLACES IT IS THE SEAL'S OWN ANSWER, NOT A NEW PERMISSION**: the
+     manifest is AUTHORED and stratified. The confound this clause was reaching
+     for is already booked as unrepaired and disclosed — `unrepairedFindings`
+     item 2 calls task selection "the largest single lever on R" and says it is
+     "left to the author", and `whatAHoldDoesNotEstablish` item 3 says the
+     manifest is authored, quotes B3's 400x split, and states that stratification
+     makes the mix visible without making it representative. Withdrawing this
+     clause therefore mints no disclosure that is not already inside the sealed
+     hash, and `voidConditions` 4 names no provenance term, so it consumes no
+     attempt.
+
+     **WHAT IS STILL OWED, AND IS NOT DECIDED HERE.** An authored corpus reopens
+     a channel the scarcity of this clause had accidentally bounded: the author
+     can run `gate` in the scratch worktree, read the score, discard low scorers
+     and re-author, leaving no artifact and spending no attempt. Nothing in the
+     frozen text closes that loop. The candidate mitigation — a pre-data
+     commitment that on an authored corpus **only a FALL is readable**, which is
+     decision 1's own logic ("if the tool cannot pay under conditions chosen to
+     suit it, it does not pay anywhere") — is NOT taken here and remains the
+     owner's.
   3. **NOTHING THE MEASUREMENT DEPENDS ON IS ELIGIBLE.** No task may touch
      `src/cost/**`, `src/telemetry.ts`, gate's or repair's emission, or
      `scripts/b12-run.mjs`. This is not a new rule: those ARE `PINNED_PATHS`, and
@@ -1886,6 +1935,29 @@ defect, and it pinned four of them in place.
      is written here so the manifest says out loud what the clause enforces
      silently — and because this repository IS the product under measurement, so
      the self-reference has to be bounded explicitly rather than assumed away.
+
+     **MEASURED 2026-08-12 — "THOSE ARE `PINNED_PATHS`" IS TRUE AND MISLEADING,
+     AND NOTHING ENFORCES THIS DECISION.** The two sets are not the same set.
+     `PINNED_PATHS` (`src/cost/b12/audit.ts:61`) is `src/cost/`,
+     `src/telemetry.ts`, `scripts/b12-run.mjs`; `PROTECTED_SCOPES`
+     (`scripts/b12-run.mjs:1196`) — the list `fileScopeViolations` actually
+     refuses against, and the only scope gate a manifest passes through — is
+     `src/cost/**`, `scripts/session-token-walk.mjs`, `evidence/**` and the four
+     governance documents. **They overlap in one item.** Run against the live
+     predicate, a task scoped to `src/telemetry.ts`, `scripts/b12-run.mjs`,
+     `src/tools/gate.ts` or `src/tools/repair.ts` is **ACCEPTED**; only
+     `src/cost/**` is refused. Clause 5 is a CHANGE DETECTOR over pinned bytes,
+     not a scope fence at the manifest, so it fires after the fact and voids
+     rather than refusing up front.
+
+     Under the withdrawn decision 2 this gap was inert — the eligible pool was
+     three tasks and the author had no freedom to misuse. **Under an authored
+     corpus it is live**, because the author now picks every fileScope and the
+     machine would accept one inside gate's own emission fence. `voidConditions`
+     5 makes the repair free until the first scored observation and not free
+     after. **The repair is owed and is NOT made here**: it edits
+     `scripts/b12-run.mjs`, which is itself pinned, so it is the owner's to
+     authorise.
   4. **TWO STRATA BY TASK SIZE**: short-mechanical (10–30 min) and
      closed-unit (30–90 min). The dimension is not decorative — it is the one
      `holdsIf` names as decisive, since a short denominator is what lifts `R_lo`.
@@ -1927,12 +1999,27 @@ defect, and it pinned four of them in place.
      to manage is p itself: the live void classes are `task_failed` and, since
      `run 2026-08-12-mac-b12-subagentkey-77fddca`, `pacing`.
 
-  **MEASURED 2026-08-12, AND IT IS A BLOCKER RATHER THAN A DETAIL: THIS
-  REPOSITORY'S ELIGIBLE BACKLOG HOLDS THREE TASKS, AGAINST THE SIXTY-FIVE THE
-  CORPUS NEEDS** (30 + 30 + 5). Decision 2 requires tasks from the real backlog,
-  not designed by the measuring party; decision 3 makes ineligible everything the
-  measurement depends on. Those two together are what empty the pool, and the
-  numbers are:
+  **MEASURED 2026-08-12 — AND ITS FRAMING WAS WRONG, WHICH IS RECORDED HERE
+  RATHER THAN EDITED AWAY.** This entry was written as a BLOCKER: "the eligible
+  backlog holds three tasks against the sixty-five the corpus needs", concluding
+  that B12 could not run and that filling the gap by authoring would break
+  decision 2. **Both halves fell the same day.** Decision 2 is WITHDRAWN above —
+  it post-dated the seal and contradicted it — and the sealed design had already
+  resolved MANIFEST SOURCE to **authored**, having MEASURED the enumeration route
+  to fail on 2026-08-05. So this is not a blocker: it is a second, independent
+  confirmation of a finding the seal already carried, produced by re-running an
+  experiment that had been run six days earlier. **The numbers below stand; the
+  conclusion drawn from them does not.**
+
+  It has one further defect worth naming, because it is this project's
+  characteristic one. The entry ruled `scripts/b12-*.mjs` ineligible by reading a
+  PRINCIPLE past decision 3's enumeration, and called the opposite reading "the
+  over-reading this file keeps catching" — while doing the over-reading, in the
+  restrictive direction. That question is now moot for the pool (an authored
+  corpus does not draw from history at all) and LIVE for the fileScope gate,
+  where it is addressed under decision 3 above.
+
+  The numbers, which are what survives:
   - Of 381 commits, **85 touched `src/cost/**`** (ineligible) and **139 touched
     `scripts/`**; only **35 touched eligible `src/` at all**. This repository
     spent its recent life inside its own instrument, which decision 3 excludes.
@@ -1948,24 +2035,31 @@ defect, and it pinned four of them in place.
     own paragraph (`:85`, `:654`).
   - The mutation harness's **6 historical bugs are all in `src/cost/**`**, so
     none is eligible.
-  - Ruling `scripts/b12-*.mjs` eligible would add **28** more. `PROTECTED_SCOPES`
-    names only `session-token-walk.mjs`, so the LETTER permits it — but decision
-    3 states a PRINCIPLE, "nothing the measurement depends on", and the register,
-    the author and the assembler are that. Reading the enumeration against the
-    principle is the over-reading this file keeps catching.
+  - `scripts/b12-*.mjs` was ruled ineligible, which added nothing. **Qualifying
+    the 28 revertible `scripts/` commits the same way returned 10 — and 9 of the
+    10 are the instrument or this session's own work**: four touch
+    `scripts/b12-run.d.mts`, the pinned harness's type surface; four are
+    `b12-register.mjs`; one is the corpus-refs commit written the same morning.
+    **One** (`48e4f4c`, `scripts/smoke-test.ts`) is unambiguously eligible. So
+    the eligible pool is **4** on the permissive reading and **3** on the
+    restrictive one, and the scope argument was worth one task.
 
-  **WHAT THIS DOES NOT ESTABLISH**: that no corpus is reachable, only that THIS
-  repository's backlog does not supply one under decisions 2 and 3 as written.
-  The reachable moves are all the owner's — draw the corpus from another
-  repository, amend decision 2 and DISCLOSE that the tasks were measurer-designed,
-  or decline this venue. **Nothing is being filled in by invention in the
-  meantime**, because a hold on tasks the measurer designed cannot distinguish
-  "the tool pays" from "the tasks were chosen to suit it", which is the one
-  distinction B12 exists to make.
+  **WHAT THIS ESTABLISHES, RESTATED AFTER THE FRAMING FELL**: enumerating a
+  corpus from this repository's history does not work, for the reason the sealed
+  design gave on 2026-08-05 and for a second one it also gave — the historical
+  fix stays reachable by `git log -S` from inside the arm's own worktree, so an
+  enumerated corpus ships the answer with the question. **That is a reason to
+  author the corpus, which the seal already requires, and not a reason to decline
+  the venue.**
+
+  **WHAT IT DOES NOT ESTABLISH**: anything about the authored corpus's quality,
+  which is a different question with a different confound — named under the
+  withdrawal of decision 2 above and not closed there.
 
   **What these decisions do NOT settle**, recorded so the gap is not mistaken
   for a decision: the per-task acceptance predicate (each must be verified
-  FAILING at base, which restricts the eligible backlog to test-backed items),
+  FAILING at base, which restricts the corpus to test-backed work whether it is
+  enumerated or authored),
   each task's `fileScope`, the manifest's committed task ORDER, and the real
   admission rate — which has never been measured in this environment, so the
   margin argument for N = 26 rests on an assumption and says so.

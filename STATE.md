@@ -17,11 +17,11 @@ and a quoted acceptance entry ALWAYS-ACCEPTS — `'single'` exits 0 on both plat
 
 ## Next action
 
-**AN OWNER DECISION, because the corpus cannot be filled.** Measured 2026-08-12, written up
-in `PREMISES.md` § B12: the eligible backlog holds **3** qualifying tasks against 65 — task
-mix decisions 2 and 3 together empty the pool, since the backlog lives in the instrument.
-Yours to pick: another repository, an amendment to 2 disclosing measurer-designed tasks, or
-decline this venue. Nothing is being invented in the meantime.
+**FIX THE FILESCOPE GATE, THEN AUTHOR THE CORPUS.** Decision 2 is WITHDRAWN — it post-dated
+the seal, which resolved MANIFEST SOURCE to **authored** on 08-05 after MEASURING enumeration
+to fail. First: `PROTECTED_SCOPES` and `PINNED_PATHS` overlap in ONE item, so
+`fileScopeViolations` ACCEPTS `src/telemetry.ts`, `b12-run.mjs`, `gate.ts` and `repair.ts` —
+free to repair until the first scored observation. Then measure **p** via the 5-task pilot.
 
 ## Still blocking a run
 
