@@ -37,11 +37,11 @@ export function makeTempRoot(prefix = "local-coder-test-"): string {
 /**
  * Remove every root handed out by `makeTempRoot` that is still on disk.
  *
- * THIS ONE WARNS WHERE `removeTempRoot` THROWS, and the difference is deliberate. An
- * explicit `afterEach` calling `removeTempRoot` is a suite asserting it cleaned up after
- * itself, so a lock surviving the retries there is evidence worth a red. This is a net
- * under suites that never made that promise; failing them for it would be inventing an
- * assertion they never wrote. Both leave the path on the record either way.
+ * THIS WARNS WHERE `removeTempRoot` THROWS, and the difference is deliberate. An explicit
+ * `afterEach` calling `removeTempRoot` is a suite asserting it cleaned up after itself, so
+ * a lock surviving the retries there is evidence worth a red. This is a net under suites
+ * that never made that promise, and failing them for it would invent an assertion they
+ * never wrote. Both leave the path on the record either way.
  */
 export async function sweepTempRoots(): Promise<void> {
   const roots = [...trackedRoots];
@@ -84,12 +84,24 @@ export async function sweepTempRoots(): Promise<void> {
  *
  * IT STILL THROWS, AND THAT IS THE SECOND DECISION. An earlier draft swallowed the final
  * failure on the argument that a file handle is not what "REFUSES an A n B intersection"
- * asserts. Adversarial review killed it: a bare catch swallows EVERY error, so a real
- * handle leak in shipped code — `atomicWriteFile` in `src/fs-safety.ts` opens a
- * `FileHandle` it must close — would report green where teardown used to be the backstop
- * that caught it. After ten retries a lock is EVIDENCE, not noise. What is kept from that
- * draft is only the part that was right: the message says TEARDOWN, by name, so the next
- * person does not go looking for the defect inside whichever test the hook was closing.
+ * asserts. A bare catch swallows EVERY error, and after ten retries a lock is EVIDENCE,
+ * not noise. What is kept from that draft is only the part that was right: the message
+ * says TEARDOWN, by name, so the next person does not go looking for the defect inside
+ * whichever test the hook was closing.
+ *
+ * WHAT THAT EVIDENCE IS, measured on this platform rather than assumed — because two
+ * earlier versions of this comment, one of them written after a review that asserted it,
+ * claimed teardown was the backstop against a dropped `close()` in `atomicWriteFile`
+ * (`src/fs-safety.ts:374-386`). It is not:
+ *
+ *   an open FileHandle inside the directory : REMOVED
+ *   a live child process with cwd there     : REFUSED (EPERM)
+ *   nothing holding it (control)            : REMOVED
+ *
+ * Node opens files share-delete on Windows, so a leaked handle does not block a thing. A
+ * live CHILD PROCESS does. So a removal that survives the retries means a test spawned
+ * something and never waited for it — which is a real defect, just not the one the
+ * argument was originally built on.
  */
 export async function removeTempRoot(root: string | undefined): Promise<void> {
   if (root === undefined) return;
