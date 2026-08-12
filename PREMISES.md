@@ -1896,6 +1896,36 @@ defect, and it pinned four of them in place.
      statistical power: at 60% admission two strata still leave ~8 per cell,
      while sealing 20 and finding one cell short is unrecoverable after the
      sessions are paid for.
+     **CORRECTED 2026-08-12: THE NUMBER IS 30, AND NOT BY CHOICE — 26 WAS NEVER
+     AVAILABLE.** Three frozen statements say 30: `admissionRule` 2 ("The
+     manifest fixes an ORDERED list of 30 tasks by id"), `design.artifacts` 1
+     ("carrying: 30 ordered task ids"), and `thresholdArgument` ("30 is the
+     ordered manifest length: headroom, not a threshold"). `voidConditions` 4
+     freezes the admission rule, and `scripts/b12-register.mjs:92` refuses
+     `n !== 30` — implementing that text faithfully rather than over-reading it,
+     which was tested before this correction was written and not assumed.
+     **26 is the SESSION budget** from `runPlan` phase 5, "20–26 supervised
+     sessions… Ordered manifest of 30", and this decision moved that number onto
+     the manifest length. Correcting the referent touches nothing frozen, runs
+     in the harder direction — four more task specifications, each owing an
+     acceptance predicate verified FAILING at base — and needs no amendment.
+     **THE ARITHMETIC WAS ALSO WRONG, IN THE DIRECTION THAT FLATTERED THE
+     CHOICE, AND THAT IS THE REAL FINDING.** "~8 per cell" checked the
+     per-stratum floor of 5 and never the ADMITTED floor of 20. Exact binomial,
+     P(at least 20 of N admit): at the **60% this decision assumed, N = 26
+     completes 5.6% of the time and N = 30 completes 29.1%**. At 66.7% — the
+     rate the frozen 30 barely implies — 26 gives 18.6% and **30 gives 58.6%, a
+     coin flip**. Ninety per cent needs N = 35 at 66.7%, or p ≥ 0.75 at N = 30.
+     `runPlan`'s own "20–26 sessions to score 20" implies p ≈ 0.77, where N = 30
+     completes 93%, so the frozen design is coherent with ITS assumption and not
+     with this decision's.
+     **THE EXPOSURE IS THEREFORE p, WHICH HAS NEVER BEEN MEASURED, AND NOT THE
+     LENGTH, WHICH IS FROZEN.** The amendment the numbers would justify is
+     UPWARD — N = 35 — and it is exactly as unavailable as 26. A run that walks
+     all 30 and admits 19 is VOID under `voidConditions` 3 and CONSUMES an
+     attempt under `voidConditions` 23, and there are two attempts. What is left
+     to manage is p itself: the live void classes are `task_failed` and, since
+     `run 2026-08-12-mac-b12-subagentkey-77fddca`, `pacing`.
 
   **What these decisions do NOT settle**, recorded so the gap is not mistaken
   for a decision: the per-task acceptance predicate (each must be verified

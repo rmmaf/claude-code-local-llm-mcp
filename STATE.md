@@ -22,11 +22,11 @@ SWITCH: if subagents serve on another key, every observation carrying one is
 
 ## Still blocking a run
 
-**NEW AND MECHANICAL: a 26-task manifest CANNOT REGISTER.** `b12-register.mjs:92`
-refuses `n !== 30` and `:94` refuses `pairs !== 6`, while the mix pre-declared N = 26.
-Frozen `admissionRule` 2 is 30 ordered, first 20 that admit: **30 tolerates an
-admission rate ≥ 0.667, 26 needs ≥ 0.769, and no 5-task pilot separates 0.60 from
-0.667.** Decide on structure, or amend a clause `voidConditions` 4 freezes.
+**RESOLVED 2026-08-12: the manifest is 30; 26 was never available.** Three frozen
+statements say 30 and `b12-register.mjs:92` implements them faithfully; 26 was
+`runPlan`'s SESSION budget moved onto the length. **The exposure is p, never
+measured:** N = 30 completes 29% at p = 0.60, 59% at 0.667 — a coin flip — and 93%
+at the 0.77 the frozen design implies. A void consumes one of two attempts.
 
 Unchanged: VOID 21 and VOID 12 (**no A/B before both**); the 65-sibling corpus; the
 Mac trips (policy blobs, installedChars RE-PROBE with the model in the key, cap probe,
