@@ -7,9 +7,11 @@
     "  KNOWN HERE  - computed on the authoring machine and already filled in.",
     "  MAC-LOCAL   - null, because only the run machine can know it. The tool REFUSES on null;",
     "                a plausible-looking placeholder would VALIDATE, which is worse than a refusal.",
-    "  OWNER       - null, because it is a choice nobody has made yet. See _ownerDecisions.",
+    "  CHOSEN      - the two constants thresholdArgument says have no ancestor. DECIDED 2026-08-12,",
+    "                pre-data, with the reasoning and the refutation attempt in _chosenConstants.",
     "",
-    "Do not replace a null with a guess to make the tool quiet. The refusal is the deliverable."
+    "Do not replace a null with a guess to make the tool quiet. The refusal is the deliverable.",
+    "Every remaining null is MAC-LOCAL. Nothing here is waiting on a decision."
   ],
 
   "specRoot": "b12-corpus",
@@ -49,8 +51,8 @@
     "memorySnapshotSha256": null,
     "captureSha256": null,
 
-    "pacingCacheWriteShareCeiling": null,
-    "perTaskDenominatorShareCap": null
+    "pacingCacheWriteShareCeiling": 0.95,
+    "perTaskDenominatorShareCap": 0.25
   },
 
   "_knownHere": {
@@ -74,10 +76,39 @@
     "captureSha256": "sha256 of the built dist/ capture. Its absence is SILENTLY PERMISSIVE rather than refusing: observe compares only `if (want)` (b12-run.mjs:2040), so leaving it null-and-unfilled means the capture ships unverified. STATE.md's standing note — re-pin this at the seal — is the same instruction from the other end."
   },
 
-  "_ownerDecisions": {
-    "pacingCacheWriteShareCeiling": "One of thresholdArgument's two CHOSEN constants, to be committed BEFORE any observation. No value is stated anywhere in the frozen text or in PREMISES.md — the fixture's 1 is test material and must not be copied in.",
-    "perTaskDenominatorShareCap": "The other one. Same status: chosen, not derived, and not yet chosen.",
-    "_note": "These two are the reason a pilot cannot be assembled today even with the Mac's values in hand. They are yours, they are pre-data, and they are free until the first scored observation."
+  "_chosenConstants": {
+    "_status": "DECIDED 2026-08-12, pre-data, before any B12 observation exists. thresholdArgument calls these the two numbers 'this design must set that have no ancestor' and requires them 'declared as chosen rather than derived'. Both values below were adversarially reviewed against nine enumerated claims and SEVEN of the nine were sustained against the author; the ceiling moved from 0.85 to 0.95 as a result. What survives is recorded here, corrections included, because a justification that hides its refuted version is worth less than the number it defends.",
+
+    "pacingCacheWriteShareCeiling": {
+      "value": 0.95,
+      "what_it_does": "admissionRule 11's second half. pacingFacts (src/cost/b12/assemble.ts:150-158) prices ONLY the observation's originatedRequestIds (:588-589) and fires on a STRICT >. voidConditions 20 then lifts it from an observation-level disposition to a run-level one: buildArchiveChecks pushes the clause when ANY assessed observation exceeded (:1187-1198), and assemble.ts:454-455 sets verdict='void' when ANY archive check fired. So one observation over this ceiling VOIDS ALL ~60 SESSIONS, and the experiment has two attempts total. Note `assessed`, not `admitted`: an observation already dropped for task_failed still counts here, and the only escape is an unreadable observation.json or an unrebuildable transcript (:567-586).",
+      "the_finding_that_set_it": "THE STATISTIC CANNOT SEPARATE THE TWO CASES IT IS ASKED TO SEPARATE. A legitimately SHORT observation is structurally near the top of the range: its first request writes the whole context and nothing has re-read it yet. Measured over per-session groups on this machine: 1 request -> 0.8841, 2 requests -> 0.7732, 3 -> 0.7610. An all-rewrite PATHOLOGY at a long session lands at 0.93-0.98. The bands OVERLAP, so no value is safe in both directions. Given that, the ceiling is set above the legitimate-short envelope, because the erring-low error costs a paid attempt immediately while the erring-high error is covered by the gap half -- which catches the phone-call scenario admissionRule 11 actually names, directly and independently.",
+      "why_not_0_85": "That was this file's first answer and it is wrong. It was chosen against a population filtered to >=2 requests, which excluded the very shape that binds. Nothing guarantees a B12 observation makes ten requests, or two: validity requires only a nonzero originated count (scripts/b12-run.mjs:2988-3012). A single-request observation measured 0.8841 here, so 0.85 would have voided the run on a legitimate one.",
+      "why_not_higher_still": "It must remain a check. With cacheWrite at the 1h class's 2.0x and output at 5.0x, an all-rewrite session has share 2N/(2N+5o+i); solving strictly with o=1500, i=200 gives N > 21,816.7 at c=0.85, N > 34,650 at 0.90 and N > 73,150 at 0.95. At the 5m class's 1.25x the same three are 34,907 / 55,440 / 117,040. So 0.95 still fires on a 45-minute coding observation rewriting a 73k context at 1h rates; it is weak at 5m rates, and that is exactly the case where the gap bar drops to five minutes and the gap half becomes twelve times more sensitive. The two halves cover each other in opposite regimes.",
+      "the_error_this_takes": "NOT that erring high is free -- an earlier draft claimed that and it is false. Undetected inflation lowers R, and a lower R makes a FALL easier, which the design's bracket reading (R_hi+ for the fall) exists to prevent. Separately, inflation in the CONTROL arm raises R_ab = sum(A_control - A_treatment)/sum(A_control) -- and no value of this constant covers that, because primary assembly filters to arm === 'treatment' (assemble.ts:221-222) and control observations are never pacing-assessed at all. The error is taken knowingly, in exchange for not spending a paid attempt on a false positive."
+    },
+
+    "perTaskDenominatorShareCap": {
+      "value": 0.25,
+      "what_it_does": "NOTHING MECHANICAL, and that is checked, not assumed: perTaskDenominatorShare is computed at assemble.ts:845 and typed at types.ts:1028, and NO code anywhere reads perTaskDenominatorShareCap -- the only mention outside this file is the comment at assemble.ts:843 saying it decides nothing, 'a live predicate here would mint a void the frozen text never wrote'. manifestDeclarationGaps still REQUIRES it (b12-run.mjs:1061-1064), so it is a pre-commitment published on the manifest's face and compared by a reader, not by the scorer.",
+      "why_0_25": "Because it costs nothing when it fires, it is chosen tight and meaningful rather than safe. The denominator is admittedSumAPlusSLo over the ADMITTED set, which assemble.ts:389-405 caps at 20 treatment observations, one per task id -- so the EQUAL share is 1/20 = 0.05 and 0.25 is five times it. STATED WITH ITS CONDITION, because the review sustained the correction: shares are weighted by each task's A+S_lo, not by observation counts, so '0.25 equals a minimum evaluable stratum of MIN_DELIVERY_OBSERVATIONS = 5' holds only if those five weigh the same as the others. What is unconditionally true is the multiple: 0.25 is 5x the equal share, and a task at it carries the weight five average ones would.",
+      "expected_to_fire": "Yes, sometimes, and that is the intent. If one task costs 10x the median while the rest sit at it, its share is 10/29 = 0.34 and the reader is told so. A covariate that never fires reports nothing."
+    },
+
+    "_refutation": {
+      "predicted_before_measuring": "Written to a file before any measurement ran. Median cacheWrite share 0.15-0.45 (HELD, 0.3042); p95 below 0.80 (HELD, 0.6916); a healthy session above 0.85 (recorded FAILED, then TRUE after all -- the first pass filtered to >=2 requests and hid the single-request case at 0.8841); max above 0.90 (FAILED, 0.8841 is the highest measured). The pre-registered falsification rule said that if nothing healthy sat above 0.85 then 0.95 was unearned slack and had to be dropped. It was dropped -- and then restored, when the excluded subpopulation turned out to be the one that binds. The prediction's ARITHMETIC about short sessions was right; its POPULATION was wrong, and the second error hid the first.",
+      "method": "cacheWrite units / total billed units over 160 Claude Code transcripts, replicating readUsage's 'equal or nothing' TTL split (src/cost/transcript.ts:201-241), rates.json's multipliers, api-error exclusion, one row per requestId. Run twice: per FILE, then per sessionId -- the second because pacingFacts prices only originatedRequestIds, and a whole-file group can carry inherited requests it would exclude. Grouping tighter did not move the tail (max 0.7732 either way for >=2 requests), which is the answer to that attack rather than an assumption about it.",
+      "what_this_is_not": "Not derived from any B12 observation -- none exists. But NOT 'unfitted' either, and the review was right to press: the historical data set the lower edge of the window this value sits in, and the arithmetic set the upper edge. The value is chosen inside that window. That is the honest label, and it is narrower than the first draft's claim."
+    }
+  },
+
+  "_theGapHalfIsTheBiggerRisk": {
+    "_why_this_block_exists": "The OTHER half of admissionRule 11 -- max inter-request gap > the shortest cache TTL in play -- has NO constant to choose and is a larger threat to a paid run than either number above. It is recorded here because deciding the two constants is not the same as covering pacing, and reading this file could otherwise leave the opposite impression.",
+    "the_bar_is_5_MINUTES_whenever_anyFiveMin_is_set": "pacingFacts sets anyFiveMin when ANY owned request has cacheWrite5m > 0, and TTL_MS then selects 300,000 ms over 3,600,000 (assemble.ts:147-148). TWO INDEPENDENT ROUTES SET IT, and neither is under this file's control:",
+    "route_1_a_subagent": "ALREADY MEASURED ON THE MAC, today: MEASUREMENTS.jsonl:239 (run 2026-08-12-mac-b12-subagentkey-77fddca) records 9,397 subagent cache_creation tokens in the 5m class against 0 on the main thread, whose writes were 1h. So an observation carrying a subagent gets a five-minute pacing bar. That row also records that this FALSIFIED the earlier reading from the installedChars probe, which saw 7 records with no ephemeral_5m and concluded pacing was probably defused -- those 7 had no subagent. n = 1 subagent, one session: not established that every subagent writes 5m.",
+    "route_2_an_inconsistent_split": "MEASURED HERE and not previously named anywhere: readUsage returns cacheWrite5m = total when the TTL split disagrees with its own top-level cache_creation_input_tokens (transcript.ts:232-238), so an INCONSISTENT record books its whole write to the 5m class and sets anyFiveMin -- with no real 5m write involved. 144 of 81,979 assistant records in this machine's corpus (0.18%) have such a split. One of them inside an observation's owned set is enough to drop that observation's bar to five minutes.",
+    "what_that_costs": "On the 1h bar, only 0.44% of 33,894 historical inter-request gaps exceed it and the 15 largest are 18h-186h RESUMES, which a harness-spawned session cannot have -- observe mints a fresh --session-id per observation and never resumes. On the 5m bar, 4.01% of the same gaps exceed it. voidConditions 20 makes ONE exceeding observation void the whole run.",
+    "what_is_NOT_established": "That a harness-driven, non-interactive observation idles the way a human-driven session does. The historical gaps include a human thinking and typing; a B12 observation has no human in the loop and its gaps are tool-execution times. This is the single largest unquantified risk to the paid run, and it is not resolvable from Windows -- but it is also not resolvable by choosing either constant above, which is the point of recording it here rather than pretending a ceiling covers it."
   },
 
   "_transport": [
