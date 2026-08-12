@@ -1967,6 +1967,198 @@ defect, and it pinned four of them in place.
      observation**; doing so would be a condition minted mid-game, which is
      what this entry exists to prevent.
 
+- **Pre-declared, 2026-08-11, before the manifest is sealed — THE SIXTH OWNER
+  DECISION: the orchestrator model is `claude-opus-5`, PINNED BY IDENTITY and
+  ASSERTED PER ARM.** The five decisions above omitted it because nobody had
+  asked whether it was controlled. A full sweep says it is not: no `pinned`
+  field, no `--model` in the harness argv (`scripts/b12-run.mjs:2835`), and
+  `instructionDriftReasons` (`:1377`) compares six instruction components of
+  which none is the model. What exists is HOMOGENEITY and never IDENTITY —
+  `void(rate_key_mixed)` when a window's own requests span two keys
+  (`src/cost/b12/assemble.ts:646`) and `voidConditions` 10 requiring exactly one
+  rate key across the admitted set (`src/cost/b12/aggregate.ts:843`), where a
+  key is `model` or `model@speed` (`src/cost/rates.ts:93`). **A run entirely on
+  ANY single model satisfies both**, so the frozen text controls that the same
+  model ran throughout and records nothing about which one.
+
+  **THIS IS AN AMENDMENT, PRE-DATA, AND CALLING IT A CORRECTION WOULD BE HAVING
+  IT BOTH WAYS.** `admissionRule` 9 already forbids a `/model` or `/fast` toggle
+  and already requires one rate key; covariate 9 lists "model id" with
+  applicability `recorded`. Nothing frozen requires the model to be DECLARED, so
+  requiring it is a new operational condition — the reading the clause-6 firing
+  entry above applied to itself. It NARROWS: one model qualifies where any
+  single model qualified before, and it adds a refusal the frozen text does not
+  ask for. **It adds no new DISPOSITION LABEL and loosens nothing** — item 3
+  does add a new run-VOID TRIGGER, stated there as one rather than smuggled in
+  as an early reading of a frozen clause. Adding a trigger that fires only where
+  the frozen text is silent is the one direction a condition may be added in
+  after the fact.
+
+  1. **Both sealed manifests carry `pinned.orchestratorRateKey`, and its value
+     is the exact string `claude-opus-5`.** Registration refuses a manifest
+     whose field is absent or carries any other value — the treatment the frozen
+     cardinalities 30, 6 and 20 already get, and for the same reason.
+     **THE PINNED OBJECT IS THE RATE KEY, NOT THE MODEL ID, and that is not a
+     naming preference.** Claude Code's fast mode "bills Opus at twice the
+     standard rate while reporting the same model string" (`src/cost/rates.ts`,
+     above `rateKey`), so a pin on the model id would be SILENT on `/fast`:
+     `claude-opus-5` and `claude-opus-5@fast` share a model and are two rate
+     keys, and `voidConditions` 10 would void a run the pin had just approved.
+     Pinning the key makes this decision and the frozen clause compare the same
+     REPRESENTATION, so they cannot disagree through model-id/speed aliasing.
+     They remain different predicates on purpose: identity is deliberately
+     STRICTER than homogeneity, and a run homogeneous on a wrong key satisfies
+     the frozen clause and fails this one. For standard speed the two strings
+     coincide, so nothing about the declared value changes — only what it is
+     checked against.
+  2. **RUN-LEVEL, BEFORE THE FIRST BILLED MANIFEST REQUEST: the pre-flight
+     asserts the live key equals the declared one, and the run does not start
+     otherwise.** This is where the cheap catch lives, and the refusal PATTERN
+     already exists: `admissionRule` 10 — not `voidConditions` 7, which states
+     only the run-level consequence of version drift — has the version and
+     binary sha "asserted by the harness BEFORE each observation, which refuses
+     to run on a mismatch", shipped as `assertPinned` (`scripts/b12-run.mjs:888`,
+     called at `:2626`). The committed
+     `evidence/2026-08-09-mac-b12-283d58b.preflight.json` already carries
+     `rateKey` on its telemetry rows. **The COMPARISON is still new** — nothing
+     today compares an observed key against a declared one — and calling the
+     whole item "new machinery nowhere", as a draft did, overstated it.
+     A refusal here costs the scratch pre-flight session and NOTHING in the
+     protocol — no task has run, no runlog row exists, no disposition is owed,
+     and no attempt is touched.
+  3. **PER ARM, AND SCOPED TO ONE CASE ONLY: an arm whose own billed requests
+     carry a SINGLE key that is not the declared one VOIDS the run.** The run is
+     VOID; the arm is not re-run, and nothing is discarded and drawn again.
+     **THIS IS A NEW VOID TRIGGER AND SAYING OTHERWISE WAS THE SECOND DRAFT'S
+     ERROR.** That draft called it "`voidConditions` 10's own condition reached
+     early", which contradicts item 1 one paragraph above. Clause 10 reads "VOID
+     if the admitted set spans MORE THAN ONE rate key" — a run homogeneous on a
+     wrong key spans exactly one and satisfies it. There is nothing to reach
+     early. What is true, and is the whole licence: **it adds a TRIGGER and no
+     new DISPOSITION LABEL**, it fires only where the frozen clause is silent,
+     and silence there is what makes the pin do any work at all.
+     **THE OTHER CASES ARE NOT THIS ITEM'S AND MUST NOT BE ESCALATED INTO IT.**
+     One key equal to the declared one is the ordinary path. An arm spanning
+     SEVERAL keys is already `void(rate_key_mixed)` at OBSERVATION level
+     (`src/cost/b12/assemble.ts:646`); this item leaves it there, because
+     escalating it would kill the run on the first multi-subagent observation —
+     see the subagent bullet below, where that is an open question rather than a
+     settled one. **A first draft covered every case and would have converted a
+     handled observation-level void into a run-level one.**
+     **AN ARM WITH ZERO OWNED KEYS IS AN OPEN ENCODING GAP, AND THE SECOND DRAFT
+     CLAIMED IT WAS HANDLED WHEN IT IS NOT.** That draft said such an arm is
+     "already reachable as `execution_error`". It is not, and the mechanism is
+     specific: `execution_error` fires on `transcript.requests.length === 0` —
+     the whole rebuilt LINEAGE (`src/cost/b12/assemble.ts:599`) — while the keys
+     are read from `owned = new Set(record.originatedRequestIds)`, the arm's
+     ORIGINATED set (`:589`, `:640`). A lineage holding billed requests none of
+     which the arm originated fires neither predicate, takes the default
+     `disposition = "scored"` (`:745`), and contributes nothing to the key union
+     clause 10 counts. It can then enter `admitted` if the arm is otherwise
+     valid (`:396` — `terms !== null`, `record.valid`, within budget, under the
+     20-cap); **that conjunction is not traced here and the claim is that the
+     path is OPEN, not that it is always taken.** Stating it the other way is
+     the existential-dressed-as-universal this project has now retracted three
+     times. **This gap is the
+     harness's and predates this decision; it is named here and NOT closed here**
+     — closing it in the same breath is what the clause-6 entry above was right
+     to refuse, and it is larger than this decision because it lets an arm be
+     scored on requests it does not own.
+     **THE FIRST DRAFT OF THIS ENTRY SAID THE OPPOSITE AND WAS WRONG, in the
+     direction that flattered the decision.** It called the refusal costless —
+     "no observation exists, nothing is spent … and re-runs" — and that is false
+     twice. The key is only readable from billed requests, so the arm's session
+     is ALREADY PAID when the check can run; and an unbounded fix-and-re-run
+     there is a repeated draw at exactly the point the frozen design forbids
+     one. `admissionRule` 12's single discretionary re-run does not reach it —
+     that allowance is scoped to `execution_error`, enumerated narrowly as a
+     harness non-zero exit, an unhandled exception, or a transcript with no
+     assistant turn — and the closed disposition list has no slot for one
+     homogeneous WRONG key. **Rather than mint either an allowance or a
+     disposition, this resolves to the VOID the frozen clause already reaches.**
+     The assertion runs before the runlog append, so a mismatch costs a refusal
+     and not an uncommitted row (`scripts/b12-run.mjs:425-438`, the harness's
+     own stated pattern).
+  4. **ASSERTION RATHER THAN `--model`, and the reason is instrumental, not
+     economic.** Passing `--model` pins the INPUT and is blind to whatever
+     resolves it: this repository does not establish Claude Code's
+     model-resolution precedence, the child inherits the operator's environment
+     unscrubbed (`scripts/b12-run.mjs:45`, called at `:2857` with `{cwd,
+     timeout}` alone), and no environment variable is hashed anywhere. Asserting
+     the model the transcript REPORTS checks the outcome, so it is
+     precedence-agnostic and catches every selection channel including ones
+     nobody enumerated. That it also keeps `pinned.extraArgs` empty, and so does
+     not force an `installedChars` re-probe (`scripts/b12-run.mjs:1911`), is a
+     consequence and not the reason.
+
+  **DISCLOSURE OF WHAT WAS KNOWN WHEN THE MODEL WAS CHOSEN**, because "we picked
+  the one our artifact was already measured under" belongs on the record rather
+  than in a later finding. The committed probe
+  `evidence/2026-08-08-mac-b12-installedchars-50de3b3-144422.probe.json` ran on
+  `claude-opus-5`, so this choice AGREES with the only calibration artifact this
+  premise has. Also known: R is a ratio of input-equivalent units whose
+  structural multipliers are identical across current models — output 5x input
+  on opus-5, sonnet-5, haiku-4-5 and fable-5 (`MEASUREMENTS.jsonl:48`) — so the
+  choice does not move R through PRICE, and the argument that a dearer
+  orchestrator makes delegation pay more is true in dollars and does not
+  transfer to what B12 measures.
+
+  **THE CHANNEL THAT DOES MOVE R IS BEHAVIOURAL, AND ITS DIRECTION IS DECLARED
+  RATHER THAN CLAIMED NEUTRAL.** Whether the model reaches for `gate` and
+  `repair` at all is the largest lever on the numerator, and it has already
+  failed once: `run 2026-08-04-mac-10`, a real 8-hour session, made 36 `Bash`
+  calls and **0 `gate` calls, 0 `repair` calls** (B5). A more capable
+  orchestrator plausibly follows the routing policy more reliably, which would
+  raise R. **That is a bias toward a hold, it is not measured, and it COMPOUNDS
+  with decision 1's favourable-but-real set** rather than sitting beside it.
+  Written here so a reader does not have to assemble it from two entries.
+
+  **WHAT THIS DOES NOT SETTLE**, recorded so no gap is read as a decision:
+  - **Nothing about any other model.** A hold under `claude-opus-5` is a
+    statement about `claude-opus-5`. `whatAHoldDoesNotEstablish` item 11 scopes
+    durability to "one pinned Claude Code build" and names no model; this entry
+    supplies the missing scope for B12 and edits that artifact not at all.
+  - **The toggle gap stays open and is NOT closed here.** `admissionRule` 9 says
+    a `/model` or `/fast` toggle VOIDS the run; nothing detects a toggle. Rate-key
+    homogeneity over an observation's OWN requests is blind to a toggle
+    producing no owned billed request, to requests outside the window, and to a
+    model change confined to a dropped observation. Naming it and closing it in
+    the same breath is what the clause-6 entry above was right to refuse.
+  - **Whether `installedChars` is model-dependent.** The probe's calibration key
+    records binary sha, MCP config, environment and policy blobs, and **no
+    model**, so it would not refuse a value taken under a different one.
+    **Requirement on the experiment, never on the result: the next re-probe adds
+    the orchestrator model to the calibration key**, and a probe whose key omits
+    it may not calibrate a manifest that pins one.
+  - **The environment is still neither constrained nor hashed.** Items 2 and 3
+    catch the EFFECT of any selection channel; they do not enumerate them.
+  - **The residual this decision cannot remove: one paid arm.** The pre-flight
+    establishes the machine's key at ONE moment. A key that moves between the
+    pre-flight and an arm is readable only from that arm's billed requests, so
+    the run voids having paid for it. **That is the honest floor of a
+    post-session check and no arrangement of these items lowers it** — which is
+    exactly why item 2 exists, to make the common case (a machine that was wrong
+    all along) cost a scratch session instead of a manifest one.
+  - **Whether a subagent inside a scored session serves on a different key, and
+    what that costs.** This is a property of frozen `voidConditions` 10 and not
+    something this decision creates — a window spanning two keys is already
+    `void(rate_key_mixed)` — but it is unresolved and this run expects
+    subagents: covariate 1 records a share measured from 0% to 78%. Item 3 is
+    scoped away from it deliberately and leaves it at observation level. **What
+    is NOT established is whether subagents inherit the orchestrator's key at
+    all**, and no artifact in this repository answers it. If they do not, the
+    frozen clause drops every multi-subagent observation and the `multi` stratum
+    becomes unevaluable — which returns `open`, never a hold or a fall. Named
+    here, measured nowhere, and cheap to settle: the pre-flight of item 2 can
+    read the keys of a session that spawns one subagent, and until it does, this
+    is the largest unpriced risk this decision leaves standing.
+
+  **What `git log -p` proves is WHEN this text was committed, and nothing more.**
+  Ordering is what git witnesses; standing is a claim this file makes. What is
+  independently checkable at this commit: no `evidence/*.b12.tasks.json` exists,
+  so no run is registered, no observation is scored, and there is no result this
+  decision could have been reached backwards from.
+
 - **Pre-declared, 2026-08-08, before any run exists — the ANALYSIS SESSION and
   the clause 4–6 AUDIT.** Three obligations the UNIT 5 pass surfaced
   (`UNIT-5.md` "What it creates"; the plan gate's R7/R9, `FINDINGS.md`), added
