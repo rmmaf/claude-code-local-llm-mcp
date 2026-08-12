@@ -49,7 +49,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -68,9 +68,43 @@ function sh(cwd, cmd, args, opts = {}) {
     maxBuffer: 1 << 28,
     env: opts.env ? { ...process.env, ...opts.env } : process.env,
     timeout: opts.timeoutMs,
+    shell: opts.shell === true,
   });
   return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "", errorCode: r.error?.code ?? null };
 }
+
+/**
+ * ONE RULE: USE A SHELL ONLY WHERE DOING SO CANNOT CHANGE THE COMMAND.
+ *
+ * Why a shell is needed at all — `observe` executes an acceptance entry with
+ * `shell: process.platform === "win32"` (`b12-run.mjs`), and `npx` on Windows is
+ * `npx.cmd`, which `spawnSync` cannot find without one. MEASURED: before this,
+ * every `npx …` predicate refused at the parent with ENOENT — an authoring
+ * machine unable to verify a predicate the harness runs happily.
+ *
+ * Why it is CONDITIONAL — Node concatenates argv into the command string without
+ * escaping when `shell` is set (its own DEP0190 warning says so). For an argv
+ * whose every element is free of whitespace and of shell metacharacters, that
+ * concatenation is provably the identity and the shell changes nothing. For any
+ * other argv it is a second parser, and it mangles: the first draft of this
+ * function passed `shell` unconditionally and broke `node -e "…"` predicates
+ * carrying spaces and quotes.
+ *
+ * That is not a loss. A predicate outside this grammar cannot be a corpus
+ * predicate anyway — `observe` splits the acceptance STRING on spaces, so a
+ * quoted one-liner is the measured always-accept the assembler refuses. Here the
+ * same shape merely runs without a shell, where it behaves as written.
+ *
+ * `shell` stays OFF for git unconditionally: those arguments are interpolated
+ * from spec fields, and a shell would sit between this file and the ref names it
+ * writes.
+ */
+const SHELL_UNSAFE = /[\s"'&|^<>%()`$]/;
+const runPredicate = (cwd, argv, timeoutMs) =>
+  sh(cwd, argv[0], argv.slice(1), {
+    timeoutMs,
+    shell: process.platform === "win32" && argv.every((a) => !SHELL_UNSAFE.test(a)),
+  });
 
 const git = (cwd, args, opts) => sh(cwd, "git", args, opts);
 
@@ -219,9 +253,27 @@ export function authorSibling(repoRoot, specDir) {
     };
   }
 
-  // mkdtemp RESERVES a unique name; the directory itself is handed to git,
-  // because `worktree add` over a pre-existing directory varies by version.
-  const wt = mkdtempSync(path.join(os.tmpdir(), "b12-author-wt-"));
+  // THE SCRATCH WORKTREE LIVES INSIDE THE REPOSITORY, AND THAT IS A CORRECTNESS
+  // REQUIREMENT RATHER THAN A TIDINESS ONE. `node_modules/` is gitignored, so it
+  // is never present in ANY worktree; what makes a dependency resolve is Node
+  // walking UP from the working directory until it finds one. `observe` puts its
+  // arm worktree at `<repo>/.b12/<task>-<arm>-<token>`, so that walk reaches the
+  // repository's own `node_modules` and the project's pinned toolchain is what
+  // runs. This function used to use `os.tmpdir()`, OUTSIDE the repository, where
+  // that walk finds nothing.
+  //
+  // MEASURED 2026-08-12, and it was not a subtle difference: under the old
+  // location every `npx tsc` and `npx vitest` predicate either refused at the
+  // parent — "the parent is not green", when the parent is green — or SILENTLY
+  // PASSED against a toolchain `npx` fetched from the registry, which is not the
+  // toolchain the run will use and is not reproducible offline. Three bases were
+  // published that way and retired.
+  //
+  // So the author now verifies where the harness will execute. `.b12/` is the
+  // harness's own scratch root and is already ignored.
+  const b12Root = path.join(repoRoot, ".b12");
+  mkdirSync(b12Root, { recursive: true });
+  const wt = mkdtempSync(path.join(b12Root, "author-wt-"));
   rmSync(wt, { recursive: true, force: true });
   let worktreeAdded = false;
   try {
@@ -232,7 +284,7 @@ export function authorSibling(repoRoot, specDir) {
     // 2. GREEN PARENT — the predicate passes at the parent, or "fix it" has
     // no referent. Run BEFORE the patch so the two predicate runs differ by
     // exactly the defect.
-    const atParent = sh(wt, spec.predicate.argv[0], spec.predicate.argv.slice(1), { timeoutMs: spec.predicate.timeoutMs });
+    const atParent = runPredicate(wt, spec.predicate.argv, spec.predicate.timeoutMs);
     if (atParent.errorCode !== null) {
       return { ok: false, why: `the predicate could not run at the parent (${atParent.errorCode}) — an unrunnable predicate proves nothing about greenness` };
     }
@@ -257,7 +309,7 @@ export function authorSibling(repoRoot, specDir) {
     }
 
     // 3. DEFECT PRESENT — the predicate fails at the patched tree.
-    const atBase = sh(wt, spec.predicate.argv[0], spec.predicate.argv.slice(1), { timeoutMs: spec.predicate.timeoutMs });
+    const atBase = runPredicate(wt, spec.predicate.argv, spec.predicate.timeoutMs);
     if (atBase.errorCode !== null) {
       return { ok: false, why: `the predicate could not run at the patched tree (${atBase.errorCode})` };
     }
@@ -723,7 +775,7 @@ function deepPredicateReasons(repoRoot, resolved, ratesSha256) {
           );
         }
       }
-      const ran = sh(wt, r.spec.predicate.argv[0], r.spec.predicate.argv.slice(1), { timeoutMs: r.spec.predicate.timeoutMs });
+      const ran = runPredicate(wt, r.spec.predicate.argv, r.spec.predicate.timeoutMs);
       if (ran.errorCode !== null) {
         reasons.push(`task ${r.id}: the predicate could not run at the base (${ran.errorCode}) — an unrunnable predicate scores nothing`);
       } else if (ran.code === r.spec.predicate.expectedExit) {
