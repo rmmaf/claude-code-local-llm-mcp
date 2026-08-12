@@ -120,7 +120,7 @@ export function serializeReport(r: ModelReport): SerializedReport {
 /** Free RAM we're willing to commit to model weights: freeBytes × fitFraction. */
 export function usableFree(memory: MemoryInfo | null, fitFraction: number): number | null {
   if (memory === null) return null;
-  return memory.freeBytes * fitFraction;
+  return memory.freeBytes;
 }
 
 /**
