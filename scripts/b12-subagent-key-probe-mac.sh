@@ -31,10 +31,10 @@
 # mirrored rule below carries the line it mirrors.
 #
 # WHAT THIS PROBE DOES NOT ESTABLISH, stated here rather than found later:
-#   - Nothing about the TREATMENT arm's MCP shape unless B12_MCP_CONFIG is set;
-#     the default runs the CONTROL argv shape. The primary observations are
-#     treatment-arm sessions (`admissionRule` 13), so an unset run leaves that
-#     gap open and the artifact says so.
+#   - Nothing about the TREATMENT arm's MCP shape unless B12_REPO or
+#     B12_MCP_CONFIG is set; otherwise it runs the CONTROL argv shape. The
+#     primary observations are treatment-arm sessions (`admissionRule` 13), so
+#     an unset run leaves that gap open and the artifact says so.
 #   - Nothing about the sealed per-arm policy blobs; none are delivered here.
 #   - Nothing about how many subagents a real manifest task spawns, or nested
 #     ones. Sidechain cardinality is REPORTED, never enforced.
@@ -67,8 +67,12 @@ case "$OUT" in
   -h|--help)
     printf 'usage: %s [output.json]\n' "$0"
     printf '  default output: $HOME/b12-subagent-key-probe.json\n'
-    printf '  env: B12_MCP_CONFIG=<path>   run the TREATMENT argv shape instead of control\n'
-    printf '  runnable from ANY directory; it reads nothing relative to the cwd\n'
+    printf '  runnable from ANY directory; it reads nothing relative to the cwd\n\n'
+    printf '  TREATMENT shape (what the primary observations run) needs an --mcp-config,\n'
+    printf '  and there is none on this machine to point at. Pick one:\n'
+    printf '    B12_REPO=<built checkout>   generate one pointing at <repo>/dist/server.js\n'
+    printf '    B12_MCP_CONFIG=<path>       supply your own\n'
+    printf '  Neither: runs the CONTROL shape and records that limitation.\n'
     exit 0 ;;
 esac
 
@@ -115,15 +119,55 @@ PROMPT='Use the Task tool to launch exactly one general-purpose subagent. That s
 # BOTH shapes are strict, mirroring scripts/b12-run.mjs:2816. Without
 # --strict-mcp-config the account's own connectors merge in and the probe is
 # measuring a different session than the harness runs.
+# THERE IS NO MCP CONFIG SITTING ON THIS MACHINE TO POINT AT, and an earlier
+# instruction that asked for one was wrong. `findMcpConfig` in
+# scripts/b12-run.mjs takes the path from `manifest.pinned.mcpConfig` — no
+# manifest exists yet — and its own comment records that "the old default was a
+# repository .mcp.json that does not exist, which starts no server".
+# scripts/b12-installedchars-probe-mac.sh:285 therefore WRITES ITS OWN into a
+# temp dir, and this does the same, from the same one-line template, so the two
+# probes exercise one shape. Your global Claude config is untouched.
+MCP_SHA=""
+MCP_SOURCE="none"
+MCP_PATH=""
 if [ -n "${B12_MCP_CONFIG:-}" ]; then
   [ -f "$B12_MCP_CONFIG" ] || refuse "B12_MCP_CONFIG=$B12_MCP_CONFIG does not exist"
-  MCP_ARGS=(--strict-mcp-config --mcp-config "$B12_MCP_CONFIG")
+  MCP_PATH="$B12_MCP_CONFIG"
+  MCP_SOURCE="supplied"
+elif [ -n "${B12_REPO:-}" ]; then
+  [ -d "$B12_REPO" ] || refuse "B12_REPO=$B12_REPO is not a directory"
+  SERVER_JS="$B12_REPO/dist/server.js"
+  # REFUSE RATHER THAN BUILD. This script's one checkable claim is that it
+  # writes nothing into the repository, and `npm run build` would end that.
+  [ -f "$SERVER_JS" ] || refuse "$SERVER_JS is missing — build the checkout first:
+    (cd \"$B12_REPO\" && npm ci && npm run build)
+  then re-run. This script deliberately does not build: it writes nothing into the repository."
+  MCP_PATH="$SCRATCH/mcp.json"
+  cat > "$MCP_PATH" <<JSON
+{"mcpServers":{"local-coder":{"type":"stdio","command":"node","args":["$SERVER_JS"],"env":{}}}}
+JSON
+  # A quote or backslash anywhere in the checkout path silently produces a
+  # config that parses and points nowhere, which starts no server and makes the
+  # treatment arm a control arm wearing its name.
+  node -e '
+const fs = require("node:fs");
+const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const s = c.mcpServers && c.mcpServers["local-coder"];
+if (!s || !Array.isArray(s.args) || !fs.existsSync(s.args[0])) process.exit(1);
+' "$MCP_PATH" 2>/dev/null || refuse "the generated --mcp-config is not usable or does not point at $SERVER_JS (a quote or backslash in the checkout path will do this)"
+  MCP_SOURCE="generated from B12_REPO"
+fi
+
+if [ -n "$MCP_PATH" ]; then
+  MCP_SHA="$(shasum -a 256 "$MCP_PATH" | awk '{print $1}')"
+  MCP_ARGS=(--strict-mcp-config --mcp-config "$MCP_PATH")
   ARGV_SHAPE="treatment: --print --session-id <id> --strict-mcp-config --mcp-config <path> --output-format json -- <prompt>"
-  ok "treatment shape, mcp config $B12_MCP_CONFIG"
+  ok "treatment shape — mcp config $MCP_SOURCE, sha ${MCP_SHA:0:12}…"
 else
   MCP_ARGS=(--strict-mcp-config)
   ARGV_SHAPE="control: --print --session-id <id> --strict-mcp-config --output-format json -- <prompt>"
-  warn "control shape (no --mcp-config). The primary observations are TREATMENT arm; set B12_MCP_CONFIG to probe that shape."
+  warn "control shape (no --mcp-config). The primary observations are TREATMENT arm (admissionRule 13)."
+  warn "Set B12_REPO=<built checkout> to generate one, or B12_MCP_CONFIG=<path> to supply your own."
 fi
 
 # ERREXIT IS DELIBERATELY NEVER ENABLED. A draft turned it on after this call,
@@ -141,6 +185,16 @@ if [ $CLI_RC -ne 0 ]; then
   refuse "claude --print exited $CLI_RC. No transcript to read; nothing was written."
 fi
 ok "session returned (exit 0)"
+
+# The config must be the SAME BYTES the session started under. Moving mid-run
+# means the two halves of one session saw two treatments — the reason the
+# installedChars probe refuses on the same fact.
+MCP_SHA_AFTER=""
+if [ -n "$MCP_PATH" ]; then
+  MCP_SHA_AFTER="$(shasum -a 256 "$MCP_PATH" | awk '{print $1}')"
+  [ "$MCP_SHA_AFTER" = "$MCP_SHA" ] \
+    || refuse "the --mcp-config bytes changed during the session ($MCP_SHA -> $MCP_SHA_AFTER). The arm is not one treatment; re-run."
+fi
 
 # ---------------------------------------------------------------------------
 next "Reading the transcripts the way the harness reads them"
@@ -369,6 +423,12 @@ const artifact = {
     disableAutoupdater: process.env.PROBE_AUTOUPD || "(unset)",
     argvShape: process.env.PROBE_ARGV,
     mcpConfig: process.env.PROBE_MCP || null,
+    mcpConfigSource: process.env.PROBE_MCP_SOURCE || "none",
+    mcpConfigSha256: process.env.PROBE_MCP_SHA || null,
+    // Re-hashed AFTER the session. The installedChars probe refuses when the
+    // --mcp-config bytes move mid-run because the calibration key moves with
+    // them; here it would mean the two halves of one session saw two configs.
+    mcpConfigSha256AfterSession: process.env.PROBE_MCP_SHA_AFTER || null,
     cwd: process.env.PROBE_CWD,
     prompt: process.env.PROBE_PROMPT,
     sessionId: SESSION,
@@ -439,7 +499,8 @@ NODE_EOF
 PROBE_SESSION="$SESSION_ID" PROBE_OUT="$OUT" PROBE_VER="$CLAUDE_VER" \
 PROBE_BIN="$CLAUDE_REAL" PROBE_CANON="$PATH_CANONICAL" PROBE_SHA="$CLAUDE_SHA" \
 PROBE_AUTOUPD="${DISABLE_AUTOUPDATER:-}" PROBE_ARGV="$ARGV_SHAPE" \
-PROBE_MCP="${B12_MCP_CONFIG:-}" PROBE_CWD="$SCRATCH" PROBE_PROMPT="$PROMPT" \
+PROBE_MCP="$MCP_PATH" PROBE_MCP_SOURCE="$MCP_SOURCE" PROBE_MCP_SHA="$MCP_SHA" \
+PROBE_MCP_SHA_AFTER="$MCP_SHA_AFTER" PROBE_CWD="$SCRATCH" PROBE_PROMPT="$PROMPT" \
 node "$VERDICT_JS"
 NODE_RC=$?
 
