@@ -1952,12 +1952,33 @@ defect, and it pinned four of them in place.
 
      Under the withdrawn decision 2 this gap was inert — the eligible pool was
      three tasks and the author had no freedom to misuse. **Under an authored
-     corpus it is live**, because the author now picks every fileScope and the
-     machine would accept one inside gate's own emission fence. `voidConditions`
-     5 makes the repair free until the first scored observation and not free
-     after. **The repair is owed and is NOT made here**: it edits
-     `scripts/b12-run.mjs`, which is itself pinned, so it is the owner's to
-     authorise.
+     corpus it is live**, because the author now picks every fileScope.
+
+     **REPAIRED 2026-08-12, owner-authorised, and only two thirds of it.**
+     `src/telemetry.ts` and `scripts/b12-run.mjs` are now in `PROTECTED_SCOPES`
+     in BOTH implementations — the harness's and the scorer's twin in
+     `src/cost/b12/filescope.ts` — which the conformance suite compares
+     case-for-case. Free under `voidConditions` 5: no manifest, no harness seal
+     and no scored observation exists at this commit.
+
+     **THE EMISSION HALF WAS ATTEMPTED AND BACKED OUT, FOR A MEASURED REASON.**
+     The first draft also added `src/tools/gate.ts` and `src/tools/repair.ts`, on
+     the argument that `fileScope` is a path grammar and cannot name a fenced
+     region, so the enforceable superset is the whole file — and that losing two
+     files would cost an authored manifest nothing. **The second half was false
+     and the suite said so:** a scope entry intersects everything beneath it, so
+     protecting those two files refuses `src/tools/` ENTIRELY, and the
+     conformance suite asserts that exact scope is lawful. `src/tools/` is where
+     gate, repair, implement, scaffold, status, models and shared live — the
+     product surface B12 measures, not two spare files. Sixteen tests went red
+     and the prediction written before the edit had said none would.
+
+     So the frozen comment beside `EMISSION_FENCED_FILES` — "the tools are the
+     subject, not the instrument" — is right, and pinning only the FENCE is what
+     keeps the subject available. **The residual is named and not closed**: a
+     task lawfully scoped to `gate.ts` may still edit inside the fence, and
+     clause 5 catches that after the fact as a VOID. No path-level gate can do
+     better, and buying it would cost the thing being measured.
   4. **TWO STRATA BY TASK SIZE**: short-mechanical (10–30 min) and
      closed-unit (30–90 min). The dimension is not decorative — it is the one
      `holdsIf` names as decisive, since a short denominator is what lifts `R_lo`.

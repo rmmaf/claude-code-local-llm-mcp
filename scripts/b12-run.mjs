@@ -1201,6 +1201,37 @@ export const PROTECTED_SCOPES = [
   "ROADMAP.md",
   "DECISIONS.md",
   "STATE.md",
+  // ADDED 2026-08-12, BECAUSE THIS LIST DID NOT ENFORCE THE DECISION THAT NAMED
+  // IT. Task-mix decision 3 forbids a task touching `src/cost/**`,
+  // `src/telemetry.ts`, gate's or repair's emission, or `scripts/b12-run.mjs`,
+  // and says "those ARE `PINNED_PATHS`". True, and misleading: `PINNED_PATHS`
+  // (`src/cost/b12/audit.ts`) and this list overlapped in ONE item, and THIS is
+  // the list a manifest actually passes through. Measured before the change — a
+  // task scoped to `src/telemetry.ts`, `scripts/b12-run.mjs`, `src/tools/gate.ts`
+  // or `src/tools/repair.ts` was ACCEPTED. Clause 5 is a change DETECTOR over
+  // pinned bytes; it fires after the fact and VOIDS, so it is not this gate.
+  "src/telemetry.ts",
+  "scripts/b12-run.mjs",
+  // GATE.TS AND REPAIR.TS ARE DELIBERATELY *NOT* HERE, AND THE FIRST DRAFT PUT
+  // THEM IN. The argument for adding them was that decision 3 forbids "gate's or
+  // repair's emission" while `fileScope` is a path grammar that cannot name a
+  // fenced region, so the enforceable superset is the whole file — and that
+  // losing two files would cost an authored manifest nothing.
+  //
+  // MEASURED, AND THE SECOND HALF WAS FALSE. A scope entry intersects every file
+  // beneath it, so protecting those two files refuses `src/tools/` ENTIRELY —
+  // the conformance suite asserts that exact scope is lawful
+  // (`tests/cost-meter.test.ts`, "the two admissionRule-7 implementations agree,
+  // case for case"), and `src/tools/` is where gate, repair, implement, scaffold,
+  // status, models and shared all live. That is the product surface B12 exists to
+  // measure the effect on, not two spare files.
+  //
+  // So the frozen comment beside `EMISSION_FENCED_FILES` — "the tools are the
+  // subject, not the instrument" — is right, and pinning only the FENCE is what
+  // keeps the subject available. The residual is real and is named rather than
+  // closed: a task lawfully scoped to gate.ts may still edit inside the fence,
+  // and clause 5 catches that AFTER the fact, as a VOID. No path-level gate can
+  // do better, and buying it would cost the thing being measured.
 ];
 
 /**
