@@ -1,0 +1,84 @@
+{
+  "_readme": [
+    "THE PILOT'S CONFIG. Build with:  node scripts/b12-manifest.mjs plan b12-corpus/manifest-config.json --pilot-only",
+    "Keys beginning with _ are ignored by parseManifestConfig; they are notes for whoever fills this in.",
+    "",
+    "EVERY PIN BELOW IS IN ONE OF THREE STATES, and the distinction is the point:",
+    "  KNOWN HERE  - computed on the authoring machine and already filled in.",
+    "  MAC-LOCAL   - null, because only the run machine can know it. The tool REFUSES on null;",
+    "                a plausible-looking placeholder would VALIDATE, which is worse than a refusal.",
+    "  OWNER       - null, because it is a choice nobody has made yet. See _ownerDecisions.",
+    "",
+    "Do not replace a null with a guess to make the tool quiet. The refusal is the deliverable."
+  ],
+
+  "specRoot": "b12-corpus",
+
+  "pilotRunId": "2026-08-13-mac-b12-pilot",
+  "_pilotRunId": "Rename to the date the pilot actually runs. It names evidence/<pilotRunId>.b12.pilot-<taskId>.manifest.json and, after the run, evidence/<pilotRunId>.b12.pilot.json.",
+
+  "pilot": [
+    "pilot-normalizeid",
+    "pilot-usablefree",
+    "pilot-csvreturn",
+    "pilot-csvcomment",
+    "pilot-lmsguard"
+  ],
+  "_pilot": "ORDERED, and the order is load-bearing: committedOrderViolation runs for every treatment arm and is NOT under the pilotMode exemption, so each of these ships as its own single-task manifest with its task at index 0. All five are excluded from manifests A and B by design.artifacts 4.",
+
+  "_manifestsAandB": "ABSENT ON PURPOSE. runPlan PHASE 2 precedes PHASE 4 — the pilot runs before the sealed manifests exist. --pilot-only is what expresses that; without it the tool would demand 60 authored siblings before emitting five pilot manifests.",
+
+  "pinned": {
+    "ratesSha256": "6d74cafd7fa5702352d068825be2f75f3ae7dd0ef3df77cc9ff7f04826730c94",
+    "b12RunSha256": "053eb27932e441cc37e19c1679942533e6ff801c852a0cfbb294f9287214b315",
+    "claudeMdSha256": "a81a02652ccefaac797cbe524ca545e042add2c323bca9105d5a01a2c3535d2a",
+    "scoringCommand": "node dist/cost/b12/emit.js 2026-08-13-mac-b12-pilot",
+    "perArmTimeoutMs": 2700000,
+    "extraArgs": [],
+
+    "claudeCodeVersion": null,
+    "claudeBinarySha256": null,
+    "clientTruncationCap": null,
+    "settingsSha256s": { "settings": null, "settingsLocal": null },
+    "installedCharsProbe": null,
+    "installedCharsProbeSha256": null,
+    "mcpConfig": null,
+    "mcpConfigSha256": null,
+    "policyBlobs": { "treatment": null, "control": null },
+
+    "pacingCacheWriteShareCeiling": null,
+    "perTaskDenominatorShareCap": null
+  },
+
+  "_knownHere": {
+    "ratesSha256": "sha256 of .local-coder/rates.json at the shared green parent. Compared inside EACH base commit's own tree by assertRatesFrozen, so it is a property of the corpus, not of a machine.",
+    "b12RunSha256": "sha256 of scripts/b12-run.mjs at 608e930. GOES STALE THE MOMENT THAT FILE CHANGES — observe asserts the running harness IS the sealed one, so recompute if you touch it before the run.",
+    "claudeMdSha256": "sha256 of the in-repo CLAUDE.md at 608e930.",
+    "scoringCommand": "voidConditions 19: the ONE string committed at pre-registration. Change it here and nowhere else.",
+    "perArmTimeoutMs": "45 minutes. Declared rather than left to the silent fallback, which manifestDeclarationGaps refuses.",
+    "extraArgs": "Empty, deliberately: a non-empty value forces an installedChars RE-PROBE (b12-run.mjs:1911)."
+  },
+
+  "_macLocal": {
+    "claudeCodeVersion": "The FULL x.y.z on the run machine. assertPinned compares with .includes(), so a partial pin like 2.1.2 silently matches 2.1.221 — the assembler refuses anything that is not x.y.z.  claude --version",
+    "claudeBinarySha256": "sha256 of the Claude Code binary that will run.  shasum -a 256 $(which claude)",
+    "clientTruncationCap": "The cap MEASURED for that version. voidConditions 8 VOIDS a run with no cap measured for the version that ran.  scripts/b12-truncationcap-probe-mac.sh",
+    "settingsSha256s": "BOTH keys required, and null is a legitimate value meaning 'this file does not exist' — omission declares nothing, null declares an absence.",
+    "installedCharsProbe": "Path to the committed probe artifact, plus its sha256. The re-probe is OWED with the orchestrator model in the calibration key (PREMISES.md, sixth decision).  scripts/b12-installedchars-probe-mac.sh",
+    "mcpConfig": "Path to the generated MCP config, plus its sha256. observe dereferences both and NO validator checks them; the path is machine-local, so presence is all this machine can assert.",
+    "policyBlobs": "One {repo, commit, path, sha256} per arm, for the OUT-OF-REPO policy bundles. The repo must exist on the run machine, be a full (not shallow) clone, and resolve OUTSIDE this repository — findPolicyBlob refuses an in-repo path as in-repo policy wearing an out-of-repo name."
+  },
+
+  "_ownerDecisions": {
+    "pacingCacheWriteShareCeiling": "One of thresholdArgument's two CHOSEN constants, to be committed BEFORE any observation. No value is stated anywhere in the frozen text or in PREMISES.md — the fixture's 1 is test material and must not be copied in.",
+    "perTaskDenominatorShareCap": "The other one. Same status: chosen, not derived, and not yet chosen.",
+    "_note": "These two are the reason a pilot cannot be assembled today even with the Mac's values in hand. They are yours, they are pre-data, and they are free until the first scored observation."
+  },
+
+  "_transport": [
+    "A plain git fetch brings NO base — measured. Tag auto-following only takes tags pointing into fetched history, and these bases are detached.",
+    "git push origin \"refs/tags/b12/corpus/*:refs/tags/b12/corpus/*\"",
+    "git fetch origin \"refs/tags/b12/corpus/*:refs/tags/b12/corpus/*\"",
+    "Then, ON THE MAC, before spending anything:  node scripts/b12-author.mjs verify-corpus b12-corpus/pilot-plan.json --deep"
+  ]
+}

@@ -281,7 +281,8 @@ export function frozenScoringFacts(repoRoot = SCRIPT_REPO) {
  * session ran the task it was owed, so a set here would silently become a
  * sequence somewhere else.
  */
-export function parseManifestConfig(repoRoot, configPath) {
+export function parseManifestConfig(repoRoot, configPath, opts = {}) {
+  const pilotOnly = opts.pilotOnly === true;
   const bad = (why) => ({ ok: false, why });
   if (!existsSync(configPath)) return bad(`${configPath} does not exist`);
   let raw;
@@ -304,8 +305,14 @@ export function parseManifestConfig(repoRoot, configPath) {
     return { ok: true, value: v };
   };
 
-  const lists = {};
-  for (const name of ["manifestA", "manifestB", "pilot"]) {
+  const lists = { manifestA: [], manifestB: [] };
+  // PILOT-ONLY IS A REAL PHASE, NOT A CONVENIENCE. `runPlan` PHASE 2 precedes
+  // PHASE 4: the pilot RUNS before the sealed manifests exist, and
+  // `design.artifacts` 4 excludes its ids from BOTH of them. Requiring sixty
+  // authored siblings before this tool will emit five pilot manifests would
+  // invert that ordering — the first draft did exactly that, which is why the
+  // pilot could not be assembled on the day its five bases were authored.
+  for (const name of pilotOnly ? ["pilot"] : ["manifestA", "manifestB", "pilot"]) {
     const parsed = idList(name);
     if (!parsed.ok) return bad(parsed.why);
     lists[name] = parsed.value;
@@ -333,15 +340,15 @@ export function parseManifestConfig(repoRoot, configPath) {
     }
   }
 
-  for (const name of ["runIdA", "runIdB", "pilotRunId"]) {
+  for (const name of pilotOnly ? ["pilotRunId"] : ["runIdA", "runIdB", "pilotRunId"]) {
     if (typeof raw[name] !== "string" || !SAFE_ID.test(raw[name])) {
       return bad(`config.${name} is absent or not a safe path segment — it names evidence/<runId>… on disk`);
     }
   }
-  if (raw.runIdA === raw.runIdB) return bad("config.runIdA and config.runIdB are the same string — run 2 is a distinct registered run, not a relabel (checkCore)");
+  if (!pilotOnly && raw.runIdA === raw.runIdB) return bad("config.runIdA and config.runIdB are the same string — run 2 is a distinct registered run, not a relabel (checkCore)");
 
-  const pairSets = {};
-  for (const [name, owner] of [["abPairsA", lists.manifestA], ["abPairsB", lists.manifestB]]) {
+  const pairSets = { abPairsA: [], abPairsB: [] };
+  for (const [name, owner] of pilotOnly ? [] : [["abPairsA", lists.manifestA], ["abPairsB", lists.manifestB]]) {
     const v = raw[name];
     if (!Array.isArray(v)) return bad(`config.${name} is absent — manifest B needs its OWN pairs, because checkCore runs manifestDeclarationGaps over BOTH`);
     for (const p of v) {
@@ -370,7 +377,7 @@ export function parseManifestConfig(repoRoot, configPath) {
     return bad("config.specRoot lies under evidence/ — every tree entry there becomes a registered trace id, and a phantom run refuses every later registration");
   }
 
-  return { ok: true, config: { specRoot, ...lists, runIdA: raw.runIdA, runIdB: raw.runIdB, pilotRunId: raw.pilotRunId, ...pairSets, pinned: raw.pinned, configPath } };
+  return { ok: true, config: { specRoot, pilotOnly, ...lists, runIdA: raw.runIdA, runIdB: raw.runIdB, pilotRunId: raw.pilotRunId, ...pairSets, pinned: raw.pinned, configPath } };
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +516,10 @@ export function assembleManifests(repoRoot, config) {
   const reasons = [];
   const tasks = {};
   const parents = new Set();
-  for (const [listName, ids] of [["manifestA", config.manifestA], ["manifestB", config.manifestB], ["pilot", config.pilot]]) {
+  const lists = config.pilotOnly
+    ? [["pilot", config.pilot]]
+    : [["manifestA", config.manifestA], ["manifestB", config.manifestB], ["pilot", config.pilot]];
+  for (const [listName, ids] of lists) {
     tasks[listName] = [];
     for (const id of ids) {
       const derived = deriveTask(repoRoot, config.specRoot, id, facts);
@@ -530,8 +540,8 @@ export function assembleManifests(repoRoot, config) {
     return { ok: false, reasons: [`the corpus declares ${parents.size} different green parents (${[...parents].map((p) => p.slice(0, 12)).join(", ")}) — every base must differ from ONE shared tree by exactly its own defect`] };
   }
 
-  const manifestA = manifestObject(config.runIdA, tasks.manifestA, config.abPairsA, config.pinned);
-  const manifestB = manifestObject(config.runIdB, tasks.manifestB, config.abPairsB, config.pinned);
+  const manifestA = config.pilotOnly ? null : manifestObject(config.runIdA, tasks.manifestA, config.abPairsA, config.pinned);
+  const manifestB = config.pilotOnly ? null : manifestObject(config.runIdB, tasks.manifestB, config.abPairsB, config.pinned);
   // FIVE SINGLE-TASK PILOT MANIFESTS SHARING ONE runId, and BOTH halves of that
   // shape are forced by the frozen harness rather than chosen.
   //
@@ -588,7 +598,10 @@ export function assemblyRefusals(repoRoot, config, built) {
   const red = [];
   const { manifestA, manifestB, pilots, facts } = built;
 
-  for (const [name, m] of [["manifest A", manifestA], ["manifest B", manifestB]]) {
+  // UNDER PILOT-ONLY THERE IS NO A AND NO B, so every check that compares them
+  // is DEFERRED rather than silently skipped — `deferredRefusals` names each.
+  const sealed = config.pilotOnly ? [] : [["manifest A", manifestA], ["manifest B", manifestB]];
+  for (const [name, m] of sealed) {
     for (const gap of manifestDeclarationGaps(m)) red.push(`${name}: ${gap}`);
   }
   // NOTHING IS SUPPRESSED HERE, and an earlier draft suppressed one thing. The
@@ -599,13 +612,15 @@ export function assemblyRefusals(repoRoot, config, built) {
     for (const gap of manifestDeclarationGaps(manifest)) red.push(`pilot manifest ${taskId}: ${gap}`);
   });
 
-  const syntheticPilot = { observations: config.pilot.map((taskId) => ({ taskId })) };
-  for (const core of checkCore(manifestA, manifestB, syntheticPilot)) red.push(core);
+  if (!config.pilotOnly) {
+    const syntheticPilot = { observations: config.pilot.map((taskId) => ({ taskId })) };
+    for (const core of checkCore(manifestA, manifestB, syntheticPilot)) red.push(core);
+  }
 
   // THE PER-CELL FLOOR, at the declaration. A stratum carrying fewer tasks than
   // MIN_DELIVERY_OBSERVATIONS can never reach that many observations, so the
   // cell is void by construction before a single session runs.
-  for (const [name, m] of [["manifest A", manifestA], ["manifest B", manifestB]]) {
+  for (const [name, m] of sealed) {
     const counts = new Map();
     for (const t of m.tasks) counts.set(t.verificationStratum, (counts.get(t.verificationStratum) ?? 0) + 1);
     for (const [stratum, n] of counts) {
@@ -628,7 +643,7 @@ export function assemblyRefusals(repoRoot, config, built) {
   // passing a different root gets an answer about the current directory. Named
   // here rather than papered over; an absolute `repo` is immune either way.
   for (const arm of ["treatment", "control"]) {
-    const found = findPolicyBlob(manifestA, arm);
+    const found = findPolicyBlob(manifestA ?? built.pilots[0]?.manifest ?? { pinned }, arm);
     if (found.blob === null) red.push(`policy blob (${arm}): ${found.why}`);
   }
 
@@ -665,13 +680,22 @@ export function assemblyRefusals(repoRoot, config, built) {
 }
 
 /** The reds that cannot be satisfied until the pilot has actually run. */
-export function deferredRefusals() {
+export function deferredRefusals(pilotOnly = false) {
   return [
+    ...(pilotOnly
+      ? [
+          "checkCore over manifests A and B — the 30/30 cardinalities, the 6 A/B pairs, the distinct runIds, and BOTH pilot-overlap checks: not satisfiable while A and B are unauthored, and NOT skipped quietly",
+          "the per-stratum floor of MIN_DELIVERY_OBSERVATIONS over the sealed manifests, for the same reason",
+        ]
+      : []),
     "no pilot file — PHASE 2 precedes PHASE 4, and a register with no pilot is a phase skipped in silence: satisfied by RUNNING the five pilot manifests, not by assembling them",
   ];
 }
 
 export function outputPaths(config) {
+  if (config.pilotOnly) {
+    return { manifestA: null, manifestB: null, pilots: config.pilot.map((t) => `evidence/${config.pilotRunId}.b12.pilot-${t}.manifest.json`) };
+  }
   return {
     manifestA: `evidence/${config.runIdA}.b12.tasks.json`,
     manifestB: `evidence/${config.runIdA}.b12.manifest-B.tasks.json`,
@@ -695,10 +719,11 @@ function report(lines, heading) {
   for (const line of lines) process.stderr.write(`  - ${line}\n`);
 }
 
-function run(write) {
+function run(write, pilotOnly) {
   const repoRoot = process.cwd();
-  const configPath = path.resolve(repoRoot, process.argv[3] ?? DEFAULT_CONFIG_PATH);
-  const parsed = parseManifestConfig(repoRoot, configPath);
+  const positional = process.argv.slice(3).filter((a) => !a.startsWith("--"));
+  const configPath = path.resolve(repoRoot, positional[0] ?? DEFAULT_CONFIG_PATH);
+  const parsed = parseManifestConfig(repoRoot, configPath, { pilotOnly });
   if (!parsed.ok) fail(parsed.why);
   const config = parsed.config;
 
@@ -723,13 +748,21 @@ function run(write) {
   const red = assemblyRefusals(repoRoot, config, built);
   if (red.length > 0) {
     report(red, `${red.length} reason(s) the manifests would not register:`);
+    // THE DEFERRED LIST PRINTS ON THIS PATH TOO, and it did not at first. A
+    // check that is deferred rather than run is only honest while it is VISIBLE;
+    // showing it solely on the success path means the operator meets it last,
+    // after every other refusal is cleared, which is precisely when a deferral
+    // is easiest to mistake for a pass.
+    report(deferredRefusals(config.pilotOnly), "and these are DEFERRED, not skipped:");
     process.exit(1);
   }
 
   const paths = outputPaths(config);
   const artifacts = [
-    { rel: paths.manifestA, bytes: manifestBytes(built.manifestA) },
-    { rel: paths.manifestB, bytes: manifestBytes(built.manifestB) },
+    ...(config.pilotOnly ? [] : [
+      { rel: paths.manifestA, bytes: manifestBytes(built.manifestA) },
+      { rel: paths.manifestB, bytes: manifestBytes(built.manifestB) },
+    ]),
     ...built.pilots.map((p, i) => ({ rel: paths.pilots[i], bytes: manifestBytes(p.manifest) })),
   ];
 
@@ -762,7 +795,7 @@ function run(write) {
   // committed between those checks and these writes, by another process, on a
   // single-operator tool: named, and not defended against.
 
-  const deferred = deferredRefusals();
+  const deferred = deferredRefusals(config.pilotOnly);
   process.stdout.write(`b12-manifest: ${write ? "WROTE" : "PLANNED"} ${artifacts.length} artifact(s)\n`);
   for (const a of artifacts) {
     if (write) {
@@ -776,7 +809,8 @@ function run(write) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const cmd = process.argv[2];
-  if (cmd === "build") run(true);
-  else if (cmd === "plan") run(false);
-  else fail("usage: node scripts/b12-manifest.mjs <build|plan> [configPath]");
+  const pilotOnly = process.argv.includes("--pilot-only");
+  if (cmd === "build") run(true, pilotOnly);
+  else if (cmd === "plan") run(false, pilotOnly);
+  else fail("usage: node scripts/b12-manifest.mjs <build|plan> [configPath] [--pilot-only]");
 }
