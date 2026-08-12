@@ -10,24 +10,22 @@ and publishes a base (`530c2c2`, annotated `refs/tags/b12/corpus/<taskId>`, crea
 retire moves before a compare-and-delete); `b12-manifest.mjs` assembles the manifests
 (`0086b79`). The assembler DERIVES rather than declares — `baseCommit` from the tag,
 `acceptance` from the spec's argv — and refuses a spec that declares either.
-**Two measurements decided design, both refuting an argument:** a plain `git fetch` into
-an existing clone brings NO base (auto-following only takes tags pointing into fetched
-history); and a quoted acceptance entry is an ALWAYS-ACCEPT — `'single'` exits 0 on both
-platforms, `"double"` exits 0 on macOS and 3 on Windows, against the author's 3.
+**Two measurements decided design, both refuting an argument:** a plain `git fetch` brings
+NO base into an existing clone (auto-following needs a tag pointing into fetched history),
+and a quoted acceptance entry ALWAYS-ACCEPTS — `'single'` exits 0 on both platforms,
+`"double"` 0 on macOS and 3 on Windows, against the author's 3.
 
 ## Next action
 
-**Author the 65 defect patches**, which is the only thing left before the Mac trips: pick
-the shared green parent, then one spec directory per task (`spec.json` with its `manifest`
-block, `defect.patch`, `prompt.md`) under `b12-corpus/`. The four open owner decisions —
-per-task predicate, `fileScope`, the committed order, and the admission rate p — are
-inputs to this, not to the tools. Predicates must be SPACE-FREE argv: no quotes.
+**Author the 65 defect patches** — the only thing left before the Mac trips: the shared green
+parent, then one spec dir per task under `b12-corpus/` (`spec.json` with its `manifest` block,
+`defect.patch`, `prompt.md`). The four open owner decisions — predicate, `fileScope`, committed
+order, p — are inputs to THIS, not to the tools. Predicates: SPACE-FREE argv, no quotes ever.
 
 ## Still blocking a run
 
 **The exposure is p, never measured:** N = 30 completes 29% at p = 0.60, 59% at 0.667 — a
-coin flip — and 93% at the 0.77 the frozen design implies. A void consumes one of two
-attempts.
+coin flip — and 93% at 0.77. A void consumes one of two attempts.
 
 Unchanged: VOID 21 and VOID 12 (**no A/B before both**); the Mac trips (policy blobs,
 installedChars RE-PROBE with the model in the key, cap probe, pilot); platform and
