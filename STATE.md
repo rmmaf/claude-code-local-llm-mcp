@@ -5,40 +5,40 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**The plan's three passes shipped and survived thirty adversarial rounds** on
-`claude/b12-f23-audit-register`: F23's uncapped bracket; clause 6's controls,
-emission wrapper and audit computer; pilot; register (CAS); policy blobs as GIT
-PROVENANCE, DUAL key. PR #18 open — the merge is the user's act.
+**The SIXTH owner decision is declared pre-data and committed** (`40d7065`): the
+orchestrator is `claude-opus-5`, pinned as a RATE KEY — a model-id pin is silent on
+`/fast` — and ASSERTED per arm, never imposed with `--model`. Nothing was pinned by
+identity; homogeneity was all there was and it decides at emission. Two adversarial
+rounds, eight findings, all sustained; three claims retracted INSIDE the entry. The
+mutation harness stands (R38–R48, `FINDINGS.md`). **The subagent rate-key probe is
+committed (`40a1ec4`) and NOT RUN.** PR #18 is MERGED.
 
 ## Next action
 
-**R8–R37 are ADJUDICATED — fifty-four findings, all but two confirmed, each
-fixed with a control shown FIRING. `FINDINGS.md` is the record round by round;
-this file does not duplicate it.** R16 and R26 were the worst: the real index
-stayed on `expectedHead`, so the next ordinary commit UNDID the registration;
-and the verdict was the ARTIFACT'S, not the audit's. After seven rounds on ONE
-surface, R35–R37 retargeted the same diff at arithmetic, attribution and
-conformance — nine findings, seven high, **none in git**.
-
-**Two owner decisions are PRE-DECLARED in `PREMISES.md` (2026-08-11), not
-here:** `open` is accepted and no power analysis gates the run; the acceptance
-predicate, verified FAILING at base, is the WHOLE quality floor — nothing added
-after the first scored observation.
+**Run the probe on the Mac with `B12_MCP_CONFIG` SET** — unset it answers for the
+control arm, and the primary observations are treatment (`admissionRule` 13). It is a
+SWITCH: if subagents serve on another key, every observation carrying one is
+`void(rate_key_mixed)`, `multi` drops below 5, and the run returns `open`. Send it back.
 
 ## Still blocking a run
 
-The A/B pass (scorer + VOID 21 and VOID 12 adjudications — **NO A/B before both
-are registered**); the task MIX, owed before the manifest is sealed; the
-65-sibling corpus; the Mac trips (policy transport, dual-key re-probe, cap probe,
-formal preflight, pilot); the platform amendment; the Phase-3 1/3 amendment
-(gate-only is CUT); contract-stability re-run; then seal → register (CAS) → 20–26
-sessions → clause-6 → verdict → A/B. **At the seal, re-pin
-`pinned.captureSha256`: editing `capture.ts` moves it.**
+**NEW AND MECHANICAL: a 26-task manifest CANNOT REGISTER.** `b12-register.mjs:92`
+refuses `n !== 30` and `:94` refuses `pairs !== 6`, while the mix pre-declared N = 26.
+Frozen `admissionRule` 2 is 30 ordered, first 20 that admit: **30 tolerates an
+admission rate ≥ 0.667, 26 needs ≥ 0.769, and no 5-task pilot separates 0.60 from
+0.667.** Decide on structure, or amend a clause `voidConditions` 4 freezes.
+
+Unchanged: VOID 21 and VOID 12 (**no A/B before both**); the 65-sibling corpus; the
+Mac trips (policy blobs, installedChars RE-PROBE with the model in the key, cap probe,
+pilot); platform and Phase-3 amendments; contract-stability re-run; seal → register
+(CAS) → sessions → clause 6 → verdict → A/B. **At the seal, re-pin `pinned.captureSha256`.**
 
 ## Do not redo
 
-- The O-bracket is DECLINED and so are its cousins: no control-arm
-  `installedChars`, no minted VOID-21 hash, no minted verdict-precedence RULE.
+- The O-bracket is DECLINED and so are its cousins: no control-arm `installedChars`,
+  no minted VOID-21 hash, no minted verdict-precedence RULE.
 - Never back-fill an append-only record; three phase-3 run ids stay row-less.
-- `tests/fixtures/b12-run/` is TEST MATERIAL, never evidence.
-- The `// b12:emission-begin` fences ARE clause 5's fourth item.
+- `tests/fixtures/b12-run/` is TEST MATERIAL; `// b12:emission-begin` IS clause 5's 4th.
+- **`void(withheld)` is MEASURED not firing** — 2026-08-09 pre-flight, 2.1.221,
+  `provenanceUnavailable === false`. A switch, not a rate; do not re-derive it.
+- The zero-owned-key gap is the harness's, named in `PREMISES.md`, and NOT closed.
