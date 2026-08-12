@@ -101,7 +101,7 @@ export function parseModelsCsv(text: string): ModelEntry[] {
     if (record.every((f) => f.trim() === "")) continue; // blank line
     const model = (record[0] ?? "").trim();
     if (model === "") continue;
-    if (model.startsWith("#")) continue; // comment line
+    if (model.startsWith("//")) continue; // comment line
     if (record.length < 2) {
       log.warn(`models-csv: row for ${JSON.stringify(model)} has no objective column; using empty objective`);
     } else if (record.length > 2) {
