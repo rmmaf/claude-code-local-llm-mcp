@@ -10,7 +10,7 @@ export type MatchQuality = "exact" | "fuzzy" | "none";
 
 /** Lowercase, trim, backslashes → forward slashes. */
 export function normalizeId(s: string): string {
-  return s.trim().toLowerCase().replace(/\\/g, "/");
+  return s.trim().replace(/\\/g, "/");
 }
 
 // Quant/format/precision tokens that distinguish the same base model. Stripped
