@@ -130,13 +130,28 @@ PROMPT='Use the Task tool to launch exactly one general-purpose subagent. That s
 MCP_SHA=""
 MCP_SOURCE="none"
 MCP_PATH=""
+# Precedence is B12_MCP_CONFIG over B12_REPO, and it is ANNOUNCED rather than
+# silent: an operator who set both would otherwise get the shape they did not
+# intend and no way to tell from the console.
+if [ -n "${B12_MCP_CONFIG:-}" ] && [ -n "${B12_REPO:-}" ]; then
+  warn "both B12_MCP_CONFIG and B12_REPO are set — B12_MCP_CONFIG WINS and B12_REPO is ignored"
+fi
+
 if [ -n "${B12_MCP_CONFIG:-}" ]; then
   [ -f "$B12_MCP_CONFIG" ] || refuse "B12_MCP_CONFIG=$B12_MCP_CONFIG does not exist"
   MCP_PATH="$B12_MCP_CONFIG"
   MCP_SOURCE="supplied"
 elif [ -n "${B12_REPO:-}" ]; then
   [ -d "$B12_REPO" ] || refuse "B12_REPO=$B12_REPO is not a directory"
-  SERVER_JS="$B12_REPO/dist/server.js"
+  # ABSOLUTE, RESOLVED, AND THIS IS NOT COSMETIC. The session runs with its cwd
+  # set to $SCRATCH, so a RELATIVE server path in the generated config resolves
+  # against the scratch dir and finds nothing — while both checks below run from
+  # the operator's cwd and PASS. The result is a treatment arm with no server:
+  # a control arm wearing the treatment's name, at exit 0. `cd && pwd -P` is the
+  # portable canonicaliser here, since BSD `readlink` has no -f.
+  B12_REPO_ABS="$(cd "$B12_REPO" 2>/dev/null && pwd -P)"
+  [ -n "$B12_REPO_ABS" ] || refuse "could not resolve B12_REPO=$B12_REPO to an absolute path"
+  SERVER_JS="$B12_REPO_ABS/dist/server.js"
   # REFUSE RATHER THAN BUILD. This script's one checkable claim is that it
   # writes nothing into the repository, and `npm run build` would end that.
   [ -f "$SERVER_JS" ] || refuse "$SERVER_JS is missing — build the checkout first:
