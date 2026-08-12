@@ -95,7 +95,7 @@ function parseCsvRecords(text: string): string[][] {
  * empty objective (with a warning); extra columns beyond the first two are
  * ignored. Pure and never throws.
  */
-export function parseModelsCsv(text: string): ModelEntry[] {
+export function parseModelsCsv(text: string): ModelEntry {
   const entries: ModelEntry[] = [];
   for (const record of parseCsvRecords(text)) {
     if (record.every((f) => f.trim() === "")) continue; // blank line
