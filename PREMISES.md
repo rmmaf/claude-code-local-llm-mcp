@@ -1927,6 +1927,42 @@ defect, and it pinned four of them in place.
      to manage is p itself: the live void classes are `task_failed` and, since
      `run 2026-08-12-mac-b12-subagentkey-77fddca`, `pacing`.
 
+  **MEASURED 2026-08-12, AND IT IS A BLOCKER RATHER THAN A DETAIL: THIS
+  REPOSITORY'S ELIGIBLE BACKLOG HOLDS THREE TASKS, AGAINST THE SIXTY-FIVE THE
+  CORPUS NEEDS** (30 + 30 + 5). Decision 2 requires tasks from the real backlog,
+  not designed by the measuring party; decision 3 makes ineligible everything the
+  measurement depends on. Those two together are what empty the pool, and the
+  numbers are:
+  - Of 381 commits, **85 touched `src/cost/**`** (ineligible) and **139 touched
+    `scripts/`**; only **35 touched eligible `src/` at all**. This repository
+    spent its recent life inside its own instrument, which decision 3 excludes.
+  - Of those 35, **8 revert cleanly against HEAD**. Each was then REVERTED IN A
+    SCRATCH WORKTREE AND ITS OWN TESTS RUN — the qualification is "verified
+    failing at base", so it is measured and not read off the diff. **3 qualify**
+    (`ed99c32`, `93bfa39`, `f5aa484`, all in `src/selection.ts`, 2/4/7 tests red).
+    One shipped no test. **Four went STILL-GREEN: the fix's own tests do not
+    catch its regression** — a finding about this suite, recorded separately.
+  - The **13 `(open point)` markers in `DECISIONS.md` yield 0–1** implementable
+    test-backed items: the rest are design questions, owner decisions ("Not my
+    call", `:519`), work needing the Mac (`:395`), or already resolved in their
+    own paragraph (`:85`, `:654`).
+  - The mutation harness's **6 historical bugs are all in `src/cost/**`**, so
+    none is eligible.
+  - Ruling `scripts/b12-*.mjs` eligible would add **28** more. `PROTECTED_SCOPES`
+    names only `session-token-walk.mjs`, so the LETTER permits it — but decision
+    3 states a PRINCIPLE, "nothing the measurement depends on", and the register,
+    the author and the assembler are that. Reading the enumeration against the
+    principle is the over-reading this file keeps catching.
+
+  **WHAT THIS DOES NOT ESTABLISH**: that no corpus is reachable, only that THIS
+  repository's backlog does not supply one under decisions 2 and 3 as written.
+  The reachable moves are all the owner's — draw the corpus from another
+  repository, amend decision 2 and DISCLOSE that the tasks were measurer-designed,
+  or decline this venue. **Nothing is being filled in by invention in the
+  meantime**, because a hold on tasks the measurer designed cannot distinguish
+  "the tool pays" from "the tasks were chosen to suit it", which is the one
+  distinction B12 exists to make.
+
   **What these decisions do NOT settle**, recorded so the gap is not mistaken
   for a decision: the per-task acceptance predicate (each must be verified
   FAILING at base, which restricts the eligible backlog to test-backed items),

@@ -17,15 +17,15 @@ and a quoted acceptance entry ALWAYS-ACCEPTS — `'single'` exits 0 on both plat
 
 ## Next action
 
-**Author the 65 defect patches** — the only thing left before the Mac trips: the shared green
-parent, then one spec dir per task under `b12-corpus/` (`spec.json` with its `manifest` block,
-`defect.patch`, `prompt.md`). The four open owner decisions — predicate, `fileScope`, committed
-order, p — are inputs to THIS, not to the tools. Predicates: SPACE-FREE argv, no quotes ever.
+**AN OWNER DECISION, because the corpus cannot be filled.** Measured 2026-08-12, written up
+in `PREMISES.md` § B12: the eligible backlog holds **3** qualifying tasks against 65 — task
+mix decisions 2 and 3 together empty the pool, since the backlog lives in the instrument.
+Yours to pick: another repository, an amendment to 2 disclosing measurer-designed tasks, or
+decline this venue. Nothing is being invented in the meantime.
 
 ## Still blocking a run
 
-**The exposure is p, never measured:** N = 30 completes 29% at p = 0.60, 59% at 0.667 — a
-coin flip — and 93% at 0.77. A void consumes one of two attempts.
+**p is unmeasured:** N=30 completes 29% at 0.60, 59% at 0.667, 93% at 0.77; a void costs an attempt.
 
 Unchanged: VOID 21 and VOID 12 (**no A/B before both**); the Mac trips (policy blobs,
 installedChars RE-PROBE with the model in the key, cap probe, pilot); platform and
