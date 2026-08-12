@@ -2139,19 +2139,41 @@ defect, and it pinned four of them in place.
     post-session check and no arrangement of these items lowers it** — which is
     exactly why item 2 exists, to make the common case (a machine that was wrong
     all along) cost a scratch session instead of a manifest one.
-  - **Whether a subagent inside a scored session serves on a different key, and
-    what that costs.** This is a property of frozen `voidConditions` 10 and not
-    something this decision creates — a window spanning two keys is already
-    `void(rate_key_mixed)` — but it is unresolved and this run expects
-    subagents: covariate 1 records a share measured from 0% to 78%. Item 3 is
-    scoped away from it deliberately and leaves it at observation level. **What
-    is NOT established is whether subagents inherit the orchestrator's key at
-    all**, and no artifact in this repository answers it. If they do not, the
-    frozen clause drops every multi-subagent observation and the `multi` stratum
-    becomes unevaluable — which returns `open`, never a hold or a fall. Named
-    here, measured nowhere, and cheap to settle: the pre-flight of item 2 can
-    read the keys of a session that spawns one subagent, and until it does, this
-    is the largest unpriced risk this decision leaves standing.
+  - **Whether a subagent inside a scored session serves on a different key —
+    ANSWERED 2026-08-12, and it does not.** This was always a property of frozen
+    `voidConditions` 10 rather than something this decision creates: a window
+    spanning two keys is already `void(rate_key_mixed)`, and item 3 is scoped
+    away from it deliberately. **As first written this bullet said "no artifact
+    in this repository answers it", and named it "the largest unpriced risk this
+    decision leaves standing".** One answers it now.
+    `run 2026-08-12-mac-b12-subagentkey-77fddca` — Mac, 2.1.221, TREATMENT shape,
+    main `["claude-opus-5"]` against subagent `["claude-opus-5"]`, zero suspect
+    reasons, zero files outside the harness union. **The `multi` stratum is
+    REACHABLE** and the feared branch is closed: the frozen clause does not drop
+    every multi-subagent observation. Observed rather than hypothesised, and it
+    closes the false negative flagged before the run: subagent records carry the
+    PARENT `sessionId`, so a `sessionId`-equality filter does not drop them and
+    report no subagent forever. **n = 1 subagent, one session, one build**, over
+    a layout that is vendor-internal and has moved before.
+  - **ADDED 2026-08-12, POST-RUN, and it is the same run that closed the bullet
+    above: an observation carrying a subagent has a FIVE MINUTE pacing ceiling.**
+    That subagent wrote **9,397 tokens to the 5-minute cache class** while every
+    main-thread record in the session wrote to 1h. The consequence is derivable
+    from the code and is not a claim this entry adds: `pacingFacts` sets
+    `anyFiveMin` when ANY owned request has `cacheWrite5m > 0`, and `TTL_MS` then
+    selects **300,000 ms over 3,600,000**, while `admissionRule` 11 makes a gap
+    above the shortest TTL in play `void(pacing)`. **The arm that carries
+    subagents is the arm that calls `repair`**, whose local model measured
+    **256,479 ms** on one phase-3 call — 85% of that ceiling.
+    **This falsifies a reading taken three days earlier**, which counted the
+    installedChars probe's 7 raw records, found zero `ephemeral_5m`, and
+    concluded pacing was probably defused. Those 7 records had no subagent, and
+    the subagent is the thing that writes 5m — a number agreeing for a property
+    of the corpus rather than of the rule, which is this project's
+    characteristic failure and now its fifth instance.
+    **NOT ESTABLISHED: that every subagent writes 5m, or that any real
+    observation would exceed 300 s.** Named here, unmeasured beyond n = 1, and
+    NOT closed. It replaces the bullet above as the largest unpriced risk.
 
   **What `git log -p` proves is WHEN this text was committed, and nothing more.**
   Ordering is what git witnesses; standing is a claim this file makes. What is
