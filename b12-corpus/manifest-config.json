@@ -45,6 +45,9 @@
     "mcpConfig": null,
     "mcpConfigSha256": null,
     "policyBlobs": { "treatment": null, "control": null },
+    "memorySnapshot": null,
+    "memorySnapshotSha256": null,
+    "captureSha256": null,
 
     "pacingCacheWriteShareCeiling": null,
     "perTaskDenominatorShareCap": null
@@ -66,7 +69,9 @@
     "settingsSha256s": "BOTH keys required, and null is a legitimate value meaning 'this file does not exist' — omission declares nothing, null declares an absence.",
     "installedCharsProbe": "Path to the committed probe artifact, plus its sha256. The re-probe is OWED with the orchestrator model in the calibration key (PREMISES.md, sixth decision).  scripts/b12-installedchars-probe-mac.sh",
     "mcpConfig": "Path to the generated MCP config, plus its sha256. observe dereferences both and NO validator checks them; the path is machine-local, so presence is all this machine can assert.",
-    "policyBlobs": "One {repo, commit, path, sha256} per arm, for the OUT-OF-REPO policy bundles. The repo must exist on the run machine, be a full (not shallow) clone, and resolve OUTSIDE this repository — findPolicyBlob refuses an in-repo path as in-repo policy wearing an out-of-repo name."
+    "policyBlobs": "One {repo, commit, path, sha256} per arm, for the OUT-OF-REPO policy bundles. The repo must exist on the run machine, be a full (not shallow) clone, and resolve OUTSIDE this repository — findPolicyBlob refuses an in-repo path as in-repo policy wearing an out-of-repo name.",
+    "memorySnapshot": "Directory of the memory snapshot, plus its sha256. FOUND LATE AND WORTH SAYING WHY: observe REQUIRES this (b12-run.mjs:1690, citing voidConditions 13) and manifestDeclarationGaps never asks for it — so before the assembler was taught to check it, a manifest could pass every build-time check in this repository and then refuse on the run machine.",
+    "captureSha256": "sha256 of the built dist/ capture. Its absence is SILENTLY PERMISSIVE rather than refusing: observe compares only `if (want)` (b12-run.mjs:2040), so leaving it null-and-unfilled means the capture ships unverified. STATE.md's standing note — re-pin this at the seal — is the same instruction from the other end."
   },
 
   "_ownerDecisions": {

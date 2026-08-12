@@ -38,7 +38,7 @@ import {
   parseManifestConfig,
   TASK_KEY_ORDER,
 } from "../scripts/b12-manifest.mjs";
-import { manifestDeclarationGaps } from "../scripts/b12-run.mjs";
+import { hashMemoryDir, manifestDeclarationGaps } from "../scripts/b12-run.mjs";
 import { makeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
@@ -143,7 +143,21 @@ async function policyRepo(name: string): Promise<{ repo: string; commit: string;
   return { repo: root, commit: git(root, ["rev-parse", "HEAD"]), path: "POLICY.md", sha256: sha256(body) };
 }
 
-async function pinnedFor(): Promise<Record<string, unknown>> {
+/**
+ * A REAL memory snapshot directory, with its REAL hash. Not a placeholder: the
+ * assembler requires `memorySnapshotSha256` and compares it against
+ * `hashMemoryDir(dir).sha256`, and both halves of that used to be wrong —
+ * compared-if-present, and compared against the whole object. A fixture with a
+ * null hash exercised neither.
+ */
+async function memorySnapshotIn(root: string): Promise<string> {
+  const dir = path.join(root, ".b12-memory");
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "MEMORY.md"), "# memory\n", "utf8");
+  return hashMemoryDir(dir).sha256;
+}
+
+async function pinnedFor(memoryHash: string): Promise<Record<string, unknown>> {
   return {
     claudeCodeVersion: "2.1.221",
     claudeBinarySha256: "a".repeat(64),
@@ -161,6 +175,15 @@ async function pinnedFor(): Promise<Record<string, unknown>> {
     installedCharsProbeSha256: "f".repeat(64),
     mcpConfig: "/Users/x/.b12/mcp.json",
     mcpConfigSha256: "0".repeat(64),
+    // These two are read by `observe` and required by NO frozen validator, so
+    // the assembler is the only thing that asks for them. The fixture carries
+    // them for the same reason the config does: a manifest without
+    // `memorySnapshot` passes every build-time check and then refuses on the run
+    // machine, and a manifest without `captureSha256` skips the dist comparison
+    // in silence.
+    memorySnapshot: ".b12-memory",
+    memorySnapshotSha256: memoryHash,
+    captureSha256: "9".repeat(64),
     policyBlobs: { treatment: await policyRepo("treatment"), control: await policyRepo("control") },
   };
 }
@@ -196,7 +219,7 @@ async function fullCorpus(root: string, over: ConfigOver = {}): Promise<{ config
       pilot: P,
       abPairsA: A.slice(0, 6).map((taskId, i) => ({ id: `pa${i}`, taskId, order: i % 2 === 0 ? "treatment-first" : "control-first" })),
       abPairsB: B.slice(0, 3).map((taskId, i) => ({ id: `pb${i}`, taskId, order: i % 2 === 0 ? "control-first" : "treatment-first" })),
-      pinned: await pinnedFor(),
+      pinned: await pinnedFor(await memorySnapshotIn(root)),
     }),
     "utf8"
   );

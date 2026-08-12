@@ -647,11 +647,25 @@ export function assemblyRefusals(repoRoot, config, built) {
     if (found.blob === null) red.push(`policy blob (${arm}): ${found.why}`);
   }
 
-  // THE MEMORY SNAPSHOT, HASHED HERE rather than trusted.
+  // THE MEMORY SNAPSHOT, HASHED HERE rather than trusted. TWO DEFECTS LIVED IN
+  // THESE SIX LINES, one hiding the other, and both were found by an adversarial
+  // round pulling on the first:
+  //
+  //  - THE HASH WAS COMPARED-IF-PRESENT while the harness requires it. Its own
+  //    refusal says the words: "required, not compared-if-present"
+  //    (`b12-run.mjs:1700`). A null sha passed assembly and refused at runtime,
+  //    which is the whole failure mode this file exists to prevent.
+  //  - AND THE COMPARISON WAS AGAINST THE WRONG THING. `hashMemoryDir` returns
+  //    `{sha256, files}`, not a string, so `pinnedString !== object` was ALWAYS
+  //    true: every correctly pinned snapshot would have been reported as a
+  //    mismatch. It never fired only because the first defect stopped it running.
   if (typeof pinned.memorySnapshot === "string" && pinned.memorySnapshot.length > 0) {
+    if (typeof pinned.memorySnapshotSha256 !== "string" || pinned.memorySnapshotSha256.length === 0) {
+      red.push('pinned.memorySnapshotSha256 is absent — design.artifacts 1 lists "the memory snapshot" in the hashed inventory, and findMemorySnapshot refuses without it: required, not compared-if-present');
+    }
     const dir = path.resolve(repoRoot, pinned.memorySnapshot);
     try {
-      const hash = hashMemoryDir(dir);
+      const { sha256: hash } = hashMemoryDir(dir);
       if (typeof pinned.memorySnapshotSha256 === "string" && pinned.memorySnapshotSha256 !== hash) {
         red.push(`pinned.memorySnapshotSha256 says ${pinned.memorySnapshotSha256.slice(0, 12)} but ${dir} hashes to ${hash.slice(0, 12)}`);
       }
@@ -665,6 +679,38 @@ export function assemblyRefusals(repoRoot, config, built) {
   // plausible version is the trap, and it is free to refuse here.
   if (typeof pinned.claudeCodeVersion === "string" && !/^\d+\.\d+\.\d+$/.test(pinned.claudeCodeVersion)) {
     red.push(`pinned.claudeCodeVersion ${JSON.stringify(pinned.claudeCodeVersion)} is not a full x.y.z — assertPinned matches with .includes(), so a partial pin matches versions it did not mean`);
+  }
+
+  // THE PINS `observe` DEREFERENCES THAT NO FROZEN VALIDATOR REQUIRES. Found by
+  // differencing every `pinned.*` the harness reads against every one
+  // `manifestDeclarationGaps` demands; seven came out, and these are the ones
+  // whose absence is not caught anywhere before a session is spent:
+  //
+  //  - `memorySnapshot` is REQUIRED AT RUNTIME and by nothing at build time.
+  //    `b12-run.mjs:1685-1691` refuses without it, citing `voidConditions` 13,
+  //    while the declaration sweep never mentions it. A manifest missing it
+  //    passes every check this repository has and then refuses on the run
+  //    machine.
+  //  - `captureSha256` is worse, because its absence is SILENTLY PERMISSIVE:
+  //    `b12-run.mjs:2040` reads `if (want && want !== sha256)`, so omitting the
+  //    pin skips the comparison entirely and the built `dist/` goes unverified.
+  //    The harness's own comment there calls it a hole the frozen text does not
+  //    close. Requiring it here is the cheapest place to stop shipping unpinned.
+  //  - `perArmTimeoutMs` and `extraArgs` ARE checked — by `checkCore`, which
+  //    `--pilot-only` defers. Deferring a whole function to skip its A/B half
+  //    quietly took these two with it, so they are re-checked here rather than
+  //    left to a deferral that names them only by their container.
+  if (typeof pinned.memorySnapshot !== "string" || pinned.memorySnapshot.length === 0) {
+    red.push("pinned.memorySnapshot is absent — observe REQUIRES it (b12-run.mjs:1690, voidConditions 13) and manifestDeclarationGaps never asks for it, so a manifest without it passes every build-time check and refuses on the run machine");
+  }
+  if (typeof pinned.captureSha256 !== "string" || pinned.captureSha256.length === 0) {
+    red.push("pinned.captureSha256 is absent — and its absence is SILENTLY PERMISSIVE: observe compares it only `if (want)` (b12-run.mjs:2040), so omitting it leaves the built dist/ unverified rather than refusing");
+  }
+  if (!Number.isFinite(pinned.perArmTimeoutMs)) {
+    red.push("pinned.perArmTimeoutMs is absent — observe falls back to a silent 45-minute default (b12-run.mjs:2885). checkCore would refuse this, and --pilot-only defers checkCore");
+  }
+  if (!Array.isArray(pinned.extraArgs)) {
+    red.push("pinned.extraArgs is absent — what the probe ran with is what the run must run with, declared. checkCore would refuse this, and --pilot-only defers checkCore");
   }
 
   // THE MCP CONFIG IS MACHINE-LOCAL TO THE MAC. `observe` requires both fields
@@ -686,6 +732,14 @@ export function deferredRefusals(pilotOnly = false) {
       ? [
           "checkCore over manifests A and B — the 30/30 cardinalities, the 6 A/B pairs, the distinct runIds, and BOTH pilot-overlap checks: not satisfiable while A and B are unauthored, and NOT skipped quietly",
           "the per-stratum floor of MIN_DELIVERY_OBSERVATIONS over the sealed manifests, for the same reason",
+          // THESE TWO WERE SKIPPED WITHOUT BEING NAMED, which an adversarial
+          // round caught, and the first was hiding behind a label that cannot
+          // cover it: this file's own comment says checkCore NEVER compares A
+          // against B, so deferring "checkCore" says nothing about the
+          // intersection. A deferral that names the wrong container is a silent
+          // skip wearing a citation.
+          "the A n B DISJOINTNESS refusal — the seventh owner decision (PREMISES.md § B12). Under --pilot-only both lists are empty, so the intersection is vacuous rather than checked, and checkCore never compares A against B in any case: nothing else in this repository would notice an overlap",
+          "corpusVerification over the SEALED bases — it receives only the pilot's ids here, so the shared green parent, the rates blob at the pin, and the confinement of each published diff go unverified for every task outside the pilot",
         ]
       : []),
     "no pilot file — PHASE 2 precedes PHASE 4, and a register with no pilot is a phase skipped in silence: satisfied by RUNNING the five pilot manifests, not by assembling them",
