@@ -194,7 +194,7 @@ export function pickLoadedContextTokens(
     // refuses work that would have fit.
     return null;
   }
-  if (loaded.length > 1) {
+  if (loaded.length > 2) {
     log.warn(
       `lms: ${loaded.length} models are loaded and none was named; skipping the context pre-flight ` +
         `rather than guessing which context length applies`
