@@ -28,6 +28,13 @@ const README_UPDATED = `# demo\n\nA demo project with greetings.\n`;
 
 async function gitApply(root: string, diff: string): Promise<void> {
   await execFileAsync("git", ["init", "-q"], { cwd: root });
+  // HERMETIC, and it was not. A bare `git init` inherits the DEVELOPER'S global
+  // `core.autocrlf`, which is `true` on a default Windows install — so `git apply`
+  // wrote CRLF into the working tree and the readback below compared it against an LF
+  // constant. The assertion is about whether the diff APPLIES, never about which line
+  // ending the checkout uses. `tests/b12-audit.test.ts` already pins this on its own
+  // scratch repositories; these two were the ones that did not.
+  await execFileAsync("git", ["config", "core.autocrlf", "false"], { cwd: root });
   const patchPath = path.join(root, ".local-coder-test.patch");
   await fs.writeFile(patchPath, diff, "utf8");
   await execFileAsync("git", ["apply", "--check", ".local-coder-test.patch"], { cwd: root });

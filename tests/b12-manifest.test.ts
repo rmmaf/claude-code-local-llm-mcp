@@ -39,7 +39,7 @@ import {
   TASK_KEY_ORDER,
 } from "../scripts/b12-manifest.mjs";
 import { hashMemoryDir, manifestDeclarationGaps } from "../scripts/b12-run.mjs";
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -50,7 +50,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 
@@ -249,7 +249,13 @@ describe("b12 manifest — the assembler derives what a hand-written manifest wo
     const clean = tempRoot();
     const good = await fullCorpus(clean);
     expect(okOf(parseManifestConfig(clean, good.configPath)).config.manifestA).toHaveLength(30);
-  }, 60_000);
+    // TWICE ITS SIBLINGS' BUDGET BECAUSE IT DOES TWICE THEIR WORK. Every other test here
+    // builds ONE corpus; this one builds two — the overlapping pair above and the disjoint
+    // control below it — at roughly 125 tasks and 250 git subprocesses between them. It
+    // carried the copied 60 s anyway and was the only test still failing a full run after
+    // the teardown and leak fixes, deterministically, in both of two consecutive runs
+    // while passing in a three-file selection. The budget was inherited, not measured.
+  }, 120_000);
 
   it("REFUSES a pilot id that also sits in a sealed manifest", async () => {
     const root = tempRoot();

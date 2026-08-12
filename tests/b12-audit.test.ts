@@ -46,7 +46,7 @@ import {
 import { sha256 } from "../src/cost/b12/archive.js";
 import { emitRun } from "../src/cost/b12/emit.js";
 import { at } from "./b12-fixtures.js";
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -57,7 +57,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 

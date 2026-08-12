@@ -7,8 +7,101 @@ import type { Config } from "../src/config.js";
 import type { CommandRunner } from "../src/exec.js";
 import type { FetchLike } from "../src/llm-client.js";
 
+/**
+ * EVERY ROOT THIS FUNCTION HANDS OUT IS TRACKED, because most of them were never given
+ * back. Nine suites — fs-safety, implement, models-tool, regression, retry, scaffold,
+ * session-token-walk, status, stdio — called `makeTempRoot` 56 times between them and
+ * removed NOTHING. Measured on this machine on 2026-08-12: **20,021** `local-coder-*`
+ * directories and 89 `b12-*` directories in the Windows temp folder, dated from 2026-08-02
+ * to that morning — every test run this project has ever done, still on disk.
+ *
+ * That is not only untidiness. `mkdtempSync`, `fs.rm` and every `git init` under it work
+ * inside that folder, so the leak makes each subsequent run slower and more lock-prone
+ * than the last — which is the same directory pressure the ENOTEMPTY teardown failures
+ * came out of. A suite that degrades the machine it runs on will eventually disagree with
+ * itself, and it did.
+ *
+ * `tests/setup.ts` sweeps this registry in an `afterAll`, so a suite that forgets is
+ * covered without having to remember. AFTER-ALL rather than after-each on purpose:
+ * `tests/stdio.test.ts:43` creates its root at collection time and spawns a server with it
+ * as cwd, and a per-test sweep would delete the ground under a live child process.
+ */
+const trackedRoots = new Set<string>();
+
 export function makeTempRoot(prefix = "local-coder-test-"): string {
-  return mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = mkdtempSync(path.join(os.tmpdir(), prefix));
+  trackedRoots.add(root);
+  return root;
+}
+
+/**
+ * Remove every root handed out by `makeTempRoot` that is still on disk.
+ *
+ * THIS ONE WARNS WHERE `removeTempRoot` THROWS, and the difference is deliberate. An
+ * explicit `afterEach` calling `removeTempRoot` is a suite asserting it cleaned up after
+ * itself, so a lock surviving the retries there is evidence worth a red. This is a net
+ * under suites that never made that promise; failing them for it would be inventing an
+ * assertion they never wrote. Both leave the path on the record either way.
+ */
+export async function sweepTempRoots(): Promise<void> {
+  const roots = [...trackedRoots];
+  trackedRoots.clear();
+  for (const root of roots) {
+    try {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      console.warn(`[tests] sweep left a scratch root on disk: ${root} — ${why}`);
+    }
+  }
+}
+
+/**
+ * REMOVE A SCRATCH ROOT WITHOUT TURNING WINDOWS' FILE LOCKING INTO A TEST RESULT.
+ *
+ * Every suite here used a bare `fs.rm(root, { recursive: true, force: true })` in
+ * `afterEach`. `force` ignores a MISSING path; it does nothing for a BUSY one, and
+ * `maxRetries` defaults to **0** — so the first `ENOTEMPTY` propagated out of the hook and
+ * vitest attributed it to whichever test the hook was closing.
+ *
+ * MEASURED, not supposed. Three consecutive gate runs over trees differing only in one
+ * JSON data file produced three different failure sets. The causes recovered from the raw
+ * reporter output:
+ *
+ *   ENOTEMPTY: directory not empty, rmdir '...\b12-manifest-test-QDZDnu\b12-corpus'
+ *   ENOTEMPTY: directory not empty, rmdir '...\b12-manifest-test-XL1nEb\b12-corpus\a08'
+ *   ENOTEMPTY: directory not empty, rmdir '...\b12-audit-test-bHSnkG'
+ *
+ * Different paths, different runs, same class. These suites drive `git` through
+ * `spawnSync`, and on Windows the child's handles can outlive the call that waited for it.
+ *
+ * THE RETRY IS ONE OF THREE FIXES, not the whole of it — the suite's answer also moved
+ * because vitest had no config and ran on a 5000 ms default (`vitest.config.ts`) and
+ * because nine suites never removed their roots at all (`sweepTempRoots`, below).
+ * `fs.rm` documents retrying on the five error codes above and the project never asked it
+ * to. With ten retries the three suites that produced the ENOTEMPTY above went 87/87 green
+ * and the fallback below never fired once.
+ *
+ * IT STILL THROWS, AND THAT IS THE SECOND DECISION. An earlier draft swallowed the final
+ * failure on the argument that a file handle is not what "REFUSES an A n B intersection"
+ * asserts. Adversarial review killed it: a bare catch swallows EVERY error, so a real
+ * handle leak in shipped code — `atomicWriteFile` in `src/fs-safety.ts` opens a
+ * `FileHandle` it must close — would report green where teardown used to be the backstop
+ * that caught it. After ten retries a lock is EVIDENCE, not noise. What is kept from that
+ * draft is only the part that was right: the message says TEARDOWN, by name, so the next
+ * person does not go looking for the defect inside whichever test the hook was closing.
+ */
+export async function removeTempRoot(root: string | undefined): Promise<void> {
+  if (root === undefined) return;
+  try {
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `TEARDOWN, not the assertion above: the scratch root ${root} could not be removed after 10 retries — ${why}. ` +
+        `A lock that survives the retries is a handle nothing released; look for a child process or a FileHandle the code under test left open.`
+    );
+  }
 }
 
 export function testConfig(root: string, overrides: Partial<Config> = {}): Config {

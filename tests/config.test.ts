@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { DEFAULTS, loadConfig } from "../src/config.js";
@@ -43,7 +45,12 @@ describe("config", () => {
 
   it("resolves a relative models CSV path against the project root", () => {
     const config = loadConfig({ LOCAL_CODER_MODELS_CSV: "config/models.csv" }, "/project");
-    expect(config.modelsCsvPath).toBe("/project/config/models.csv");
+    // The CLAIM is "against the project root, not against cwd". The old literal
+    // "/project/config/models.csv" tested the SEPARATOR instead, and failed on Windows
+    // where "/project" resolves drive-qualified. Both halves are asserted so the
+    // OS-agnostic form cannot pass by merely mirroring the implementation.
+    expect(config.modelsCsvPath).toBe(path.resolve("/project", "config/models.csv"));
+    expect(config.modelsCsvPath).not.toBe(path.resolve(process.cwd(), "config/models.csv"));
   });
 
   it("clamps a mem fit fraction above 1 down to 1", () => {

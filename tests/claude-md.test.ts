@@ -13,7 +13,7 @@ import {
   resetClaudeMdState,
 } from "../src/claude-md.js";
 import { loadConfig } from "../src/config.js";
-import { makeTempRoot, testConfig } from "./helpers.js";
+import { makeTempRoot, removeTempRoot, testConfig } from "./helpers.js";
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -45,7 +45,7 @@ afterEach(async () => {
   resetClaudeMdState();
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 

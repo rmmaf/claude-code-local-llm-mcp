@@ -34,7 +34,7 @@ import {
 import { scopeTelemetry } from "../src/cost/report.js";
 import { readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { readTranscript, type Transcript } from "../src/cost/transcript.js";
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
 const tmp = (): string => {
@@ -43,7 +43,7 @@ const tmp = (): string => {
   return root;
 };
 afterEach(async () => {
-  for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) await removeTempRoot(root);
 });
 
 /** An assistant line as Claude Code actually writes one: metered fields plus noise. */

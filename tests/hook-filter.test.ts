@@ -21,7 +21,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { readTelemetry } from "../src/telemetry.js";
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 const execFileAsync = promisify(execFile);
 const HOOK = path.join(
@@ -35,7 +35,7 @@ const roots: string[] = [];
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 

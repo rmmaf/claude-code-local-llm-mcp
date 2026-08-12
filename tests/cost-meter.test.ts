@@ -33,7 +33,7 @@ import { listSessionIds, listTranscripts, projectTranscriptDir, readTranscript, 
 import { assembleRun } from "../src/cost/b12/assemble.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { archiveOf, billed, obsOf, PINNED, taskOf } from "./b12-fixtures.js";
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -46,7 +46,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 
@@ -3373,7 +3373,7 @@ describe("the B12 harness", () => {
         expect(new Set([first.dir, second.dir, third.dir]).size).toBe(3);
         expect(path.basename(second.dir)).toBe("obs-t1-treatment-r2");
       } finally {
-        await fs.rm(root, { recursive: true, force: true });
+        await removeTempRoot(root);
       }
     });
   });

@@ -40,6 +40,7 @@ import {
   queuedFetch,
   testConfig,
   writeFileTree,
+  removeTempRoot,
 } from "./helpers.js";
 
 const roots: string[] = [];
@@ -51,7 +52,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 
