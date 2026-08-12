@@ -57,10 +57,18 @@ ok()   { printf '   %s+%s %s\n' "$GRN" "$RST" "$1"; }
 warn() { printf '   %s!%s %s\n' "$YEL" "$RST" "$1"; }
 refuse() { printf '\n%sREFUSED:%s %s\n\n' "$RED" "$RST" "$1" >&2; exit 1; }
 
-OUT="${1:-./b12-subagent-key-probe.json}"
+# DEFAULT IS ABSOLUTE ON PURPOSE. Everything else here is already independent of
+# where the script is invoked from — the binary comes off PATH, the session runs
+# in a fresh mktemp scratch dir, and the transcripts are read from $HOME. A
+# `./`-relative default was the one thing that made the artifact land wherever
+# the operator happened to be standing, which is how a probe result gets lost.
+OUT="${1:-$HOME/b12-subagent-key-probe.json}"
 case "$OUT" in
   -h|--help)
-    printf 'usage: %s [output.json]\n  env: B12_MCP_CONFIG=<path>   run the TREATMENT argv shape instead of control\n' "$0"
+    printf 'usage: %s [output.json]\n' "$0"
+    printf '  default output: $HOME/b12-subagent-key-probe.json\n'
+    printf '  env: B12_MCP_CONFIG=<path>   run the TREATMENT argv shape instead of control\n'
+    printf '  runnable from ANY directory; it reads nothing relative to the cwd\n'
     exit 0 ;;
 esac
 
