@@ -2211,6 +2211,61 @@ defect, and it pinned four of them in place.
   so no run is registered, no observation is scored, and there is no result this
   decision could have been reached backwards from.
 
+- **Pre-declared, 2026-08-12, before any spec is authored — THE SEVENTH OWNER
+  DECISION: manifests A and B are DISJOINT.** The corpus is **65 distinct task
+  specifications** — 30 for A, 30 for B, 5 for the pilot — no task is measured
+  twice, and `scripts/b12-manifest.mjs` refuses to assemble a configuration whose
+  A and B lists intersect. Put to the owner with the alternative (35 specs, with
+  25 shared between the two runs) and answered: disjoint.
+
+  **NOTHING FROZEN CONSTRAINS A ∩ B, WHICH IS WHY THIS IS A DECISION AND NOT A
+  READING.** `checkCore` (`scripts/b12-register.mjs:82-135`) freezes 30 tasks per
+  manifest, 6 A/B pairs in A, five distinct pilot ids excluded from **both**
+  sealed manifests, distinct runIds, `promptSha256`, `fileScope` and four `pinned`
+  fields. Its only overlap check is pilot-versus-manifest (`:104-110`), and
+  `manifestDeclarationGaps` takes **one** manifest (`scripts/b12-run.mjs:1025`),
+  so it structurally cannot see an intersection between two. A configuration
+  repeating 25 tasks across both runs would seal, register and score without a
+  single refusal.
+
+  **IT NARROWS, AND WHAT IT NARROWS IS THE CORPUS — NOT WHAT A LAWFUL RUN IS.**
+  The distinction matters and an earlier draft of this entry blurred it by
+  borrowing the sixth decision's language wholesale. The sixth changes
+  LAWFULNESS: registration refuses a manifest without the pin. This one does not
+  — `b12-register check` would accept overlapping manifests today and would still
+  accept them after this entry, and a hand-written manifest can overlap. The
+  refusal lives in a BUILD TOOL, before anything is spent. So: it adds no
+  disposition label, adds no VOID trigger, loosens nothing, and rejects
+  configurations the frozen rules permit. That last clause is the whole of its
+  force and it is stated rather than smuggled.
+
+  **WHY IT IS ENFORCED IN THE TOOL RATHER THAN LEFT AS A CONVENTION.** An
+  accidental intersection in a hand-edited 65-entry configuration is invisible to
+  every validator in this repository, by the reading above. It would surface, if
+  at all, in the aggregate — after the sessions were paid for. A build-time
+  refusal costs nothing and catches it before the first billed request. The
+  refusal string names THIS entry, so it is contestable against a durable
+  declaration; an earlier draft cited `STATE.md`, whose own header says it is
+  overwritten every session, and a sentence in a diary is not design authority.
+
+  **WHAT THIS DOES NOT SETTLE**, recorded so no gap reads as a decision:
+  - **Not that overlap would have been unsound.** No claim is made here that a
+    shared task biases R, correlates the two runs, or would void anything.
+    Neither direction is measured. The decision is that this corpus does not use
+    overlap, taken once and before any spec exists.
+  - **Not that the tasks are independent.** Disjointness of IDs is not
+    independence of tasks: 65 defects authored by one person against one
+    repository share whatever that induces, and `whatAHoldDoesNotEstablish`
+    already scopes the venue. This entry narrows the id sets and nothing else.
+  - **Not enforced anywhere but the assembler.** Named plainly because the
+    natural misreading is that the seal now checks it. It does not.
+
+  **What `git log -p` proves is WHEN this text was committed, and nothing more.**
+  Independently checkable at this commit: no `evidence/*.b12.tasks.json` exists,
+  no `b12-corpus/` directory exists, and not one of the 65 specifications has
+  been authored — so there is no result and no corpus this could have been
+  reached backwards from.
+
 - **Pre-declared, 2026-08-08, before any run exists — the ANALYSIS SESSION and
   the clause 4–6 AUDIT.** Three obligations the UNIT 5 pass surfaced
   (`UNIT-5.md` "What it creates"; the plan gate's R7/R9, `FINDINGS.md`), added
