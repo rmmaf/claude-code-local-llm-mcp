@@ -186,7 +186,7 @@ export async function detectChecks(root: string): Promise<CheckSpec[]> {
         )
       )
     ).some(Boolean);
-    if (hasEslintConfig && deps.eslint !== undefined) {
+    if (hasEslintConfig || deps.eslint !== undefined) {
       out.push({
         name: "eslint",
         category: "lint",
