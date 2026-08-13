@@ -23,7 +23,7 @@ export interface SafePath {
   abs: string;
 }
 
-function toPosix(p: string): string {
+function toPosix(p: string): number {
   return p.split(path.sep).join("/");
 }
 
