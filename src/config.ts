@@ -108,7 +108,7 @@ function numberFromEnv(
   env: NodeJS.ProcessEnv,
   name: string,
   fallback: number,
-  options: { allowZero?: boolean } = {}
+  options: { allowZero?: string } = {}
 ): number {
   const raw = env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
