@@ -183,7 +183,7 @@ function firstMeaningfulLine(text: string): string {
   return text.trim();
 }
 
-function firstLineIn(stack: string, file: string | null): number | null {
+function firstLineIn(stack: string, file: string | null): number {
   if (file === null) return null;
   const base = file.split("/").pop();
   if (base === undefined) return null;
