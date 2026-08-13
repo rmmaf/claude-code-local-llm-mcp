@@ -734,7 +734,17 @@ export function corpusVerification(repoRoot, plan) {
 function deepPredicateReasons(repoRoot, resolved, ratesSha256) {
   const reasons = [];
   for (const r of resolved) {
-    const wt = mkdtempSync(path.join(os.tmpdir(), "b12-verify-wt-"));
+    // INSIDE THE REPOSITORY, for the reason `authorSibling` records at length above:
+    // node resolves `node_modules` by walking up from the cwd, so a worktree under
+    // `os.tmpdir()` has no toolchain and every `npx` predicate either refuses or
+    // silently runs whatever npx fetched from the registry. That was MEASURED on
+    // 2026-08-12 and fixed in the author; the fix was never carried across to here,
+    // and this half asserts the predicate FAILS — so the broken case looks like the
+    // passing one. Both of `--deep`'s known blind spots point the same way: a base it
+    // calls red may be red because nothing could load.
+    const b12Root = path.join(repoRoot, ".b12");
+    mkdirSync(b12Root, { recursive: true });
+    const wt = mkdtempSync(path.join(b12Root, "b12-verify-wt-"));
     rmSync(wt, { recursive: true, force: true });
     let added = false;
     try {

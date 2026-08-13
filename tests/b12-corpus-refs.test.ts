@@ -385,6 +385,46 @@ describe("corpusVerification — every reason, firing, with its control", () => 
     // shallow pass never says the defect is gone.
     expect(shallow.join(" ")).not.toMatch(/predicate is GREEN/);
   }, 60_000);
+
+  it("--deep checks out INSIDE the repository, where a toolchain resolves", async () => {
+    const root = tempRoot();
+    initRepo(root);
+    const parent = await greenBase(root);
+    await authorAndPublish(root, parent, "t1");
+
+    // THE MECHANISM ITSELF, not a model of it. Node finds a dependency by
+    // walking `node_modules` upward from the cwd, so a base checked out under
+    // `os.tmpdir()` has no toolchain at all: every `npx tsc` and `npx vitest`
+    // predicate there either refuses or runs whatever npx fetched from the
+    // registry. `authorSibling` was fixed for exactly this on 2026-08-12 after
+    // three bases were published against a phantom toolchain; the deep verifier
+    // kept the old `os.tmpdir()` call for another day.
+    //
+    // WHY IT MATTERED MORE HERE THAN THERE: this half asserts the predicate
+    // FAILS. A base that cannot resolve anything is indistinguishable, by exit
+    // code, from a base carrying its defect — so the broken case reads as the
+    // passing one and `--deep` reports a clean corpus either way.
+    const dep = path.join(root, "node_modules", "b12-marker-pkg");
+    await fs.mkdir(dep, { recursive: true });
+    await fs.writeFile(
+      path.join(dep, "package.json"),
+      JSON.stringify({ name: "b12-marker-pkg", version: "1.0.0", main: "index.js" }),
+      "utf8"
+    );
+    await fs.writeFile(path.join(dep, "index.js"), "", "utf8");
+
+    // Exit 1 — read by `--deep` as "the defect is still there" — ONLY when the
+    // upward walk reaches the repository. Unresolvable exits 0, which `--deep`
+    // reports as a base whose defect is gone. So an empty reason list is the
+    // assertion that the checkout happened somewhere the walk can succeed.
+    const specDir = await specDirOf(parent, "t1", {
+      predicate: {
+        ...PREDICATE,
+        argv: ["node", "-e", "try { require.resolve('b12-marker-pkg'); process.exit(1); } catch { process.exit(0); }"],
+      },
+    });
+    expect(corpusVerification(root, { tasks: [{ id: "t1", specDir }], deep: true })).toEqual([]);
+  }, 60_000);
 });
 
 describe("TRANSPORT — decided by experiment, because the default is not what it looks like", () => {
