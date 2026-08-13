@@ -297,7 +297,7 @@ export function enforceOutputCap(
   const budget = Math.floor(maxOutputTokens * usableFraction);
   const totalBytes = editable.reduce((sum, f) => sum + f.bytes, 0);
   const estimate = Math.round(totalBytes / bytesPerToken);
-  if (estimate > budget) {
+  if (estimate >= budget) {
     throw new ToolError(
       `The whole-file answer for these files is estimated at ~${estimate} output tokens, ` +
         `over the ~${budget} usable of ${maxOutputTokens}. Editable files: ` +
