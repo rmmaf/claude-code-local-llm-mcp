@@ -5,26 +5,28 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**The corpus is 61 of 65** — 5 pilot plus 56 of the 60 sealed bases, published as annotated
-tags and re-verified `--deep`. Plan in `corpus-plan.json`, sites in `defect-sites.json`,
-writer at `scripts/b12-spec.mjs`. **Both constants are DECIDED** pre-data (`b086a59`):
-ceiling 0.95, cap 0.25. Every remaining pin is MAC-LOCAL.
+**The corpus is COMPLETE: 65 of 65** — 60 sealed bases plus 5 pilot, published as annotated
+tags, shallow and `--deep` clean. Generator now in `scripts/b12-plan.mjs` with a `check` mode;
+`tests/b12-plan.test.ts` binds artifact→generator AND all 60 specs→plan, so a hand-edit is a
+red suite. **Both constants DECIDED** pre-data (`b086a59`). Every remaining pin is MAC-LOCAL.
 
 ## Next action
 
-**FOUR BASES REMAIN, two problems.** `chkbudget` and `tymemrec` need NEW sites — the first
-blinded the gate the treatment arm verifies through, the second was not runtime-neutral and
-its tsc-only predicate would let a session score FIXED without restoring behaviour.
-`cfgclamp`/`cfgenv` are blocked by the PARENT: `tests/config.test.ts` is red at 608e930.
+**COMPLETE IS NOT SEALABLE.** `manifest-config.json` declares no manifestA/manifestB, no
+runIds and no abPairs, so `b12-manifest.mjs` is still in its pilotOnly branch and refuses a
+sealed manifest without well-formed pair declarations. Writing those is the next step, and
+the abPairs decide the open question in `_typesOnlyEscapeRoute`.
 
 ## Measured, and worth not re-deriving
 
-- **`verify-corpus --deep` is not evidence a base carries its defect.** It asserts the
-  predicate is RED at the base, and a suite that cannot LOAD is red — the pilot re-verified
-  clean while every predicate died on a missing module. Green at the parent is trustworthy.
-  The root `vitest.config.ts` governs those worktrees too; its own comment is the record.
-- **The pacing ceiling cannot discriminate**: one-request observations reach 0.8841 against
-  an all-rewrite pathology's 0.93–0.98. Two routes to a 5-minute gap bar; see PREMISES.md.
+- **`--deep` still is not evidence a base carries its defect**, though its `os.tmpdir()`
+  toolchain bug is fixed (`32561af`). It asserts the predicate FAILS, so every way of being
+  wrong that makes one fail reads as a defect. **Green at the parent is the trustworthy half**
+  and the author checks it. It also belongs on the Mac; the Windows run took 9.1 min.
+- **7 of 30 types-only sites admit a false FIXED** — a tsc-only predicate cannot tell a
+  restored annotation from a behaviour-changing silencer. Built and run. Plan records it.
+- **The authoring machine is not the run machine.** `tests/config.test.ts` is red at the
+  parent on Windows only; a whole round went into routing around a Mac-green suite.
 - **Zero of 162 local sessions carry a sidechain** — wrong population: B12's subagents come
   from the arm calling `repair`, and only the pilot can measure the `multi` cell.
 
@@ -39,7 +41,5 @@ Phase-3 amendments; contract-stability re-run; seal → register (CAS) → sessi
 ## Do not redo
 
 - The O-bracket is DECLINED, with its cousins. Never back-fill an append-only record.
-- **`void(withheld)` is MEASURED not firing** (2026-08-09, 2.1.221), and a pilot manifest
-  needs 3 abPairs — `observe` sweeps gaps BEFORE any exemption.
-- Decision 2 is WITHDRAWN — the seal resolved MANIFEST SOURCE to **authored** after
-  MEASURING enumeration to fail. Do not go looking for a backlog again.
+- Decision 2 is WITHDRAWN — the seal resolved MANIFEST SOURCE to **authored**.
+- A published base is RETIRED, never re-authored: `git commit` embeds committer time.
