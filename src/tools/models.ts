@@ -97,7 +97,7 @@ export async function runModels(
       ? {
           total_gb: bytesToGb(memory.totalBytes),
           free_gb: bytesToGb(memory.freeBytes),
-          usable_free_gb: usable === null ? null : bytesToGb(usable),
+          usable_free_gb: bytesToGb(usable),
           source: memory.source,
           fit_fraction: config.memFitFraction,
         }
