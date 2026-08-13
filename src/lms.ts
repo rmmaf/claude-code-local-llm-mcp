@@ -36,7 +36,7 @@ export interface LmsLoadedModel {
  */
 const ID_KEYS = ["path", "modelKey", "key", "displayName", "identifier", "name"];
 const SIZE_KEYS = ["sizeBytes", "size_bytes", "size"];
-const CONTEXT_KEYS = ["contextLength", "context_length", "contextSize"];
+const CONTEXT_KEYS = ["contextLength", "contextSize"];
 const MAX_CONTEXT_KEYS = ["maxContextLength", "max_context_length"];
 
 function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number | null {
