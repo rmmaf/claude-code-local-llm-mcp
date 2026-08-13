@@ -39,7 +39,7 @@ export interface ChatOptions {
 
 async function fetchWithTimeout(
   fetchImpl: FetchLike,
-  url: string,
+  url: URL,
   init: RequestInit,
   timeoutMs: number
 ): Promise<Response> {
