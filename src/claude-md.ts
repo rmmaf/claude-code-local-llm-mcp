@@ -161,7 +161,7 @@ export async function ensureClaudeMd(config: Config): Promise<ClaudeMdResult> {
     // Version-agnostic on purpose: a v2 block must recognise a v1 one and leave
     // it alone rather than appending a second copy. Upgrading someone's edited
     // policy is a decision for a human, not a side effect of a server start.
-    if (existing.includes(MARKER_BEGIN_PREFIX)) {
+    if (existing.includes(MARKER_BEGIN)) {
       return record({ state: "present", path: target });
     }
 
