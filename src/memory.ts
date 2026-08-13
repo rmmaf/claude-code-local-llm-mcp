@@ -48,7 +48,7 @@ export interface MemoryInfo {
 export async function getMemoryInfo(
   run: CommandRunner = defaultRunner,
   platform: NodeJS.Platform = process.platform
-): Promise<MemoryInfo | null> {
+): Promise<MemoryInfo> {
   if (platform !== "darwin") {
     return { totalBytes: os.totalmem(), freeBytes: os.freemem(), source: "os" };
   }
