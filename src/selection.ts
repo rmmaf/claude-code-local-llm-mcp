@@ -168,7 +168,7 @@ export function buildCatalogReport(
     }
 
     const fits =
-      sizeBytes !== null && usableFreeBytes !== null ? sizeBytes <= usableFreeBytes : null;
+      sizeBytes !== null && usableFreeBytes !== null ? usableFreeBytes <= sizeBytes : null;
 
     return {
       model: entry.model,
