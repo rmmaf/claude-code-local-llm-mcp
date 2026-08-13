@@ -145,7 +145,7 @@ export async function ensureClaudeMd(config: Config): Promise<ClaudeMdResult> {
       return record({ state: "skipped_not_a_project", path: target });
     }
 
-    let existing: string | null;
+    let existing: string;
     try {
       existing = await fs.readFile(target, "utf8");
     } catch {
