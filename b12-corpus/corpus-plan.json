@@ -1,0 +1,1189 @@
+{
+  "_readme": [
+    "THE 60 SEALED-MANIFEST TASKS. The five pilot ids are excluded by design.artifacts 4 and",
+    "live in pilot-plan.json. Generated and constraint-checked, not hand-listed: A n B empty,",
+    "30 each, >=5 per verificationStratum per manifest, no fileScope inside PROTECTED_SCOPES,",
+    "every named file and suite present on disk.",
+    "",
+    "DEFECT KIND follows task-mix decision 1, the favourable-but-real set: mechanical type",
+    "errors and failing assertions with bulky output, which is where delegation plausibly",
+    "pays. Nothing subtle, nothing that needs judgement about intent."
+  ],
+  "specRoot": "b12-corpus",
+  "manifestA": [
+    "selmatchfuzzy",
+    "selobjective",
+    "csvcols",
+    "lmsps",
+    "parsefence",
+    "parsetrail",
+    "memindex",
+    "cfgenv",
+    "chkbudget",
+    "cmdidem",
+    "fsoutcap",
+    "probephrase",
+    "gatebudget",
+    "scafexists",
+    "modelspick",
+    "tyselret",
+    "tycsvrow",
+    "tylmsnull",
+    "tymemrec",
+    "tycfgdefault",
+    "tychkparse",
+    "tycmdblock",
+    "tyfscap",
+    "tyclientbody",
+    "tycorpusrow",
+    "tyexecopts",
+    "tysharedres",
+    "tygatereport",
+    "tyscafspec",
+    "tymodelsarg"
+  ],
+  "manifestB": [
+    "selsizefit",
+    "csvheader",
+    "csvempty",
+    "lmssizes",
+    "parsepath",
+    "memslug",
+    "cfgclamp",
+    "chkdetect",
+    "cmdheading",
+    "fsescape",
+    "fsctxcap",
+    "probetier",
+    "gatededupe",
+    "statusoffline",
+    "repairrounds",
+    "tyselarg",
+    "tylmsopt",
+    "typarseblk",
+    "tycfgfield",
+    "tychkspec",
+    "tychkfail",
+    "tyfspath",
+    "typrobetier",
+    "tyclientfetch",
+    "tydiffstat",
+    "tyserverreg",
+    "tysharedcap",
+    "tyrepairdiff",
+    "tystatusout",
+    "tyfixarg"
+  ],
+  "tasks": [
+    {
+      "id": "selmatchfuzzy",
+      "fileScope": [
+        "src/selection.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/selection.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/selection.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "selsizefit",
+      "fileScope": [
+        "src/selection.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/selection.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/selection.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "selobjective",
+      "fileScope": [
+        "src/selection.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/selection.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/selection.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "csvheader",
+      "fileScope": [
+        "src/models-csv.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/models-csv.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/models-csv.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "csvcols",
+      "fileScope": [
+        "src/models-csv.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/models-csv.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/models-csv.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "csvempty",
+      "fileScope": [
+        "src/models-csv.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/models-csv.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/models-csv.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "lmsps",
+      "fileScope": [
+        "src/lms.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/lms.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/lms.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "lmssizes",
+      "fileScope": [
+        "src/lms.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/lms.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/lms.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "parsefence",
+      "fileScope": [
+        "src/parse.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/parse.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/parse.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "parsepath",
+      "fileScope": [
+        "src/parse.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/parse.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/parse.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "parsetrail",
+      "fileScope": [
+        "src/parse.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/parse.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/parse.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "memslug",
+      "fileScope": [
+        "src/memory.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/memory.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/memory.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "memindex",
+      "fileScope": [
+        "src/memory.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/memory.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/memory.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "cfgclamp",
+      "fileScope": [
+        "src/config.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/config.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/config.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "cfgenv",
+      "fileScope": [
+        "src/config.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/config.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/config.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "chkdetect",
+      "fileScope": [
+        "src/checks/config.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/config.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/config.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "chkbudget",
+      "fileScope": [
+        "src/checks/config.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/config.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/config.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "cmdheading",
+      "fileScope": [
+        "src/claude-md.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/claude-md.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/claude-md.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "cmdidem",
+      "fileScope": [
+        "src/claude-md.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/claude-md.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/claude-md.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "fsescape",
+      "fileScope": [
+        "src/fs-safety.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/fs-safety.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/fs-safety.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "fsoutcap",
+      "fileScope": [
+        "src/fs-safety.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/fs-safety.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/fs-safety.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "fsctxcap",
+      "fileScope": [
+        "src/fs-safety.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/fs-safety.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/fs-safety.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "probephrase",
+      "fileScope": [
+        "src/contract-probe.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/contract-probe.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/contract-probe.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "probetier",
+      "fileScope": [
+        "src/contract-probe.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/contract-probe.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/contract-probe.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "gatebudget",
+      "fileScope": [
+        "src/tools/gate.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/gate.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/gate.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "gatededupe",
+      "fileScope": [
+        "src/tools/gate.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/gate.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/gate.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "scafexists",
+      "fileScope": [
+        "src/tools/scaffold.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/scaffold.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/scaffold.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "statusoffline",
+      "fileScope": [
+        "src/tools/status.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/status.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/status.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "modelspick",
+      "fileScope": [
+        "src/tools/models.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/models-tool.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/models-tool.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "repairrounds",
+      "fileScope": [
+        "src/tools/repair.ts"
+      ],
+      "verificationStratum": "test-red",
+      "predicateArgv": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/repair.test.ts"
+      ],
+      "gateCategory": "test",
+      "verificationCommands": [
+        "npx vitest run tests/repair.test.ts"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyselret",
+      "fileScope": [
+        "src/selection.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyselarg",
+      "fileScope": [
+        "src/selection.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tycsvrow",
+      "fileScope": [
+        "src/models-csv.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tylmsopt",
+      "fileScope": [
+        "src/lms.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tylmsnull",
+      "fileScope": [
+        "src/lms.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "typarseblk",
+      "fileScope": [
+        "src/parse.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tymemrec",
+      "fileScope": [
+        "src/memory.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tycfgfield",
+      "fileScope": [
+        "src/config.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tycfgdefault",
+      "fileScope": [
+        "src/config.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tychkspec",
+      "fileScope": [
+        "src/checks/config.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tychkparse",
+      "fileScope": [
+        "src/checks/parsers.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tychkfail",
+      "fileScope": [
+        "src/checks/parsers.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tycmdblock",
+      "fileScope": [
+        "src/claude-md.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyfspath",
+      "fileScope": [
+        "src/fs-safety.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyfscap",
+      "fileScope": [
+        "src/fs-safety.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "typrobetier",
+      "fileScope": [
+        "src/contract-probe.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyclientbody",
+      "fileScope": [
+        "src/llm-client.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyclientfetch",
+      "fileScope": [
+        "src/llm-client.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tycorpusrow",
+      "fileScope": [
+        "src/corpus.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tydiffstat",
+      "fileScope": [
+        "src/diff.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyexecopts",
+      "fileScope": [
+        "src/exec.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyserverreg",
+      "fileScope": [
+        "src/server.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tysharedres",
+      "fileScope": [
+        "src/tools/shared.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tysharedcap",
+      "fileScope": [
+        "src/tools/shared.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tygatereport",
+      "fileScope": [
+        "src/tools/gate.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyrepairdiff",
+      "fileScope": [
+        "src/tools/repair.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyscafspec",
+      "fileScope": [
+        "src/tools/scaffold.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tystatusout",
+      "fileScope": [
+        "src/tools/status.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tymodelsarg",
+      "fileScope": [
+        "src/tools/models.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    },
+    {
+      "id": "tyfixarg",
+      "fileScope": [
+        "src/tools/fix.ts"
+      ],
+      "verificationStratum": "types-only",
+      "predicateArgv": [
+        "npx",
+        "tsc",
+        "-p",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "gateCategory": "types",
+      "verificationCommands": [
+        "npx tsc -p tsconfig.json --noEmit"
+      ],
+      "expectedSubagentStratum": "solo"
+    }
+  ]
+}
