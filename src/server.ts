@@ -204,7 +204,7 @@ async function main(): Promise<void> {
     },
     async (args) => {
       try {
-        return jsonResult(await runModels(config, args));
+        return jsonResult(await runModels(args, config));
       } catch (error) {
         return errorResult(error);
       }
