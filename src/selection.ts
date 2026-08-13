@@ -24,7 +24,7 @@ export function normalizeId(s: string): string {
 // and it is anchored at `$`, so an "@" mid-id is not a trailing suffix and
 // survives. Not global — `$` admits one match, and the flag would only leave
 // `lastIndex` state for a future `.test()` to trip over.
-const QUANT_SUFFIX_RE = /(?:[-@](?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\d+(?:_k(?:_[ms])?)?|v\d+))+$/i;
+const QUANT_SUFFIX_RE = /(?:[-](?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\d+(?:_k(?:_[ms])?)?|v\d+))+$/i;
 
 /** Candidate forms for fuzzy comparison: full, basename, and quant-stripped variants. */
 function fuzzyForms(id: string): Set<string> {
