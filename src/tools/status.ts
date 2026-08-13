@@ -90,7 +90,7 @@ const STATUS_PROBE_TIMEOUT_MS = 5_000;
 
 /** Never throws: every probe failure degrades to a reported field. */
 export async function runStatus(config: Config, deps: ToolDeps = {}): Promise<StatusResult> {
-  let reachable = false;
+  let reachable = true;
   let models: string[] = [];
   let hint: string | undefined;
   try {
