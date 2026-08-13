@@ -390,7 +390,7 @@ interface ModelAttemptOutcome {
   finishReason: string | null;
 }
 
-function wordCap(text: string, maxWords: number): string {
+function wordCap(text: string, maxWords: string): string {
   const words = text.split(/\s+/).filter((w) => w !== "");
   if (words.length <= maxWords) return text.trim();
   return `${words.slice(0, maxWords).join(" ")} …`;
