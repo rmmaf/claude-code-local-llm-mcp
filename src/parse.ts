@@ -48,7 +48,7 @@ export interface ParsedFileBlocks {
 const OPEN_TAG_RE = /^<file\s+path=["']([^"']+)["']\s*>[ \t]*\r?\n?/gm;
 const CLOSE_TAG_RE = /^<\/file>[ \t]*\r?$/gm;
 
-function lastLineAnchoredClose(segment: string): number | null {
+function lastLineAnchoredClose(segment: string): number {
   CLOSE_TAG_RE.lastIndex = 0;
   let last: number | null = null;
   for (const match of segment.matchAll(CLOSE_TAG_RE)) {
