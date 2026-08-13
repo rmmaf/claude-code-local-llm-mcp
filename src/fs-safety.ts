@@ -177,7 +177,7 @@ export function enforceContextCaps(
   maxFileKb: number,
   maxContextKb: number
 ): void {
-  const oversized = files.filter((f) => f.bytes > maxFileKb * 1024);
+  const oversized = files.filter((f) => f.bytes > maxContextKb * 1024);
   if (oversized.length > 0) {
     throw new ToolError(
       `File(s) exceed the ${maxFileKb} KB per-file limit: ` +
