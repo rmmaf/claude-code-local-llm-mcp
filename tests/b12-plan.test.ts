@@ -138,6 +138,24 @@ describe("manifest-config.json agrees with the plan it declares", () => {
     expect(pinned.claudeMdSha256).toBe(shaAt("HEAD", "CLAUDE.md"));
     expect(pinned.ratesSha256).toBe(shaAt(plan.parent, ".local-coder/rates.json"));
   });
+
+  it("declares scoringCommand as a TEMPLATE pinning the --audit form", () => {
+    // TWO DECISIONS, BOUND SO THAT REVERTING EITHER IS LOUD.
+    //
+    // The placeholder: clause 19 compares exact equality against an invocation
+    // rebuilt from the whole argv (assemble.ts:1172, emit.ts:316), so a literal
+    // id here is right for at most one of the seven manifests. The assembler
+    // refuses a template without it; this asserts the config never stops being
+    // one, which the assembler cannot say about a value it never sees.
+    //
+    // The `--audit` form: the prescribed loop emits twice (audit.ts:15) and one
+    // of the two must diverge from the pin. Pinning the bare form voids the
+    // FINAL scored artifact; pinning this one voids the first, provisional
+    // emission instead — already final:false with clauses 4-6 UNCHECKED. The
+    // path is the only one committedAuditCheck accepts (emit.ts:57).
+    const command = (config().pinned as { scoringCommand: string }).scoringCommand;
+    expect(command).toBe("node dist/cost/b12/emit.js <runId> --audit evidence/<runId>.b12.audit.json");
+  });
 });
 
 /**

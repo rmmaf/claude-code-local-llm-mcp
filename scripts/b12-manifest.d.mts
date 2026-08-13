@@ -63,8 +63,18 @@ export interface ManifestTask {
   fileScope: string[];
 }
 
+/** The spelling a run id enters `pinned.scoringCommand` through. */
+export const RUN_ID_PLACEHOLDER: "<runId>";
+
 export interface AssembledManifest {
   runId: string;
+  /**
+   * OPTIONAL BECAUSE IT IS ASYMMETRIC, not because it is unimportant. A and B
+   * carry it so `b12-register.mjs:627` and `:740` stop resolving the pilot as
+   * `manifestA?.pilotRunId ?? runId`; the five pilot manifests do not, because
+   * nothing reads it there and it would only restate `runId`.
+   */
+  pilotRunId?: string;
   pinned: Record<string, unknown>;
   abPairs: ManifestPair[];
   tasks: ManifestTask[];

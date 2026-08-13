@@ -24,6 +24,14 @@ coverage/
 # evidence/ IS versioned; these are the bulk it was scored from.
 .local-coder/contract-spill/
 
+# PER-MACHINE, and it has to be: `detectChecks` picks `npx.cmd`/`npm.cmd` on
+# win32 and `npx`/`npm` everywhere else (src/checks/config.ts:183, :242), so a
+# versioned file carrying either spelling breaks the gate on the other platform
+# — and `loadChecks` REPLACES autodetection rather than merging with it
+# (:295-297), so the breakage is total, not partial. A machine that needs its
+# own checks writes them here and they stay here.
+.local-coder/checks.json
+
 # mac-check.sh probe, removed on exit; listed so an interrupted run cannot dirty the tree
 .mac-check-status.*.mts
 .b12/

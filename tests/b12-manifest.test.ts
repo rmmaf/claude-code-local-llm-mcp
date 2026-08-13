@@ -165,7 +165,10 @@ async function pinnedFor(memoryHash: string): Promise<Record<string, unknown>> {
     clientTruncationCap: 25_000,
     pacingCacheWriteShareCeiling: 0.5,
     perTaskDenominatorShareCap: 0.4,
-    scoringCommand: "node dist/cost/b12/score.js",
+    // A TEMPLATE. The assembler resolves `<runId>` per manifest, and refuses a
+    // literal — which is what this fixture used to carry, naming a script that
+    // has never existed.
+    scoringCommand: "node dist/cost/b12/emit.js <runId> --audit evidence/<runId>.b12.audit.json",
     perArmTimeoutMs: 2_700_000,
     extraArgs: [],
     b12RunSha256: "c".repeat(64),
@@ -196,6 +199,8 @@ interface ConfigOver {
   manifestB?: string[];
   pilot?: string[];
   runIdB?: string;
+  /** Omitted keeps the template; `null` deletes the key outright. */
+  scoringCommand?: string | null;
 }
 
 /** A full 30/30/5 corpus and the config that assembles it. */
@@ -207,6 +212,9 @@ async function fullCorpus(root: string, over: ConfigOver = {}): Promise<{ config
   const P = over.pilot ?? ids("p", 5);
   for (const id of [...new Set([...A, ...B, ...P])]) await makeTask(root, parent, id);
   const configPath = path.join(root, "b12-corpus", "manifest-config.json");
+  const pinned = await pinnedFor(await memorySnapshotIn(root));
+  if (over.scoringCommand === null) delete pinned.scoringCommand;
+  else if (over.scoringCommand !== undefined) pinned.scoringCommand = over.scoringCommand;
   await fs.writeFile(
     configPath,
     JSON.stringify({
@@ -219,7 +227,7 @@ async function fullCorpus(root: string, over: ConfigOver = {}): Promise<{ config
       pilot: P,
       abPairsA: A.slice(0, 6).map((taskId, i) => ({ id: `pa${i}`, taskId, order: i % 2 === 0 ? "treatment-first" : "control-first" })),
       abPairsB: B.slice(0, 3).map((taskId, i) => ({ id: `pb${i}`, taskId, order: i % 2 === 0 ? "control-first" : "treatment-first" })),
-      pinned: await pinnedFor(await memorySnapshotIn(root)),
+      pinned,
     }),
     "utf8"
   );
@@ -229,6 +237,11 @@ async function fullCorpus(root: string, over: ConfigOver = {}): Promise<{ config
 function okOf<T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> {
   if (!r.ok) throw new Error(`expected ok, got: ${JSON.stringify(r)}`);
   return r as Extract<T, { ok: true }>;
+}
+/** `assembleManifests` refuses with `reasons`, not the `why` `whyOf` reads. */
+function reasonsOf(r: { ok: boolean }): string {
+  if (r.ok) throw new Error("expected a refusal; the call succeeded");
+  return ((r as { reasons?: string[] }).reasons ?? []).join(" | ");
 }
 function whyOf<T extends { ok: boolean }>(r: T): string {
   if (r.ok) throw new Error("expected a refusal; the call succeeded");
@@ -475,5 +488,107 @@ describe("b12 manifest — the assembler derives what a hand-written manifest wo
     // registered run, and five phantom registrations refuse every real one.
     for (const p of paths.pilots) expect(p.endsWith(".b12.tasks.json")).toBe(false);
     expect(paths.pilots).toHaveLength(5);
+  }, 90_000);
+
+  const scoringCommandFor = (runId: string): string =>
+    `node dist/cost/b12/emit.js ${runId} --audit evidence/${runId}.b12.audit.json`;
+
+  it("resolves pinned.scoringCommand per manifest — A from runIdA, B from runIdB, the pilots from pilotRunId", async () => {
+    const root = tempRoot();
+    const { configPath } = await fullCorpus(root);
+    const config = okOf(parseManifestConfig(root, configPath)).config;
+    const built = okOf(assembleManifests(root, config));
+
+    // ASSERTED AFTER THE WHOLE ASSEMBLY, never one manifest at a time. All
+    // seven are handed the SAME `config.pinned` object, so an implementation
+    // that resolved by mutating it would satisfy a per-call check and leave
+    // every earlier manifest carrying whichever id was resolved last — with
+    // bytes that still look entirely plausible.
+    expect(built.manifestA.pinned.scoringCommand).toBe(scoringCommandFor("run-a"));
+    // runIdB, even though manifest B's sealed FILE is named from runIdA
+    // (`outputPaths`): `open-b` copies those bytes to
+    // evidence/<runIdB>.b12.tasks.json and run 2 is scored under runIdB, which
+    // is the id `emit`'s argv will carry and clause 19 will compare.
+    expect(built.manifestB.pinned.scoringCommand).toBe(scoringCommandFor("run-b"));
+    for (const p of built.pilots) expect(p.manifest.pinned.scoringCommand).toBe(scoringCommandFor("run-pilot"));
+
+    // Three distinct strings out of one declaration, and the declaration itself
+    // unchanged — which is what makes the assembly repeatable.
+    expect(config.pinned.scoringCommand).toBe(scoringCommandFor("<runId>"));
+  }, 90_000);
+
+  it("REFUSES a scoringCommand with no <runId> — the exact value that used to seal in silence", async () => {
+    const root = tempRoot();
+    // A literal that is RIGHT for the pilot and wrong for A and for B, which is
+    // what the real config carried: `build` checks presence only
+    // (b12-run.mjs:1065) and clause 19 does not fire until score time, after
+    // every paid session has been spent.
+    const { configPath } = await fullCorpus(root, { scoringCommand: scoringCommandFor("run-pilot") });
+    const config = okOf(parseManifestConfig(root, configPath)).config;
+    expect(reasonsOf(assembleManifests(root, config))).toMatch(/does not contain <runId>/);
+  }, 90_000);
+
+  it("REFUSES an absent scoringCommand rather than resolving nothing into six manifests", async () => {
+    const root = tempRoot();
+    const { configPath } = await fullCorpus(root, { scoringCommand: null });
+    const config = okOf(parseManifestConfig(root, configPath)).config;
+    expect(reasonsOf(assembleManifests(root, config))).toMatch(/absent, empty, or not a string/);
+  }, 90_000);
+
+  it("emits pilotRunId on A and B and on NEITHER of the five pilot manifests", async () => {
+    const root = tempRoot();
+    const { configPath } = await fullCorpus(root);
+    const config = okOf(parseManifestConfig(root, configPath)).config;
+    const built = okOf(assembleManifests(root, config));
+
+    // The field exists so b12-register.mjs:627 and :740 stop resolving the
+    // pilot as `manifestA?.pilotRunId ?? runId` — a fallback that fired for
+    // every manifest this assembler had ever produced, sending the register to
+    // look for the pilot record under the RUN's id.
+    expect(built.manifestA.pilotRunId).toBe("run-pilot");
+    expect(built.manifestB.pilotRunId).toBe("run-pilot");
+    // Nothing reads it off a pilot manifest, where it would only restate runId.
+    for (const p of built.pilots) expect("pilotRunId" in p.manifest).toBe(false);
+
+    // AND THE FROZEN SWEEP MUST STILL ACCEPT THE EXTRA KEY. `observe` runs this
+    // on the run machine (b12-run.mjs:2540) and a manifest it rejects cannot
+    // run at all, so the assembler's opinion of the shape is not the one that
+    // counts.
+    expect(manifestDeclarationGaps(built.manifestA)).toEqual([]);
+    expect(manifestDeclarationGaps(built.manifestB)).toEqual([]);
+  }, 90_000);
+
+  it("REFUSES a built manifest whose scoringCommand stopped matching its own runId", async () => {
+    const root = tempRoot();
+    const { configPath } = await fullCorpus(root);
+    const config = okOf(parseManifestConfig(root, configPath)).config;
+    const built = okOf(assembleManifests(root, config));
+    expect(assemblyRefusals(root, config, built).join("\n")).toBe("");
+
+    // THE FAILURE THIS EXISTS FOR, and it is one this change created. All seven
+    // manifests used to share ONE pinned object and one string: they could be
+    // wrong together, but they could not DISAGREE. They now carry independently
+    // resolved strings, and nothing downstream tells a right difference from a
+    // wrong one — manifestDeclarationGaps asks only for a non-empty string
+    // (b12-run.mjs:1065) and registrationGuard proves byte identity, not that
+    // the bytes are right. Clause 19 would, at score time, after the sessions.
+    built.manifestA.pinned.scoringCommand = built.manifestB.pinned.scoringCommand;
+    expect(assemblyRefusals(root, config, built).join("\n")).toMatch(
+      /manifest A: pinned\.scoringCommand is .+ but its own runId resolves the template to/
+    );
+  }, 90_000);
+
+  it("REFUSES manifests A and B naming different pilots", async () => {
+    const root = tempRoot();
+    const { configPath } = await fullCorpus(root);
+    const config = okOf(parseManifestConfig(root, configPath)).config;
+    const built = okOf(assembleManifests(root, config));
+
+    // Only A's copy is ever read (b12-register.mjs:627, :740), so B's could
+    // drift with nothing later noticing — and two manifests sealed in one act
+    // disagreeing about which run preceded them is not a thing the record
+    // should be able to say.
+    built.manifestB.pilotRunId = "run-pilot-elsewhere";
+    expect(assemblyRefusals(root, config, built).join("\n")).toMatch(/name different pilots/);
   }, 90_000);
 });

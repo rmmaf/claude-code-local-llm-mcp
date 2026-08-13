@@ -496,12 +496,50 @@ export function manifestBytes(value) {
   return text;
 }
 
+/** The one spelling a run id enters `pinned.scoringCommand` through. */
+export const RUN_ID_PLACEHOLDER = "<runId>";
+
+/**
+ * `voidConditions` 19 compares `pinned.scoringCommand` for EXACT equality
+ * against the invocation `emit` rebuilds from its own argv (`assemble.ts:1172`,
+ * `emit.ts:316`), and that argv carries the run id. So one literal string
+ * cannot be right for A and for B, and the config declares a TEMPLATE that is
+ * resolved here, per manifest, from that manifest's OWN runId — B's is runIdB,
+ * even though B's sealed FILE is named from runIdA (`outputPaths`), because
+ * `open-b` copies those bytes to `evidence/<runIdB>.b12.tasks.json` and run 2
+ * is scored under runIdB.
+ *
+ * ON A COPY, which is the whole reason this is a function. `config.pinned` is
+ * ONE object handed to all seven manifests; writing the resolved string onto it
+ * would make the last call win for every earlier one, and the emitted bytes
+ * would still look entirely plausible. Spreading also preserves key order,
+ * because `scoringCommand` already exists — the manifest bytes do not move.
+ */
+function pinnedFor(pinned, runId) {
+  return { ...pinned, scoringCommand: pinned.scoringCommand.split(RUN_ID_PLACEHOLDER).join(runId) };
+}
+
 /**
  * Top-level key order, taken from the same fixture as `TASK_KEY_ORDER` rather
- * than chosen: `runId, pinned, abPairs, tasks`.
+ * than chosen: `runId, pinned, abPairs, tasks`. `pilotRunId` is the one
+ * addition and it sits beside `runId`, being the same kind of thing — an
+ * identity, not a pin.
+ *
+ * ON BOTH SEALED MANIFESTS AND ON NEITHER PILOT. `b12-register.mjs:627` and
+ * `:740` resolve the pilot as `manifestA?.pilotRunId ?? runId`, and this
+ * assembler never emitted the field — so for every manifest it produced the
+ * fallback fired and the register looked for the pilot record under the RUN's
+ * id, while `b12-run.mjs:2315` had written it under the pilot's.
+ *
+ * Only A's copy is read today. B carries it anyway for two reasons: `open-b`
+ * installs B's bytes verbatim as run 2's manifest (`b12-register.mjs:878`), so
+ * the field is there if run 2 ever needs it; and two sealed manifests that
+ * could disagree about which pilot preceded them is a disagreement nothing
+ * downstream would surface, so `assemblyRefusals` refuses one. The five pilot
+ * manifests do not carry it, where it would only restate `runId`.
  */
-function manifestObject(runId, tasks, abPairs, pinned) {
-  return { runId, pinned, abPairs, tasks };
+function manifestObject(runId, tasks, abPairs, pinned, pilotRunId = null) {
+  return pilotRunId === null ? { runId, pinned, abPairs, tasks } : { runId, pilotRunId, pinned, abPairs, tasks };
 }
 
 /**
@@ -540,8 +578,26 @@ export function assembleManifests(repoRoot, config) {
     return { ok: false, reasons: [`the corpus declares ${parents.size} different green parents (${[...parents].map((p) => p.slice(0, 12)).join(", ")}) — every base must differ from ONE shared tree by exactly its own defect`] };
   }
 
-  const manifestA = config.pilotOnly ? null : manifestObject(config.runIdA, tasks.manifestA, config.abPairsA, config.pinned);
-  const manifestB = config.pilotOnly ? null : manifestObject(config.runIdB, tasks.manifestB, config.abPairsB, config.pinned);
+  // THE TEMPLATE, CHECKED BEFORE IT IS USED, because the failure it replaces was
+  // silent all the way to score time. `pinned.scoringCommand` named the PILOT
+  // run; `build` asserts only that the field is a non-empty string
+  // (`b12-run.mjs:1065`); and clause 19 does not fire until `emit`, which is
+  // after every paid session has been spent.
+  const template = config.pinned?.scoringCommand;
+  if (typeof template !== "string" || template.length === 0) {
+    return { ok: false, reasons: ["pinned.scoringCommand is absent, empty, or not a string — it is the template each manifest resolves from its own runId (voidConditions 19)"] };
+  }
+  if (!template.includes(RUN_ID_PLACEHOLDER)) {
+    return {
+      ok: false,
+      reasons: [
+        `pinned.scoringCommand does not contain ${RUN_ID_PLACEHOLDER} — a literal run id there is right for at most one of the seven manifests and clause 19 voids the rest, at score time and not here (got ${JSON.stringify(template)})`,
+      ],
+    };
+  }
+
+  const manifestA = config.pilotOnly ? null : manifestObject(config.runIdA, tasks.manifestA, config.abPairsA, pinnedFor(config.pinned, config.runIdA), config.pilotRunId);
+  const manifestB = config.pilotOnly ? null : manifestObject(config.runIdB, tasks.manifestB, config.abPairsB, pinnedFor(config.pinned, config.runIdB), config.pilotRunId);
   // FIVE SINGLE-TASK PILOT MANIFESTS SHARING ONE runId, and BOTH halves of that
   // shape are forced by the frozen harness rather than chosen.
   //
@@ -576,7 +632,7 @@ export function assembleManifests(repoRoot, config) {
         { id: `${task.id}-2`, taskId: task.id, order: "control-first" },
         { id: `${task.id}-3`, taskId: task.id, order: "treatment-first" },
       ],
-      config.pinned
+      pinnedFor(config.pinned, config.pilotRunId)
     ),
   }));
 
@@ -611,6 +667,47 @@ export function assemblyRefusals(repoRoot, config, built) {
   pilots.forEach(({ taskId, manifest }) => {
     for (const gap of manifestDeclarationGaps(manifest)) red.push(`pilot manifest ${taskId}: ${gap}`);
   });
+
+  // THE RESOLVED COMMANDS, RE-DERIVED RATHER THAN TRUSTED — a check this file
+  // did not need until this file created the need for it. All seven manifests
+  // used to share ONE pinned object and one string, which could be wrong but
+  // could not DISAGREE. They now hold seven independently built objects that are
+  // supposed to differ, and nothing downstream can tell a right difference from
+  // a wrong one: manifestDeclarationGaps asks only that the field is a non-empty
+  // string (b12-run.mjs:1065), checkCore never recomputes it, and
+  // registrationGuard proves byte identity rather than that the bytes are right.
+  // Clause 19 would, at score time, after the sessions are spent.
+  //
+  // WHAT THIS DOES NOT CHECK, and the omission is deliberate: whether the
+  // template names the right executable, carries --audit, or spells the audit
+  // path correctly. Guessing at command SHAPE here would refuse lawful commands
+  // this experiment has not thought of; the exact string that ships is pinned in
+  // tests/b12-plan.test.ts instead, which is an equality and not a guess.
+  const template = typeof config.pinned?.scoringCommand === "string" ? config.pinned.scoringCommand : null;
+  if (template !== null) {
+    const carriers = [
+      ...(config.pilotOnly ? [] : [["manifest A", manifestA], ["manifest B", manifestB]]),
+      ...pilots.map(({ taskId, manifest }) => [`pilot manifest ${taskId}`, manifest]),
+    ];
+    for (const [name, m] of carriers) {
+      const want = template.split(RUN_ID_PLACEHOLDER).join(m.runId);
+      if (m.pinned?.scoringCommand !== want) {
+        red.push(
+          `${name}: pinned.scoringCommand is ${JSON.stringify(m.pinned?.scoringCommand ?? null)} but its own runId resolves the template to ${JSON.stringify(want)} — clause 19 compares the manifest's string against an invocation carrying the manifest's runId, so this is a VOID at score time`
+        );
+      }
+    }
+  }
+
+  // AND A AND B MUST NAME THE SAME PILOT. Only A's pilotRunId is read
+  // (b12-register.mjs:627, :740), so B's could drift without any later check
+  // noticing — and two manifests sealed in one act disagreeing about which run
+  // preceded them is not a thing the record should be able to say.
+  if (!config.pilotOnly && manifestA?.pilotRunId !== manifestB?.pilotRunId) {
+    red.push(
+      `manifests A and B name different pilots (${JSON.stringify(manifestA?.pilotRunId ?? null)} vs ${JSON.stringify(manifestB?.pilotRunId ?? null)}) — one pilot run precedes both, and only A's copy is ever read`
+    );
+  }
 
   if (!config.pilotOnly) {
     const syntheticPilot = { observations: config.pilot.map((taskId) => ({ taskId })) };
