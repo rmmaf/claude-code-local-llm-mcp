@@ -109,7 +109,7 @@ export async function chatCompletion(options: ChatOptions): Promise<ChatResult> 
 
   const body = payload as {
     choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
-    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+    usage?: { prompt_tokens?: unknown };
     model?: unknown;
   };
   const choice = body.choices?.[0];
