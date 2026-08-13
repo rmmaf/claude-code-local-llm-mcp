@@ -372,11 +372,11 @@
         "npx",
         "vitest",
         "run",
-        "tests/config.test.ts"
+        "tests/claude-md.test.ts"
       ],
       "gateCategory": "test",
       "verificationCommands": [
-        "npx vitest run tests/config.test.ts"
+        "npx vitest run tests/claude-md.test.ts"
       ],
       "expectedSubagentStratum": "solo"
     },
@@ -391,11 +391,11 @@
         "npx",
         "vitest",
         "run",
-        "tests/config.test.ts"
+        "tests/claude-md.test.ts"
       ],
       "gateCategory": "test",
       "verificationCommands": [
-        "npx vitest run tests/config.test.ts"
+        "npx vitest run tests/claude-md.test.ts"
       ],
       "expectedSubagentStratum": "solo"
     },

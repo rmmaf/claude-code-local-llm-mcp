@@ -10,16 +10,36 @@
     "",
     "SELF-CONTAINED IS THE PROPERTY THAT MATTERS. A defect whose fix requires touching a",
     "file outside the declared fileScope makes scope confinement unsatisfiable, and the",
-    "observation voids for a reason the author planted. That is why both sites below are",
-    "INTERNAL helpers: dropping the nullable half of an exported signature would push the",
-    "error out to callers in other files.",
+    "observation voids for a reason the author planted. An earlier draft of this note stated",
+    "the property as a PROXY — 'that is why the sites here are internal helpers, since",
+    "dropping the nullable half of an exported signature would push the error out to callers'",
+    "— and the proxy is wrong in both directions. `tymemrec` narrows the return of an",
+    "EXPORTED function and was MEASURED not to leak, because every consumer already receives",
+    "it as `MemoryInfo | null`; narrowing the INTERNAL `MemoryInfo.source` would have leaked,",
+    "into tests/memory.test.ts:88. The property is the measurement, not the shape: run the",
+    "predicate at the base and read which files it names.",
     "",
     "`symptom` says what BROKE and never what to change. It is pasted into prompt.md above",
-    "a fixed instruction to stay in scope and leave the tests alone.",
+    "a fixed instruction to stay in scope and leave the tests alone. NOTHING COMPARES IT TO",
+    "THE PREDICATE. A symptom naming the wrong suite authors clean and the only casualty is a",
+    "paid session sent to chase something else, so it is the one field here whose staleness",
+    "is silent — it is worth re-reading whenever a task's predicate moves.",
     "",
-    "The two entries here are already authored and published as annotated tags; the writer",
-    "skips a task whose spec dir exists rather than rewriting it. They are kept as the",
-    "worked example for the remaining 58."
+    "All 60 plan tasks now carry a site. The writer SKIPS a task whose spec dir already",
+    "exists rather than rewriting it, so editing an entry after its spec is written changes",
+    "nothing; delete the spec dir first, and remember that a published tag must be retired",
+    "rather than re-authored.",
+    "",
+    "TWO EXCEPTIONS ARE SPENT HERE, both on cfgclamp and cfgenv, and neither is visible to",
+    "any validator. Their predicate had to move to tests/claude-md.test.ts because",
+    "tests/config.test.ts is red at the green parent on Windows over a drive-qualified path",
+    "literal, and the parent cannot move with 61 tags published against it. That suite",
+    "reaches src/config.ts through exactly ONE `it`, so these are the corpus's first pair of",
+    "bases that break the SAME NAMED assertion — the seventh owner decision buys 65 DISTINCT",
+    "specifications and b12-manifest.mjs enforces it by comparing id strings, which cannot",
+    "see this. And `cfgclamp` no longer names a clamp: it was sited on fractionFromEnv and is",
+    "now a spelling table. corpus-plan.json has no description field, so the id is the only",
+    "label a reader gets, and symptom cannot carry the correction because it is the prompt."
   ],
   "tylmsopt": {
     "find": "function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number | null {",
@@ -37,14 +57,14 @@
     "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/checks/parsers.ts`. The helper that\npulls a line number out of a stack trace is declared to always find one — but it is handed\na nullable file, and a stack that never mentions that file has no line to give."
   },
   "cfgclamp": {
-    "find": "memFitFraction: fractionFromEnv(env, \"LOCAL_CODER_MEM_FIT_FRACTION\", DEFAULTS.memFitFraction),",
-    "replace": "memFitFraction: numberFromEnv(env, \"LOCAL_CODER_MEM_FIT_FRACTION\", DEFAULTS.memFitFraction),",
-    "symptom": "`npx vitest run tests/config.test.ts` is red. Set `LOCAL_CODER_MEM_FIT_FRACTION=1.5` and the loaded\nconfig hands that 1.5 straight back: the memory-fit fraction is documented as living in (0, 1], and an\nout-of-range value is no longer held to that ceiling. Values inside the range, and invalid ones, behave."
+    "find": "[\"0\", \"false\", \"no\", \"off\"].includes(value)",
+    "replace": "[\"0\", \"false\", \"no\"].includes(value)",
+    "symptom": "`npx vitest run tests/claude-md.test.ts` is red. Setting `LOCAL_CODER_AUTO_CLAUDE_MD` to one of the\ndocumented off-spellings no longer opts out: the loader calls the value invalid, warns, and keeps the\ndefault. Not all of them — the ones that still work are what makes the variable look healthy."
   },
   "cfgenv": {
-    "find": "numberFromEnv(env, \"LOCAL_CODER_TEMPERATURE\", DEFAULTS.temperature, { allowZero: true })",
-    "replace": "numberFromEnv(env, \"LOCAL_CODER_TEMPERATURE\", DEFAULTS.temperature)",
-    "symptom": "`npx vitest run tests/config.test.ts` is red on the env-override case. `LOCAL_CODER_TEMPERATURE=0` — a\nperfectly legal temperature, and the one deterministic decoding actually wants — comes back as the\nbuilt-in default instead of 0, and the loader logs a warning calling that input invalid."
+    "find": "autoClaudeMd: booleanFromEnv(env, \"LOCAL_CODER_AUTO_CLAUDE_MD\", DEFAULTS.autoClaudeMd),",
+    "replace": "autoClaudeMd: booleanFromEnv(env, \"LOCAL_CODER_AUTO_CLAUDEMD\", DEFAULTS.autoClaudeMd),",
+    "symptom": "`npx vitest run tests/claude-md.test.ts` is red. `LOCAL_CODER_AUTO_CLAUDE_MD` has stopped doing\nanything at all — every spelling leaves the setting at its default, valid ones included. There is no\nwarning either, which is the part that narrows it: the value is not being rejected, it is never seen."
   },
   "tycfgfield": {
     "find": "options: { allowZero?: boolean } = {}",
@@ -310,5 +330,15 @@
     "find": "return jsonResult(await runModels(config, args));",
     "replace": "return jsonResult(await runModels(args, config));",
     "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/server.ts`. One registered MCP tool handler\ninvokes its implementation with arguments the implementation's parameters do not accept, so the\nserver entry point no longer compiles."
+  },
+  "chkbudget": {
+    "find": "if (problems.length > 0) throw invalid",
+    "replace": "if (problems.length > 1) throw invalid",
+    "symptom": "`npx vitest run tests/gate.test.ts` is red. A `.local-coder/checks.json` carrying ONE malformed entry\nno longer fails closed: that entry is dropped and the gate runs whatever was left, reporting passed.\nTwo malformed entries still refuse, which is exactly what makes the validation look like it works."
+  },
+  "tymemrec": {
+    "find": "Promise<MemoryInfo | null> {",
+    "replace": "Promise<MemoryInfo> {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/memory.ts`. The macOS memory probe is declared\nto always produce a reading, but three of its paths — an unparseable `sysctl` total, an unparseable\n`vm_stat`, and anything thrown along the way — deliberately report that no reading was available."
   }
 }

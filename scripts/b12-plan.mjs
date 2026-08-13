@@ -48,11 +48,31 @@ const TEST_RED = [
   ["parsetrail", "src/parse.ts", "tests/parse.test.ts"],
   ["memslug", "src/memory.ts", "tests/memory.test.ts"],
   ["memindex", "src/memory.ts", "tests/memory.test.ts"],
-  ["cfgclamp", "src/config.ts", "tests/config.test.ts"],
-  ["cfgenv", "src/config.ts", "tests/config.test.ts"],
-  // NOT tests/config.test.ts, which imports src/config.js and never reaches
-  // src/checks/config.ts — a defect there would have left that suite green and the
-  // author would have refused the base. Caught by the reachability check below.
+  // NOT tests/config.test.ts, the obvious pairing, and this is the one entry here whose
+  // suite was chosen against its own file. That suite is RED AT THE GREEN PARENT on
+  // Windows: it asserted the literal "/project/config/models.csv" and path.resolve is
+  // drive-qualified on win32, so the author refuses both bases ("a defect authored onto a
+  // red parent is two defects, one of them unowned") and the parent cannot move with 61
+  // tags published against it.
+  //
+  // A -t filter narrowing the predicate to the one test each defect breaks was measured and
+  // is DEAD five ways over: an unmatched -t exits 0, so the predicate could pass vacuously;
+  // SHELL_UNSAFE forces shell:false on a spaced argv and npx with shell:false on Windows is
+  // ENOENT; b12-manifest.mjs refuses whitespace in argv by name; the manifest joins argv on
+  // spaces and the frozen b12-run.mjs splits it back; and a one-assertion oracle admits a
+  // false FIXED. Underneath all of it, the premise is a Windows artifact and the run machine
+  // is the Mac, where that suite is green — the fix would have routed around a defect that
+  // does not exist where these execute.
+  //
+  // tests/claude-md.test.ts reaches src/config.ts through loadConfig and is MEASURED green
+  // at the parent. What it costs is recorded in defect-sites.json: it reaches that file
+  // through exactly one `it`, so these two are the corpus's first pair breaking the same
+  // named assertion.
+  ["cfgclamp", "src/config.ts", "tests/claude-md.test.ts"],
+  ["cfgenv", "src/config.ts", "tests/claude-md.test.ts"],
+  // NOT tests/config.test.ts either, for a different reason: it imports src/config.js and
+  // never reaches src/checks/config.ts — a defect there would have left that suite green and
+  // the author would have refused the base. Caught by the reachability check below.
   ["chkdetect", "src/checks/config.ts", "tests/gate.test.ts"],
   ["chkbudget", "src/checks/config.ts", "tests/gate.test.ts"],
   ["cmdheading", "src/claude-md.ts", "tests/claude-md.test.ts"],

@@ -1,0 +1,12 @@
+diff --git a/src/config.ts b/src/config.ts
+index 0b705a9..90822b6 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -209,6 +209,6 @@ export function loadConfig(
+     ),
+     // No default: null means "probe", and the probe is allowed to decline.
+     contextTokens: optionalNumberFromEnv(env, "LOCAL_CODER_CONTEXT_TOKENS"),
+-    autoClaudeMd: booleanFromEnv(env, "LOCAL_CODER_AUTO_CLAUDE_MD", DEFAULTS.autoClaudeMd),
++    autoClaudeMd: booleanFromEnv(env, "LOCAL_CODER_AUTO_CLAUDEMD", DEFAULTS.autoClaudeMd),
+   };
+ }
