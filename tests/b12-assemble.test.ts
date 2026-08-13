@@ -543,9 +543,48 @@ describe("selection — the committed order, and the metamorphic pair", () => {
   });
 });
 
+/**
+ * VOIDCONDITIONS 2 — the optional-stopping guard, still unimplemented.
+ *
+ * A predicate WAS written for it on 2026-08-13 and was refuted before shipping:
+ * `admitted >= 20 || notStarted === 0`. `runPlan` phase 5 budgets 20-26
+ * supervised sessions over a manifest of 30, so 26 observations with 19 admitted
+ * and 4 tasks never reached is a LAWFUL run whose set cannot grow — and that
+ * predicate voids it, at `emit`, after every session is paid for. It also
+ * under-fires: `notStarted` counts tasks with no archived attempt, which is not
+ * the question of whether a lawful future event can still change the admitted
+ * set. `buildArchiveChecks` carries the full account.
+ *
+ * These two tests pin the honest state. If a real predicate is ever written,
+ * the first one fails, and its neighbours are where to read what the last
+ * attempt got wrong.
+ */
+describe("voidConditions 2 — unimplemented, and no longer claimed", () => {
+  const archive = (): Parameters<typeof assemble>[0] =>
+    archiveOf({ tasks: [taskOf("t1"), taskOf("t2"), taskOf("t3")], observations: [obsOf("t1")] });
+
+  it("no archive check carries clause 2's number", () => {
+    // The whole content of the 2026-08-13 change. Clause 2's number used to sit
+    // on `committedOrderReplay` — clause 3's predicate — so an unimplemented
+    // clause read as implemented on the artifact's face.
+    const claimed = assemble(archive()).result.archiveChecks.filter((c) => c.clause.startsWith("voidConditions 2 "));
+    expect(claimed.map((c) => c.clause)).toEqual([]);
+  });
+
+  it("the interim bracket IS still derivable — the half of clause 2 nothing closes", () => {
+    // NOT AN ENDORSEMENT. This asserts the hole so that closing it is a visible
+    // change rather than a silent one. `aggregate` runs before any archive
+    // check, so a run stopped at one observation of three still publishes rLo
+    // and rHi — the optional-stopping peek the clause forbids.
+    const result = assemble(archive()).result;
+    expect(typeof result.rLo).toBe("number");
+    expect(typeof result.rHi).toBe("number");
+  });
+});
+
 describe("committedOrderReplay — voidConditions 3's order half, retrospective", () => {
   const tasks = [taskOf("t1"), taskOf("t2"), taskOf("t3")];
-  // The session must be the attempt's own — the binding half of clause 2's
+  // The session must be the attempt's own — the binding half of clause 3's
   // replay refuses a row it cannot show to be an attempt's row.
   const row = (taskId: string, i: number, attempt = 1): RunlogRow => ({
     ts: at(i * 1_000),
@@ -562,7 +601,10 @@ describe("committedOrderReplay — voidConditions 3's order half, retrospective"
   it("fires when a task first ran before its predecessor", () => {
     const archive = archiveOf({ tasks, observations: [obsOf("t2")], runlogRows: [row("t2", 0)] });
     expect(committedOrderReplay(archive)).toMatch(/before its predecessor t1/);
-    expect(check(assemble(archive).result, "voidConditions 2").fired).toBe(true);
+    // CLAUSE 3, not clause 2. This predicate was pushed under clause 2's number
+    // while nothing implemented clause 2 — this describe block's own title said
+    // "voidConditions 3's order half" the whole time.
+    expect(check(assemble(archive).result, "voidConditions 3").fired).toBe(true);
   });
 
   it("a late RE-RUN is not an order event (admissionRule 12 has no temporal clause)", () => {

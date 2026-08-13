@@ -38,7 +38,7 @@ import {
 } from "../report.js";
 import { rateKey } from "../rates.js";
 import type { Transcript } from "../transcript.js";
-import { aggregate } from "./aggregate.js";
+import { aggregate, ADMITTED_OBSERVATIONS } from "./aggregate.js";
 import { runCoverage } from "./coverage.js";
 import { fileScopeViolations } from "./filescope.js";
 import { computeTerms } from "./terms.js";
@@ -398,7 +398,10 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
       a.disposition === "scored" &&
       a.obs.record?.valid === true &&
       !overBudget.has(a) &&
-      admitted.length < 20;
+      // The SAME constant clause 2's closure test reads. A bare 20 here and a
+      // named one there is two spellings of one rule, and the pair drifting
+      // would make the closure test silently wrong about when the cap is hit.
+      admitted.length < ADMITTED_OBSERVATIONS;
     if (admissible) {
       admitted.push(a.terms!);
       admittedAssessed.push(a);
@@ -468,7 +471,9 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     .filter((a) => a.terms !== null)
     .map((a) => counterfactualOf(a, admitted.includes(a.terms!), admittedSumAPlusSLo));
 
-  // not_started: lawful, and reported with its disposition (`admissionRule` 2).
+  // not_started: lawful, and reported with its disposition — the preregistration
+  // lists it in the closed set beside `scored` and the eight voids, and
+  // UNIT-5.md says a manifest task with no observation directory IS lawful.
   // These are manifest entries with NO observation — they never had terms, so
   // they are appended here rather than synthesised as zero-valued observations
   // (a zero A_o is a measurement; absence is not).
@@ -881,10 +886,18 @@ interface ChecksContext {
 }
 
 /**
- * The archive-level clauses of UNIT-5.md step 7 — 2, 7, 8, 9, 11, 12, 13, 14,
- * 19, 20 — plus artifact 1's manifest facts and the rates byte-identity, each
- * with its own predicate over the archive, each on the face fired or not.
- * `aggregate`'s `decide()` already owns 1, 3, 10, 16, 17, 18.
+ * The archive-level clauses of UNIT-5.md step 7 — 3's order half, 7, 8, 9, 11,
+ * 12, 13, 14, 19, 20 — plus artifact 1's manifest facts and the rates
+ * byte-identity, each with its own predicate over the archive, each on the face
+ * fired or not. `aggregate`'s `decide()` owns 1, 3's count half, 10, 16, 17, 18.
+ *
+ * CLAUSE 3 IS SPLIT ACROSS THE TWO AND SAYS SO. Its count half ("fewer than 20
+ * admitted", "a stratum under 5") is arithmetic over the finished set and lives
+ * in `decide()`; its ORDER half is a replay over the runlog and lives here.
+ *
+ * CLAUSE 2 IS OWNED BY NEITHER. Its number used to sit on clause 3's order
+ * predicate, which made an unimplemented clause look implemented; the number
+ * has been moved and the gap is now stated where the check would go.
  */
 function buildArchiveChecks(ctx: ChecksContext): void {
   const { archive, assessed, checks } = ctx;
@@ -956,13 +969,54 @@ function buildArchiveChecks(ctx: ChecksContext): void {
         : "committedness is UNSHOWABLE — git could not answer, and absence of proof is never read as clean"
   );
 
-  // voidConditions 2 — the committed order, replayed from the runlog.
+  // VOIDCONDITIONS 2 IS NOT IMPLEMENTED HERE, AND THE OBVIOUS PREDICATE IS
+  // WRONG. Read this before writing one.
+  //
+  // The clause is an optional-stopping guard — the preregistration names the
+  // property in the PILOT's words, "mechanically incapable of optional
+  // stopping". Nothing implements it. The check that used to carry its number
+  // ran `committedOrderReplay`, which is clause 3's predicate by that
+  // function's own docstring, and its detail said the partial-set half was
+  // "carried by the analysis-session obligations" — by a person. The number is
+  // now on the right predicate, so the gap is at least visible.
+  //
+  // WHAT IS STILL OPEN. `aggregate` runs unconditionally above, before any
+  // check here, so an operator can `emit` mid-run and read rLo, rHi and rHiPlus
+  // off the artifact even though the verdict is void. That is the peek.
+  //
+  // THE PREDICATE THAT LOOKS RIGHT AND IS NOT. `admittedCount >= 20 ||
+  // notStartedCount === 0` was written, reviewed and REFUTED on 2026-08-13. It
+  // over-fires on a lawful shape and costs the run: `runPlan` phase 5 budgets
+  // 20-26 supervised sessions over an ordered manifest of 30 (PREMISES.md), so
+  // 26 completed observations with 19 admitted and 4 tasks never reached is a
+  // run that genuinely cannot grow — and that predicate voids it, at `emit`,
+  // after every session is paid for. It also under-fires: `notStartedCount`
+  // counts tasks with no ARCHIVED ATTEMPT, which is not the same question as
+  // whether a lawful future event can still change the admitted set —
+  // `admissionRule` 12's discretionary re-run, an observation whose disposition
+  // is null, and invalid or dropped attempts all leave the set mutable while
+  // reading as observed.
+  //
+  // WHAT A CORRECT ONE MUST ACCOUNT FOR: the 20-admission cap, the 26-session
+  // ceiling, remaining discretionary and version-drift re-runs, disposition
+  // EXISTENCE rather than `byTask` membership, and manifest cardinality — this
+  // file has no `tasks.length === 30` check, so an undersized manifest reaches
+  // the cap trivially.
+  //
+  // AND THE FROZEN TEXT CONTRADICTS ITSELF, which is why no predicate here can
+  // settle it: `admissionRule` 1 says every registered run owes a result
+  // carrying "the partial bracket", and clause 2 says no interim bracket may be
+  // derivable. Whichever wins is a pre-data amendment and is the owner's.
+
+  // voidConditions 3's ORDER half, replayed from the runlog. Its count half is
+  // `decide()`'s, at aggregate.ts's frozen-count refusal — two mechanisms, one
+  // clause number, in two different containers: this one lands in
+  // `archiveChecks`, that one in `voidClause`.
   const orderProblem = committedOrderReplay(archive);
   push(
-    "voidConditions 2 — committed order",
+    "voidConditions 3 — committed order",
     orderProblem !== null,
-    orderProblem ??
-      "every first execution in the runlog respects the manifest's committed order; the partial-set half is carried by the analysis-session obligations (PREMISES.md § B12)"
+    orderProblem ?? "every first execution in the runlog respects the manifest's committed order"
   );
 
   // voidConditions 4 — rates.json byte-identity, the one clause-4 item the
