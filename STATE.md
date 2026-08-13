@@ -5,40 +5,41 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**The corpus toolchain is COMPLETE and the corpus is EMPTY.** `b12-author.mjs` mints
-and publishes a base (`530c2c2`, annotated `refs/tags/b12/corpus/<taskId>`, create-only,
-retire moves before a compare-and-delete); `b12-manifest.mjs` assembles the manifests
-(`0086b79`). The assembler DERIVES rather than declares — `baseCommit` from the tag,
-`acceptance` from the spec's argv — and refuses a spec that declares either.
-**Two measurements decided design, both refuting an argument:** a plain `git fetch` brings
-NO base into an existing clone (auto-following needs a tag pointing into fetched history),
-and a quoted acceptance entry ALWAYS-ACCEPTS — `'single'` exits 0 on both platforms,
-`"double"` 0 on macOS and 3 on Windows, against the author's 3.
+**The toolchain is done and the corpus is 7 of 65.** The fileScope gate is repaired
+(`608e930`, two thirds — the emission half was measured to refuse `src/tools/` entirely),
+five pilot bases are published (`d2e5462`), `--pilot-only` and the pilot config exist
+(`ac3d01f`, `f21d351`). **Both chosen constants are DECIDED** pre-data (`b086a59`): ceiling
+0.95, cap 0.25. The **60-task corpus plan** is constraint-checked (`3f5b996`, `6f8f275`),
+two bases authored, every remaining null MAC-LOCAL — nothing waits on a decision.
 
 ## Next action
 
-**FIX THE FILESCOPE GATE, THEN AUTHOR THE CORPUS.** Decision 2 is WITHDRAWN — it post-dated
-the seal, which resolved MANIFEST SOURCE to **authored** on 08-05 after MEASURING enumeration
-to fail. First: `PROTECTED_SCOPES` and `PINNED_PATHS` overlap in ONE item, so
-`fileScopeViolations` ACCEPTS `src/telemetry.ts`, `b12-run.mjs`, `gate.ts` and `repair.ts` —
-free to repair until the first scored observation. Then measure **p** via the 5-task pilot.
+**AUTHOR THE REMAINING 58 BASES** from `b12-corpus/corpus-plan.json`, then run the assembler
+without `--pilot-only`. Each defect must be SELF-CONTAINED — a fix needing a file outside
+the declared `fileScope` makes confinement unsatisfiable. Capture patches with `git diff`
+from a real edit, never by hand, and verify each batch `--deep`.
+
+## Measured, and worth not re-deriving
+
+- **The pacing ceiling cannot discriminate.** A legitimately SHORT observation reaches
+  0.8841 (one request); an all-rewrite pathology 0.93–0.98. The bands overlap.
+- **Two routes to a 5-minute gap bar**: a subagent (`MEASUREMENTS.jsonl:239`) and an
+  INCONSISTENT TTL split, which `readUsage` books wholly to 5m — 144 of 81,979 records.
 
 ## Still blocking a run
 
-**p is unmeasured:** N=30 completes 29% at 0.60, 59% at 0.667, 93% at 0.77; a void costs an attempt.
-
-Unchanged: VOID 21 and VOID 12 (**no A/B before both**); the Mac trips (policy blobs,
-installedChars RE-PROBE with the model in the key, cap probe, pilot); platform and
-Phase-3 amendments; contract-stability re-run; seal → register (CAS) → sessions → clause
-6 → verdict → A/B. **At the seal, re-pin `pinned.captureSha256`.**
+**p is unmeasured:** N=30 completes 29% at 0.60, 59% at 0.667, 93% at 0.77; a void costs an
+attempt. Unchanged: VOID 21 and VOID 12 (**no A/B before both**); the Mac trips (policy
+blobs, installedChars RE-PROBE with the model in the key, cap probe, pilot); platform and
+Phase-3 amendments; contract-stability re-run; seal → register (CAS) → sessions → clause 6
+→ verdict → A/B. **At the seal, re-pin `pinned.captureSha256`.**
 
 ## Do not redo
 
-- The O-bracket is DECLINED and so are its cousins: no control-arm `installedChars`,
-  no minted VOID-21 hash, no minted verdict-precedence RULE.
-- Never back-fill an append-only record; three phase-3 run ids stay row-less.
-- `tests/fixtures/b12-run/` is TEST MATERIAL; `// b12:emission-begin` IS clause 5's 4th.
-- **`void(withheld)` is MEASURED not firing** — 2026-08-09 pre-flight, 2.1.221.
-- The zero-owned-key gap is the harness's, named in `PREMISES.md`, and NOT closed.
-- A pilot manifest needs 3 abPairs: `observe` runs the gap sweep BEFORE any pilot
-  exemption. Suppressing that gap in a build tool ships an unrunnable artifact.
+- The O-bracket is DECLINED, with its cousins: no control-arm `installedChars`, no minted
+  VOID-21 hash, no minted verdict-precedence RULE. Never back-fill an append-only record.
+  `tests/fixtures/b12-run/` is TEST MATERIAL; `// b12:emission-begin` IS clause 5's 4th.
+- **`void(withheld)` is MEASURED not firing** — 2026-08-09 pre-flight, 2.1.221. A pilot
+  manifest needs 3 abPairs: `observe` sweeps gaps BEFORE any exemption.
+- Decision 2 is WITHDRAWN — the seal resolved MANIFEST SOURCE to **authored** on 08-05
+  after MEASURING enumeration to fail. Do not go looking for a backlog again.
