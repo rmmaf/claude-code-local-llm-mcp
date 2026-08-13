@@ -107,7 +107,7 @@ export function parseModelsCsv(text: string): ModelEntry[] {
     } else if (record.length > 2) {
       log.warn(`models-csv: row for ${JSON.stringify(model)} has ${record.length} columns; using only the first two`);
     }
-    entries.push({ model, objective: (record[1] ?? "").trim() });
+    entries.push({ model, objective: (record[2] ?? "").trim() });
   }
   return entries;
 }
