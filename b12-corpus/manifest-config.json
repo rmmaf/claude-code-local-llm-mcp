@@ -1,7 +1,14 @@
 {
   "_readme": [
-    "THE PILOT'S CONFIG. Build with:  node scripts/b12-manifest.mjs plan b12-corpus/manifest-config.json --pilot-only",
-    "Keys beginning with _ are ignored by parseManifestConfig; they are notes for whoever fills this in.",
+    "THE RUN'S CONFIG — the pilot AND both sealed manifests. Dry run, then write:",
+    "  node scripts/b12-manifest.mjs plan  b12-corpus/manifest-config.json   [--pilot-only]",
+    "  node scripts/b12-manifest.mjs build b12-corpus/manifest-config.json   [--pilot-only]",
+    "--pilot-only emits the five pilot manifests alone and ignores manifestA/B, the run ids and",
+    "the pairs; it was the whole file until those were declared. A FULL build emits the pilot",
+    "manifests too, so read _beforeYouBuild item 2 before running one.",
+    "Keys beginning with _ are ignored by parseManifestConfig; they are notes for whoever fills",
+    "this in, and they are the ONLY place a pair's reason can live — the parser narrows every",
+    "abPairs entry to {id, taskId, order} and silently discards anything else.",
     "",
     "EVERY PIN BELOW IS IN ONE OF THREE STATES, and the distinction is the point:",
     "  KNOWN HERE  - computed on the authoring machine and already filled in.",
@@ -11,14 +18,32 @@
     "                pre-data, with the reasoning and the refutation attempt in _chosenConstants.",
     "",
     "Do not replace a null with a guess to make the tool quiet. The refusal is the deliverable.",
-    "Every remaining null is MAC-LOCAL. Nothing here is waiting on a decision."
+    "Every remaining null is MAC-LOCAL. FOUR DECISIONS are open, plus one hazard that is not a",
+    "decision at all; all five are in _beforeYouBuild. An earlier version of this line said",
+    "nothing was open, which was true only while the sealed manifests did not exist."
   ],
-
   "specRoot": "b12-corpus",
-
+  "_runIds": [
+    "THREE NAMES, NOT PINS, and they are UNDATED ON PURPOSE. A run id is a path segment — it",
+    "names evidence/<runId>.b12.tasks.json — not a measurement, so the pin doctrine two blocks",
+    "down does not govern it. But an id carrying a date the run did not happen on is misleading",
+    "evidence in a file committed before the event, so these say `pending` instead. RENAME EACH",
+    "BEFORE `build`, the same instruction _pilotRunId already carries.",
+    "",
+    "runIdA and runIdB MUST DIFFER (b12-manifest.mjs:348) — run 2 is a distinct registered run,",
+    "not a relabel. Manifest B's FILE is named from runIdA (outputPaths, b12-manifest.mjs:754);",
+    "runIdB appears only as manifest B's own `runId`, which is the sole source open-b has for",
+    "run 2's identity (b12-register.mjs:856). `plan` reads all three for parsing, manifest",
+    "construction and the output-path collision check, and writes none of them; `build` writes",
+    "them into manifest bytes and registration makes those bytes durable. So a rename is",
+    "mechanically free up to `build`. NOT impossible after it — `build` uses ordinary overwrite",
+    "for a path that has not yet entered history (b12-manifest.mjs:844). The irreversible boundary",
+    "is INTRODUCTION into history and registration, not the first build."
+  ],
+  "runIdA": "mac-b12-run1-pending",
+  "runIdB": "mac-b12-run2-pending",
   "pilotRunId": "2026-08-13-mac-b12-pilot",
   "_pilotRunId": "Rename to the date the pilot actually runs. It names evidence/<pilotRunId>.b12.pilot-<taskId>.manifest.json and, after the run, evidence/<pilotRunId>.b12.pilot.json.",
-
   "pilot": [
     "pilot-normalizeid",
     "pilot-usablefree",
@@ -27,9 +52,261 @@
     "pilot-lmsguard"
   ],
   "_pilot": "ORDERED, and the order is load-bearing: committedOrderViolation runs for every treatment arm and is NOT under the pilotMode exemption, so each of these ships as its own single-task manifest with its task at index 0. All five are excluded from manifests A and B by design.artifacts 4.",
-
-  "_manifestsAandB": "ABSENT ON PURPOSE. runPlan PHASE 2 precedes PHASE 4 — the pilot runs before the sealed manifests exist. --pilot-only is what expresses that; without it the tool would demand 60 authored siblings before emitting five pilot manifests.",
-
+  "_manifestsAandB": [
+    "THE 30 + 30, COPIED FROM b12-corpus/corpus-plan.json AND NOT RETYPED. The order is",
+    "load-bearing: admissionRule 2 scores 'the first 20 that admit, in that committed order'.",
+    "",
+    "NOTHING IN THE TOOLCHAIN COMPARES THESE LISTS TO THE PLAN — parseManifestConfig refuses",
+    "only A n B and A n pilot overlap. That is the duplication class that produced a real defect",
+    "four commits ago, when nothing compared the 60 written specs to the plan they came from",
+    "(b637461). tests/b12-plan.test.ts now binds this file to corpus-plan.json for exactly that",
+    "reason, along with specRoot and the ratesSha256 that is also stated in both places."
+  ],
+  "manifestA": [
+    "selmatchfuzzy",
+    "tyselret",
+    "selobjective",
+    "tycsvrow",
+    "csvcols",
+    "tylmsnull",
+    "lmsps",
+    "tymemrec",
+    "parsefence",
+    "tycfgdefault",
+    "parsetrail",
+    "tychkparse",
+    "memindex",
+    "tycmdblock",
+    "cfgenv",
+    "tyfscap",
+    "chkbudget",
+    "tyclientbody",
+    "cmdidem",
+    "tycorpusrow",
+    "fsoutcap",
+    "tyexecopts",
+    "probephrase",
+    "tysharedres",
+    "gatebudget",
+    "tygatereport",
+    "scafexists",
+    "tyscafspec",
+    "modelspick",
+    "tymodelsarg"
+  ],
+  "manifestB": [
+    "selsizefit",
+    "tyselarg",
+    "csvheader",
+    "tylmsopt",
+    "csvempty",
+    "typarseblk",
+    "lmssizes",
+    "tycfgfield",
+    "parsepath",
+    "tychkspec",
+    "memslug",
+    "tychkfail",
+    "cfgclamp",
+    "tyfspath",
+    "chkdetect",
+    "typrobetier",
+    "cmdheading",
+    "tyclientfetch",
+    "fsescape",
+    "tydiffstat",
+    "fsctxcap",
+    "tyserverreg",
+    "probetier",
+    "tysharedcap",
+    "gatededupe",
+    "tyrepairdiff",
+    "statusoffline",
+    "tystatusout",
+    "repairrounds",
+    "tyfixarg"
+  ],
+  "_abPairs": [
+    "SIX PAIRS PER MANIFEST. A pair is ONE TASK RUN TWICE — once with the delegation server",
+    "installed, once without — and `order` says which arm goes first.",
+    "",
+    "SIX IN A IS FROZEN (b12-register.mjs:95, runPlan PHASE 7 '12 sessions (6 pairs)'). SIX IN B",
+    "IS CHOSEN. B's count is not unchecked — manifestDeclarationGaps enforces a minimum of three",
+    "at assembly and before every observation (b12-run.mjs:1106, :2565) — but nothing requires",
+    "exactly six of it, and open-b does not re-run checkCore. Six keeps the scored run under the",
+    "cardinality PHASE 7 froze whichever manifest ends up scored, AT A COST: if B opens, that is",
+    "six more paid sessions than the minimum-valid three would have been.",
+    "",
+    "THE SELECTION IS: THE FIRST SIX IDS OF THE COMMITTED ORDER. That is the whole rule. It has",
+    "no clauses to tune, and its shape is not mine — admissionRule 2 already scores 'the first 20",
+    "that admit, in that committed order', so a prefix is the selection this design uses on the",
+    "primary instrument. The pairs use the same shape on the same order.",
+    "",
+    "THE 3/3 STRATUM SPLIT IS A CONSEQUENCE, NOT A TERM: the plan interleaves strata (b12-plan.mjs",
+    "deals alternately within each), so the first six are three test-red and three types-only",
+    "without the rule mentioning strata at all.",
+    "",
+    "TWO EARLIER SELECTIONS WERE DISCARDED, and both failures are worth keeping because the second",
+    "is subtler than the first.",
+    "  A HAND-PICKED LIST, rejected because its stated reason was that chkbudget and chkdetect run",
+    "  the loudest suite and a loud control arm pushes R_ab AWAY from the kill. That is selection",
+    "  on expected outcome — the residual task-selection channel operatorConfound says it cannot",
+    "  close — and a falsification-only instrument does not neutralise it, because avoiding the",
+    "  kill is itself valuable to the operator.",
+    "  A RULE WITH A fileScope CLAUSE ('take a task if its stratum has fewer than three slots AND",
+    "  its fileScope is not already used'), rejected for a better reason: adversarial review",
+    "  pointed out that removing outcome vocabulary from a rule does not remove the degree of",
+    "  freedom that SELECTED the rule, and named a rule of equal simplicity — first, middle and",
+    "  last per stratum — that would have included chkdetect. The fileScope clause was the tunable",
+    "  part, and it was the clause doing the work.",
+    "",
+    "THE HONEST RESIDUAL, since a rule adopted after its output is known is weaker than a",
+    "pre-committed one: the outcome space HAS been seen, and no rule chosen now can undo that.",
+    "What a prefix buys is that it is the rule with the fewest places to hide — there is one way",
+    "to write 'the first six', and the alternative rules that were considered and their outputs",
+    "are recorded above rather than deleted.",
+    "",
+    "WHAT THE PREFIX COSTS, taken as it came rather than patched:",
+    "  - MANIFEST A GETS NO ESCAPE-ROUTE PAIR. Its first six hold none of the seven types-only",
+    "    sites that admit a tsc-green fix which changes behaviour; manifest B's first six hold two",
+    "    (tylmsopt, typarseblk). An earlier draft added a clause to fix exactly this, and that",
+    "    clause is what review rejected. So the escape route is observable in B and not in A.",
+    "  - CONCENTRATED SCOPES. A's six touch only three files, three of them src/selection.ts; B's",
+    "    touch four. Two of A's pairs share tests/selection.test.ts, so one flaky suite can take",
+    "    two of its six, and voidConditions 21 voids the whole A/B below three complete pairs.",
+    "  - ALL THREE types-only pairs in each manifest share `npx tsc -p tsconfig.json --noEmit` by",
+    "    construction, so a tsc that cannot run takes three at once.",
+    "",
+    "ARM ORDER alternates WITHIN stratum — test-red opening treatment-first, types-only opening",
+    "control-first — giving 3/3 per manifest. Alternating by POSITION instead would have been",
+    "simpler and is wrong: the committed order alternates strata, so every test-red pair would",
+    "have been treatment-first and every types-only pair control-first, perfectly confounding arm",
+    "order with stratum. Which stratum opens with which arm is arbitrary and is not defended.",
+    "",
+    "WHAT 3/3 DOES AND DOES NOT BOUND: it balances WITHIN-PAIR position, first arm against second.",
+    "It does not bound chronological drift across pairs, because the manifest declares each pair's",
+    "arm order but NOT the sequence in which pairs are run — b12-run.mjs:1130 leaves that to the",
+    "A/B pass, and committedOrderViolation covers treatment arms only.",
+    "",
+    "ON THE ESCAPE ROUTE, corrected from a claim that was too strong. Pairing makes the same defect",
+    "and the same predicate available in BOTH arms, but availability is not probability. Only the",
+    "treatment arm has `repair`, which loops until its checks pass, and on a tsc-only task that",
+    "loop has no signal separating a restored annotation from a behaviour-changing patch",
+    "(src/tools/repair.ts:628, :722). Arm-dependent route choice therefore survives as a possible",
+    "TREATMENT EFFECT or confound. Pairing does not close the question; it makes the route",
+    "observable in both arms for two of the seven, both of them in B.",
+    "",
+    "MEASURED about what the validators do NOT require, so nothing above reads as enforced: pair",
+    "taskIds need not be distinct (six pairs may name one task), pair ids are held to no grammar",
+    "and reach no path, and NOTHING ties a pair to the admission window. Every property here is",
+    "chosen, and tests/b12-plan.test.ts derives this rule's exact output so a drift from it is red."
+  ],
+  "abPairsA": [
+    {
+      "id": "ab-a-selmatchfuzzy",
+      "taskId": "selmatchfuzzy",
+      "order": "treatment-first"
+    },
+    {
+      "id": "ab-a-tyselret",
+      "taskId": "tyselret",
+      "order": "control-first"
+    },
+    {
+      "id": "ab-a-selobjective",
+      "taskId": "selobjective",
+      "order": "control-first"
+    },
+    {
+      "id": "ab-a-tycsvrow",
+      "taskId": "tycsvrow",
+      "order": "treatment-first"
+    },
+    {
+      "id": "ab-a-csvcols",
+      "taskId": "csvcols",
+      "order": "treatment-first"
+    },
+    {
+      "id": "ab-a-tylmsnull",
+      "taskId": "tylmsnull",
+      "order": "control-first"
+    }
+  ],
+  "abPairsB": [
+    {
+      "id": "ab-b-selsizefit",
+      "taskId": "selsizefit",
+      "order": "treatment-first"
+    },
+    {
+      "id": "ab-b-tyselarg",
+      "taskId": "tyselarg",
+      "order": "control-first"
+    },
+    {
+      "id": "ab-b-csvheader",
+      "taskId": "csvheader",
+      "order": "control-first"
+    },
+    {
+      "id": "ab-b-tylmsopt",
+      "taskId": "tylmsopt",
+      "order": "treatment-first"
+    },
+    {
+      "id": "ab-b-csvempty",
+      "taskId": "csvempty",
+      "order": "treatment-first"
+    },
+    {
+      "id": "ab-b-typarseblk",
+      "taskId": "typarseblk",
+      "order": "control-first"
+    }
+  ],
+  "_beforeYouBuild": [
+    "FOUR THINGS ARE NOT SETTLED, and none is which tasks to pair. `plan` is silent on all four,",
+    "so a clean dry run is not evidence that `build` and then `register` can succeed.",
+    "",
+    "1. THE HARNESS SEAL DOES NOT EXIST. evidence/b12-harness-seal.json is a barrier before ANY",
+    "   registration (b12-register.mjs:642 and :749). It comes from a fourth verb —",
+    "   `node scripts/b12-register.mjs seal-harness <runId> [manifestPath]` (:800) — which",
+    "   defaults manifestPath to evidence/<runId>.b12.tasks.json and so must run AFTER `build`.",
+    "   It refuses an on-disk file and an addition reachable through the CURRENT revision's",
+    "   history, then creates with exclusive `wx` (:545, :580). Not `--all`: unreachable history",
+    "   would not stop it. The order is: fill the MAC-LOCAL pins -> build -> seal-harness ->",
+    "   commit -> register.",
+    "",
+    "2. WHETHER THE FIVE PILOT MANIFESTS ARE EVER COMMITTED. A full `build` re-emits them",
+    "   (b12-manifest.mjs:814) and refuses on any output path already TRACKED at HEAD (:823) —",
+    "   and that guard sits above the `if (write)` branch, so it applies to `plan` too. evidence/",
+    "   is not gitignored and 28 files there are tracked, so committing the pilot's manifests is",
+    "   the natural act and would make the later build refuse on all five. The escape is a",
+    "   different pilotRunId. Note `build` uses ordinary overwrite for a path NOT yet in history",
+    "   (:844), so it can silently replace an untracked pilot manifest.",
+    "",
+    "3. pinned.scoringCommand IS WRONG AND ONE STRING CANNOT FIX IT. It names the PILOT run.",
+    "   Clause 19 compares it for exact equality against an invocation reconstructed from argv",
+    "   (assemble.ts:1172, emit.ts:311), and the prescribed operator sequence emits TWICE — once",
+    "   bare, once `--audit evidence/<runId>.b12.audit.json` (audit.ts:15). One `pinned` object is",
+    "   stamped into all seven manifests (b12-manifest.mjs:543, :569), so no single string can be",
+    "   right for A, for B, and for both emissions. Only build-time PRESENCE is checked",
+    "   (b12-run.mjs:1065), so a wrong string seals in silence. The fix may require `pinned` to",
+    "   become per-manifest, which is a harness change and not a config edit.",
+    "",
+    "4. runIdA VERSUS pilotRunId. b12-register.mjs:627 and :740 resolve the pilot as",
+    "   `manifestA?.pilotRunId ?? runId`, and manifestObject never emits pilotRunId",
+    "   (b12-manifest.mjs:503) — so for any manifest THIS ASSEMBLER produces the fallback always",
+    "   fires and the register reads the pilot's id off the run's id. A hand-authored manifest",
+    "   could carry the field. Two repairs exist and were never compared: bend runIdA to equal",
+    "   pilotRunId, or emit pilotRunId from manifestObject. Neither is adopted here.",
+    "",
+    "ALSO OPEN — a HAZARD rather than a decision, and worse for manifest B than its pair count:",
+    "B inherits A's `pinned` object, including claudeCodeVersion and claudeBinarySha256, and",
+    "assertPinned refuses at EVERY observe on a mismatch (b12-run.mjs:888). If Claude Code updates",
+    "between run 1 and run 2 — weeks apart by design — run 2 can only proceed on the PINNED binary, which may mean restoring it. B cannot be re-sealed for a new one."
+  ],
   "pinned": {
     "ratesSha256": "6d74cafd7fa5702352d068825be2f75f3ae7dd0ef3df77cc9ff7f04826730c94",
     "b12RunSha256": "053eb27932e441cc37e19c1679942533e6ff801c852a0cfbb294f9287214b315",
@@ -37,24 +314,27 @@
     "scoringCommand": "node dist/cost/b12/emit.js 2026-08-13-mac-b12-pilot",
     "perArmTimeoutMs": 2700000,
     "extraArgs": [],
-
     "claudeCodeVersion": null,
     "claudeBinarySha256": null,
     "clientTruncationCap": null,
-    "settingsSha256s": { "settings": "75cd35da2e1975836d06e7bd2436e88c37cb265c6f25385c4eed0835ca4d867d", "settingsLocal": null },
+    "settingsSha256s": {
+      "settings": "75cd35da2e1975836d06e7bd2436e88c37cb265c6f25385c4eed0835ca4d867d",
+      "settingsLocal": null
+    },
     "installedCharsProbe": null,
     "installedCharsProbeSha256": null,
     "mcpConfig": null,
     "mcpConfigSha256": null,
-    "policyBlobs": { "treatment": null, "control": null },
+    "policyBlobs": {
+      "treatment": null,
+      "control": null
+    },
     "memorySnapshot": null,
     "memorySnapshotSha256": null,
     "captureSha256": null,
-
     "pacingCacheWriteShareCeiling": 0.95,
     "perTaskDenominatorShareCap": 0.25
   },
-
   "_knownHere": {
     "ratesSha256": "sha256 of .local-coder/rates.json at the shared green parent. Compared inside EACH base commit's own tree by assertRatesFrozen, so it is a property of the corpus, not of a machine.",
     "b12RunSha256": "sha256 of scripts/b12-run.mjs at 608e930. GOES STALE THE MOMENT THAT FILE CHANGES — observe asserts the running harness IS the sealed one, so recompute if you touch it before the run.",
@@ -63,7 +343,6 @@
     "perArmTimeoutMs": "45 minutes. Declared rather than left to the silent fallback, which manifestDeclarationGaps refuses.",
     "extraArgs": "Empty, deliberately: a non-empty value forces an installedChars RE-PROBE (b12-run.mjs:1911)."
   },
-
   "_macLocal": {
     "claudeCodeVersion": "The FULL x.y.z on the run machine. assertPinned compares with .includes(), so a partial pin like 2.1.2 silently matches 2.1.221 — the assembler refuses anything that is not x.y.z.  claude --version",
     "claudeBinarySha256": "sha256 of the Claude Code binary that will run.  shasum -a 256 $(which claude)",
@@ -75,10 +354,8 @@
     "memorySnapshot": "Directory of the memory snapshot, plus its sha256. FOUND LATE AND WORTH SAYING WHY: observe REQUIRES this (b12-run.mjs:1690, citing voidConditions 13) and manifestDeclarationGaps never asks for it — so before the assembler was taught to check it, a manifest could pass every build-time check in this repository and then refuse on the run machine.",
     "captureSha256": "sha256 of the built dist/ capture. Its absence is SILENTLY PERMISSIVE rather than refusing: observe compares only `if (want)` (b12-run.mjs:2040), so leaving it null-and-unfilled means the capture ships unverified. STATE.md's standing note — re-pin this at the seal — is the same instruction from the other end."
   },
-
   "_chosenConstants": {
     "_status": "DECIDED 2026-08-12, pre-data, before any B12 observation exists. thresholdArgument calls these the two numbers 'this design must set that have no ancestor' and requires them 'declared as chosen rather than derived'. Both values below were adversarially reviewed against nine enumerated claims and SEVEN of the nine were sustained against the author; the ceiling moved from 0.85 to 0.95 as a result. What survives is recorded here, corrections included, because a justification that hides its refuted version is worth less than the number it defends.",
-
     "pacingCacheWriteShareCeiling": {
       "value": 0.95,
       "what_it_does": "admissionRule 11's second half. pacingFacts (src/cost/b12/assemble.ts:150-158) prices ONLY the observation's originatedRequestIds (:588-589) and fires on a STRICT >. voidConditions 20 then lifts it from an observation-level disposition to a run-level one: buildArchiveChecks pushes the clause when ANY assessed observation exceeded (:1187-1198), and assemble.ts:454-455 sets verdict='void' when ANY archive check fired. So one observation over this ceiling VOIDS ALL ~60 SESSIONS, and the experiment has two attempts total. Note `assessed`, not `admitted`: an observation already dropped for task_failed still counts here, and the only escape is an unreadable observation.json or an unrebuildable transcript (:567-586).",
@@ -87,21 +364,18 @@
       "why_not_higher_still": "It must remain a check. With cacheWrite at the 1h class's 2.0x and output at 5.0x, an all-rewrite session has share 2N/(2N+5o+i); solving strictly with o=1500, i=200 gives N > 21,816.7 at c=0.85, N > 34,650 at 0.90 and N > 73,150 at 0.95. At the 5m class's 1.25x the same three are 34,907 / 55,440 / 117,040. So 0.95 still fires on a 45-minute coding observation rewriting a 73k context at 1h rates; it is weak at 5m rates, and that is exactly the case where the gap bar drops to five minutes and the gap half becomes twelve times more sensitive. The two halves cover each other in opposite regimes.",
       "the_error_this_takes": "NOT that erring high is free -- an earlier draft claimed that and it is false. Undetected inflation lowers R, and a lower R makes a FALL easier, which the design's bracket reading (R_hi+ for the fall) exists to prevent. Separately, inflation in the CONTROL arm raises R_ab = sum(A_control - A_treatment)/sum(A_control) -- and no value of this constant covers that, because primary assembly filters to arm === 'treatment' (assemble.ts:221-222) and control observations are never pacing-assessed at all. The error is taken knowingly, in exchange for not spending a paid attempt on a false positive."
     },
-
     "perTaskDenominatorShareCap": {
       "value": 0.25,
       "what_it_does": "NOTHING MECHANICAL, and that is checked, not assumed: perTaskDenominatorShare is computed at assemble.ts:845 and typed at types.ts:1028, and NO code anywhere reads perTaskDenominatorShareCap -- the only mention outside this file is the comment at assemble.ts:843 saying it decides nothing, 'a live predicate here would mint a void the frozen text never wrote'. manifestDeclarationGaps still REQUIRES it (b12-run.mjs:1061-1064), so it is a pre-commitment published on the manifest's face and compared by a reader, not by the scorer.",
       "why_0_25": "Because it costs nothing when it fires, it is chosen tight and meaningful rather than safe. The denominator is admittedSumAPlusSLo over the ADMITTED set, which assemble.ts:389-405 caps at 20 treatment observations, one per task id -- so the EQUAL share is 1/20 = 0.05 and 0.25 is five times it. STATED WITH ITS CONDITION, because the review sustained the correction: shares are weighted by each task's A+S_lo, not by observation counts, so '0.25 equals a minimum evaluable stratum of MIN_DELIVERY_OBSERVATIONS = 5' holds only if those five weigh the same as the others. What is unconditionally true is the multiple: 0.25 is 5x the equal share, and a task at it carries the weight five average ones would.",
       "expected_to_fire": "Yes, sometimes, and that is the intent. If one task costs 10x the median while the rest sit at it, its share is 10/29 = 0.34 and the reader is told so. A covariate that never fires reports nothing."
     },
-
     "_refutation": {
       "predicted_before_measuring": "Written to a file before any measurement ran. Median cacheWrite share 0.15-0.45 (HELD, 0.3042); p95 below 0.80 (HELD, 0.6916); a healthy session above 0.85 (recorded FAILED, then TRUE after all -- the first pass filtered to >=2 requests and hid the single-request case at 0.8841); max above 0.90 (FAILED, 0.8841 is the highest measured). The pre-registered falsification rule said that if nothing healthy sat above 0.85 then 0.95 was unearned slack and had to be dropped. It was dropped -- and then restored, when the excluded subpopulation turned out to be the one that binds. The prediction's ARITHMETIC about short sessions was right; its POPULATION was wrong, and the second error hid the first.",
       "method": "cacheWrite units / total billed units over 160 Claude Code transcripts, replicating readUsage's 'equal or nothing' TTL split (src/cost/transcript.ts:201-241), rates.json's multipliers, api-error exclusion, one row per requestId. Run twice: per FILE, then per sessionId -- the second because pacingFacts prices only originatedRequestIds, and a whole-file group can carry inherited requests it would exclude. Grouping tighter did not move the tail (max 0.7732 either way for >=2 requests), which is the answer to that attack rather than an assumption about it.",
       "what_this_is_not": "Not derived from any B12 observation -- none exists. But NOT 'unfitted' either, and the review was right to press: the historical data set the lower edge of the window this value sits in, and the arithmetic set the upper edge. The value is chosen inside that window. That is the honest label, and it is narrower than the first draft's claim."
     }
   },
-
   "_theGapHalfIsTheBiggerRisk": {
     "_why_this_block_exists": "The OTHER half of admissionRule 11 -- max inter-request gap > the shortest cache TTL in play -- has NO constant to choose and is a larger threat to a paid run than either number above. It is recorded here because deciding the two constants is not the same as covering pacing, and reading this file could otherwise leave the opposite impression.",
     "the_bar_is_5_MINUTES_whenever_anyFiveMin_is_set": "pacingFacts sets anyFiveMin when ANY owned request has cacheWrite5m > 0, and TTL_MS then selects 300,000 ms over 3,600,000 (assemble.ts:147-148). TWO INDEPENDENT ROUTES SET IT, and neither is under this file's control:",
@@ -110,7 +384,6 @@
     "what_that_costs": "On the 1h bar, only 0.44% of 33,894 historical inter-request gaps exceed it and the 15 largest are 18h-186h RESUMES, which a harness-spawned session cannot have -- observe mints a fresh --session-id per observation and never resumes. On the 5m bar, 4.01% of the same gaps exceed it. voidConditions 20 makes ONE exceeding observation void the whole run.",
     "what_is_NOT_established": "That a harness-driven, non-interactive observation idles the way a human-driven session does. The historical gaps include a human thinking and typing; a B12 observation has no human in the loop and its gaps are tool-execution times. This is the single largest unquantified risk to the paid run, and it is not resolvable from Windows -- but it is also not resolvable by choosing either constant above, which is the point of recording it here rather than pretending a ceiling covers it."
   },
-
   "_transport": [
     "A plain git fetch brings NO base — measured. Tag auto-following only takes tags pointing into fetched history, and these bases are detached.",
     "git push origin \"refs/tags/b12/corpus/*:refs/tags/b12/corpus/*\"",
