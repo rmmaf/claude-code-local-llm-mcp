@@ -1,0 +1,42 @@
+{
+  "_readme": [
+    "ONE DEFECT SITE PER TASK, consumed by `node scripts/b12-spec.mjs write`. Everything",
+    "else about a task — parent, fileScope, predicate, stratum — lives in corpus-plan.json",
+    "and is never restated here.",
+    "",
+    "`find` must appear EXACTLY ONCE in the scoped file; the writer refuses on zero and on",
+    "more than one, because a replacement landing twice would leave the fileScope claiming",
+    "one edit while the tree carries two.",
+    "",
+    "SELF-CONTAINED IS THE PROPERTY THAT MATTERS. A defect whose fix requires touching a",
+    "file outside the declared fileScope makes scope confinement unsatisfiable, and the",
+    "observation voids for a reason the author planted. That is why both sites below are",
+    "INTERNAL helpers: dropping the nullable half of an exported signature would push the",
+    "error out to callers in other files.",
+    "",
+    "`symptom` says what BROKE and never what to change. It is pasted into prompt.md above",
+    "a fixed instruction to stay in scope and leave the tests alone.",
+    "",
+    "The two entries here are already authored and published as annotated tags; the writer",
+    "skips a task whose spec dir exists rather than rewriting it. They are kept as the",
+    "worked example for the remaining 58."
+  ],
+
+  "tylmsopt": {
+    "find": "function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number | null {",
+    "replace": "function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/lms.ts`. A helper that reports a\nnumeric field from an `lms` JSON row is declared to always produce a number, but the row\nit reads may simply not carry that field."
+  },
+
+  "typarseblk": {
+    "find": "function lastLineAnchoredClose(segment: string): number | null {",
+    "replace": "function lastLineAnchoredClose(segment: string): number {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/parse.ts`. The helper that locates a\nclosing fence on its own line is declared to always find one, and a segment with no such\nline has nothing to report."
+  },
+
+  "tychkparse": {
+    "find": "function firstLineIn(stack: string, file: string | null): number | null {",
+    "replace": "function firstLineIn(stack: string, file: string | null): number {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/checks/parsers.ts`. The helper that\npulls a line number out of a stack trace is declared to always find one — but it is handed\na nullable file, and a stack that never mentions that file has no line to give."
+  }
+}
