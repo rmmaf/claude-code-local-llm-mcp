@@ -72,7 +72,7 @@ export async function getMemoryInfo(
       log.warn("memory: vm_stat output could not be parsed");
       return null;
     }
-    return { totalBytes, freeBytes, source: "vm_stat" };
+    return { totalBytes, freeBytes, source: "memory_pressure" };
   } catch (error) {
     log.warn(`memory: detection failed: ${error instanceof Error ? error.message : String(error)}`);
     return null;
