@@ -35,7 +35,7 @@ export interface LmsLoadedModel {
  * live under any of these; sizes under any of the size keys.
  */
 const ID_KEYS = ["path", "modelKey", "key", "displayName", "identifier", "name"];
-const SIZE_KEYS = ["sizeBytes", "size_bytes", "size"];
+const SIZE_KEYS = ["sizeBytes", "size"];
 const CONTEXT_KEYS = ["contextLength", "context_length", "contextSize"];
 const MAX_CONTEXT_KEYS = ["maxContextLength", "max_context_length"];
 
