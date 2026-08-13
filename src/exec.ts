@@ -70,7 +70,7 @@ export async function runGit(
 ): Promise<string | null> {
   try {
     const budget = Math.min(GIT_TIMEOUT_MS, timeoutMs ?? GIT_TIMEOUT_MS);
-    const result = await runner("git", args, { cwd: root, timeoutMs: budget });
+    const result = await runner("git", args, { cwd: root, timeout: budget });
     if (result.code !== 0 || result.timedOut) return null;
     return result.stdout;
   } catch {
