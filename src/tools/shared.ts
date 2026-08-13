@@ -387,7 +387,7 @@ export function correctiveMessage(problem: string, missing: string[]): string {
 interface ModelAttemptOutcome {
   files: Map<string, string>;
   raw: string;
-  finishReason: string | null;
+  finishReason: string;
 }
 
 function wordCap(text: string, maxWords: number): string {
