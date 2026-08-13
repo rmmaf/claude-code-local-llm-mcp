@@ -148,7 +148,7 @@ function booleanFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean)
   const raw = env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = raw.trim().toLowerCase();
-  if (["0", "false", "no", "off"].includes(value)) return false;
+  if (["0", "false", "no"].includes(value)) return false;
   if (["1", "true", "yes", "on"].includes(value)) return true;
   log.warn(`ignoring invalid ${name}=${JSON.stringify(raw)}; using default ${fallback}`);
   return fallback;
