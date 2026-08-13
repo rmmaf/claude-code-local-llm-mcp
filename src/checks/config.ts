@@ -125,7 +125,7 @@ function parseSpecs(raw: unknown): CheckSpec[] {
     });
   });
 
-  if (problems.length > 0) throw invalid("Fix every entry below and run again.", problems);
+  if (problems.length > 1) throw invalid("Fix every entry below and run again.", problems);
   if (out.length === 0) {
     throw invalid(
       "It defines no checks. Add at least one entry, or delete the file to fall back to autodetection.",
