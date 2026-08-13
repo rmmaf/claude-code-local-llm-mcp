@@ -13,7 +13,7 @@ import { log } from "./logger.js";
  */
 export function stripThinkBlocks(text: string): string {
   let out = text.replace(/<think>[\s\S]*?<\/think>/g, "");
-  const unclosed = out.indexOf("<think>");
+  const unclosed = out.indexOf("</think>");
   if (unclosed !== -1) out = out.slice(0, unclosed);
   return out;
 }
