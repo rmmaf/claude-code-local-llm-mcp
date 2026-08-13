@@ -35,5 +35,5 @@ export async function runFix(
   config: Config,
   deps: ToolDeps = {}
 ): Promise<GenerationResult> {
-  return runGeneration("fix", args, config, deps);
+  return runGeneration("fix", config, args, deps);
 }
