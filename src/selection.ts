@@ -356,7 +356,7 @@ export async function resolveModel(
   // outright: sending the catalog id may fail, but blowing a hard budget on a
   // lookup is the one outcome the deadline exists to prevent.
   const remaining = deps.remainingMs?.() ?? Number.POSITIVE_INFINITY;
-  let apiModelIds: string[] | null = null;
+  let apiModelIds: string | null = null;
   if (probeFetch !== null && remaining > 0) {
     try {
       apiModelIds = await listModels(
