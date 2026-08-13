@@ -37,7 +37,7 @@ export const DEFAULT_MODEL_CATALOG: ModelEntry[] = [
  * may contain commas, escaped `""` quotes, and newlines) per RFC-4180. Kept
  * minimal — enough that an `objective` can contain a comma.
  */
-function parseCsvRecords(text: string): string[][] {
+function parseCsvRecords(text: string): string[] {
   const records: string[][] = [];
   let field = "";
   let record: string[] = [];
