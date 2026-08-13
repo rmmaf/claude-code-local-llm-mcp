@@ -63,7 +63,7 @@ const ELISION_PHRASES: RegExp[] = [
 export interface ElisionMarker {
   line: number;
   text: string;
-  tier: "ellipsis" | "phrase";
+  tier: "ellipsis";
 }
 
 /**
