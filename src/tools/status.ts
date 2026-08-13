@@ -107,7 +107,7 @@ export async function runStatus(config: Config, deps: ToolDeps = {}): Promise<St
     );
   }
 
-  let memory: MemoryInfo | null = null;
+  let memory: MemoryInfo = null;
   try {
     memory = await getMemoryInfo(deps.runner, deps.platform);
   } catch (error) {
