@@ -10,6 +10,7 @@
     "pays. Nothing subtle, nothing that needs judgement about intent."
   ],
   "specRoot": "b12-corpus",
+  "ratesSha256": "6d74cafd7fa5702352d068825be2f75f3ae7dd0ef3df77cc9ff7f04826730c94",
   "manifestA": [
     "selmatchfuzzy",
     "selobjective",
@@ -77,6 +78,7 @@
   "tasks": [
     {
       "id": "selmatchfuzzy",
+      "specDir": "b12-corpus/selmatchfuzzy",
       "fileScope": [
         "src/selection.ts"
       ],
@@ -95,6 +97,7 @@
     },
     {
       "id": "selsizefit",
+      "specDir": "b12-corpus/selsizefit",
       "fileScope": [
         "src/selection.ts"
       ],
@@ -113,6 +116,7 @@
     },
     {
       "id": "selobjective",
+      "specDir": "b12-corpus/selobjective",
       "fileScope": [
         "src/selection.ts"
       ],
@@ -131,6 +135,7 @@
     },
     {
       "id": "csvheader",
+      "specDir": "b12-corpus/csvheader",
       "fileScope": [
         "src/models-csv.ts"
       ],
@@ -149,6 +154,7 @@
     },
     {
       "id": "csvcols",
+      "specDir": "b12-corpus/csvcols",
       "fileScope": [
         "src/models-csv.ts"
       ],
@@ -167,6 +173,7 @@
     },
     {
       "id": "csvempty",
+      "specDir": "b12-corpus/csvempty",
       "fileScope": [
         "src/models-csv.ts"
       ],
@@ -185,6 +192,7 @@
     },
     {
       "id": "lmsps",
+      "specDir": "b12-corpus/lmsps",
       "fileScope": [
         "src/lms.ts"
       ],
@@ -203,6 +211,7 @@
     },
     {
       "id": "lmssizes",
+      "specDir": "b12-corpus/lmssizes",
       "fileScope": [
         "src/lms.ts"
       ],
@@ -221,6 +230,7 @@
     },
     {
       "id": "parsefence",
+      "specDir": "b12-corpus/parsefence",
       "fileScope": [
         "src/parse.ts"
       ],
@@ -239,6 +249,7 @@
     },
     {
       "id": "parsepath",
+      "specDir": "b12-corpus/parsepath",
       "fileScope": [
         "src/parse.ts"
       ],
@@ -257,6 +268,7 @@
     },
     {
       "id": "parsetrail",
+      "specDir": "b12-corpus/parsetrail",
       "fileScope": [
         "src/parse.ts"
       ],
@@ -275,6 +287,7 @@
     },
     {
       "id": "memslug",
+      "specDir": "b12-corpus/memslug",
       "fileScope": [
         "src/memory.ts"
       ],
@@ -293,6 +306,7 @@
     },
     {
       "id": "memindex",
+      "specDir": "b12-corpus/memindex",
       "fileScope": [
         "src/memory.ts"
       ],
@@ -311,6 +325,7 @@
     },
     {
       "id": "cfgclamp",
+      "specDir": "b12-corpus/cfgclamp",
       "fileScope": [
         "src/config.ts"
       ],
@@ -329,6 +344,7 @@
     },
     {
       "id": "cfgenv",
+      "specDir": "b12-corpus/cfgenv",
       "fileScope": [
         "src/config.ts"
       ],
@@ -347,6 +363,7 @@
     },
     {
       "id": "chkdetect",
+      "specDir": "b12-corpus/chkdetect",
       "fileScope": [
         "src/checks/config.ts"
       ],
@@ -365,6 +382,7 @@
     },
     {
       "id": "chkbudget",
+      "specDir": "b12-corpus/chkbudget",
       "fileScope": [
         "src/checks/config.ts"
       ],
@@ -383,6 +401,7 @@
     },
     {
       "id": "cmdheading",
+      "specDir": "b12-corpus/cmdheading",
       "fileScope": [
         "src/claude-md.ts"
       ],
@@ -401,6 +420,7 @@
     },
     {
       "id": "cmdidem",
+      "specDir": "b12-corpus/cmdidem",
       "fileScope": [
         "src/claude-md.ts"
       ],
@@ -419,6 +439,7 @@
     },
     {
       "id": "fsescape",
+      "specDir": "b12-corpus/fsescape",
       "fileScope": [
         "src/fs-safety.ts"
       ],
@@ -437,6 +458,7 @@
     },
     {
       "id": "fsoutcap",
+      "specDir": "b12-corpus/fsoutcap",
       "fileScope": [
         "src/fs-safety.ts"
       ],
@@ -455,6 +477,7 @@
     },
     {
       "id": "fsctxcap",
+      "specDir": "b12-corpus/fsctxcap",
       "fileScope": [
         "src/fs-safety.ts"
       ],
@@ -473,6 +496,7 @@
     },
     {
       "id": "probephrase",
+      "specDir": "b12-corpus/probephrase",
       "fileScope": [
         "src/contract-probe.ts"
       ],
@@ -491,6 +515,7 @@
     },
     {
       "id": "probetier",
+      "specDir": "b12-corpus/probetier",
       "fileScope": [
         "src/contract-probe.ts"
       ],
@@ -509,6 +534,7 @@
     },
     {
       "id": "gatebudget",
+      "specDir": "b12-corpus/gatebudget",
       "fileScope": [
         "src/tools/gate.ts"
       ],
@@ -527,6 +553,7 @@
     },
     {
       "id": "gatededupe",
+      "specDir": "b12-corpus/gatededupe",
       "fileScope": [
         "src/tools/gate.ts"
       ],
@@ -545,6 +572,7 @@
     },
     {
       "id": "scafexists",
+      "specDir": "b12-corpus/scafexists",
       "fileScope": [
         "src/tools/scaffold.ts"
       ],
@@ -563,6 +591,7 @@
     },
     {
       "id": "statusoffline",
+      "specDir": "b12-corpus/statusoffline",
       "fileScope": [
         "src/tools/status.ts"
       ],
@@ -581,6 +610,7 @@
     },
     {
       "id": "modelspick",
+      "specDir": "b12-corpus/modelspick",
       "fileScope": [
         "src/tools/models.ts"
       ],
@@ -599,6 +629,7 @@
     },
     {
       "id": "repairrounds",
+      "specDir": "b12-corpus/repairrounds",
       "fileScope": [
         "src/tools/repair.ts"
       ],
@@ -617,6 +648,7 @@
     },
     {
       "id": "tyselret",
+      "specDir": "b12-corpus/tyselret",
       "fileScope": [
         "src/selection.ts"
       ],
@@ -636,6 +668,7 @@
     },
     {
       "id": "tyselarg",
+      "specDir": "b12-corpus/tyselarg",
       "fileScope": [
         "src/selection.ts"
       ],
@@ -655,6 +688,7 @@
     },
     {
       "id": "tycsvrow",
+      "specDir": "b12-corpus/tycsvrow",
       "fileScope": [
         "src/models-csv.ts"
       ],
@@ -674,6 +708,7 @@
     },
     {
       "id": "tylmsopt",
+      "specDir": "b12-corpus/tylmsopt",
       "fileScope": [
         "src/lms.ts"
       ],
@@ -693,6 +728,7 @@
     },
     {
       "id": "tylmsnull",
+      "specDir": "b12-corpus/tylmsnull",
       "fileScope": [
         "src/lms.ts"
       ],
@@ -712,6 +748,7 @@
     },
     {
       "id": "typarseblk",
+      "specDir": "b12-corpus/typarseblk",
       "fileScope": [
         "src/parse.ts"
       ],
@@ -731,6 +768,7 @@
     },
     {
       "id": "tymemrec",
+      "specDir": "b12-corpus/tymemrec",
       "fileScope": [
         "src/memory.ts"
       ],
@@ -750,6 +788,7 @@
     },
     {
       "id": "tycfgfield",
+      "specDir": "b12-corpus/tycfgfield",
       "fileScope": [
         "src/config.ts"
       ],
@@ -769,6 +808,7 @@
     },
     {
       "id": "tycfgdefault",
+      "specDir": "b12-corpus/tycfgdefault",
       "fileScope": [
         "src/config.ts"
       ],
@@ -788,6 +828,7 @@
     },
     {
       "id": "tychkspec",
+      "specDir": "b12-corpus/tychkspec",
       "fileScope": [
         "src/checks/config.ts"
       ],
@@ -807,6 +848,7 @@
     },
     {
       "id": "tychkparse",
+      "specDir": "b12-corpus/tychkparse",
       "fileScope": [
         "src/checks/parsers.ts"
       ],
@@ -826,6 +868,7 @@
     },
     {
       "id": "tychkfail",
+      "specDir": "b12-corpus/tychkfail",
       "fileScope": [
         "src/checks/parsers.ts"
       ],
@@ -845,6 +888,7 @@
     },
     {
       "id": "tycmdblock",
+      "specDir": "b12-corpus/tycmdblock",
       "fileScope": [
         "src/claude-md.ts"
       ],
@@ -864,6 +908,7 @@
     },
     {
       "id": "tyfspath",
+      "specDir": "b12-corpus/tyfspath",
       "fileScope": [
         "src/fs-safety.ts"
       ],
@@ -883,6 +928,7 @@
     },
     {
       "id": "tyfscap",
+      "specDir": "b12-corpus/tyfscap",
       "fileScope": [
         "src/fs-safety.ts"
       ],
@@ -902,6 +948,7 @@
     },
     {
       "id": "typrobetier",
+      "specDir": "b12-corpus/typrobetier",
       "fileScope": [
         "src/contract-probe.ts"
       ],
@@ -921,6 +968,7 @@
     },
     {
       "id": "tyclientbody",
+      "specDir": "b12-corpus/tyclientbody",
       "fileScope": [
         "src/llm-client.ts"
       ],
@@ -940,6 +988,7 @@
     },
     {
       "id": "tyclientfetch",
+      "specDir": "b12-corpus/tyclientfetch",
       "fileScope": [
         "src/llm-client.ts"
       ],
@@ -959,6 +1008,7 @@
     },
     {
       "id": "tycorpusrow",
+      "specDir": "b12-corpus/tycorpusrow",
       "fileScope": [
         "src/corpus.ts"
       ],
@@ -978,6 +1028,7 @@
     },
     {
       "id": "tydiffstat",
+      "specDir": "b12-corpus/tydiffstat",
       "fileScope": [
         "src/diff.ts"
       ],
@@ -997,6 +1048,7 @@
     },
     {
       "id": "tyexecopts",
+      "specDir": "b12-corpus/tyexecopts",
       "fileScope": [
         "src/exec.ts"
       ],
@@ -1016,6 +1068,7 @@
     },
     {
       "id": "tyserverreg",
+      "specDir": "b12-corpus/tyserverreg",
       "fileScope": [
         "src/server.ts"
       ],
@@ -1035,6 +1088,7 @@
     },
     {
       "id": "tysharedres",
+      "specDir": "b12-corpus/tysharedres",
       "fileScope": [
         "src/tools/shared.ts"
       ],
@@ -1054,6 +1108,7 @@
     },
     {
       "id": "tysharedcap",
+      "specDir": "b12-corpus/tysharedcap",
       "fileScope": [
         "src/tools/shared.ts"
       ],
@@ -1073,6 +1128,7 @@
     },
     {
       "id": "tygatereport",
+      "specDir": "b12-corpus/tygatereport",
       "fileScope": [
         "src/tools/gate.ts"
       ],
@@ -1092,6 +1148,7 @@
     },
     {
       "id": "tyrepairdiff",
+      "specDir": "b12-corpus/tyrepairdiff",
       "fileScope": [
         "src/tools/repair.ts"
       ],
@@ -1111,6 +1168,7 @@
     },
     {
       "id": "tyscafspec",
+      "specDir": "b12-corpus/tyscafspec",
       "fileScope": [
         "src/tools/scaffold.ts"
       ],
@@ -1130,6 +1188,7 @@
     },
     {
       "id": "tystatusout",
+      "specDir": "b12-corpus/tystatusout",
       "fileScope": [
         "src/tools/status.ts"
       ],
@@ -1149,6 +1208,7 @@
     },
     {
       "id": "tymodelsarg",
+      "specDir": "b12-corpus/tymodelsarg",
       "fileScope": [
         "src/tools/models.ts"
       ],
@@ -1168,6 +1228,7 @@
     },
     {
       "id": "tyfixarg",
+      "specDir": "b12-corpus/tyfixarg",
       "fileScope": [
         "src/tools/fix.ts"
       ],
