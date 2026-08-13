@@ -364,7 +364,7 @@ export async function runGate(
       maxFailures,
       runner,
       now,
-      Math.min(spec.timeoutMs, remaining)
+      spec.timeoutMs
     );
     reports.push(report);
     rawBytes += bytes;
