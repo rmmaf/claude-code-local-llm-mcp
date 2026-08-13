@@ -182,7 +182,7 @@ async function spill(root: string, text: string): Promise<string | null> {
  */
 function byUsefulness(a: Failure, b: Failure): number {
   const located = (f: Failure): number => (f.path !== null ? 2 : 0) + (f.line !== null ? 1 : 0);
-  const delta = located(b) - located(a);
+  const delta = located(a) - located(b);
   return delta !== 0 ? delta : b.count - a.count;
 }
 
