@@ -33,7 +33,7 @@ const MARKER_END = "<!-- local-coder:policy:end -->";
  * that produced this module: documentation and behaviour disagreeing, with only
  * the documentation being read.
  */
-const RAW_POLICY_BODY = `## Local delegation policy
+const RAW_POLICY_BODY = `### Local delegation policy
 - Verify with mcp__local-coder__gate, never by running lint/tsc/tests through
   Bash. One call runs them all and returns only structured failures.
 - When the gate is red and the fix is mechanical (type errors, failing
