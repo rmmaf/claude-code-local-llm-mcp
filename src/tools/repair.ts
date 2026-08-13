@@ -328,7 +328,7 @@ function sideEffects(
  * and diff it. That write was unconditional, so a concurrent edit was destroyed
  * to produce a *report* that was then thrown away.
  */
-function renderDiff(snapshots: Snapshot[], contents: string[]): { diff: string; changed: string[] } {
+function renderDiff(snapshots: Snapshot[], contents: string[]): { diff: string; changed: string } {
   const diffs: string[] = [];
   const changed: string[] = [];
   for (const [index, file] of snapshots.entries()) {
