@@ -89,7 +89,7 @@ export function parseLmsList(jsonText: string): LmsModel[] {
   const rows = rowsOf(parsed);
   if (rows === null) return [];
 
-  const out: LmsModel[] = [];
+  const out: LmsLoadedModel[] = [];
   for (const row of rows) {
     if (typeof row !== "object" || row === null) continue;
     const obj = row as Record<string, unknown>;
