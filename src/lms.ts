@@ -39,7 +39,7 @@ const SIZE_KEYS = ["sizeBytes", "size_bytes", "size"];
 const CONTEXT_KEYS = ["contextLength", "context_length", "contextSize"];
 const MAX_CONTEXT_KEYS = ["maxContextLength", "max_context_length"];
 
-function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number | null {
+function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number {
   for (const key of keys) {
     const value = row[key];
     if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
