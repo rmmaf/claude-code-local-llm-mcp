@@ -81,7 +81,7 @@ export function findElisionMarkers(original: string, returned: string): ElisionM
     const trimmed = (lines[i] ?? "").trim();
     if (trimmed === "" || known.has(trimmed)) continue;
     if (ELLIPSIS_ONLY.test(trimmed)) {
-      markers.push({ line: i + 1, text: trimmed, tier: "ellipsis" });
+      markers.push({ line: i + 1, text: trimmed, tier: "phrase" });
     } else if (COMMENT_ONLY.test(trimmed) && ELISION_PHRASES.some((re) => re.test(trimmed))) {
       markers.push({ line: i + 1, text: trimmed, tier: "phrase" });
     }
