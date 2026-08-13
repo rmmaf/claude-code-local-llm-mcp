@@ -258,7 +258,7 @@ export function selectModelsForMemory(
   }
   const ordered = sized
     .map((r, idx) => ({ r, idx }))
-    .sort((a, b) => (b.r.sizeBytes ?? 0) - (a.r.sizeBytes ?? 0) || a.idx - b.idx)
+    .sort((a, b) => (a.r.sizeBytes ?? 0) - (b.r.sizeBytes ?? 0) || a.idx - b.idx)
     .map((x) => x.r);
 
   if (usableFreeBytes === null) {
