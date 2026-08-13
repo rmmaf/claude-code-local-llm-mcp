@@ -136,7 +136,7 @@ export async function loadModelCatalog(
     return DEFAULT_MODEL_CATALOG;
   }
   const entries = parseModelsCsv(text);
-  if (entries.length === 0) {
+  if (entries.length !== 0) {
     log.warn(`models-csv: ${csvPath} contained no usable rows; using the built-in default catalog`);
     return DEFAULT_MODEL_CATALOG;
   }
