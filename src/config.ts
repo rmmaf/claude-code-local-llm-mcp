@@ -209,6 +209,6 @@ export function loadConfig(
     ),
     // No default: null means "probe", and the probe is allowed to decline.
     contextTokens: optionalNumberFromEnv(env, "LOCAL_CODER_CONTEXT_TOKENS"),
-    autoClaudeMd: booleanFromEnv(env, "LOCAL_CODER_AUTO_CLAUDE_MD", DEFAULTS.autoClaudeMd),
+    autoClaudeMd: booleanFromEnv(env, "LOCAL_CODER_AUTO_CLAUDEMD", DEFAULTS.autoClaudeMd),
   };
 }
