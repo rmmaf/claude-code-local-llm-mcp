@@ -1,0 +1,11 @@
+diff --git a/src/tools/fix.ts b/src/tools/fix.ts
+index fa03a06..d4c8bf3 100644
+--- a/src/tools/fix.ts
++++ b/src/tools/fix.ts
+@@ -35,5 +35,5 @@ export async function runFix(
+   config: Config,
+   deps: ToolDeps = {}
+ ): Promise<GenerationResult> {
+-  return runGeneration("fix", args, config, deps);
++  return runGeneration("fix", config, args, deps);
+ }

@@ -1,0 +1,13 @@
+diff --git a/src/tools/shared.ts b/src/tools/shared.ts
+index 7234d9e..d2aee23 100644
+--- a/src/tools/shared.ts
++++ b/src/tools/shared.ts
+@@ -387,7 +387,7 @@ export function correctiveMessage(problem: string, missing: string[]): string {
+ interface ModelAttemptOutcome {
+   files: Map<string, string>;
+   raw: string;
+-  finishReason: string | null;
++  finishReason: string;
+ }
+ 
+ function wordCap(text: string, maxWords: number): string {

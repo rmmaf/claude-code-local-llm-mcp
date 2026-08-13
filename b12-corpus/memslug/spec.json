@@ -1,0 +1,28 @@
+{
+  "taskId": "memslug",
+  "parent": "608e930bc5c3dfec550fb43c9cccee082c03e9b8",
+  "message": "b12 base: memslug",
+  "fileScope": [
+    "src/memory.ts"
+  ],
+  "patch": "defect.patch",
+  "predicate": {
+    "argv": [
+      "npx",
+      "vitest",
+      "run",
+      "tests/memory.test.ts"
+    ],
+    "expectedExit": 0,
+    "timeoutMs": 600000
+  },
+  "manifest": {
+    "verificationStratum": "test-red",
+    "expectedSubagentStratum": "solo",
+    "verificationCommands": [
+      "npx vitest run tests/memory.test.ts"
+    ],
+    "gateCategory": "test",
+    "repairMaxRounds": 3
+  }
+}

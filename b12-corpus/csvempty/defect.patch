@@ -1,0 +1,13 @@
+diff --git a/src/models-csv.ts b/src/models-csv.ts
+index 62da863..49d3001 100644
+--- a/src/models-csv.ts
++++ b/src/models-csv.ts
+@@ -136,7 +136,7 @@ export async function loadModelCatalog(
+     return DEFAULT_MODEL_CATALOG;
+   }
+   const entries = parseModelsCsv(text);
+-  if (entries.length === 0) {
++  if (entries.length !== 0) {
+     log.warn(`models-csv: ${csvPath} contained no usable rows; using the built-in default catalog`);
+     return DEFAULT_MODEL_CATALOG;
+   }

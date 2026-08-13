@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import { defineConfig } from "vitest/config";
 
 /**
@@ -33,7 +36,28 @@ export default defineConfig({
   test: {
     testTimeout: 30_000,
     hookTimeout: 30_000,
-    // The scratch-root sweep. See tests/setup.ts and the count in tests/helpers.ts.
-    setupFiles: ["tests/setup.ts"],
+    // The scratch-root sweep (tests/setup.ts, and the count in tests/helpers.ts) — declared
+    // ONLY IF THAT FILE EXISTS UNDER THE ROOT BEING RUN, which is not the pedantry it looks
+    // like.
+    //
+    // MEASURED. `b12-author.mjs` checks a corpus base by materialising the GREEN PARENT in a
+    // detached worktree under `<repo>/.b12/` and running the task's predicate there. Vitest
+    // resolves this config from above that worktree, so an unconditional `setupFiles` made
+    // every suite at the parent die with `Cannot find module …/.b12/probe/tests/setup.ts` —
+    // the parent commit predates tests/setup.ts and never had one. 29 of 29 test-red bases
+    // were refused with "the parent is not green", which is the author telling the truth
+    // about a file this config had broken.
+    //
+    // WORSE, AND THE REASON THIS IS A COMMENT AND NOT A ONE-LINE FIX: `verify-corpus --deep`
+    // asserts each base's predicate FAILS, so a suite that cannot even load reads as a
+    // present defect. The pilot re-verified green while every one of its predicates was
+    // dying on a missing module. Green at the parent is trustworthy; red at the base is not,
+    // and only the green half caught this.
+    //
+    // The residual is named and NOT closed: this config still governs a detached worktree it
+    // does not belong to, so a later change here silently changes what "green at the parent"
+    // means for a sealed corpus. The durable answer is a green parent whose own tree carries
+    // its config.
+    ...(existsSync(path.resolve("tests/setup.ts")) ? { setupFiles: ["tests/setup.ts"] } : {}),
   },
 });

@@ -1,0 +1,13 @@
+diff --git a/src/server.ts b/src/server.ts
+index ae29dd4..e034e59 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -204,7 +204,7 @@ async function main(): Promise<void> {
+     },
+     async (args) => {
+       try {
+-        return jsonResult(await runModels(config, args));
++        return jsonResult(await runModels(args, config));
+       } catch (error) {
+         return errorResult(error);
+       }

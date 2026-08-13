@@ -1,0 +1,13 @@
+diff --git a/src/selection.ts b/src/selection.ts
+index 5ea2208..ed59593 100644
+--- a/src/selection.ts
++++ b/src/selection.ts
+@@ -168,7 +168,7 @@ export function buildCatalogReport(
+     }
+ 
+     const fits =
+-      sizeBytes !== null && usableFreeBytes !== null ? sizeBytes <= usableFreeBytes : null;
++      sizeBytes !== null && usableFreeBytes !== null ? usableFreeBytes <= sizeBytes : null;
+ 
+     return {
+       model: entry.model,

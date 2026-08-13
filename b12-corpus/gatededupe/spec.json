@@ -1,0 +1,28 @@
+{
+  "taskId": "gatededupe",
+  "parent": "608e930bc5c3dfec550fb43c9cccee082c03e9b8",
+  "message": "b12 base: gatededupe",
+  "fileScope": [
+    "src/tools/gate.ts"
+  ],
+  "patch": "defect.patch",
+  "predicate": {
+    "argv": [
+      "npx",
+      "vitest",
+      "run",
+      "tests/gate.test.ts"
+    ],
+    "expectedExit": 0,
+    "timeoutMs": 600000
+  },
+  "manifest": {
+    "verificationStratum": "test-red",
+    "expectedSubagentStratum": "solo",
+    "verificationCommands": [
+      "npx vitest run tests/gate.test.ts"
+    ],
+    "gateCategory": "test",
+    "repairMaxRounds": 3
+  }
+}

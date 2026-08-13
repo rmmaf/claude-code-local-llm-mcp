@@ -1,0 +1,13 @@
+diff --git a/src/config.ts b/src/config.ts
+index 0b705a9..66b7e77 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -155,7 +155,7 @@ function booleanFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean)
+ }
+ 
+ /** A fraction in (0, 1]: reuses numberFromEnv (finite, > 0) then clamps anything above 1 down to 1. */
+-function fractionFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
++function fractionFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: string): number {
+   const value = numberFromEnv(env, name, fallback);
+   if (value > 1) {
+     log.warn(`clamping ${name}=${value} to 1 (must be in (0, 1])`);

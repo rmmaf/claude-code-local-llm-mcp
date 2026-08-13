@@ -1,0 +1,13 @@
+diff --git a/src/contract-probe.ts b/src/contract-probe.ts
+index 21cda6b..8a3a267 100644
+--- a/src/contract-probe.ts
++++ b/src/contract-probe.ts
+@@ -63,7 +63,7 @@ const ELISION_PHRASES: RegExp[] = [
+ export interface ElisionMarker {
+   line: number;
+   text: string;
+-  tier: "ellipsis" | "phrase";
++  tier: "ellipsis";
+ }
+ 
+ /**

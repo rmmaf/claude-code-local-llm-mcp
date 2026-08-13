@@ -1,0 +1,13 @@
+diff --git a/src/tools/repair.ts b/src/tools/repair.ts
+index aba541c..e88b807 100644
+--- a/src/tools/repair.ts
++++ b/src/tools/repair.ts
+@@ -869,7 +869,7 @@ async function repairLoop(
+       rounds.push({
+         round,
+         failures_before: before,
+-        failures_after: after,
++        failures_after: before,
+         files_touched: touched,
+         model_latency_ms: modelLatency,
+         gate_ms: now() - gateStarted,

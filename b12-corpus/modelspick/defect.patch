@@ -1,0 +1,13 @@
+diff --git a/src/tools/models.ts b/src/tools/models.ts
+index 1ca1386..8022885 100644
+--- a/src/tools/models.ts
++++ b/src/tools/models.ts
+@@ -87,7 +87,7 @@ export async function runModels(
+   const lms = await getLmsModels(deps.runner);
+   const loaded = await getLoadedLmsModels(deps.runner);
+   const usable = usableFree(memory, config.memFitFraction);
+-  const report = buildCatalogReport(config.models, reachable ? apiIds : null, lms, loaded, usable);
++  const report = buildCatalogReport(config.models, reachable ? null : apiIds, lms, loaded, usable);
+   const recommended = selectModelsForMemory(report, usable, args.concurrent_models ?? 1);
+ 
+   const result: ModelsResult = {

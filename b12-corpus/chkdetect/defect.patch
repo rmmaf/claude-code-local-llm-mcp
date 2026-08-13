@@ -1,0 +1,13 @@
+diff --git a/src/checks/config.ts b/src/checks/config.ts
+index 32d3b9b..1347642 100644
+--- a/src/checks/config.ts
++++ b/src/checks/config.ts
+@@ -186,7 +186,7 @@ export async function detectChecks(root: string): Promise<CheckSpec[]> {
+         )
+       )
+     ).some(Boolean);
+-    if (hasEslintConfig && deps.eslint !== undefined) {
++    if (hasEslintConfig || deps.eslint !== undefined) {
+       out.push({
+         name: "eslint",
+         category: "lint",

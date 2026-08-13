@@ -21,22 +21,294 @@
     "skips a task whose spec dir exists rather than rewriting it. They are kept as the",
     "worked example for the remaining 58."
   ],
-
   "tylmsopt": {
     "find": "function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number | null {",
     "replace": "function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number {",
     "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/lms.ts`. A helper that reports a\nnumeric field from an `lms` JSON row is declared to always produce a number, but the row\nit reads may simply not carry that field."
   },
-
   "typarseblk": {
     "find": "function lastLineAnchoredClose(segment: string): number | null {",
     "replace": "function lastLineAnchoredClose(segment: string): number {",
     "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/parse.ts`. The helper that locates a\nclosing fence on its own line is declared to always find one, and a segment with no such\nline has nothing to report."
   },
-
   "tychkparse": {
     "find": "function firstLineIn(stack: string, file: string | null): number | null {",
     "replace": "function firstLineIn(stack: string, file: string | null): number {",
     "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/checks/parsers.ts`. The helper that\npulls a line number out of a stack trace is declared to always find one — but it is handed\na nullable file, and a stack that never mentions that file has no line to give."
+  },
+  "cfgclamp": {
+    "find": "memFitFraction: fractionFromEnv(env, \"LOCAL_CODER_MEM_FIT_FRACTION\", DEFAULTS.memFitFraction),",
+    "replace": "memFitFraction: numberFromEnv(env, \"LOCAL_CODER_MEM_FIT_FRACTION\", DEFAULTS.memFitFraction),",
+    "symptom": "`npx vitest run tests/config.test.ts` is red. Set `LOCAL_CODER_MEM_FIT_FRACTION=1.5` and the loaded\nconfig hands that 1.5 straight back: the memory-fit fraction is documented as living in (0, 1], and an\nout-of-range value is no longer held to that ceiling. Values inside the range, and invalid ones, behave."
+  },
+  "cfgenv": {
+    "find": "numberFromEnv(env, \"LOCAL_CODER_TEMPERATURE\", DEFAULTS.temperature, { allowZero: true })",
+    "replace": "numberFromEnv(env, \"LOCAL_CODER_TEMPERATURE\", DEFAULTS.temperature)",
+    "symptom": "`npx vitest run tests/config.test.ts` is red on the env-override case. `LOCAL_CODER_TEMPERATURE=0` — a\nperfectly legal temperature, and the one deterministic decoding actually wants — comes back as the\nbuilt-in default instead of 0, and the loader logs a warning calling that input invalid."
+  },
+  "tycfgfield": {
+    "find": "options: { allowZero?: boolean } = {}",
+    "replace": "options: { allowZero?: string } = {}",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/config.ts`. The private reader that pulls a number\nout of the environment declares an options bag whose one field no longer admits the flag value its single\ncaller passes for the setting that is allowed to be zero."
+  },
+  "tycfgdefault": {
+    "find": "function fractionFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {",
+    "replace": "function fractionFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: string): number {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/config.ts`. The private reader for a 0–1 fraction\ndisagrees with itself and with both of its callers about what kind of value its fallback is: the two\nsettings that use it hand over the numeric defaults, and what it forwards to the numeric reader is\nsomething else entirely."
+  },
+  "chkdetect": {
+    "find": "if (hasEslintConfig && deps.eslint !== undefined) {",
+    "replace": "if (hasEslintConfig || deps.eslint !== undefined) {",
+    "symptom": "`npx vitest run tests/gate.test.ts` is red. Autodetection now proposes an `eslint` check for a project\nthat merely lists eslint among its dependencies with no eslint configuration anywhere on disk — the case\nthe file's own doc comment calls out as worse than a missing check, because the command it proposes cannot\nsucceed and teaches the caller to ignore the gate."
+  },
+  "tychkspec": {
+    "find": "function isCategory(value: unknown): value is CheckCategory {",
+    "replace": "function isCategory(value: string): value is CheckCategory {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/checks/config.ts`. The private guard that validates\na check entry's `category` no longer accepts the kind of value it is asked about: the entries come out of\n`JSON.parse`, so every field reaches validation untyped, and the guard now refuses to be handed one."
+  },
+  "tychkfail": {
+    "find": "function failure(partial: Partial<Failure> & { message: string }): Failure {",
+    "replace": "function failure(partial: Partial<Failure>): Failure {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/checks/parsers.ts`. The small constructor every\ntool parser funnels its findings through no longer guarantees that the one field it actually dereferences\nis present, so normalising the message trips strict null checking."
+  },
+  "selmatchfuzzy": {
+    "find": "const QUANT_SUFFIX_RE = /(?:[-@](?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\\d+(?:_k(?:_[ms])?)?|v\\d+))+$/i;",
+    "replace": "const QUANT_SUFFIX_RE = /(?:[-](?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\\d+(?:_k(?:_[ms])?)?|v\\d+))+$/i;",
+    "symptom": "`npx vitest run tests/selection.test.ts` is failing. A catalog name no longer matches the id\nLM Studio actually serves when the served id spells its quantisation after an `@` —\n`…-14b-instruct` against `…-14b-instruct@8bit` now comes back as no match at all."
+  },
+  "selsizefit": {
+    "find": "      sizeBytes !== null && usableFreeBytes !== null ? sizeBytes <= usableFreeBytes : null;",
+    "replace": "      sizeBytes !== null && usableFreeBytes !== null ? usableFreeBytes <= sizeBytes : null;",
+    "symptom": "`npx vitest run tests/selection.test.ts` is failing. The per-model fit verdict in the catalog\nreport is coming out backwards: models comfortably smaller than the usable free-RAM budget\nare reported as not fitting, and models far larger than it are reported as fitting."
+  },
+  "selobjective": {
+    "find": "    .sort((a, b) => (b.r.sizeBytes ?? 0) - (a.r.sizeBytes ?? 0) || a.idx - b.idx)",
+    "replace": "    .sort((a, b) => (a.r.sizeBytes ?? 0) - (b.r.sizeBytes ?? 0) || a.idx - b.idx)",
+    "symptom": "`npx vitest run tests/selection.test.ts` is failing. Packing several models into free RAM at\nonce is no longer greedy on the big models first — the pack comes back in the opposite order,\nand a budget that should have gone to the largest model is being spent on the small ones."
+  },
+  "tyselret": {
+    "find": "function fuzzyForms(id: string): Set<string> {",
+    "replace": "function fuzzyForms(id: string): string[] {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/selection.ts`. A private helper that\ncollects the comparison forms of a model id is declared to hand back a different kind of\ncollection than the one it builds, and the lookup that consumes it no longer type-checks."
+  },
+  "tyselarg": {
+    "find": "  let apiModelIds: string[] | null = null;",
+    "replace": "  let apiModelIds: string | null = null;",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/selection.ts`. The variable that holds\nwhat the `/models` probe reported is declared as a single id, while the probe answers with\nevery id the endpoint serves — and the catalog join downstream expects the whole set."
+  },
+  "csvheader": {
+    "find": "  for (const record of parseCsvRecords(text)) {",
+    "replace": "  for (const record of parseCsvRecords(text).slice(1)) {",
+    "symptom": "`npx vitest run tests/models-csv.test.ts` is failing. The model catalog CSV has no header\nrow, but the very first record of every file is now being thrown away, so a catalog whose\nopening line is a real model comes back one entry short."
+  },
+  "csvcols": {
+    "find": "    entries.push({ model, objective: (record[1] ?? \"\").trim() });",
+    "replace": "    entries.push({ model, objective: (record[2] ?? \"\").trim() });",
+    "symptom": "`npx vitest run tests/models-csv.test.ts` is failing. Model rows are coming back with the\nwrong objective: an ordinary two-column row now has an empty objective, and a row that\ncarries extra columns picks up text from one column too far to the right."
+  },
+  "csvempty": {
+    "find": "  if (entries.length === 0) {",
+    "replace": "  if (entries.length !== 0) {",
+    "symptom": "`npx vitest run tests/models-csv.test.ts` is failing. The fall back to the built-in catalog\nfires exactly backwards: a CSV full of usable rows is thrown away in favour of the defaults,\nwhile a CSV with nothing usable in it yields an empty catalog instead of the defaults."
+  },
+  "tycsvrow": {
+    "find": "function parseCsvRecords(text: string): string[][] {",
+    "replace": "function parseCsvRecords(text: string): string[] {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/models-csv.ts`. The private splitter\nthat turns CSV text into records is declared to produce a flat run of strings rather than one\nrow of fields per record, so both what it returns and how each row is read are now untrue."
+  },
+  "cmdheading": {
+    "find": "const RAW_POLICY_BODY = `## Local delegation policy",
+    "replace": "const RAW_POLICY_BODY = `### Local delegation policy",
+    "symptom": "`npx vitest run tests/claude-md.test.ts` is failing. The delegation-policy text this server installs into a project's CLAUDE.md no longer matches, byte for byte, the fenced block that `README.md` tells users to paste by hand.\nThe two copies have drifted, which is the exact failure this module was written to end."
+  },
+  "cmdidem": {
+    "find": "    if (existing.includes(MARKER_BEGIN_PREFIX)) {",
+    "replace": "    if (existing.includes(MARKER_BEGIN)) {",
+    "symptom": "`npx vitest run tests/claude-md.test.ts` is failing. A CLAUDE.md that already carries an OLDER version of the delegation-policy block is no longer recognised as already-installed: startup reports it as appended, and the file comes back carrying two policy blocks instead of the one the user already has."
+  },
+  "tycmdblock": {
+    "find": "    let existing: string | null;",
+    "replace": "    let existing: string;",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/claude-md.ts`. The local that holds the current contents of a project's CLAUDE.md is declared as always being text, but the read that fills it is wrapped in a catch precisely because the file may not exist yet, and the code downstream still asks whether nothing came back."
+  },
+  "fsescape": {
+    "find": "  return relative !== \"\" && !relative.startsWith(\"..\") && !path.isAbsolute(relative);",
+    "replace": "  return relative !== \"\" && !relative.endsWith(\"..\") && !path.isAbsolute(relative);",
+    "symptom": "`npx vitest run tests/fs-safety.test.ts` is failing. Containment is no longer enforced: a relative path that climbs out of the project root resolves as if it were inside, and a symlink whose target sits outside the root is accepted rather than refused. Neither `path_escape` nor `symlink_escape` is raised any more."
+  },
+  "fsoutcap": {
+    "find": "  if (estimate > budget) {",
+    "replace": "  if (estimate >= budget) {",
+    "symptom": "`npx vitest run tests/fs-safety.test.ts` is failing. The whole-file output pre-flight has become one token too strict: a request whose estimated answer lands EXACTLY on the usable budget is now refused, when sitting exactly at the bar is supposed to be allowed through. Only the boundary moved — requests well under and well over still behave."
+  },
+  "fsctxcap": {
+    "find": "  const oversized = files.filter((f) => f.bytes > maxFileKb * 1024);",
+    "replace": "  const oversized = files.filter((f) => f.bytes > maxContextKb * 1024);",
+    "symptom": "`npx vitest run tests/fs-safety.test.ts` is failing. The assembled-context pre-flight has stopped singling out the files that individually blow the per-file limit. A batch holding two oversized files and one small one is now reported as a whole-batch problem, with the innocent small file named alongside the two that are actually at fault, and under the wrong error code."
+  },
+  "tyfspath": {
+    "find": "function toPosix(p: string): string {",
+    "replace": "function toPosix(p: string): number {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/fs-safety.ts`. The helper that normalises a resolved path to posix separators is declared to hand back a number, while what it actually computes — and what the safe-path record it feeds expects — is text."
+  },
+  "tyfscap": {
+    "find": "  const { contextTokens } = window;",
+    "replace": "  const contextTokens: number = window.contextTokens;",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/fs-safety.ts`. The context-window pre-flight reads the loaded model's context length as if it were always known, but the caller is explicitly allowed to say the window is unknown — which is the very case this check is written to skip rather than guess at."
+  },
+  "probephrase": {
+    "find": "  /(?:rest|remainder) of (?:the )?(?:file|code|content|function|method|class|implementation|module)/i,",
+    "replace": "  /(?:rest|remainder) of (?:the )?(?:code|content|function|method|class|implementation|module)/i,",
+    "symptom": "`npx vitest run tests/contract-probe.test.ts` is failing. A response that replaces a file's body with a `// ... rest of the file unchanged ...` comment is no longer credited with any elision marker. The scorer still calls that response elided — but only because the lines are gone, and it reports the text that admits the elision as if nothing had been found."
+  },
+  "probetier": {
+    "find": "      markers.push({ line: i + 1, text: trimmed, tier: \"ellipsis\" });",
+    "replace": "      markers.push({ line: i + 1, text: trimmed, tier: \"phrase\" });",
+    "symptom": "`npx vitest run tests/contract-probe.test.ts` is failing. Elision markers that are a bare ellipsis line come back labelled as the prose-phrasing kind of marker instead. The detector still finds them and the responses are still scored elided, but every marker it reports is filed under the wrong tier, so the artifact can no longer tell the two detectors apart."
+  },
+  "typrobetier": {
+    "find": "  tier: \"ellipsis\" | \"phrase\";",
+    "replace": "  tier: \"ellipsis\";",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/contract-probe.ts`. The record that describes one elision marker now admits only one of the two kinds of marker the detector actually produces — the detector still emits both, a bare-ellipsis line and a prose phrasing that stands in for dropped content."
+  },
+  "modelspick": {
+    "find": "buildCatalogReport(config.models, reachable ? apiIds : null, lms, loaded, usable)",
+    "replace": "buildCatalogReport(config.models, reachable ? null : apiIds, lms, loaded, usable)",
+    "symptom": "`npx vitest run tests/models-tool.test.ts` is failing. The `models` tool reports, per catalog model, whether LM Studio currently offers it — and that field now comes out wrong in both directions: unknown when the endpoint answered, and a definite \"not offered\" when the endpoint could not be reached at all."
+  },
+  "tymodelsarg": {
+    "find": "usable_free_gb: usable === null ? null : bytesToGb(usable),",
+    "replace": "usable_free_gb: bytesToGb(usable),",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/models.ts`. The memory block of the `models` result converts the usable-free-RAM budget into gigabytes, but that budget is only a number when the memory probe actually produced a reading — when it did not, there is nothing to convert."
+  },
+  "repairrounds": {
+    "find": "failures_after: after,",
+    "replace": "failures_after: before,",
+    "symptom": "`npx vitest run tests/repair.test.ts` is failing. Each round of the repair loop is supposed to record how many check failures stood before it and how many stood after it. The \"after\" figure now mirrors the \"before\" one, so every round reports that nothing moved — in the trace returned to the caller and in the per-round telemetry alike."
+  },
+  "tyrepairdiff": {
+    "find": "function renderDiff(snapshots: Snapshot[], contents: string[]): { diff: string; changed: string[] } {",
+    "replace": "function renderDiff(snapshots: Snapshot[], contents: string[]): { diff: string; changed: string } {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/repair.ts`. The helper that renders the cumulative diff also hands back which files it found changed — several of them, in general — but it is declared to hand back a single one, and both the helper itself and the result payload that carries the list contradict that."
+  },
+  "tysharedres": {
+    "find": "  finishReason: string | null;",
+    "replace": "  finishReason: string;",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/shared.ts`. The record kept for the model attempt that finally produced usable output stores the server's stop reason, and the chat client reports that reason as absent whenever the response did not carry a usable one."
+  },
+  "tysharedcap": {
+    "find": "function wordCap(text: string, maxWords: number): string {",
+    "replace": "function wordCap(text: string, maxWords: string): string {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/shared.ts`. The helper that clips a generated summary to a maximum number of words no longer agrees with the word limits its callers hand it, and inside the helper the length comparison and the slice that enforce that limit no longer agree with it either."
+  },
+  "tyfixarg": {
+    "find": "return runGeneration(\"fix\", args, config, deps);",
+    "replace": "return runGeneration(\"fix\", config, args, deps);",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/fix.ts`. This tool does exactly one thing — hand the caller's request on to the shared generation pipeline — and what it hands over no longer matches what that pipeline accepts."
+  },
+  "gatebudget": {
+    "find": "      Math.min(spec.timeoutMs, remaining)",
+    "replace": "      spec.timeoutMs",
+    "symptom": "`npm test` is failing in `tests/gate.test.ts`. The `gate` tool accepts a wall-clock ceiling for a whole call, and the suite that pins what a check is actually launched with is now seeing a value far larger than the ceiling the caller supplied. A single check can outlive the deadline its caller set, and so can the git coverage probe that follows it."
+  },
+  "gatededupe": {
+    "find": "  const delta = located(b) - located(a);",
+    "replace": "  const delta = located(a) - located(b);",
+    "symptom": "`npm test` is failing in `tests/gate.test.ts`. When the failure cap keeps only a handful of findings out of a red check, the ones it keeps are the bare unlocated messages and the ones carrying a path and a line are the ones thrown away. The caller gets back the least actionable half of what the check found."
+  },
+  "tygatereport": {
+    "find": "): Promise<{ report: CheckReport; rawBytes: number }> {",
+    "replace": "): Promise<{ report: CheckReport; rawBytes: string }> {",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/gate.ts`. The internal helper that runs one check reports, alongside the check's report, how many bytes of raw output that check produced. What it now declares it hands back does not agree with the numbers it actually computes, nor with the running total the tool accumulates them into."
+  },
+  "scafexists": {
+    "find": "    await fs.access(target.abs);",
+    "replace": "    await fs.access(target.rel);",
+    "symptom": "`npm test` is failing in `tests/scaffold.test.ts`. `scaffold` documents that it never overwrites anything and refuses an occupied target before it spends a single model call. A run whose target file already exists no longer refuses: it falls through the guard and goes on to call the local model."
+  },
+  "tyscafspec": {
+    "find": "  const specExcerpt = wordCap(args.spec.trim().split(/\\r?\\n/)[0] ?? \"\", 30);",
+    "replace": "  const specExcerpt = wordCap(args.spec.trim().split(/\\r?\\n/)[0], 30);",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/scaffold.ts`. The summary the tool returns quotes the first line of the caller's spec, and the value being handed to the word-capping helper is no longer something that helper will accept: the indexing that produces it is allowed to yield nothing, while the helper insists on text."
+  },
+  "statusoffline": {
+    "find": "  let reachable = false;",
+    "replace": "  let reachable = true;",
+    "symptom": "`npm test` is failing in `tests/status.test.ts`. `status` exists to tell a user whether LM Studio's server is answering. With the endpoint down — the probe throwing outright — it now reports the server as reachable anyway, and the catalog it returns states each model's availability as a known fact instead of leaving it unknown."
+  },
+  "tystatusout": {
+    "find": "  let memory: MemoryInfo | null = null;",
+    "replace": "  let memory: MemoryInfo = null;",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/tools/status.ts`. This tool's contract is that every probe failure degrades to a reported field rather than an error, and the memory probe is one of the probes allowed to come back with nothing. The local that receives it no longer admits that outcome, so neither its starting value nor what the probe returns fits it."
+  },
+  "lmsps": {
+    "find": "const CONTEXT_KEYS = [\"contextLength\", \"context_length\", \"contextSize\"];",
+    "replace": "const CONTEXT_KEYS = [\"contextLength\", \"contextSize\"];",
+    "symptom": "`npx vitest run tests/lms.test.ts` is failing in `src/lms.ts`. When `lms ps --json` reports a loaded model's window under the snake_case spelling some versions of `lms` emit, the parsed row comes back carrying no context length at all.\nThe pre-flight that is supposed to bound a whole-file answer is then left with nothing to check against for that model."
+  },
+  "lmssizes": {
+    "find": "const SIZE_KEYS = [\"sizeBytes\", \"size_bytes\", \"size\"];",
+    "replace": "const SIZE_KEYS = [\"sizeBytes\", \"size\"];",
+    "symptom": "`npx vitest run tests/lms.test.ts` is failing in `src/lms.ts`. A downloaded-model row whose size arrives under one of the alternate field spellings `lms ls --json` uses is now treated as sizeless.\nSizeless rows are skipped, so a model that really is on disk disappears from the catalog entirely instead of being listed with its size."
+  },
+  "tylmsnull": {
+    "find": "  const out: LmsModel[] = [];",
+    "replace": "  const out: LmsLoadedModel[] = [];",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/lms.ts`. The rows being collected for the downloaded-model catalog no longer typecheck against what that catalog is declared to hand back: the on-disk size a row carries is rejected as an unknown property, and the collected array is rejected as the function's result."
+  },
+  "parsefence": {
+    "find": "  const match = trimmed.match(/^```[a-zA-Z0-9_-]*\\r?\\n([\\s\\S]*?)\\r?\\n?```$/);",
+    "replace": "  const match = trimmed.match(/^```[a-zA-Z0-9_-]+\\r?\\n([\\s\\S]*?)\\r?\\n?```$/);",
+    "symptom": "`npx vitest run tests/parse.test.ts` is failing in `src/parse.ts`. When a model wraps its whole answer in a bare code fence — three backticks with no language written after them — the fence is no longer recognized as wrapping the payload.\nThe caller gets the backtick lines back as part of the text instead of the content they enclose."
+  },
+  "parsepath": {
+    "find": "const OPEN_TAG_RE = /^<file\\s+path=[\"']([^\"']+)[\"']\\s*>[ \\t]*\\r?\\n?/gm;",
+    "replace": "const OPEN_TAG_RE = /^<file\\s+path=\"([^\"]+)\"\\s*>[ \\t]*\\r?\\n?/gm;",
+    "symptom": "`npx vitest run tests/parse.test.ts` is failing in `src/parse.ts`. A `<file …>` block whose path attribute is written with apostrophes instead of double quotes is not recognized as a block at all.\nThe file it declares is simply absent from the parse result — no content, no entry in extras, no unclosed-block warning."
+  },
+  "parsetrail": {
+    "find": "  const unclosed = out.indexOf(\"<think>\");",
+    "replace": "  const unclosed = out.indexOf(\"</think>\");",
+    "symptom": "`npx vitest run tests/parse.test.ts` is failing in `src/parse.ts`. Output that was cut off mid-reasoning — a thinking block that opens and never closes, the signature of a truncated response — is no longer trimmed at the point where the reasoning starts.\nThe dangling reasoning survives into the returned text instead of being dropped."
+  },
+  "memslug": {
+    "find": "    pages += Number(match[1]);",
+    "replace": "    pages = Number(match[1]);",
+    "symptom": "`npx vitest run tests/memory.test.ts` is failing in `src/memory.ts`. Free RAM derived from `vm_stat` comes out far too small: of the several page counts the measurement is supposed to add together, only one reaches the total.\nA machine with tens of gigabytes free is reported as having almost none, which would refuse work that fits."
+  },
+  "memindex": {
+    "find": "    return { totalBytes, freeBytes, source: \"vm_stat\" };",
+    "replace": "    return { totalBytes, freeBytes, source: \"memory_pressure\" };",
+    "symptom": "`npx vitest run tests/memory.test.ts` is failing in `src/memory.ts`. When the first free-RAM probe on macOS is unavailable and the fallback probe supplies the number, the reported provenance still credits the probe that failed.\nThe figure is right but the label attached to it names a command that did not produce it, so callers echoing that label to the user are stating something untrue."
+  },
+  "tyclientbody": {
+    "find": "    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };",
+    "replace": "    usage?: { prompt_tokens?: unknown };",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/llm-client.ts`. The code that reads token\naccounting out of an LM Studio chat-completion response asks the parsed body for a usage field that\nthe shape the body was parsed into does not admit."
+  },
+  "tyclientfetch": {
+    "find": "  url: string,",
+    "replace": "  url: URL,",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/llm-client.ts`. The internal timeout wrapper\nthat both HTTP paths in that module go through no longer accepts the endpoint address either of\nthem builds for it."
+  },
+  "tycorpusrow": {
+    "find": "  patch: string | null;",
+    "replace": "  patch: string;",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/corpus.ts`. The helper that records working-tree\nstate alongside a captured failure now promises a patch in every case, while two of its own exit paths\ndeliberately report having none — the no-diff case and the over-the-cap case."
+  },
+  "tydiffstat": {
+    "find": "  let removed = 0;",
+    "replace": "  let removed = \"0\";",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/diff.ts`. The helper that counts added and\nremoved lines in a unified diff no longer produces the numeric pair its declared result type\npromises — one of the two counters it accumulates is not a number."
+  },
+  "tyexecopts": {
+    "find": "{ cwd: root, timeoutMs: budget }",
+    "replace": "{ cwd: root, timeout: budget }",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/exec.ts`. The read-only git wrapper hands the\nprocess runner an options object that does not satisfy the runner's options contract: a required\nfield is absent and an unrecognised one is present in its place."
+  },
+  "tyserverreg": {
+    "find": "return jsonResult(await runModels(config, args));",
+    "replace": "return jsonResult(await runModels(args, config));",
+    "symptom": "`npx tsc -p tsconfig.json --noEmit` is failing in `src/server.ts`. One registered MCP tool handler\ninvokes its implementation with arguments the implementation's parameters do not accept, so the\nserver entry point no longer compiles."
   }
 }
