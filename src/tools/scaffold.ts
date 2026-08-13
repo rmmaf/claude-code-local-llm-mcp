@@ -76,7 +76,7 @@ export async function runScaffold(
   const target = await resolveSafePath(config.root, args.target_path, { mustExist: false });
 
   try {
-    await fs.access(target.abs);
+    await fs.access(target.rel);
     throw new ToolError(
       `Target already exists: ${target.rel}. scaffold creates new files only — ` +
         "use implement to modify existing files, or pick a different target path.",
