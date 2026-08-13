@@ -27,7 +27,7 @@ export function normalizeId(s: string): string {
 const QUANT_SUFFIX_RE = /(?:[-@](?:4bit|8bit|dwq|gguf|mlx|fp16|bf16|int4|int8|q\d+(?:_k(?:_[ms])?)?|v\d+))+$/i;
 
 /** Candidate forms for fuzzy comparison: full, basename, and quant-stripped variants. */
-function fuzzyForms(id: string): Set<string> {
+function fuzzyForms(id: string): string[] {
   const norm = normalizeId(id);
   const base = norm.split("/").pop() ?? norm;
   const forms = new Set<string>();
