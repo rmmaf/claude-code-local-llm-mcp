@@ -74,7 +74,7 @@ async function treeState(
   root: string
 ): Promise<{
   head: string | null;
-  patch: string | null;
+  patch: string;
   patch_bytes: number;
   patch_omitted: boolean;
   untracked: string[];
