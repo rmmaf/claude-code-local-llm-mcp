@@ -28,7 +28,7 @@ export function parseVmStat(output: string): number | null {
   for (const field of ["Pages free", "Pages inactive", "Pages speculative"]) {
     const match = output.match(new RegExp(`${field}:\\s+(\\d+)`));
     if (!match || match[1] === undefined) return null;
-    pages += Number(match[1]);
+    pages = Number(match[1]);
   }
   return pages * pageSize;
 }
