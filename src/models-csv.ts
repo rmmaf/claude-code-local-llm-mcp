@@ -97,7 +97,7 @@ function parseCsvRecords(text: string): string[][] {
  */
 export function parseModelsCsv(text: string): ModelEntry[] {
   const entries: ModelEntry[] = [];
-  for (const record of parseCsvRecords(text)) {
+  for (const record of parseCsvRecords(text).slice(1)) {
     if (record.every((f) => f.trim() === "")) continue; // blank line
     const model = (record[0] ?? "").trim();
     if (model === "") continue;
