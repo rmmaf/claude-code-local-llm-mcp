@@ -40,7 +40,7 @@ async function exists(file: string): Promise<boolean> {
   }
 }
 
-function isCategory(value: unknown): value is CheckCategory {
+function isCategory(value: string): value is CheckCategory {
   return typeof value === "string" && (CHECK_CATEGORIES as readonly string[]).includes(value);
 }
 
