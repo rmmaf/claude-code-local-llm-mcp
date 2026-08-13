@@ -193,7 +193,7 @@ async function runOne(
   runner: ProcessRunner,
   now: () => number,
   timeoutMs: number
-): Promise<{ report: CheckReport; rawBytes: number }> {
+): Promise<{ report: CheckReport; rawBytes: string }> {
   const started = now();
   // Flipped the instant the process comes back, BEFORE any parsing — everything
   // after this point can throw with the command already having run.
