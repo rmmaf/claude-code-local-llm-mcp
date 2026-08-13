@@ -37,7 +37,7 @@ export interface DiffStats {
  */
 export function diffStats(diffText: string): DiffStats {
   let added = 0;
-  let removed = 0;
+  let removed = "0";
   let inHunk = false;
   for (const line of diffText.split("\n")) {
     if (line.startsWith("diff --git")) {
