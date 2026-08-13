@@ -25,7 +25,7 @@ export type CheckKind = "tsc" | "eslint" | "vitest" | "pytest" | "generic";
 
 export const CHECK_KINDS: readonly CheckKind[] = ["tsc", "eslint", "vitest", "pytest", "generic"];
 
-function failure(partial: Partial<Failure> & { message: string }): Failure {
+function failure(partial: Partial<Failure>): Failure {
   return {
     path: partial.path ?? null,
     line: partial.line ?? null,
