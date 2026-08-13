@@ -184,7 +184,7 @@ export async function runScaffold(
     log.info(`scaffold created ${write.rel} (${write.content.length} chars)`);
   }
 
-  const specExcerpt = wordCap(args.spec.trim().split(/\r?\n/)[0] ?? "", 30);
+  const specExcerpt = wordCap(args.spec.trim().split(/\r?\n/)[0], 30);
   return {
     summary: wordCap(
       `Scaffolded ${created.length} new file(s) for: ${specExcerpt}. Created: ${created.join(", ")}.`,
