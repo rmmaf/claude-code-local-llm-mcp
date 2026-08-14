@@ -168,6 +168,14 @@ interface Assessed {
   declReasons: string[];
   terms: ObservationTerms | null;
   pacing: PacingFacts | null;
+  /**
+   * Artifact 1's frozen `max_rounds` against what this observation's repair
+   * calls ran under. A FACT and not a disposition: the amendment that makes it
+   * violable is RUN-LEVEL, so nothing here excludes this observation — the
+   * clause reads the union across all of them. Empty means "no disagreement
+   * among the rows that exist", which is not the same as "no repair ran".
+   */
+  repairRounds: string[];
   provenanceUnavailable: boolean | null;
   requestsPerSegment: Array<{ thread: string; segment: number; requests: number }>;
 }
@@ -429,6 +437,7 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     checks,
     scoringCommandActual: input.scoringCommandActual,
     duplicatedTaskIds,
+    gitAudit,
     brackets: { rLo: base.rLo, rHi: base.rHi, uncappedBracket: base.uncappedBracket },
   });
 
@@ -585,6 +594,10 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
       declReasons,
       terms: null,
       pacing: null,
+      // No disposition could be decided here, so there is nothing for a fact to
+      // qualify. Empty is the honest value: it says nothing was compared, and the
+      // run-level clause reads a union that this contributes nothing to.
+      repairRounds: [],
       provenanceUnavailable: null,
       requestsPerSegment: [],
     };
@@ -707,6 +720,10 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
       declReasons,
       terms: null,
       pacing,
+      // No disposition could be decided here, so there is nothing for a fact to
+      // qualify. Empty is the honest value: it says nothing was compared, and the
+      // run-level clause reads a union that this contributes nothing to.
+      repairRounds: [],
       provenanceUnavailable: report.provenanceUnavailable,
       requestsPerSegment: requestsPerSegment(transcript, owned),
     };
@@ -734,6 +751,10 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
       declReasons,
       terms: null,
       pacing,
+      // No disposition could be decided here, so there is nothing for a fact to
+      // qualify. Empty is the honest value: it says nothing was compared, and the
+      // run-level clause reads a union that this contributes nothing to.
+      repairRounds: [],
       provenanceUnavailable: report.provenanceUnavailable,
       requestsPerSegment: requestsPerSegment(transcript, owned),
     };
@@ -785,9 +806,54 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
     declReasons,
     terms,
     pacing,
+    repairRounds: repairRoundsMismatches(ctx.task?.repairMaxRounds ?? null, scopedRecords),
     provenanceUnavailable: report.provenanceUnavailable,
     requestsPerSegment: requestsPerSegment(transcript, owned),
   };
+}
+
+/**
+ * Artifact 1's frozen `max_rounds` against the rows that say what ran.
+ *
+ * Read over the SCOPED telemetry — the same subset the counterfactual is priced
+ * from — and not over the whole worktree log the harness sees. That is the
+ * difference that matters between this and its driver-side twin in
+ * `scripts/b12-run.mjs`: a row this run does not own cannot reach a verdict from
+ * here, so the scoring side cannot void a run on a foreign row.
+ *
+ * FAIL-CLOSED ON AN ABSENT FIELD. A repair row carrying no numeric
+ * `detail.max_rounds` cannot be compared, and "cannot tell" may not wear the
+ * same answer as "matched".
+ *
+ * BUT NOT ON AN ABSENT ROW, and the amendment says so in its own text: the
+ * telemetry writer swallows append failures by design, and a tool whose preflight
+ * refuses emits no row while its result still sits in the transcript. Absence of
+ * a row is therefore not evidence of compliance, and no guard can be built on
+ * the contrary premise without voiding lawful observations.
+ */
+export function repairRoundsMismatches(
+  declared: number | null,
+  scoped: ReadonlyArray<{ tool: string; detail?: Record<string, unknown> | undefined }>
+): string[] {
+  const rows = scoped.filter((r) => r.tool === "repair");
+  if (rows.length === 0) return [];
+  if (declared === null || !Number.isFinite(declared)) {
+    return [
+      `${rows.length} repair row(s) exist but the manifest declares repairMaxRounds ${String(declared)}, which is not a number — artifact 1's frozen max_rounds has nothing to compare against`,
+    ];
+  }
+  const out: string[] = [];
+  rows.forEach((row, i) => {
+    const got = row.detail?.max_rounds;
+    if (typeof got !== "number" || !Number.isFinite(got)) {
+      out.push(
+        `repair row ${i + 1} of ${rows.length} carries no numeric detail.max_rounds, so the frozen repairMaxRounds (${declared}) cannot be checked against what ran`
+      );
+    } else if (got !== declared) {
+      out.push(`repair ran at max_rounds ${got} against a frozen repairMaxRounds of ${declared}`);
+    }
+  });
+  return out;
 }
 
 /** First match in the registered precedence; the full list is published beside it. */
@@ -877,6 +943,13 @@ interface ChecksContext {
   checks: ArchiveCheck[];
   scoringCommandActual: string | null;
   duplicatedTaskIds: ReadonlySet<string>;
+  /**
+   * Which regime governs. Only the repair-max-rounds amendment's `governs` is
+   * read here; the whole audit is passed rather than the boolean so the clause
+   * can print the amendment's PATH, and a reader of the face can tell WHICH
+   * document did or did not apply without holding this file open.
+   */
+  gitAudit: GitAudit;
   /**
    * The four bracket bounds off the aggregate result, for clause 8's live
    * predicate — checked as VALUES on the constructed result, because NaN
@@ -1263,6 +1336,57 @@ function buildArchiveChecks(ctx: ChecksContext): void {
       : paced.length > 0
         ? `${paced.length} observation(s) exceeded a pacing ceiling`
         : "every observation is inside the gap and cacheWrite-share ceilings"
+  );
+
+  // THE 2026-08-14 PRE-DATA AMENDMENT — repair's frozen max_rounds, run-level.
+  //
+  // Not one of the 23 frozen conditions and never described as one. It is named
+  // here as an amendment so a reader of the face can always tell which regime
+  // produced the verdict, which is the same courtesy the conformance-paths
+  // amendment gets in the audit artifact.
+  //
+  // GATED ON `governs`, which `audit.ts` computed against the run's freeze
+  // anchor. An ungoverned run reaches the same line and is told, in the detail,
+  // that the amendment exists and did not apply to it — because "no mismatch"
+  // and "the rule was not in force" are two different clean answers, and a
+  // clause that prints one when it means the other is how a regime silently
+  // changes.
+  //
+  // RUN-LEVEL AND NOT AN EXCLUSION, on voidConditions 9's own stated ground:
+  // triggering it costs the run rather than buying an exclusion. `repair` is
+  // treatment-only, so dropping the offending observation instead would drop
+  // treatment attempts alone and hand the vacated admission slot to the next
+  // task in committed order — a selection channel whose sign cannot be
+  // established before the run. Every observation keeps its disposition here;
+  // what dies is the run.
+  // Read off the COMMITTED audit's published face, the same flat input map every
+  // other git fact arrives through — never re-derived here, because this file
+  // cannot ask git anything and a second derivation is a second answer.
+  //
+  // `{ran: false}` IS NOT "does not govern" AND IS NOT "governs". With no
+  // committed audit the regime is UNKNOWN, and the clause says so rather than
+  // picking the reading that fires nothing. It still does not fire — an unproven
+  // rule may not void a run — but the detail refuses to call that a clean pass,
+  // which is the distinction `uncheckedClauses` exists to preserve.
+  const rmrInputs = ctx.gitAudit.ran ? ctx.gitAudit.inputs : null;
+  const rmrPath = rmrInputs?.["clause5.repairRoundsAmendment.path"] ?? "(no committed audit)";
+  const rmrGoverns = rmrInputs?.["clause5.repairRoundsAmendment.governs"] === "yes";
+  const rmrUnknown = rmrInputs === null || rmrInputs["clause5.repairRoundsAmendment.governs"] === undefined;
+  const offenders = assessed.filter((a) => a.repairRounds.length > 0);
+  const wouldHave =
+    offenders.length > 0 ? `; ${offenders.length} observation(s) WOULD have fired it, reported and deciding nothing` : "";
+  push(
+    "amendment 2026-08-14 — repair's frozen max_rounds",
+    rmrGoverns && offenders.length > 0,
+    rmrUnknown
+      ? `no committed audit says whether the repair-max-rounds amendment governs this run, so the regime is UNKNOWN and this clause may not be read as passed${wouldHave}`
+      : !rmrGoverns
+        ? `the amendment (${rmrPath}) does not govern this run — its introducing commit is not an ancestor of the freeze anchor, so artifact 1's max_rounds is carried but not enforced here${wouldHave}`
+        : offenders.length > 0
+        ? `${offenders.length} observation(s) ran repair at a max_rounds other than the frozen one: ${offenders
+            .map((a) => `${a.obs.taskId}/${a.obs.arm} — ${a.repairRounds.join("; ")}`)
+            .join(" | ")}`
+        : "every repair row that exists ran at its task's frozen max_rounds (a call whose row never landed is invisible to this, by the amendment's own text)"
   );
 }
 

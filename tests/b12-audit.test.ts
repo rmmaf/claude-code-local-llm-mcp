@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   AMENDMENT_CONFORMANCE_PATHS,
+  AMENDMENT_REPAIR_MAX_ROUNDS,
   AUDIT_INPUT_KEYS,
   AuditRefused,
   attestationFromVitest,
@@ -194,6 +195,14 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
         commit: null,
         sha256: null,
         addedPaths: CONFORMANCE_FILES,
+        governs: false,
+      },
+      // Default OFF, like its sibling: a fixture that governed by default would
+      // make every oracle here run the post-amendment regime by accident.
+      repairRoundsAmendment: {
+        path: AMENDMENT_REPAIR_MAX_ROUNDS,
+        commit: null,
+        sha256: null,
         governs: false,
       },
       commitsTouchingPinned: [],

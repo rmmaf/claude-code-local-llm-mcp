@@ -187,6 +187,29 @@ export const CONFORMANCE_FILES = ["tests/cost-meter.test.ts", "tests/session-tok
 export const AMENDMENT_CONFORMANCE_PATHS = "evidence/2026-08-10-b12-amendment-conformance-paths.json";
 
 /**
+ * THE PRE-DATA AMENDMENT that makes repair's frozen `max_rounds` violable.
+ *
+ * `design.artifacts` 1 requires the manifest to CARRY the value. No frozen
+ * clause required an observation to RUN under it, and clause 4 does not reach
+ * the case: 4 fires when a frozen item CHANGES, and a session calling `repair`
+ * at another value changes nothing — the manifest still declares what it
+ * declared. A frozen item nothing can violate is not frozen.
+ *
+ * Read exactly like the conformance-paths amendment beside it: PROSPECTIVE,
+ * governing a run only when its own INTRODUCING commit is an ancestor of that
+ * run's freeze-anchor commit. Nothing here edits the frozen pre-registration.
+ *
+ * It is RUN-LEVEL by the frozen text's own reasoning, not by preference:
+ * clause 9 settled the trade and stated the ground — "run-level, so triggering
+ * it costs the run rather than buying an exclusion". `repair` is treatment-only,
+ * so a per-observation exclusion would drop treatment attempts alone and hand
+ * the vacated admission slot to the next task in committed order, a selection
+ * channel whose SIGN cannot be established before the run. This computes only
+ * WHETHER the amendment governs; `assemble.ts` owns the clause itself.
+ */
+export const AMENDMENT_REPAIR_MAX_ROUNDS = "evidence/2026-08-14-b12-amendment-repair-max-rounds.json";
+
+/**
  * The only spellings a run id may take when it becomes a FILENAME — the same
  * grammar `b12-register.mjs` applies at its own point of use, written here
  * because this file interpolates the id into paths it then WRITES.
@@ -381,6 +404,17 @@ export interface AuditFacts {
       commit: string | null;
       sha256: string | null;
       addedPaths: readonly string[];
+      governs: boolean;
+    };
+    /**
+     * The repair-max-rounds amendment's identity and whether it governs. No
+     * `addedPaths`: it widens no path set. `assemble.ts` reads `governs` and
+     * owns the clause; nothing here fires on it.
+     */
+    repairRoundsAmendment: {
+      path: string;
+      commit: string | null;
+      sha256: string | null;
       governs: boolean;
     };
     /** Every commit touching a pinned path: `{sha, committerDate}`. */
@@ -1059,6 +1093,8 @@ export interface CollectorOptions {
   emissionFencedFiles?: readonly string[];
   /** Test seam: where the conformance-path amendment lives. */
   amendmentPath?: string;
+  /** Test seam: where the repair-max-rounds amendment lives. */
+  repairRoundsAmendmentPath?: string;
   /** Test seam: wrap or replace the git runner — how the oracle makes a
    * MANDATORY probe fail without corrupting a repository. */
   gitRunner?: Git;
@@ -1387,6 +1423,27 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   }
   const effectivePinned = amendmentGoverns ? [...pinnedPaths, ...CONFORMANCE_FILES] : [...pinnedPaths];
 
+  // The repair-max-rounds amendment, decided by the SAME prospective test and
+  // computed here because this is the only place that holds both a git runner
+  // and the anchor. `assemble.ts` cannot ask git anything, so the answer travels
+  // to it as a fact rather than being re-derived where it is used.
+  //
+  // FAIL-CLOSED ON AN UNASKABLE ANCESTRY, exactly as above: a refusal is
+  // retryable and writes no artifact, while guessing `false` would silently run
+  // the pre-amendment regime and publish a verdict that names the wrong one.
+  const rmrPath = options.repairRoundsAmendmentPath ?? AMENDMENT_REPAIR_MAX_ROUNDS;
+  const rmrCommit = introducingCommit(git, rmrPath);
+  let rmrGoverns = false;
+  if (rmrCommit !== null && anchor !== null) {
+    const anc = isAncestor(git, rmrCommit, anchor.commit);
+    if (anc === null) {
+      throw new AuditRefused(
+        `ancestry of the repair-max-rounds amendment ${rmrCommit} against the anchor commit cannot be asked — which regime governs this run cannot be decided`
+      );
+    }
+    rmrGoverns = anc;
+  }
+
   // ---- clause 5: the two probes, in union ---------------------------------
   const commitsTouchingPinned: Array<{ sha: string; committerDate: string }> = [];
   const offenders: string[] = [];
@@ -1640,6 +1697,16 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
         sha256: blobSha(git, "HEAD", amendmentPath),
         addedPaths: CONFORMANCE_FILES,
         governs: amendmentGoverns,
+      },
+      // A SIBLING, NOT A MEMBER of clause 5's amendment above: this one widens
+      // no path set and moves no clock. It sits inside `clause5` only because
+      // that is where the anchor and the git runner already are, and its own
+      // clause lives in `assemble.ts`.
+      repairRoundsAmendment: {
+        path: rmrPath,
+        commit: rmrCommit,
+        sha256: blobSha(git, "HEAD", rmrPath),
+        governs: rmrGoverns,
       },
       commitsTouchingPinned,
       offenders,

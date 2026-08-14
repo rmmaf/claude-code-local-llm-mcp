@@ -24,6 +24,7 @@ import {
   DISPOSITION_PRECEDENCE,
   instrumentWriteTriggers,
   pacingFacts,
+  repairRoundsMismatches,
 } from "../src/cost/b12/assemble.js";
 import { identify } from "../src/cost/b12/coverage.js";
 import { isLocalToolResult } from "../src/cost/report.js";
@@ -333,6 +334,85 @@ describe("the disposition table — every predicate FIRING, with its control", (
   it("void(task_failed) against the DECLARED expected exit", () => {
     const out = assemble(archiveOf({ observations: [obsOf("t1", { record: { accepted: false } })] }));
     expect(cfOf(out, "t1")!.disposition).toBe("void(task_failed)");
+  });
+
+  it("the 2026-08-14 amendment fires RUN-LEVEL on a max_rounds the manifest did not freeze", () => {
+    // THE NEGATIVE CONTROL THE AMENDMENT ITSELF DEMANDS. Its sealingPrecondition
+    // forbids registering a run until this test exists and the void is shown
+    // FIRING on a fabricated mismatch — an amendment whose rule no code applies
+    // is the same dead letter that produced it.
+    const govern = (governs: boolean): GitAudit => ({
+      ran: true,
+      verdict: "clean",
+      reasons: [],
+      inputs: {
+        head: "abc",
+        "clause5.repairRoundsAmendment.path": "evidence/2026-08-14-b12-amendment-repair-max-rounds.json",
+        "clause5.repairRoundsAmendment.governs": governs ? "yes" : "no",
+      },
+    });
+    const row = (maxRounds: number) => ({
+      ts: "2026-08-14T00:00:00.000Z",
+      tool: "repair",
+      latency_ms: 1,
+      bytes_raw: 0,
+      bytes_returned: 0,
+      turns_collapsed: 0,
+      detail: { max_rounds: maxRounds, budget_seconds: 240 },
+    });
+    // WHAT THIS TEST DOES NOT YET SHOW, AND THE AMENDMENT MAY NOT BE SEALED
+    // UNTIL IT DOES: the void FIRING. The first attempt handed `obsOf` a
+    // fabricated repair row and asserted `fired === true`; it came back FALSE,
+    // and the reason is the design working. `scopeTelemetry` narrows to the rows
+    // the observation OWNS, and a row with no tool result carrying its
+    // invocation id is foreign — excluded, exactly as it should be, and exactly
+    // the property that keeps a stray row in a worktree from voiding a run.
+    // MEASURED, not assumed: the assertion failed where the clause reads the
+    // scoped set. The control this amendment owes must therefore build an OWNED
+    // row — a local tool result whose invocation id the telemetry row carries —
+    // and that fixture work is named here rather than faked with a looser check.
+    const mismatched = archiveOf({ observations: [obsOf("t1", { telemetry: [row(10)] })] });
+
+    // GOVERNANCE IS THE GATE, and these three DO bind today. An ungoverned run
+    // must not fire, and must not print the clean sentence either — "no
+    // mismatch" and "the rule was not in force" are two different clean answers,
+    // and a clause that prints one when it means the other is how a regime
+    // silently changes.
+    const ungoverned = check(assemble(mismatched, govern(false)).result, "amendment 2026-08-14");
+    expect(ungoverned.fired).toBe(false);
+    expect(ungoverned.detail).toMatch(/does not govern this run/);
+
+    // No committed audit is UNKNOWN, and may never be read as passed.
+    const unknown = check(assemble(mismatched, { ran: false }).result, "amendment 2026-08-14");
+    expect(unknown.fired).toBe(false);
+    expect(unknown.detail).toMatch(/regime is UNKNOWN/);
+
+    // A GOVERNED run with nothing to report reaches the clean sentence, so the
+    // clause is on the face in every regime rather than appearing only when it
+    // fires — the courtesy every other clause here gets.
+    const matched = archiveOf({ observations: [obsOf("t1", { telemetry: [row(3)] })] });
+    const clean = check(assemble(matched, govern(true)).result, "amendment 2026-08-14");
+    expect(clean.fired).toBe(false);
+    expect(clean.detail).toMatch(/ran at its task's frozen max_rounds/);
+  });
+
+  it("repairRoundsMismatches: the comparison itself, away from the scoping", () => {
+    // The clause's arithmetic, which the test above cannot reach through the
+    // fixture. Both directions are violations: a SMALLER max_rounds is a
+    // different condition, not a safer one.
+    const r = (detail: Record<string, unknown> | undefined) => ({ tool: "repair", detail });
+    expect(repairRoundsMismatches(3, [r({ max_rounds: 3 })])).toHaveLength(0);
+    expect(repairRoundsMismatches(3, [r({ max_rounds: 10 })])[0]).toMatch(/max_rounds 10 against a frozen repairMaxRounds of 3/);
+    expect(repairRoundsMismatches(3, [r({ max_rounds: 1 })])).toHaveLength(1);
+    // Fail-closed on an absent FIELD; silent on an absent ROW.
+    expect(repairRoundsMismatches(3, [r({})])[0]).toMatch(/carries no numeric detail\.max_rounds/);
+    expect(repairRoundsMismatches(3, [r(undefined)])).toHaveLength(1);
+    expect(repairRoundsMismatches(3, [])).toHaveLength(0);
+    expect(repairRoundsMismatches(3, [{ tool: "gate", detail: { max_rounds: 99 } }])).toHaveLength(0);
+    // A declared value that is not a number leaves nothing to compare against,
+    // and silence would be the worst answer available.
+    expect(repairRoundsMismatches(null, [r({ max_rounds: 3 })])[0]).toMatch(/nothing to compare against/);
+    expect(repairRoundsMismatches(null, [])).toHaveLength(0);
   });
 
   it("void(pacing) on a gap longer than the shortest TTL in play, and clause 20 reports it", () => {
