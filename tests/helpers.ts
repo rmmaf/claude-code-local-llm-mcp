@@ -23,8 +23,15 @@ import type { FetchLike } from "../src/llm-client.js";
  *
  * `tests/setup.ts` sweeps this registry in an `afterAll`, so a suite that forgets is
  * covered without having to remember. AFTER-ALL rather than after-each on purpose:
- * `tests/stdio.test.ts:43` creates its root at collection time and spawns a server with it
- * as cwd, and a per-test sweep would delete the ground under a live child process.
+ * `tests/stdio.test.ts` creates its root at COLLECTION time and runs a server with it as
+ * cwd for the whole suite, and a per-test sweep would delete the ground under a live child
+ * process.
+ *
+ * CORRECTED 2026-08-14: this said the SPAWN was also at collection time. It no longer is —
+ * it moved into that suite's `beforeAll`, because a describe-body spawn survives as an
+ * orphan when a file is collected but never run. `makeTempRoot()` is still called at
+ * collection time, and the child still outlives every individual test, so the reason for
+ * after-all is unchanged; only the sentence describing it was wrong.
  */
 const trackedRoots = new Set<string>();
 

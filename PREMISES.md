@@ -3082,3 +3082,130 @@ total should quote its machine with it."
   against a stale `dist/`. **Always verify with `npm test`, never bare
   `npx vitest run`** — and note that `gate` made the same mistake until the
   adversarial review caught it (`DECISIONS.md § v3`).
+
+## The `stdio.test.ts` partial-line defect — predicted, measured, FALSIFIED, hardened anyway
+
+**2026-08-14.** Recorded because the prediction was wrong and the plan that carried
+it asserted something about this repository that this repository does not contain.
+
+**The prediction, written before any measurement** (plan W5, verbatim): the handler
+at `tests/stdio.test.ts:53-59` re-parsed the whole buffer on every chunk and ran
+`JSON.parse` on *every* line including the last — partial whenever a chunk boundary
+lands mid-message. The throw would happen inside a `data` handler, which vitest
+reports as an *Unhandled Error*: the suite fails with **zero failing tests**. The
+falsifiable form: "a probe counting unparseable tails will record a count > 0 in at
+least one of N runs. If it records 0 in all of them, THE MECHANISM IS NOT
+ESTABLISHED."
+
+**The measurement.** `scripts/stdio-chunking-probe.mjs`, committed so every figure below
+can be regenerated rather than trusted. It replicates the spawn and the three requests and
+applies the test's own pre-2026-08-14 parse expression, outside vitest. 20 runs,
+node v24.16.0, win32:
+
+| | |
+|---|---|
+| runs with any partial tail | **0 / 20** |
+| runs where the old expression would throw | **0 / 20** |
+| chunks per run | 3, 3, 3 … (20×) — one chunk per message, every run |
+| stdout bytes per run | 17 918, except three runs at 17 916 |
+| largest single chunk | 15 372 B |
+| non-ASCII bytes per run | 105, all 20 runs |
+
+**The prediction is falsified.** In these 20 runs every message arrived whole and no
+boundary landed mid-message. Full suite the same day: 174 suites, 858 tests, 0 failures,
+`stdio.test.ts` green — **5 tests**, not "5 assertions"; the file holds 20 static `expect`
+call sites, several inside loops.
+
+**Two figures in the first draft of this table were wrong and are corrected above.** It
+read "17 824 bytes per run, identical in all 20". That count was CHARACTERS of the decoded
+string, not bytes, and the byte total is *not* constant — it varies by two across runs. The
+committed probe measures the buffer, which is what "bytes" should always have meant here.
+
+**And the motivating observation cannot be located.** The plan said this failure form
+was "exactly the observed form". Nothing in `PREMISES.md`, `docs/b12-scorer/FINDINGS.md`
+or the registered `KNOWN_FLAKY` class records `tests/stdio.test.ts` failing this way;
+the only stdio failure on record is the five-vs-seven-tools assertion above, fixed long
+ago. **So no flake in this file is established either** — not by the probe, and not by
+the record. The premise was mine and it is withdrawn.
+
+**One lead, recorded as a lead and NOT as the cause.** `MEASUREMENTS.jsonl:249` records, at
+the parent baseline `608e930`, "**5 skipped every run (stdio server integration)**" — this
+suite, skipped, five of them. A skipped suite reports zero failing tests, which is the shape
+I mistook for the failure form. That is a plausible origin for the withdrawn premise and it
+is **not** established as one: no run linking a skip to my reading exists, and this
+repository's standing rule is that a list of outcomes says WHICH, never WHY.
+
+**What was NOT established.** That the mechanism cannot occur — 20 runs on one OS with one
+tools/list size is a weak bound, not a proof, and the margin is wide: ~15 KB of frame
+against a 64 KiB pipe buffer, so "a longer tools/list" would have to be several times
+longer, not slightly. That any of the five defects below has ever produced a red. That
+vitest scheduling, which the probe deliberately excluded, changes the chunking.
+
+**Changed anyway, as HARDENING and labelled as such** — each is a real latent defect
+independent of whether it has fired:
+
+1. **Partial-line parse.** The reader now buffers and parses only complete lines,
+   carrying the remainder. Correctness here rested on a property nothing guarantees.
+   A stream ending on an unterminated line is flushed by an `end` handler, so the one
+   input a line buffer could swallow rather than judge still reaches a verdict.
+2. **Unparseable complete lines are collected, not thrown**, and asserted empty in BOTH
+   the purity test and `afterAll`. The two places are the point: the old handler threw on
+   a bad line at any moment in the child's life, whereas a single assertion inside test 4
+   of 5 is live only while that test runs. Both reviewers found that gap, and without the
+   `afterAll` assertion this change would have been a genuine WEAKENING for stray output
+   during test 5 or teardown. It is now readable *and* temporally complete — the earlier
+   draft of this entry claimed "strictly more readable, whatever the cause", which was
+   false when written.
+3. **`spawn` moved from the `describe` body into `beforeAll`.** A describe body runs at
+   COLLECT time, so the server started during collection and survived as an orphan
+   holding its temp root if the file was collected but never run. That path is not
+   hypothetical here: see the skip figure recorded above.
+4. **`child.on("error")` added, and `afterAll` now awaits `'exit'`** (bounded at 5 s,
+   then `SIGKILL`). A spawn failure previously had no listener — an `'error'` event with
+   no listener throws — and the unwaited `kill()` could leave the temp root locked on
+   Windows. `afterAll` returns immediately on a spawn failure rather than spending the
+   full timeout waiting for an `'exit'` from a process that never existed, and a child
+   that ignores SIGTERM is now killed rather than left holding the directory.
+5. **`StringDecoder` on both streams**, replacing per-chunk `chunk.toString("utf8")`.
+   Found while the reviews were still out, and independently by BOTH of them — the
+   verifier located the source, `dist/tools/gate.js:12`, and counted 2 783 non-ASCII bytes
+   across `dist/tools/*.js`. It is the WORSE half of the defect I had
+   named. **Measured the same day: stdout carries 105 non-ASCII bytes, every one of them
+   `e2 80 94` — U+2014 EM DASH, three bytes — inside tool descriptions.** A chunk
+   boundary landing mid-sequence decodes to U+FFFD on both sides, and the resulting JSON
+   **still parses**. So that path corrupts a tool description silently and leaves the
+   stdout-purity assertion green, where the partial-line path at least threw. A decoder
+   holds back an incomplete SEQUENCE, `pending` holds back an incomplete LINE, and the
+   two boundaries are independent — neither substitutes for the other.
+
+   This defect was in the ORIGINAL code (`stdoutRaw += chunk.toString("utf8")`) and was
+   not introduced by the hardening. Like the rest of this section it has **never been
+   observed firing**, and for the same reason: at one chunk per message no boundary
+   exists to land badly.
+
+**Control shown firing, not merely green.** A `console.log` was added to `src/server.ts`
+after the imports and the suite run: `tests/stdio.test.ts` went red at the purity test with
+`AssertionError: expected 'TEMPORARY STRAY NON-PROTOCOL LINE - R…' to be ''` — one named
+test, one line number, the offending text quoted. `src/server.ts` was then restored and
+`git diff` against HEAD is empty. That message is the whole justification for the design,
+and getting it required a second firing: the first form, `expect(unparseable).toEqual([])`,
+reported `expected [ Array(1) ] to deeply equal []` and hid the stray line, so the assertion
+was changed to compare the joined string. **A guard whose failure message omits the evidence
+is a guard that fires without informing** — that is the readable-failure claim taken
+seriously rather than assumed.
+
+**ONE REVIEW FINDING DECLINED, with its reason.** Codex called the UTF-8 decoding defect
+"a real defect introduced by the hardening". The defect is confirmed and was fixed; the
+ATTRIBUTION is refused. `HEAD:54` before this change reads `stdoutRaw += chunk.toString("utf8")`
+— the identical per-chunk decode. The hardening failed to fix a pre-existing defect, which
+is a fair charge and a different one from introducing it. The independent Claude verifier
+reached the same conclusion from the same line, and the two reviews are recorded as
+disagreeing rather than merged.
+
+**What the review round changed, so the cost of skipping it is legible.** Five findings
+were confirmed and fixed after the first draft passed a green gate: the missing `end`
+flush, the single-point `unparseable` assertion, the unread `spawnError` in teardown, the
+absent force-kill, and the unreproducible figures. Two documentation errors were confirmed
+and corrected: "5 assertions" for 5 tests, and the now-false justification comment in
+`tests/helpers.ts` that cited a collection-time spawn this change had just removed. A green
+gate established none of these.
