@@ -48,6 +48,31 @@ MODEL="${B12_MODEL:-mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2}"
 # called nothing, that is the likely cause -- re-run with
 # B12_PERMISSION_MODE=bypassPermissions. Named here rather than guessed at.
 PERMISSION_MODE="${B12_PERMISSION_MODE:-acceptEdits}"
+# THE LIMITS THE SCRATCH SESSION RUNS UNDER, PASSED RATHER THAN INHERITED.
+# Until 2026-08-14 the prompt below asked for a `repair` call with no limits at
+# all, so what it ran under was whatever the product happened to default to that
+# day -- and that number moved (300 -> 240) for reasons having nothing to do with
+# this script. An artifact that cannot say which limits produced it is the defect
+# this whole registry exists to prevent, and `b12-scorer-mac.sh` already refuses
+# to run without pinning its own pair (:254-256).
+#
+# 240 AND 3 ARE NOT THIS SCRIPT'S PREFERENCE, they are what a PHASE 5 observation
+# actually gets, which is the thing this rehearsal is for: `b12-run.mjs` pins
+# neither `budget_seconds` nor `LOCAL_CODER_TIMEOUT_MS`, so an observation
+# inherits `DEFAULT_BUDGET_SECONDS` (240) and takes `max_rounds` from the task's
+# own `repairMaxRounds` (3, and voidConditions 4 refuses a task that declares
+# none). PHASE 3's 600/180000 pair is deliberately NOT copied here: that harness
+# measures whether `repair` CAN close a large unit, this one rehearses the
+# observation path, and a rehearsal at limits no observation uses rehearses
+# nothing.
+#
+# UNLIKE the scorer, nothing here reads them back out of telemetry -- the probe
+# below digs the repair RESULT out of the transcript, and the limits live in the
+# telemetry row's `detail`, not the result. So this pins what is asked for and
+# does not verify what was done. Named, because the difference is the whole
+# lesson of the scorer's `limits-unverifiable` VOID.
+REPAIR_BUDGET_SECONDS="${B12_REPAIR_BUDGET_SECONDS:-240}"
+REPAIR_MAX_ROUNDS="${B12_REPAIR_MAX_ROUNDS:-3}"
 SCRATCH_SRC="src/b12-scratch.ts"
 OUT_DIR="$HOME/Desktop"
 [ -d "$OUT_DIR" ] || OUT_DIR="$HOME"
@@ -502,7 +527,7 @@ DISABLE_AUTOUPDATER=1 claude --print \
   --session-id "$SESSION_ID" \
   --permission-mode "$PERMISSION_MODE" \
   -- \
-  "Call mcp__local-coder__gate exactly once. It will be red: src/b12-scratch.ts has a type error. Then call mcp__local-coder__repair exactly once to fix that file. Do not edit any file yourself, do not use Bash, and do not call any other tool." \
+  "Call mcp__local-coder__gate exactly once. It will be red: src/b12-scratch.ts has a type error. Then call mcp__local-coder__repair EXACTLY ONCE, with these arguments and no others: files: [\"$SCRATCH_SRC\"], spec: \"the type error in $SCRATCH_SRC must be fixed so the checks pass\", max_rounds: $REPAIR_MAX_ROUNDS, budget_seconds: $REPAIR_BUDGET_SECONDS. Pass max_rounds and budget_seconds explicitly even though they have defaults — this run is only comparable to another if the limits it ran under are known. Do not edit any file yourself, do not use Bash, and do not call any other tool." \
   >"$CLAUDE_LOG" 2>&1
 CLAUDE_EXIT=$?
 
@@ -682,6 +707,19 @@ o.context = {
   modelMatchQuality: e.B12_MATCH_Q || null,
   modelsServedByLmStudio: (e.B12_REACHABLE || "").split(",").filter(Boolean),
   modelUsedByRepair: probe && probe.repairModel ? probe.repairModel : null,
+  // WHAT THE PROMPT ASKED FOR, which is not the same as what the call ran under.
+  // The limits reach the model through prose, so a session that dropped one
+  // would be recorded here as if it had not — the scorer closes that gap by
+  // reading `detail.budget_seconds` back out of telemetry and VOIDing on a
+  // mismatch, and this script does not. `asked` is the honest word.
+  // `null` when the variable did not arrive, DELIBERATELY and not by way of a
+  // NaN that JSON.stringify would quietly flatten to the same thing: absent is a
+  // third answer here, the same as everywhere else in this artifact.
+  repairLimitsAsked: {
+    budget_seconds: Number.isFinite(Number(e.B12_REPAIR_BUDGET)) ? Number(e.B12_REPAIR_BUDGET) : null,
+    max_rounds: Number.isFinite(Number(e.B12_REPAIR_ROUNDS)) ? Number(e.B12_REPAIR_ROUNDS) : null,
+    verifiedInTelemetry: false,
+  },
   serverEnv: {},
   strictMcpConfig: true,
   sessionId: e.B12_SESSION,
@@ -716,6 +754,7 @@ JS
     B12_MATCH_ID="$MATCH_ID" B12_MATCH_Q="$MATCH_Q" \
     B12_LEFTOVER="$LEFTOVER" B12_UNTRACKED="$UNTRACKED" B12_TREE_RC="$TREE_RC" \
     B12_CLAUDE_EXIT="$CLAUDE_EXIT" B12_CLAUDE_LOG="$CLAUDE_LOG_TAIL" B12_PROBE="$PROBE" \
+    B12_REPAIR_BUDGET="$REPAIR_BUDGET_SECONDS" B12_REPAIR_ROUNDS="$REPAIR_MAX_ROUNDS" \
     node "$MERGE_JS" "$ART" 2>&1)
   NCHECKS=""
   case "$MERGE_OUT" in
