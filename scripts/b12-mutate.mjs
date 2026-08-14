@@ -421,7 +421,15 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
     }
     const conformanceInTree = worktreeSha(treeDir, controlFile);
 
+    // COUNTED, never computed. `runsSpent` used to be the formula
+    // `1 + 2 * registry.length`, which is the BUDGET and not the spend: a red
+    // pristine bookend skips its mutant invocation at the `continue` below, and
+    // that has happened — m5 was never mutated in run 1 for exactly this reason.
+    // The formula therefore reported thirteen runs on a matrix that had made
+    // twelve, overstating the evidence in the artifact's own headline number.
+    let conformanceRuns = 0;
     const baseline = runConformance(treeDir, controlFile, { expectFailures: false });
+    conformanceRuns += 1;
     if (!baseline.ok) throw new Error(`baseline: ${baseline.why}`);
 
     const mutants = {};
@@ -430,6 +438,7 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
       const pristine = makePristine(treeDir);
       if (!pristine.ok) throw new Error(`before ${entry.id}: ${pristine.why}`);
       const bookend = runConformance(treeDir, controlFile, { expectFailures: false });
+      conformanceRuns += 1;
       bookends.push({
         id: entry.id,
         green: bookend.ok,
@@ -457,6 +466,7 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
         continue;
       }
       const run = runConformance(treeDir, controlFile, { expectFailures: true });
+      conformanceRuns += 1;
       mutants[entry.id] = run.ok
         ? { applied: true, notApplied: null, report: run.report }
         : { applied: false, notApplied: `the mutant run refused: ${run.why}`, report: null };
@@ -501,7 +511,11 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
         },
       ],
       bookends,
-      runsSpent: 1 + 2 * registry.length,
+      // BOTH, because the gap between them is itself the finding. When they
+      // differ, a pair was skipped and the artifact says so on its face instead
+      // of quietly reporting the budget as though it had been spent.
+      runsSpent: conformanceRuns,
+      runsBudgeted: 1 + 2 * registry.length,
       /**
        * REPORTED, DECIDING NOTHING — the toolchain the matrix actually ran on.
        *
@@ -627,7 +641,7 @@ if (isMain) {
       }
       console.log(
         artifact.allFired
-          ? `\nALL ${artifact.registeredCount} CONTROLS FIRED over ${artifact.runsSpent} runs → ${out}`
+          ? `\nALL ${artifact.registeredCount} CONTROLS FIRED over ${artifact.runsSpent} of ${artifact.runsBudgeted} budgeted runs → ${out}`
           : `\nNOT ALL FIRED (${artifact.firedCount}/${artifact.registeredCount}) → ${out}`
       );
       if (artifact.problems.length > 0) for (const p of artifact.problems) console.log(`  problem: ${p}`);
