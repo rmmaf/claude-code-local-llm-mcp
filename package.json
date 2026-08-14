@@ -27,6 +27,7 @@
     "prepare": "npm run build",
     "pretest": "npm run build",
     "test": "vitest run",
+    "pins:check": "node scripts/b12-pins-check.mjs",
     "smoke-test": "tsx scripts/smoke-test.ts",
     "cost-meter": "tsx src/cost/cli.ts"
   },
