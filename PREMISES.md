@@ -3209,3 +3209,65 @@ absent force-kill, and the unreproducible figures. Two documentation errors were
 and corrected: "5 assertions" for 5 tests, and the now-false justification comment in
 `tests/helpers.ts` that cited a collection-time spawn this change had just removed. A green
 gate established none of these.
+
+## W7a — the conformance flake after R46's deadline, measured and BOUNDED
+
+**2026-08-14.** R45 measured `tests/cost-meter.test.ts` failing ~1 run in 3 SOLO,
+falsifying half the registered `KNOWN_FLAKY` class. R46 raised the F24 describe's
+deadline from vitest's 5 s default to 60 s (`tests/cost-meter.test.ts:3398`), and
+**R48 corrected R46 in the strongest terms: that is a MITIGATION THAT WORKS, NOT A
+ROOT CAUSE.** This entry adds repetition and nothing else.
+
+**The prediction, written before the runs** (and before the runner was even built):
+"If the 5 s budget was the operative constraint, 12 solo runs after the fix show 0
+failures. If ≥ 1 fails, the mitigation is insufficient and the flake persists — I
+will record WHICH tests failed and how often, and will NOT name a cause."
+
+**The measurement.** 12 consecutive solo runs at `bb5593b`, after `npm run build`,
+default reporter:
+
+| | |
+|---|---|
+| runs | **12 / 12 PASS** |
+| tests per run | 163 passed (163), every run |
+| failures | 0 |
+
+**A method correction against my own first attempt.** The first runner used
+`--reporter=json`, and R48 records that this reporter turns exactly these failures
+into the placeholder `Error: STACK_TRACE_ERROR` — it cost three rounds of reading a
+channel that erased the evidence. The run was killed and re-done on the default
+reporter before any number here was taken. (The first attempt also silently wrote
+its JSON nowhere, because a Git Bash `/tmp/...` path is not what the Windows vitest
+process resolves — it reported `NO-JSON` rather than a failure list, which is the
+same class of blindness twice over.)
+
+**WHAT THIS EXCLUDES, arithmetically.** If the old ~1/3 rate still held, twelve
+clean runs had probability **(2/3)¹² ≈ 0.77 %**. So the pre-R46 rate is excluded at
+about 99 %. That is the whole of the positive claim.
+
+**WHAT IT DOES NOT EXCLUDE, and the number is not flattering.** Twelve clean runs
+exclude only a failure rate **≥ 22 %** at 95 % confidence. Below that they are
+nearly uninformative:
+
+| true flake rate | chance it still produces 12 clean runs |
+|---|---|
+| 5 % | **54 %** |
+| 10 % | **28 %** |
+| 15 % | 14 % |
+| 22 % | 5 % |
+
+**So "the flake is gone" is NOT established, and must not be written anywhere.**
+What is established is that the rate is no longer ~1/3.
+
+**The independence objection applies to THESE runs too, and it is mine to own.**
+R48's criticism of R47 was that its clean executions were "chained on one machine
+within minutes, so their independence is unestablished". These twelve were run
+back-to-back in a single shell loop on one machine inside about ten minutes — the
+same shape. They are not twelve independent samples in the sense R48 asked for, and
+counting them as such would repeat the error the correction was written about.
+
+**Also NOT established**: any root cause. R48 named what a root cause needs —
+per-phase timings, child-process and active-handle capture at the deadline, and
+controlled load/no-load repetitions. None of that was done here, and this entry
+does not bring it closer. These twelve ran UNLOADED; R46's own check was 4/4 under
+deliberate load, and load is the variable most likely to matter for a deadline.
