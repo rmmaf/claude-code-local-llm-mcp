@@ -699,25 +699,95 @@ OWN SHAPE:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced
   mechanically by the calibration-key refusal above the moment a manifest
-  carries blobs.
-- **The clause 4–6 audit computer** (see the UNIT 5 block above) — the input
-  seam and the pre-declaration exist; the tool does not.
+  carries blobs. **THE MACHINERY HAS LANDED; THE MEASUREMENT HAS NOT** — the
+  distinction matters, because it is the shape the three stale entries below
+  took. The harness already refuses a stale probe
+  (`scripts/b12-run.mjs:2037`), and the only committed probe
+  (`evidence/2026-08-08-mac-b12-installedchars-50de3b3-144422.probe.json:19`)
+  carries a null policy-blob hash and says on its face that it must be retaken.
+  No committed artifact carries the newer dual `policyBlobSha256s` key. Mac-only.
 - **A REAL run's committed archive** for artifact 11's replay — the fixture
-  replay exercises the full path; only a run can supply the real object.
-- **Identity stamps on the snapshot files** (harness-side): the fifth round's
-  binding covers `observation.json`, `archive.json` and the runlog because
-  those carry identity; the snapshots carry none, so their binding waits on
-  the harness writing one — a run-time change, not a scoring-time mint.
-- **A concurrent same-task execution test** (harness-side): the sixth round's
-  unique worktree path and commit retry are exercised by real sessions only —
-  two live processes on one task/arm belong to the real run's protocol, not
-  to a fixture that would prove the mock instead of the harness.
-- **A registration-row marker** (operator-side): the seventh round's row-alone
-  blind spot exists because the frozen clause pins no registration-row schema.
-  The registration COMMAND is operator tooling, not frozen instrument — a
-  marker field on future registration rows would make the row-alone direction
-  decidable without touching the design. Until then the limit stands as
-  registered.
+  replay exercises the full path; only a run can supply the real object. The
+  tracked inventory holds exactly one `archive.json`,
+  `tests/fixtures/b12-run/evidence/replay-01/obs-t1-treatment/archive.json`, and
+  `tests/b12-archive.test.ts:9` labels it fixture material in as many words.
+- **TWO concurrency tests, and they cannot be one test** (harness-side). The
+  sixth round's unique worktree path and commit retry are exercised by real
+  sessions only — two live processes belong to the real run's protocol, not to a
+  fixture that would prove the mock instead of the harness. **Split 2026-08-14,
+  because the single bullet this replaces asked for something unbuildable:** a
+  same-task loser is refused by the SESSION LOCK at `scripts/b12-run.mjs:2884`
+  before it can ever contend for the commit lock, so one same-task test cannot
+  exercise both paths. What is owed is (i) an end-to-end two-process SAME-TASK
+  `observe` test, reaching the process-unique worktree at `:2806`, and (ii) a
+  concurrent DIFFERENT-TASK test of the run-level commit-lock retry at `:388`.
+  Partial coverage exists and is not the thing: `tests/cost-meter.test.ts:3043`
+  holds a real second process contending for `acquireSessionLock` directly
+  (`:3055-3070`), which tests the lock and not a concurrent `observe`.
+- ~~"**A registration-row marker** (operator-side): the seventh round's
+  row-alone blind spot exists because the frozen clause pins no
+  registration-row schema. The registration COMMAND is operator tooling, not
+  frozen instrument — a marker field on future registration rows would make the
+  row-alone direction decidable without touching the design. Until then the
+  limit stands as registered."~~ **HALF CLOSED, and the halves must not be
+  conflated — corrected 2026-08-14.** This entry was written 2026-08-08
+  (`5432fca`); the marker landed the NEXT DAY in `a319c36` and the list was
+  never updated. **The operator half is done**: every row the act writes carries
+  `b12_registration: true` — `scripts/b12-register.mjs:770` for `register` and
+  `:881` for `open-b` — and the act already DECIDES on it, refusing a second
+  registration for one id at `:229`.
+
+  **What is still owed is the scorer half, and it is owed as a QUESTION rather
+  than as code.** `registrationRows` (`src/cost/b12/archive.ts:551-563`) keys
+  membership on `run_id` alone and never reads the marker. That is deliberate
+  and argued in `collectRegister`'s docstring at `:591-600`: the frozen clause
+  pins no registration-row schema, so REQUIRING the marker would void a run
+  over a field the design never asked for, and firing on the bare set
+  difference would void every run against this repository's own committed
+  history. So a marked row is today decidable BY A READER AND BY THE OPERATOR
+  ACT, and not by THE SCORER — "not by the computer" would be wrong, since the
+  act's own duplicate guard is a computer reading it. Whether the scorer should
+  report the marker as a fact that decides
+  nothing — the pattern the conformance-paths amendment already uses for its
+  `reportedBesideIt` hashes — is a scoring-path change and gets its own
+  adversarial round before any edit. **It is NOT resolved here, and the limit
+  stands as registered for the computer.**
+
+**THREE OF THE SIX ENTRIES WERE STALE, AND A FOURTH ASKED FOR SOMETHING
+UNBUILDABLE — corrected 2026-08-14.** Two were closed outright and are recorded
+below with their original wording; the third, the registration-row marker, was
+half closed and is corrected in place above; the fourth, the concurrency test,
+described one test that the session lock makes impossible and is now split into
+the two it always was. All are kept verbatim because a list of what a blocker
+owes is load-bearing, and an entry that OVERSTATES the debt is as wrong as one
+that understates it — it invites work already done and makes the blocker look
+larger than it is.
+
+**None of the three was found by re-reading this list. All three surfaced only
+when the code was opened in order to act on them**, which is the reproducible
+lesson: an owed-list is a claim about code and decays exactly like any other,
+and this one decayed **by the next calendar day in every case** — the three
+landings fall 24h18m, 24h27m and 24h52m after `5432fca`. An earlier draft of
+this sentence said "within a day", which is off by those minutes and is
+corrected rather than rounded.
+
+- ~~"**The clause 4–6 audit computer** (see the UNIT 5 block above) — the input
+  seam and the pre-declaration exist; the tool does not."~~ **The tool exists**:
+  `src/cost/b12/audit.ts`, 2 000 lines, with `tests/b12-audit.test.ts` carrying
+  51 tests across 12 describes. It is the right tool and not a namesake: its own
+  header calls it "THE CLAUSE 4–6 AUDIT COMPUTER" (`audit.ts:2`), the pure
+  decider implements clause 4 at `:659`, clause 5 at `:697` and clause 6 at
+  `:728`, and the CLI writes `<runId>.b12.audit.json` at `:1984`.
+- ~~"**Identity stamps on the snapshot files** (harness-side) … the snapshots
+  carry none, so their binding waits on the harness writing one — a run-time
+  change, not a scoring-time mint."~~ **The harness writes one and the scorer
+  enforces it.** `scripts/b12-run.mjs:701` takes an `identity`, the observe path
+  passes `{runId, taskId, arm, sessionId, phase}` at `:2944` and `:3024`, and it
+  reaches disk at `:3379-3380`. It is not a stamp nothing parses:
+  `src/cost/b12/archive.ts:970` REFUSES a snapshot carrying no identity —
+  "a swapped snapshot cannot be shown bound" — and `:975-986` checks every field
+  against the directory's task/arm, the archive's run id, `observation.json`'s
+  session id, and the file's own before/after phase.
 
 **Two readings of mine were REFUTED and are recorded as refuted:**
 
