@@ -1211,20 +1211,42 @@ export function runEmittedArtifacts(runId: string): readonly string[] {
 export const REEMISSION_READING =
   "population = what re-emission PRODUCES (emitRun's own write paths). The frozen quantifier says every existing evidence/ artifact for the run; read over the frozen inventory that is unsatisfiable, because the two manifests are sealed create-only and a commit touching manifest A is itself a VOID. Narrowing the quantifier is a pre-data amendment and none exists.";
 
-/** The commit that INTRODUCED a path: the last line of `git log --diff-filter=A`. */
-function introducingCommit(git: Git, rel: string): string | null {
-  const r = git(["log", "--diff-filter=A", "--format=%H", "--", rel]);
-  if (!r.ok) return null;
-  const lines = r.out.trim().split("\n").filter(Boolean);
-  return lines.length === 0 ? null : lines[lines.length - 1]!;
+/**
+ * A git question that WAS ASKED, kept distinct from one that could not be.
+ *
+ * `{ok: true, commit: null}` is an ANSWER — the history carries no such commit.
+ * `{ok: false}` is the absence of one. Both used to be `null`, and both then
+ * read as "the amendment does not govern": a repository the audit could not
+ * interrogate silently ran the PRE-AMENDMENT regime and published a verdict
+ * naming the wrong one. That is the exact shape the comment above the ancestry
+ * test already refused for `isAncestor`, applied one call earlier. Named
+ * 2026-08-14 by adversarial review, which also confirmed no test or production
+ * path depends on a command FAILURE meaning false.
+ */
+type CommitAnswer = { readonly ok: true; readonly commit: string | null } | { readonly ok: false };
+
+/** Force the answer, refusing where there is none. A refusal writes no artifact and is retryable. */
+function orRefuse(answer: CommitAnswer, question: string): string | null {
+  if (!answer.ok) {
+    throw new AuditRefused(`${question} cannot be asked of this repository — git did not answer, and guessing would publish a verdict under a regime nobody established`);
+  }
+  return answer.commit;
 }
 
-/** The most recent commit touching a path; null when none does. */
-function lastCommit(git: Git, rel: string): string | null {
+/** The commit that INTRODUCED a path: the last line of `git log --diff-filter=A`. */
+function introducingCommit(git: Git, rel: string): CommitAnswer {
+  const r = git(["log", "--diff-filter=A", "--format=%H", "--", rel]);
+  if (!r.ok) return { ok: false };
+  const lines = r.out.trim().split("\n").filter(Boolean);
+  return { ok: true, commit: lines.length === 0 ? null : lines[lines.length - 1]! };
+}
+
+/** The most recent commit touching a path; `commit: null` when none does. */
+function lastCommit(git: Git, rel: string): CommitAnswer {
   const r = git(["log", "-1", "--format=%H", "--", rel]);
-  if (!r.ok) return null;
+  if (!r.ok) return { ok: false };
   const line = r.out.trim();
-  return line === "" ? null : line;
+  return { ok: true, commit: line === "" ? null : line };
 }
 
 /**
@@ -1254,7 +1276,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
 
   const manifestRel = `evidence/${runId}.b12.tasks.json`;
   const manifestBRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
-  const registrationCommit = introducingCommit(git, manifestRel);
+  const registrationCommit = orRefuse(introducingCommit(git, manifestRel), `the commit introducing ${manifestRel}`);
 
   // ---- clause 5: the anchor, from COMMITTED artifacts only ----------------
   const anchorProblems: string[] = [];
@@ -1400,7 +1422,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
           // time: the re-read was an unguarded `JSON.parse` over whatever a
           // second `git show` returned, which is a SyntaxError wearing the
           // counterfactual's name if HEAD moved underneath the audit.
-          const commit = introducingCommit(git, dir);
+          const commit = orRefuse(introducingCommit(git, dir), `the commit introducing ${dir}`);
           if (commit === null) {
             anchorProblems.push(`${dir} has no introducing commit — scored evidence that was never committed cannot anchor the freeze`);
           } else {
@@ -1423,7 +1445,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   // whose first scored observation is committed after this artifact". An
   // amendment born later governs nothing, and saying so is the whole point.
   const amendmentPath = options.amendmentPath ?? AMENDMENT_CONFORMANCE_PATHS;
-  const amendmentCommit = introducingCommit(git, amendmentPath);
+  const amendmentCommit = orRefuse(introducingCommit(git, amendmentPath), `the commit introducing ${amendmentPath}`);
   let amendmentGoverns = false;
   if (amendmentCommit !== null && anchor !== null) {
     const anc = isAncestor(git, amendmentCommit, anchor.commit);
@@ -1445,7 +1467,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   // retryable and writes no artifact, while guessing `false` would silently run
   // the pre-amendment regime and publish a verdict that names the wrong one.
   const rmrPath = options.repairRoundsAmendmentPath ?? AMENDMENT_REPAIR_MAX_ROUNDS;
-  const rmrCommit = introducingCommit(git, rmrPath);
+  const rmrCommit = orRefuse(introducingCommit(git, rmrPath), `the commit introducing ${rmrPath}`);
   let rmrGoverns = false;
   if (rmrCommit !== null && anchor !== null) {
     const anc = isAncestor(git, rmrCommit, anchor.commit);
@@ -1495,7 +1517,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       for (const offender of offenders) {
         let excused = true;
         for (const rel of artifacts) {
-          const last = lastCommit(git, rel);
+          const last = orRefuse(lastCommit(git, rel), `the last commit touching ${rel}`);
           if (last === null || isAncestor(git, offender, last) !== true) {
             excused = false;
             break;
@@ -1583,7 +1605,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
         emissionDrifted.push(`${sha} ${rel}`);
         let excused = true;
         for (const relArtifact of artifacts) {
-          const last = lastCommit(git, relArtifact);
+          const last = orRefuse(lastCommit(git, relArtifact), `the last commit touching ${relArtifact}`);
           if (last === null || isAncestor(git, sha, last) !== true) {
             excused = false;
             break;

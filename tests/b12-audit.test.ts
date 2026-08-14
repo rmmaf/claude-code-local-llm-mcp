@@ -647,6 +647,46 @@ describe("fail-closed probes and the dirty-tree guard", () => {
     ).toThrow(/clause 5's history cannot be inspected/);
   });
 
+  it("REFUSES when the introducing-commit log FAILS — an unaskable history is not 'does not govern'", async () => {
+    // `introducingCommit` mapped a FAILED `git log` and a path with NO
+    // introducing commit to the same `null`, and both then read as
+    // `governs = false`. A repository the audit could not interrogate therefore
+    // ran the PRE-AMENDMENT regime in silence and published a verdict naming the
+    // wrong one — while the comment four lines above the ancestry test already
+    // declared this exact case fail-closed. Against the previous code this test
+    // does not throw at all.
+    const { root, first } = await minimalRepo();
+    const base = realGit(root);
+    const failing: Git = (args) => (args[0] === "log" && args.includes("--diff-filter=A") ? { ok: false, out: "" } : base(args));
+    expect(() =>
+      collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: failing })
+    ).toThrow(/cannot be asked of this repository/);
+  });
+
+  it("does NOT refuse when that log succeeds EMPTY — a path with no introducing commit IS an answer", async () => {
+    // The control that keeps the refusal from swallowing the lawful case. This
+    // scratch repo carries neither amendment, so their `--diff-filter=A` logs
+    // succeed with no lines, and that must stay "does not govern" — which is
+    // what the prospective-governance tests below depend on.
+    const { root, first } = await minimalRepo();
+    expect(() =>
+      collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: realGit(root) })
+    ).not.toThrow();
+  });
+
+  // `lastCommit`'s REFUSAL IS UNEXERCISED, and that is measured rather than
+  // assumed. A test was written for it and asserted first that the fixture
+  // reached the call at all; it reported `expected 0 to be greater than 0`. Both
+  // of `lastCommit`'s call sites sit inside loops that need clause-5 offenders
+  // or emission drift, and both are gated on an anchor derived from committed
+  // observations — of which there are none pre-data, so `minimalRepo` cannot
+  // reach them. The guard is in place and shares `orRefuse` with the
+  // introducing-commit path proven above; what is missing is a fixture with
+  // committed observations, and inventing one here would be a bigger change than
+  // the guard it certifies. Recorded instead of dressed up: the first draft of
+  // that test wrapped its assertion in `if (threw !== null)`, which passes
+  // whether or not the path is reached and would have certified nothing.
+
   it("REFUSES when the attestation drift diff fails — a failed diff may not impersonate 'no drift'", async () => {
     const { root, first } = await minimalRepo();
     await fs.writeFile(
