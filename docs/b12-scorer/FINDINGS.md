@@ -2152,8 +2152,12 @@ replay" — and that stayed true through R47, whose numbers were quoted from a
 run that left no committed object either. This is the first firing artifact in
 the repository's history.
 
-**The specificity table reproduces R47's exactly**, at a different commit, on a
-different day, after R46's deadline change:
+**The off-diagonal counts reproduce R47's cell for cell** — 2/0/1/0/0/5 — at a
+different commit, on a different day, after R46's deadline change. The TABLES are
+not identical and an earlier draft of this sentence said they were: R47's columns
+are `pair | fired | specific | off-diagonal`, these are `pair | fired |
+off-diagonal | R47`. The counts match; the presentation does not, and "reproduces
+R47's table exactly" was the wrong claim to make.
 
 | pair | fired | off-diagonal | R47 |
 |---|---|---|---|
@@ -2181,6 +2185,40 @@ coherence, never that the harness executed. And R48's independence objection
 stands: this is one more chained run on one machine, not an independent
 replication, and `specificityClean` is FALSE overall with eight kills that stay
 REPORTED, DECIDING NOTHING.
+
+**WHAT THE ARTIFACT SUPPORTS ON ITS OWN, AND WHAT IT DOES NOT.** The distinction
+matters because the point of committing it is that a stranger can check it. From
+the JSON ALONE: 6/6 fired, six green bookends, every problems array empty,
+13 of 13, the base commit, and the per-pair counts summing to
+`offDiagonalKillCount: 8`. NOT from the JSON alone: that this is the fifth run,
+that it is the first committed artifact, that R47 left none, that m4 alone was
+predicted, and that m5 was skipped in run 1 — every one of those needs the
+repository's history or an earlier finding, and none is a claim the artifact makes.
+
+**"None stale" is the sharpest case, and the artifact cannot show it.** The
+evaluator DOES check — `b12-firing.mjs:473-476` raises a problem for an annotation
+naming a test that did not fail, and `problems` is empty — but the artifact omits
+the declared-collateral registry, so a reader cannot recompute the check. Verified
+against the registry by hand instead: the declarations match the observations
+2/0/1/0/0/5 exactly.
+
+**THREE OMISSIONS, OWED BEFORE THE SCORED RUN AND NOT BEFORE THIS ONE.** The
+artifact is replayable BY REFERENCE — base commit plus `--at` plus `--commit`
+reconstructs the command, and the base commit content-addresses the mutation
+definitions, the harness, the lockfile and the subjects — but it is not
+self-contained. It embeds neither the mutation `find`/`replace` pairs, nor the raw
+vitest reports, nor a digest of the runner and evaluator that produced it. So it
+cannot show that its producer ran the canonical harness at that commit; a third
+party must check out `3aff4db` and re-run. That is tolerable for a win32 DRY RUN.
+It will not be tolerable for the Mac artifact that becomes evidence of record, and
+closing these three is owed before then.
+
+**A provenance oddity, so nobody reads it as a contradiction.** `generatedAt` is
+`2026-08-14T00:00:00Z`, which is EARLIER than its own `baseCommit` was created.
+That is not an inconsistency: `--at` is operator-supplied and REQUIRED precisely
+so the artifact is byte-stable (`b12-mutate.mjs:614-615`), and it is therefore not
+a wall-clock record of when the harness executed. Nothing in this repository
+should ever read it as one.
 
 **One runner defect was fixed before this ran** (`3aff4db`): `runsSpent` was
 `1 + 2 * registry.length` — the BUDGET, not the spend. A red pristine bookend
