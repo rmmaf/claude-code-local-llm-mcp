@@ -448,6 +448,23 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
         "voidConditions 5",
         "voidConditions 6",
       ];
+  // A COMMITTED AUDIT THAT CANNOT SAY WHICH REGIME APPLIES LEAVES A CLAUSE
+  // UNCHECKED, and this list is the only thing that says so. Found 2026-08-14 by
+  // review: the repair-max-rounds clause printed "the regime is UNKNOWN" inside
+  // an unfired check while `uncheckedClauses` — computed from `gitAudit.ran`
+  // alone — stayed empty, so `final` went true and `emit` printed FINAL over a
+  // rule nobody had established. An audit predating the amendment's keys is
+  // exactly that case, and it is not hypothetical: every audit committed before
+  // this key existed is one.
+  //
+  // NOT A VOID. An unproven rule may not kill a run any more than it may bless
+  // one; what it may do is stop the verdict being called FINAL, which is the
+  // same distinction `{ran: false}` already carries for clauses 4–6.
+  if (gitAudit.ran && gitAudit.inputs["clause5.repairRoundsAmendment.governs"] === undefined) {
+    uncheckedClauses.push(
+      "amendment 2026-08-14 (repair's frozen max_rounds) — the committed audit carries no clause5.repairRoundsAmendment.governs, so which regime applies is unknown"
+    );
+  }
   if (gitAudit.ran && gitAudit.verdict === "void") {
     checks.push({
       clause: "voidConditions 4–6 — the git audit",

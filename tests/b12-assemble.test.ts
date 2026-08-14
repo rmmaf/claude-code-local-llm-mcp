@@ -390,6 +390,20 @@ describe("the disposition table — every predicate FIRING, with its control", (
     expect(unknown.fired).toBe(false);
     expect(unknown.detail).toMatch(/regime is UNKNOWN/);
 
+    // THE CASE THE REVIEW FOUND, and the one that actually happens: an audit
+    // that RAN but predates the amendment's keys. The clause said UNKNOWN while
+    // `uncheckedClauses` — built from `gitAudit.ran` alone — stayed empty, so the
+    // verdict went FINAL over a rule nobody had established. It must now appear
+    // as unchecked, WITHOUT firing: an unproven rule may not kill a run any more
+    // than it may bless one.
+    const stale = assemble(mismatched, { ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } }).result;
+    expect(check(stale, "amendment 2026-08-14").fired).toBe(false);
+    expect(check(stale, "amendment 2026-08-14").detail).toMatch(/regime is UNKNOWN/);
+    expect(stale.uncheckedClauses.some((c) => /repairRoundsAmendment\.governs/.test(c))).toBe(true);
+    // Control: an audit that DOES carry the key leaves the list clean, so the
+    // assertion above cannot be passing because the list is never empty.
+    expect(assemble(mismatched, govern(true)).result.uncheckedClauses).toHaveLength(0);
+
     // A GOVERNED run with nothing to report reaches the clean sentence, so the
     // clause is on the face in every regime rather than appearing only when it
     // fires — the courtesy every other clause here gets.
@@ -1075,7 +1089,14 @@ describe("the clause 4–6 audit — an input, never a silent pass", () => {
       reasons: ["src/cost/report.ts changed after the first scored observation"],
       inputs: { head: "abc" },
     });
-    expect(out.result.uncheckedClauses).toHaveLength(0);
+    // Clauses 4–6 are CHECKED — that is what a committed audit buys, and it is
+    // what this test is about. The list is no longer empty, and that is not a
+    // regression: this fixture's audit predates the 2026-08-14 amendment's keys,
+    // so which regime governs repair's frozen max_rounds is genuinely unknown
+    // here. Asserted by CONTENT rather than by length, so the next clause to go
+    // unchecked cannot slip in under a number.
+    expect(out.result.uncheckedClauses.filter((c) => /voidConditions [456]/.test(c))).toHaveLength(0);
+    expect(out.result.uncheckedClauses).toEqual([expect.stringMatching(/repairRoundsAmendment\.governs/)]);
     const audit = check(out.result, "voidConditions 4–6");
     expect(audit.fired).toBe(true);
     expect(audit.detail).toMatch(/report\.ts changed/);

@@ -1446,6 +1446,17 @@ export function runlogBarrierViolation(diskText, headText) {
  * COMPLETE OVER ROWS THAT EXIST AND OVER NOTHING ELSE. Named 2026-08-14 by an
  * adversarial review, after the commit that added it claimed completeness.
  *
+ * IT READS A SUPERSET OF WHAT THE SCORER READS, AND ONLY THE SCORER DECIDES.
+ * `repairRoundsMismatches` in `src/cost/b12/assemble.ts` runs the same
+ * comparison over `scopeTelemetry`'s subset — the rows this observation OWNS —
+ * while this one runs it over every row in the log. Driver ⊇ scorer, always, so
+ * the disagreement is one-directional: this can warn where the run-level clause
+ * stays silent, and it can never be silent where that clause fires. Named
+ * 2026-08-14 by review, and left rather than closed, because the two are not
+ * doing the same job — this one warns an operator mid-run and decides nothing,
+ * and narrowing it to the scored set would hide from the operator exactly the
+ * stray rows they are the only one positioned to explain.
+ *
  * SCOPE, ALSO NARROWER THAN IT LOOKS. `archive.telemetry` is every parseable row
  * in the observation's worktree log up to the acceptance boundary
  * (`capture.ts:561`) — it is NOT scoped by session or by invocation ownership
@@ -3201,11 +3212,13 @@ async function observe(args, pilotMode = false) {
   }
   if (repairRoundsFindings.length > 0) {
     process.stderr.write(
-      "  ^ recorded in observation.repairRoundsFindings and DECIDING NOTHING — no clause of the frozen" +
+      "  ^ recorded in observation.repairRoundsFindings and DECIDING NOTHING here. The rule that acts" +
         String.fromCharCode(10) +
-        "    pre-registration covers it, and excluding by an unnamed route is the degree of freedom this" +
+        "    on it is the 2026-08-14 pre-data amendment, raised RUN-LEVEL at scoring time, and it reads" +
         String.fromCharCode(10) +
-        "    apparatus removes. A pre-data amendment is owed before PHASE 4." +
+        "    only the rows this observation OWNS. This warning reads EVERY row in the log, so it is a" +
+        String.fromCharCode(10) +
+        "    superset: a stray row can appear here and be excluded there as foreign. Explain the row." +
         String.fromCharCode(10)
     );
   }
