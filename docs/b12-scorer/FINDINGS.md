@@ -24,16 +24,16 @@ all of them — `coverage.ts` joined the three when the run-level ledger landed 
 which is exactly why they need writing down: an oracle that cannot fail on a
 defect is not evidence the defect is absent.
 
-## Twenty-six findings, and only two of them are work
+## Twenty-seven findings, and only two of them are work
 
-**F1–F26, one number per finding except F2, which split. F18 does not exist and
+**F1–F27, one number per finding except F2, which split. F18 does not exist and
 never did** — the numbering skipped it, and that is recorded here rather than
 back-filled, because renumbering would break every citation in `git log`.
 
 The count says less than the split does. **Nineteen are closed — F23 repaired
 2026-08-09, in its own pass as its entry demanded, and F26 found and closed
-the same day the audit computer pinned the control registry. Of the seven
-open, one is code owed, one is a decision, and five will never close** — each of
+the same day the audit computer pinned the control registry. Of the eight
+open, one is code owed, two are decisions, and five will never close** — each of
 those five is a place the frozen design underdetermines what an implementer needs,
 every closing route was adjudicated and REFUSED, and what shipped is the literal
 reading plus enough published detail that a reader of a committed artifact can see
@@ -805,9 +805,12 @@ arithmetic:
 
 ## OPEN — a decision, not an implementation
 
-One. Its candidate route now has shipped behaviour (below), but the finding
+Two. F25's candidate route now has shipped behaviour (below), but the finding
 itself — an encoding gap in the frozen text — remains: a run that reaches the
-gap at scoring time still has no legal outcome.
+gap at scoring time still has no legal outcome. F27 is not a gap at all, and is
+complete as written: it is the arithmetic of a decision no implementation can
+take, worked out once so the operator is not deriving it on the day the money is
+committed. What stays open there is the decision, never the finding.
 
 ### F25 — the frozen text demands a declaration and supplies no disposition for its absence
 
@@ -876,6 +879,72 @@ arithmetic. A PRESENT-but-corrupt stratum string keeps its terms and flows
 through `partitionByStrata.unknownStratum`, the shipped defence in depth. The
 gap itself remains exactly as stated above: OPEN, an encoding gap in the
 frozen text.
+
+### F27 — `p` is not estimable before the run, and the pilot is a STOP screen, not an estimator
+
+`STATE.md` puts `p` at the top of "Still blocking a run" and `PREMISES.md` says
+it in capitals: **"THE EXPOSURE IS THEREFORE p, WHICH HAS NEVER BEEN MEASURED,
+AND NOT THE LENGTH, WHICH IS FROZEN."** `evidence/` confirms it — no pilot
+record, no runlog, no observation directory exists, because no session has ever
+run against a corpus base. This finding does not measure `p`. It works out what
+each value of it costs, and what the instrument designed to read it can and
+cannot say, so that neither has to be re-derived on the day the decision is made.
+
+**DERIVED, NOT MEASURED**, which is why it lives here and not in
+`MEASUREMENTS.jsonl`. `p` is the per-task admission probability; completion is
+`P(X >= 20)` for `X ~ Binomial(30, p)`, the pilot is `Binomial(5, p)`. Reproduced
+from the binomial pmf directly. **Calibration: it returns 29.1 / 58.6 / 93.6 at
+p = 0.60 / 0.667 / 0.77, which are the three figures `STATE.md` already records**
+— so the table agrees with the number that has been driving the decision.
+
+| p | run completes (>=20 of 30) | pilot <=1 of 5 | pilot 5 of 5 |
+|---|---|---|---|
+| 0.50 | 4.9% | 18.8% | 3.1% |
+| 0.55 | 13.5% | 13.1% | 5.0% |
+| 0.60 | 29.1% | 8.7% | 7.8% |
+| 0.667 | 58.6% | 4.5% | 13.2% |
+| 0.70 | 73.0% | 3.1% | 16.8% |
+| 0.75 | 89.4% | 1.6% | 23.7% |
+| 0.77 | 93.6% | 1.1% | 27.1% |
+| 0.80 | 97.4% | 0.7% | 32.8% |
+| 0.85 | 99.7% | 0.2% | 44.4% |
+
+**THE PILOT CANNOT ESTIMATE `p`, AND THE ARITHMETIC IS NOT CLOSE.** At n = 5 the
+95% half-width is **±0.43**; the range that decides everything, 0.60 to 0.77, is
+0.17 wide. Half-widths: ±0.43 at n=5, ±0.30 at n=10, ±0.22 at n=20, ±0.15 at
+n=40, ±0.12 at n=60. **Separating the 29% run from the 94% run would take on the
+order of sixty observations — more than PHASE 5 itself.** Any plan that treats
+the five-task pilot as a measurement of `p` is reading noise.
+
+**IT IS A ONE-SIDED SCREEN, AND THAT IS WORTH HAVING.** `<=1 of 5` occurs 1.1% of
+the time at p = 0.77 and 18.8% at p = 0.50, so a bad pilot is strong evidence of
+a catastrophic `p` and PHASE 5 should not be entered. `5 of 5` occurs 7.8% at
+p = 0.60 against 27.1% at p = 0.77 — a clean pilot barely moves anything. **The
+pilot can say STOP. It cannot say GO**, and the design never claimed otherwise:
+its committed output is the disposition distribution and the covariate vector,
+with no bracket, precisely so it cannot be read as a result.
+
+**WHAT MOVES `p`, GIVEN IT CANNOT BE MEASURED.** The live void classes are
+`task_failed` and `pacing` (`PREMISES.md`), and they are opposite in kind.
+`task_failed` is "did the session fix the defect" — irreducibly paid, and the
+only lever on it is task difficulty, which is selection on expected outcome and
+therefore not a lever at all. **`pacing` is operator discipline and context size,
+not luck**: measuring its historical rate would measure past discipline rather
+than future risk, so the move is to remove it by protocol, not to estimate it. It
+is the one term of `p` that can be driven toward zero for free.
+
+**AND ONE KNOWN BIAS, POINTING THE OTHER WAY.** Seven of the thirty types-only
+sites admit a false `FIXED` — a tsc-only predicate cannot tell a restored
+annotation from a behaviour-changing silencer. That INFLATES the observed `p`:
+the run is likelier to reach twenty than the real fix rate justifies. Good for
+completion, bad for validity, and the two effects do not cancel because they are
+not the same quantity.
+
+**WHAT THIS DOES NOT DECIDE.** Whether to enter PHASE 5 at an unknown `p`. The
+design already budgets for the answer being bad — a void consumes an attempt and
+there are two — and the amendment the numbers would justify, N = 35, is frozen
+and unavailable. `PREMISES.md` states the residual in the words this finding
+inherits: "What is left to manage is `p` itself." Manage, not measure.
 
 ---
 
