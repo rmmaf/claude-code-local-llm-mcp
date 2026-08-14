@@ -56,7 +56,9 @@ export const repairInputSchema = {
     .int()
     .positive()
     .optional()
-    .describe("Hard wall-clock ceiling for the whole call, first gate run included (default 300)."),
+    .describe(
+      "Wall-clock ceiling on the loop — first gate run included, rollback and telemetry after it are not (default 240)."
+    ),
   context_files: z.array(z.string()).optional().describe("Read-only reference files."),
   model: z.string().optional().describe("Override the local model."),
 };
@@ -656,10 +658,25 @@ async function repairLoop(
   const budgetMs = (args.budget_seconds ?? DEFAULT_BUDGET_SECONDS) * 1000;
   const category = args.checks ?? "all";
 
-  // A hard deadline for the whole call, not a between-rounds checkpoint. The
-  // first gate run counts against it, and every check and every model request is
-  // capped by what is left — otherwise `budget_seconds: 1` could still sit
-  // through a 300 s check timeout and then a full 300 s model request.
+  // A deadline for the LOOP, not a between-rounds checkpoint: the first gate run
+  // counts against it, and every check and every model request is capped by what
+  // is left — otherwise `budget_seconds: 1` could still sit through a 300 s check
+  // timeout and then a full 300 s model request.
+  //
+  // It is NOT a bound on the call. Named on 2026-08-14, when this comment said
+  // "the whole call" and a review showed it does not: `started` is taken by the
+  // caller (`:391`) but the deadline is only built here, so the preflight between
+  // them — snapshots and the tree fingerprint — is unchecked (it does consume the
+  // budget, which is why a slow one starves the loop rather than extending it);
+  // and after the loop, `restore`, the second `treeFingerprint` and the telemetry
+  // write all run uncapped. Both tails scale with `files.length`, which the schema
+  // does not cap. At B12's fileScope of 1 they are a git spawn apiece — about
+  // 200 ms measured — so a 240 s budget lands ~240 s and the 300 s pacing bar is
+  // not in reach; a caller passing hundreds of files is the case this does not
+  // cover, and it is the caller's own argument that puts it there.
+  //
+  // Cheap to close if it ever matters: pass `remainingMs()` down the rollback and
+  // fingerprint paths. Not done, because no measured caller is near the bar.
   const deadline = started + budgetMs;
   const remainingMs = (): number => deadline - now();
 
@@ -876,10 +893,16 @@ async function repairLoop(
         // A request THIS CALL'S DEADLINE cut off is a budget stop, not a model
         // failure. The `budget` branch above only runs between rounds, so a
         // timeout inside generation used to be filed as `model_failed` — and
-        // `config.timeoutMs` defaults to exactly `DEFAULT_BUDGET_SECONDS`, so
-        // round 1 alone can consume the whole budget and then blame the model.
-        // Measured: 3 of 4 `model_failed` rows sat at 300-326 s against a 300 s
-        // budget, `run 2026-08-03-mac-06`.
+        // `config.timeoutMs` DEFAULTED TO EXACTLY `DEFAULT_BUDGET_SECONDS` until
+        // 2026-08-14, so round 1 alone could consume the whole budget and then
+        // blame the model. Measured: 3 of 4 `model_failed` rows sat at 300-326 s
+        // against a 300 s budget, `run 2026-08-03-mac-06`.
+        //
+        // The budget now defaults to 240 and the timeout still to 300, so the
+        // mislabel no longer arrives by default — it arrives whenever a caller
+        // passes `budget_seconds: 300`, or any budget at or above the timeout.
+        // The branch stays for that case, and because the measurement above is
+        // what put it here.
         //
         // Everything else here is the model's own failure, including a request
         // that hit `config.timeoutMs` with budget to spare: the ceiling it broke

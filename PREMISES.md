@@ -1524,7 +1524,8 @@ defect, and it pinned four of them in place.
     `budget` with round 3 timing out**, so `aggregate` got TWO productive rounds.
     Cause, measured rather than guessed: its rounds cost **106–132 s** because it
     writes ~3,400 completion tokens, **twice `terms`' ~1,700** — and `repair`'s
-    default `budget_seconds` is 300. **NOT the window.** `aggregate`'s prompt
+    default `budget_seconds` was 300 when this ran (240 since 2026-08-14; see the
+    note below). **NOT the window.** `aggregate`'s prompt
     (20–23 k) is within 4% of `terms`' (19–20 k), and its rounds cost 128–132 s
     at 32,768 as well. The file's size is the cause, at any window.
   - **WHETHER THE THIRD ROUND WOULD HAVE MATTERED IS A HYPOTHESIS, LABELLED.**
@@ -1534,6 +1535,18 @@ defect, and it pinned four of them in place.
     **`budget_seconds` is an unregistered free parameter** that silently truncates
     the registered `max_rounds` on any unit whose output is large enough. It must
     be fixed and recorded before the next exposure, not defaulted.
+  - **2026-08-14 — THE DEFAULT MOVED, AND IT MOVED THE WRONG WAY FOR THIS UNIT.**
+    `DEFAULT_BUDGET_SECONDS` went 300 → 240 for a B12 pacing reason that has
+    nothing to do with PHASE 3: at 300 the default was exactly `admissionRule`
+    11's five-minute bar. On the B12 corpus that is safe — 65 of 65 tasks have a
+    `fileScope` of one file and rounds cost a measured 89.4 s, so 240 still buys
+    2.7 rounds. On THIS unit it is not: `aggregate`'s rounds cost 106–132 s, so
+    240 buys **1.8–2.3**, where 300 bought 2.3–2.8 and already truncated the
+    registered `max_rounds: 3`. The truncation this entry demanded be fixed got
+    tighter instead. NOT A REGRESSION IN B12 — the two populations are different
+    and only the corpus one is measured — but the next PHASE 3 exposure must pass
+    `budget_seconds` explicitly rather than inherit it, which is what this entry
+    asked for in the first place and is still not done.
   - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
     hedge that this would be its first real observation and not necessarily a bad
     one. Both halves resolved: real, and bad.

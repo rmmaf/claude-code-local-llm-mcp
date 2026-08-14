@@ -1070,8 +1070,11 @@ describe("repair loop", () => {
     // Both ceilings bind at the same instant and the budget is spent either way
     // — one iteration later the between-rounds branch would call this `budget`,
     // so calling it anything else here contradicts the loop's own accounting.
-    // Not a corner case: config.timeoutMs and DEFAULT_BUDGET_SECONDS share a
-    // default, so round 1 lands on the tie whenever the first gate is free.
+    // It WAS not a corner case: config.timeoutMs and DEFAULT_BUDGET_SECONDS
+    // shared a default of 300 s, so round 1 landed on the tie whenever the first
+    // gate was free. Since 2026-08-14 the budget defaults to 240 and the tie no
+    // longer arrives by default — which is why this test sets the ceilings
+    // itself instead of leaning on the defaults agreeing.
     let elapsed = 0;
     const fetchImpl = ((_url: string, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
