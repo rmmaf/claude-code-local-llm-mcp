@@ -4327,6 +4327,58 @@ describe("the B12 harness", () => {
       expect(instructionDriftReasons(base, { ...base, settingsLocal: "appeared" })).toHaveLength(1);
     });
 
+    it("invalidates a repair call that did not run at the manifest's frozen max_rounds", async () => {
+      // The gap this closes was a DEAD LETTER, not a bug: `repairMaxRounds` was
+      // refused when absent, carried into the manifest and archived, and then
+      // nothing transmitted or checked it. The session is handed `task.prompt`
+      // alone and no corpus prompt mentions `repair`, so an observation matched
+      // the declared 3 only by coincidence of the tool's own default — and a
+      // session calling `max_rounds: 10` archived clean.
+      const { repairRoundsReasons } = await load();
+      const row = (maxRounds: unknown) => ({
+        tool: "repair",
+        invocation_id: "i",
+        detail: maxRounds === undefined ? {} : { max_rounds: maxRounds, budget_seconds: 240 },
+      });
+
+      // The registered condition: silence.
+      expect(repairRoundsReasons(3, [row(3)], "t")).toHaveLength(0);
+      // Two calls, both compliant, still silence — the rule is per row.
+      expect(repairRoundsReasons(3, [row(3), row(3)], "t")).toHaveLength(0);
+
+      // NOT the registered condition, in either direction. A SMALLER value is a
+      // violation too: it is a different condition, not a safer one.
+      const over = repairRoundsReasons(3, [row(10)], "selmatchfuzzy");
+      expect(over).toHaveLength(1);
+      expect(over[0]).toMatch(/repair ran at max_rounds 10 while the manifest freezes repairMaxRounds 3 for selmatchfuzzy/);
+      expect(repairRoundsReasons(3, [row(1)], "t")).toHaveLength(1);
+      // Each offending row is named on its own; one bad call does not hide
+      // behind a good one.
+      expect(repairRoundsReasons(3, [row(3), row(10)], "t")).toHaveLength(1);
+
+      // FAIL-CLOSED. "Cannot tell" may not wear the same answer as "matched" —
+      // this is the `limits-unverifiable` mistake the scorer already voids on.
+      expect(repairRoundsReasons(3, [row(undefined)], "t")[0]).toMatch(/carries no numeric detail\.max_rounds/);
+      expect(repairRoundsReasons(3, [row(null)], "t")).toHaveLength(1);
+      expect(repairRoundsReasons(3, [row("3")], "t")).toHaveLength(1);
+      expect(repairRoundsReasons(3, [row(Number.NaN)], "t")).toHaveLength(1);
+
+      // ZERO REPAIR ROWS IS NOT A VIOLATION: the control arm has no such tool,
+      // and a treatment session is free not to call it. Rows from other tools
+      // are not this rule's business either.
+      expect(repairRoundsReasons(3, [], "t")).toHaveLength(0);
+      expect(repairRoundsReasons(3, null, "t")).toHaveLength(0);
+      expect(repairRoundsReasons(3, [{ tool: "gate", detail: { max_rounds: 99 } }], "t")).toHaveLength(0);
+      // And with no repair row, a manifest carrying no declared value is not
+      // this check's problem to report — the manifest gate already refused it.
+      expect(repairRoundsReasons(null, [], "t")).toHaveLength(0);
+
+      // A declared value that is not a number leaves the comparison with no
+      // right-hand side. Silence would be the worst answer available.
+      expect(repairRoundsReasons(null, [row(3)], "t")[0]).toMatch(/has nothing to compare against/);
+      expect(repairRoundsReasons(undefined, [row(3)], "t")).toHaveLength(1);
+    });
+
     it("accepts only committed evidence as a probe source", async () => {
       // The review's high finding: with the path unconstrained and the sha
       // compared only if pinned, a fabricated working-tree JSON with

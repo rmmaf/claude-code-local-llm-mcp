@@ -320,6 +320,18 @@ export function instructionDriftReasons(
 ): string[];
 
 /**
+ * Invalidity reasons for a repair call that did not run at the manifest's frozen
+ * `repairMaxRounds` (artifact 1). Compares `detail.max_rounds` on every archived
+ * `repair` telemetry row against the declared value; fail-closed when the field
+ * is absent, empty when there are no repair rows at all. Pure.
+ */
+export function repairRoundsReasons(
+  declared: number | null | undefined,
+  telemetry: ReadonlyArray<Record<string, unknown>> | null | undefined,
+  taskId: string
+): string[];
+
+/**
  * sha256 over sorted (relative path, content sha256) pairs, separators
  * normalised to "/". A missing or empty directory hashes as the empty list
  * with `files: 0`.

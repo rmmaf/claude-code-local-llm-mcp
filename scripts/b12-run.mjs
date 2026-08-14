@@ -1405,6 +1405,71 @@ export function runlogBarrierViolation(diskText, headText) {
  * `installedChars` calibration key with it. Null-to-hash transitions compare
  * like any other difference.
  */
+/**
+ * ARTIFACT 1'S "repair's frozen max_rounds", ENFORCED RATHER THAN ONLY DECLARED.
+ *
+ * ADDED 2026-08-14, PRE-DATA, after an adversarial review found the clause was a
+ * dead letter. `repairMaxRounds` is refused when absent (`b12-manifest.mjs:457`),
+ * carried into the manifest (`:480`) and archived (`archive.ts:256`) — and then
+ * NOTHING transmitted or checked it. The session is handed `task.prompt` alone,
+ * no corpus prompt mentions `repair` at all, and an observation matched the
+ * declared 3 only by COINCIDENCE of the tool's own default. A session calling
+ * `max_rounds: 10` archived clean.
+ *
+ * VERIFIED, NOT DELIVERED, and that is the whole design. Telling the session the
+ * number means changing what an arm is handed — the prompt is frozen by
+ * `promptSha256` and the per-arm policy comes from the committed out-of-repo
+ * blob — so delivering it would move the experiment's own input in order to
+ * satisfy a check. This reads what the call did, after the fact, and changes
+ * nothing either arm sees.
+ *
+ * INVALID RATHER THAN REFUSED. The artifact is still written and the reason
+ * travels in `invalidReasons`, because admission already requires
+ * `record.valid === true` (`assemble.ts`). A refusal writes nothing, and an
+ * attempt that leaves no trace is retryable without limit — a forking path
+ * bought to close a check.
+ *
+ * FAIL-CLOSED ON ABSENCE. A repair row carrying no numeric `detail.max_rounds`
+ * predates the field or came from somewhere else, and "cannot tell" may not wear
+ * the same answer as "matched" — the mistake `limits-unverifiable` exists for in
+ * `b12-scorer-mac.sh`. ZERO REPAIR ROWS IS NOT A VIOLATION: the control arm has
+ * no such tool, and a treatment session is free not to call it.
+ *
+ * `budget_seconds` IS DELIBERATELY NOT CHECKED. It is an unregistered free
+ * parameter (F7) — nothing freezes it, so there is no declared value to compare
+ * against, and inventing one here would register a condition by side effect. It
+ * is archived verbatim on the row either way.
+ */
+export function repairRoundsReasons(declared, telemetry, taskId) {
+  const rows = (Array.isArray(telemetry) ? telemetry : []).filter((r) => r !== null && typeof r === "object" && r.tool === "repair");
+  if (rows.length === 0) return [];
+  if (typeof declared !== "number" || !Number.isFinite(declared)) {
+    // `tneed` at the manifest gate should make this unreachable; if it is
+    // reached, the comparison has no right-hand side and silence is the worst
+    // answer available.
+    return [
+      `${rows.length} repair telemetry row(s) exist but the manifest declares repairMaxRounds ${String(declared)} ` +
+        `for ${taskId}, which is not a number — artifact 1's frozen max_rounds has nothing to compare against`,
+    ];
+  }
+  const reasons = [];
+  rows.forEach((row, i) => {
+    const got = row.detail?.max_rounds;
+    if (typeof got !== "number" || !Number.isFinite(got)) {
+      reasons.push(
+        `repair telemetry row ${i + 1} of ${rows.length} carries no numeric detail.max_rounds, so the manifest's frozen ` +
+          `repairMaxRounds (${declared}) cannot be checked against what ran (artifact 1: "repair's frozen max_rounds")`
+      );
+    } else if (got !== declared) {
+      reasons.push(
+        `repair ran at max_rounds ${got} while the manifest freezes repairMaxRounds ${declared} for ${taskId} ` +
+          `(artifact 1: "repair's frozen max_rounds") — this attempt is not an observation of the registered condition`
+      );
+    }
+  });
+  return reasons;
+}
+
 export function instructionDriftReasons(pre, post) {
   const cites = {
     claudeMd: "voidConditions 12: the in-repo CLAUDE.md blob hash moved between arm start and end",
@@ -3083,6 +3148,11 @@ async function observe(args, pilotMode = false) {
         `the search covered ${archive.slugsSearched.length} slug(s) and ${archive.transcriptsSearched} file(s)`
     );
   }
+
+  // Artifact 1's frozen `max_rounds`, compared against what the call actually
+  // ran under. Same shape as the drift check above, and the doctrine is on the
+  // function.
+  invalid.push(...repairRoundsReasons(task.repairMaxRounds, archive.telemetry, task.id));
 
   const observation = {
     valid: invalid.length === 0,
