@@ -56,21 +56,37 @@ PERMISSION_MODE="${B12_PERMISSION_MODE:-acceptEdits}"
 # this whole registry exists to prevent, and `b12-scorer-mac.sh` already refuses
 # to run without pinning its own pair (:254-256).
 #
-# 240 AND 3 ARE NOT THIS SCRIPT'S PREFERENCE, they are what a PHASE 5 observation
-# actually gets, which is the thing this rehearsal is for: `b12-run.mjs` pins
-# neither `budget_seconds` nor `LOCAL_CODER_TIMEOUT_MS`, so an observation
-# inherits `DEFAULT_BUDGET_SECONDS` (240) and takes `max_rounds` from the task's
-# own `repairMaxRounds` (3, and voidConditions 4 refuses a task that declares
-# none). PHASE 3's 600/180000 pair is deliberately NOT copied here: that harness
-# measures whether `repair` CAN close a large unit, this one rehearses the
-# observation path, and a rehearsal at limits no observation uses rehearses
-# nothing.
+# 240 and 3 are the VALUES a PHASE 5 observation ends up under: `b12-run.mjs`
+# pins neither `budget_seconds` nor `LOCAL_CODER_TIMEOUT_MS`, so an observation
+# inherits `DEFAULT_BUDGET_SECONDS` (240) and reaches 3 rounds by the tool's own
+# default. PHASE 3's 600/180000 pair is deliberately NOT copied: that harness
+# asks whether `repair` CAN close a large unit, and a rehearsal at limits no
+# observation uses rehearses nothing.
 #
-# UNLIKE the scorer, nothing here reads them back out of telemetry -- the probe
-# below digs the repair RESULT out of the transcript, and the limits live in the
-# telemetry row's `detail`, not the result. So this pins what is asked for and
-# does not verify what was done. Named, because the difference is the whole
-# lesson of the scorer's `limits-unverifiable` VOID.
+# CORRECTED 2026-08-14, SAME DAY, after an adversarial review: this block first
+# said an observation "takes max_rounds from the task's own repairMaxRounds".
+# IT DOES NOT. `repairMaxRounds` is validated (b12-manifest.mjs:457), carried
+# into the manifest (:480) and archived (archive.ts:256), and then nothing
+# transmits it: `b12-run.mjs:2880` hands the session `task.prompt` alone, and no
+# corpus prompt mentions `repair` at all. The observation matches 3 by COINCIDENCE
+# of the tool's default, and would archive clean at `max_rounds: 10`. That is a
+# gap in PHASE 5, not in this script, and `scripts/b12-run.mjs` is inside clause
+# 5's PINNED_PATHS, so closing it is the owner's decision and not this commit's.
+#
+# WHICH IS ALSO WHY THE PROMPT PINNING THEM IS A DIVERGENCE, NAMED RATHER THAN
+# HIDDEN: PHASE 5 delivers no limits, this rehearsal delivers two. The pin buys a
+# deterministic scratch run and an artifact that can be compared with the next
+# one; it does NOT exercise the inheritance path an observation actually takes.
+# And the scratch defect is a one-line type error that has always closed in one
+# round, so neither the third round nor the 240-second deadline is reached: these
+# limits are RECORDED here, never BOUND. A green preflight is not evidence that
+# budget enforcement works.
+#
+# What the probe below DOES verify, since 2026-08-14: it joins the telemetry row
+# by `invocation_id` and reads `detail.budget_seconds` / `detail.max_rounds` back,
+# so the artifact carries asked AND observed and says whether they agreed. Before
+# that it could only ever record what was asked -- the limits live on the
+# telemetry row and never on the returned result.
 REPAIR_BUDGET_SECONDS="${B12_REPAIR_BUDGET_SECONDS:-240}"
 REPAIR_MAX_ROUNDS="${B12_REPAIR_MAX_ROUNDS:-3}"
 SCRATCH_SRC="src/b12-scratch.ts"
@@ -550,12 +566,22 @@ const { readdirSync, readFileSync, existsSync } = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const sessionId = process.argv[2];
+const repo = process.argv[3] || "";
 const root = path.join(os.homedir(), ".claude", "projects");
 // `transcriptFound` is decided HERE and nowhere else. Both consumers -- the
 // shell's terminal warning and the artifact's provenance block -- used to derive
 // it themselves from the shape of this JSON, which is two implementations of a
 // one-line rule that could disagree the moment this file changes.
-const out = { transcript: null, transcriptFound: false, tools: [], repairModel: null };
+const out = {
+  transcript: null,
+  transcriptFound: false,
+  tools: [],
+  repairModel: null,
+  // The id `repair` returns AND writes on its telemetry row, which is what makes
+  // the join below exact rather than a guess over a time window.
+  repairInvocationId: null,
+  repairLimits: null,
+};
 const walk = (d, depth) => {
   if (depth > 3 || out.transcript !== null) return;
   let entries;
@@ -582,7 +608,10 @@ const dig = (v, depth) => {
   }
   if (Array.isArray(v)) { for (const x of v) dig(x, depth + 1); return; }
   if (typeof v === "object") {
-    if ("rounds_used" in v && typeof v.model === "string") out.repairModel = v.model;
+    if ("rounds_used" in v && typeof v.model === "string") {
+      out.repairModel = v.model;
+      if (typeof v.invocation_id === "string") out.repairInvocationId = v.invocation_id;
+    }
     for (const k of Object.keys(v)) dig(v[k], depth + 1);
   }
 };
@@ -599,9 +628,35 @@ if (out.transcript) {
   }
 }
 out.transcriptFound = out.transcript !== null;
+// WHAT THE CALL ACTUALLY RAN UNDER. The limits reach the model through prose and
+// live on the telemetry row's `detail`, never on the returned result, so the
+// result alone cannot answer this and an artifact built from it could only ever
+// say what was ASKED. Joined by `invocation_id`, which `repair` both returns and
+// writes: exact, so a second repair call in the same window cannot be mistaken
+// for this one, and no time-window heuristic is needed.
+//
+// Absent telemetry, an absent id and an unreadable file all leave `repairLimits`
+// null. Null is "not known", which is a different answer from a mismatch, and
+// the artifact keeps them apart.
+if (repo && out.repairInvocationId) {
+  try {
+    const tel = readFileSync(path.join(repo, ".local-coder", "telemetry.jsonl"), "utf8");
+    for (const line of tel.split("\n")) {
+      if (!line.trim()) continue;
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      if (!row || row.tool !== "repair" || row.invocation_id !== out.repairInvocationId) continue;
+      const d = row.detail || {};
+      out.repairLimits = {
+        budget_seconds: typeof d.budget_seconds === "number" ? d.budget_seconds : null,
+        max_rounds: typeof d.max_rounds === "number" ? d.max_rounds : null,
+      };
+    }
+  } catch { /* leaves null */ }
+}
 process.stdout.write(JSON.stringify(out));
 JS
-PROBE=$(node "$PROBE_JS" "$SESSION_ID" 2>/dev/null || true)
+PROBE=$(node "$PROBE_JS" "$SESSION_ID" "$REPO" 2>/dev/null || true)
 case "$PROBE" in
   '{'*) : ;;
   *) PROBE=""; warn "could not read the session back; the artifact will record that as unknown rather than as absent" ;;
@@ -624,6 +679,34 @@ if [ -n "$PROBE" ]; then
     *)
       warn "the probe answered but did not say whether a transcript exists; the"
       warn "artifact records that as unknown rather than as either answer."
+      ;;
+  esac
+  # THE LIMITS, READ BACK RATHER THAN ASSUMED. Every branch is matched
+  # positively and the fall-through is named unknown, the same shape as the
+  # transcript check above and for the same reason: a probe whose output stops
+  # carrying one of these substrings must not land on the good outcome.
+  case "$PROBE" in
+    *'"repairLimits":null'*|*'"repairLimits": null'*)
+      warn "the repair call's limits could not be read back from telemetry, so the"
+      warn "artifact records what the prompt ASKED and nothing about what ran."
+      ;;
+    *'"repairLimits":{'*)
+      # Substring match on the pair the prompt demanded. Exact numbers, so a
+      # session that passed something else cannot satisfy it.
+      case "$PROBE" in
+        *"\"budget_seconds\":$REPAIR_BUDGET_SECONDS,\"max_rounds\":$REPAIR_MAX_ROUNDS"*)
+          ok "limits verified in telemetry: budget ${REPAIR_BUDGET_SECONDS}s, max_rounds $REPAIR_MAX_ROUNDS"
+          ;;
+        *)
+          warn "THE REPAIR CALL RAN UNDER LIMITS THE PROMPT DID NOT ASK FOR. The"
+          warn "session did not pass budget ${REPAIR_BUDGET_SECONDS}s / max_rounds $REPAIR_MAX_ROUNDS."
+          warn "Read repairLimits.observed in the artifact; this run is not"
+          warn "comparable with one that ran under the asked-for pair."
+          ;;
+      esac
+      ;;
+    *)
+      warn "the probe said nothing about the repair limits; recorded as unknown."
       ;;
   esac
 fi
@@ -712,14 +795,28 @@ o.context = {
   // would be recorded here as if it had not — the scorer closes that gap by
   // reading `detail.budget_seconds` back out of telemetry and VOIDing on a
   // mismatch, and this script does not. `asked` is the honest word.
-  // `null` when the variable did not arrive, DELIBERATELY and not by way of a
-  // NaN that JSON.stringify would quietly flatten to the same thing: absent is a
-  // third answer here, the same as everywhere else in this artifact.
-  repairLimitsAsked: {
-    budget_seconds: Number.isFinite(Number(e.B12_REPAIR_BUDGET)) ? Number(e.B12_REPAIR_BUDGET) : null,
-    max_rounds: Number.isFinite(Number(e.B12_REPAIR_ROUNDS)) ? Number(e.B12_REPAIR_ROUNDS) : null,
-    verifiedInTelemetry: false,
-  },
+  // ASKED and OBSERVED, kept apart on purpose. The limits travel to the model
+  // through prose, so what the prompt demanded and what the call ran under are
+  // two different facts and only the second one is a measurement. `agreed` is
+  // null when either side is unknown -- absent telemetry is not agreement, and
+  // it is not a mismatch either.
+  //
+  // `asked` is null when the variable did not arrive, DELIBERATELY and not by way
+  // of a NaN that JSON.stringify would quietly flatten to the same thing.
+  repairLimits: (() => {
+    const num = (x) => (Number.isFinite(Number(x)) ? Number(x) : null);
+    const asked = { budget_seconds: num(e.B12_REPAIR_BUDGET), max_rounds: num(e.B12_REPAIR_ROUNDS) };
+    const observed = (probe && probe.repairLimits) || null;
+    const both = observed !== null && asked.budget_seconds !== null && asked.max_rounds !== null;
+    return {
+      asked,
+      observed,
+      agreed: both
+        ? observed.budget_seconds === asked.budget_seconds && observed.max_rounds === asked.max_rounds
+        : null,
+      joinedBy: probe && probe.repairInvocationId ? "invocation_id" : null,
+    };
+  })(),
   serverEnv: {},
   strictMcpConfig: true,
   sessionId: e.B12_SESSION,
