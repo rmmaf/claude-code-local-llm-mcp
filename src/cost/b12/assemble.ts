@@ -851,7 +851,15 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
 /** Which regime a committed audit establishes. Absent and invalid are the same. */
 export type Regime = "governs" | "does-not-govern" | "unknown";
 
-/** The key every amendment's governance answer is published under. */
+/**
+ * The key the REPAIR-MAX-ROUNDS amendment's governance answer is published under.
+ * NOT a shared key: the conformance-paths amendment publishes
+ * `clause5.amendment.governs`, and — checked 2026-08-14 — nothing reads that one
+ * as a regime switch here. Its governance is decided inside `audit.ts` from the
+ * boolean fact and drives `effectivePinned` there; the serialized key is replay
+ * evidence. So this is the only governance key `assemble` interprets, and saying
+ * "every amendment" invited a reader to look for a second one.
+ */
 export const REPAIR_ROUNDS_GOVERNS = "clause5.repairRoundsAmendment.governs";
 
 /**

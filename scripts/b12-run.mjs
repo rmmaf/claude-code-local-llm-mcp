@@ -1448,11 +1448,14 @@ export function runlogBarrierViolation(diskText, headText) {
  *
  * IT READS A DIFFERENT SET FROM THE SCORER — NOT A SUPERSET — AND ONLY THE
  * SCORER DECIDES. `repairRoundsMismatches` in `src/cost/b12/assemble.ts` runs the
- * same comparison, but over a different universe: the run-wide union of every
- * VALID TREATMENT observation's identified rows (`assemble.ts:282`), narrowed per
- * observation by `scopeTelemetry` (`assemble.ts:688`). This one runs over one
- * worktree's own log. THE TWO SCOPING AXES ARE INDEPENDENT, so each set holds
- * rows the other does not:
+ * same comparison, but over a different universe: the run-wide union of the
+ * treatment observations' identified rows (`assemble.ts:283`), narrowed per
+ * observation by `scopeTelemetry` (`assemble.ts:688`). NOT "every VALID treatment
+ * observation" — that was this comment's second wrong version, corrected the same
+ * day: the union filters SUSPECT integrity sources (`assemble.ts:256`), while
+ * `record.valid` is consulted later and only for admission (`:407`). This one
+ * runs over one worktree's own log. THE TWO SCOPING AXES ARE INDEPENDENT, so each
+ * set holds rows the other does not:
  *   - driver-only: a foreign row written into this private worktree that is
  *     neither a known invocation nor inside the scorer's window;
  *   - scorer-only: a row archived by ANOTHER treatment observation whose
@@ -3231,11 +3234,15 @@ async function observe(args, pilotMode = false) {
     process.stderr.write(
       "  ^ recorded in observation.repairRoundsFindings and DECIDING NOTHING here. The rule that acts" +
         String.fromCharCode(10) +
-        "    on it is the 2026-08-14 pre-data amendment, raised RUN-LEVEL at scoring time, and it reads" +
+        "    on it is the 2026-08-14 pre-data amendment, raised RUN-LEVEL at scoring time over a" +
         String.fromCharCode(10) +
-        "    only the rows this observation OWNS. This warning reads EVERY row in the log, so it is a" +
+        "    DIFFERENT set: the run-wide union of archived treatment rows, narrowed per observation." +
         String.fromCharCode(10) +
-        "    superset: a stray row can appear here and be excluded there as foreign. Explain the row." +
+        "    NEITHER SET CONTAINS THE OTHER. A row can appear here and be excluded there as foreign," +
+        String.fromCharCode(10) +
+        "    and a row that VOIDS THE RUN can be absent here — so this staying quiet is not that" +
+        String.fromCharCode(10) +
+        "    clause's assent. Explain the row." +
         String.fromCharCode(10)
     );
   }
