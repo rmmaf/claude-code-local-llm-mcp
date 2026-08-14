@@ -130,7 +130,34 @@ export interface RepairResult {
 }
 
 const DEFAULT_MAX_ROUNDS = 3;
-const DEFAULT_BUDGET_SECONDS = 300;
+
+/**
+ * 240, LOWERED FROM 300 ON 2026-08-14, and the reason is not about repair.
+ *
+ * In a B12 observation there is no human in the loop, so every inter-request gap
+ * IS a tool call. `admissionRule` 11 voids an observation whose max gap exceeds
+ * the shortest cache TTL in play — 300,000 ms whenever any owned request wrote
+ * to the 5-minute class, which a subagent does — and `voidConditions` 20 lifts
+ * that to the WHOLE run. At 300 this constant WAS that bar, exactly, so a repair
+ * that spent its budget produced a gap at the edge of it.
+ *
+ * MEASURED on mac-01 against `b12/corpus/selmatchfuzzy` with the 30B: three runs
+ * fixed in one round at 129.4, 115.6 and 120.1 s, per round a median 57.6 s of
+ * model plus 31.8 s of gate. One-round totals are not the margin: `max_rounds`
+ * is 3, and three rounds is 268 s at the median round and 293 s at the worst
+ * observed one — 89 to 98% of the bar. Two percent of headroom is not headroom.
+ *
+ * 240 leaves 2.7 rounds at that rate and puts a full-budget repair 20% clear of
+ * the bar. The cost is real and one-sided: `repair` is a treatment-only tool, so
+ * this trims the arm being measured and not its control. That is why it is a
+ * pre-data decision, taken before any observation exists, and recorded in
+ * `b12-corpus/manifest-config.json` rather than only here.
+ *
+ * It also BREAKS A TIE the code used to rely on: `config.timeoutMs` still
+ * defaults to 300 s, so the budget is now strictly the smaller of the two and
+ * `min(timeoutMs, remaining)` resolves to the budget rather than to a tie.
+ */
+const DEFAULT_BUDGET_SECONDS = 240;
 /** Failures fed back to the model per round. More context, worse focus. */
 const FAILURES_IN_PROMPT = 12;
 
@@ -755,9 +782,13 @@ async function repairLoop(
        * `config.timeoutMs` left" and "the budget had more than that" onto the
        * same applied value, and `Math.max(1, ...)` folds every sub-millisecond
        * remainder onto 1 — so a tie is indistinguishable from a comfortable
-       * budget downstream. The tie is not a corner case either: `config.timeoutMs`
-       * and `DEFAULT_BUDGET_SECONDS` share a default, so round 1 hits it whenever
-       * the first gate costs nothing.
+       * budget downstream. The tie WAS not a corner case — `config.timeoutMs` and
+       * `DEFAULT_BUDGET_SECONDS` shared a default of 300 s, so round 1 hit it
+       * whenever the first gate cost nothing. Since 2026-08-14 the budget
+       * defaults to 240 and the timeout still to 300, so the two no longer tie
+       * and `min` resolves to the budget; the ambiguity returns the moment a
+       * caller passes `budget_seconds: 300` by hand, which is why the reading is
+       * still recorded rather than deleted.
        *
        * Re-declared per round, so a later round cannot be judged on an earlier
        * one's reading. `resolveModel` reads it too, before the attempt loop, and

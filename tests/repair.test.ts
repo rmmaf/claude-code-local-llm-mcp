@@ -812,7 +812,11 @@ describe("repair loop", () => {
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
-    expect(detail.budget_seconds).toBe(300);
+    // 240 since 2026-08-14: at 300 the default WAS admissionRule 11's
+    // five-minute pacing bar exactly, and a repair that spent its budget put a
+    // B12 observation's largest inter-request gap at the edge of it. See
+    // DEFAULT_BUDGET_SECONDS for the measurement.
+    expect(detail.budget_seconds).toBe(240);
     expect(detail.max_rounds).toBe(3);
   });
 
@@ -963,9 +967,12 @@ describe("repair loop", () => {
     // A request that never comes back, honouring the abort signal exactly as
     // fetch does — so the timeout is raised where the real one is, by the
     // controller in llm-client, and not simulated by a thrown string.
-    // config.timeoutMs defaults to exactly DEFAULT_BUDGET_SECONDS, so this is
-    // the ordinary case rather than a corner: 3 of 4 `model_failed` rows in run
-    // 2026-08-03-mac-06 sat at 300-326 s against a 300 s budget.
+    // config.timeoutMs (300 s) USED to equal DEFAULT_BUDGET_SECONDS exactly, so
+    // this was the ordinary case rather than a corner: 3 of 4 `model_failed`
+    // rows in run 2026-08-03-mac-06 sat at 300-326 s against a 300 s budget.
+    // Since 2026-08-14 the budget defaults to 240 and binds first, so this test
+    // now exercises the budget cutting a generation the timeout would still
+    // have allowed — the same path, reached the other way round.
     const fetchImpl = ((_url: string, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => {
