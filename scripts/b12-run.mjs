@@ -3169,9 +3169,46 @@ async function observe(args, pilotMode = false) {
   }
 
   // Artifact 1's frozen `max_rounds`, compared against what the call actually
-  // ran under. Same shape as the drift check above, and the doctrine is on the
-  // function.
-  invalid.push(...repairRoundsReasons(task.repairMaxRounds, archive.telemetry, task.id));
+  // ran under. The doctrine is on the function.
+  //
+  // REPORTED, DECIDING NOTHING — and that is a RETREAT from 8fedebc, which
+  // pushed these into `invalid`. The retreat is the point. No clause of the
+  // frozen pre-registration covers "the call did not honour the frozen
+  // max_rounds": clause 4 fires when a FROZEN ITEM CHANGES, and `repairMaxRounds`
+  // is still declared 3 in the manifest — nothing moved. So invalidating here
+  // excluded an observation by a route the registration cannot name, and
+  // `assemble.ts` still published it as `scored` (its disposition falls through
+  // to "scored" when no void fires) while `record.valid !== true` kept it out of
+  // the admitted set, with its terms landing in `dropped` and moving R_all/R_hi+.
+  // An unregistered exclusion route is the exact researcher degree of freedom
+  // this apparatus exists to remove, so a check that creates one is worse than
+  // the gap it closes.
+  //
+  // INTERIM, decided 2026-08-14: record and do not decide. The fact is on the
+  // observation, an operator cannot miss it, and NOTHING is excluded by it. A
+  // pre-data amendment naming the violation — the `b12-amendment/1` route the
+  // conformance-paths amendment already took, prospective and editing no frozen
+  // byte — is owed BEFORE PHASE 4, and until it governs, this stays a covariate.
+  const repairRoundsFindings = repairRoundsReasons(task.repairMaxRounds, archive.telemetry, task.id);
+  // Said HERE rather than beside the invalidity block at the end, because the
+  // pilot path returns before that block and a pilot observation can break the
+  // registered condition exactly as a scored one can. On its own prefix, never
+  // `INVALID:`, because it decides nothing and must not read as if it did — and
+  // louder than its consequence on purpose: nothing acts on it yet, so an
+  // operator reading past it is the only way it gets lost.
+  for (const finding of repairRoundsFindings) {
+    process.stderr.write(`  CONDITION NOT AS REGISTERED: ${finding}` + String.fromCharCode(10));
+  }
+  if (repairRoundsFindings.length > 0) {
+    process.stderr.write(
+      "  ^ recorded in observation.repairRoundsFindings and DECIDING NOTHING — no clause of the frozen" +
+        String.fromCharCode(10) +
+        "    pre-registration covers it, and excluding by an unnamed route is the degree of freedom this" +
+        String.fromCharCode(10) +
+        "    apparatus removes. A pre-data amendment is owed before PHASE 4." +
+        String.fromCharCode(10)
+    );
+  }
 
   const observation = {
     valid: invalid.length === 0,
@@ -3179,6 +3216,13 @@ async function observe(args, pilotMode = false) {
     // wrong; this records what, and it is what a re-adjudication reads.
     outcome: verdict.outcome,
     invalidReasons: invalid,
+    // NOT invalidity, and kept in its own field so it can never be mistaken for
+    // it: artifact 1's frozen `max_rounds` against what the call ran under.
+    // Empty on a compliant observation AND on one where the row never landed —
+    // see the function's own note on what it cannot see. Non-empty means the
+    // attempt is not an observation of the registered condition, which is a fact
+    // no clause currently acts on; a pre-data amendment is owed before PHASE 4.
+    repairRoundsFindings,
     ts: stamp(),
     runId: manifest.runId ?? null,
     manifestSha256: manifestSha,

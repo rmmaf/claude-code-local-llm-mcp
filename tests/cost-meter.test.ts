@@ -4327,13 +4327,21 @@ describe("the B12 harness", () => {
       expect(instructionDriftReasons(base, { ...base, settingsLocal: "appeared" })).toHaveLength(1);
     });
 
-    it("invalidates a repair call that did not run at the manifest's frozen max_rounds", async () => {
-      // The gap this closes was a DEAD LETTER, not a bug: `repairMaxRounds` was
+    it("REPORTS a repair call that did not run at the manifest's frozen max_rounds", async () => {
+      // The gap this detects was a DEAD LETTER, not a bug: `repairMaxRounds` was
       // refused when absent, carried into the manifest and archived, and then
       // nothing transmitted or checked it. The session is handed `task.prompt`
       // alone and no corpus prompt mentions `repair`, so an observation matched
       // the declared 3 only by coincidence of the tool's own default — and a
       // session calling `max_rounds: 10` archived clean.
+      //
+      // REPORTS, and does not invalidate. The first version of this pushed into
+      // `invalidReasons`, which excluded the observation by a route no clause of
+      // the frozen pre-registration can name — `assemble.ts` still published it
+      // as `scored` while admission dropped it. The findings now travel in their
+      // own field and decide nothing until a pre-data amendment names the
+      // violation. What this test pins is the DETECTOR; that it must not decide
+      // is a property of the CALL SITE, which no test here reaches.
       const { repairRoundsReasons } = await load();
       const row = (maxRounds: unknown) => ({
         tool: "repair",
