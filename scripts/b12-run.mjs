@@ -1446,21 +1446,38 @@ export function runlogBarrierViolation(diskText, headText) {
  * COMPLETE OVER ROWS THAT EXIST AND OVER NOTHING ELSE. Named 2026-08-14 by an
  * adversarial review, after the commit that added it claimed completeness.
  *
- * IT READS A SUPERSET OF WHAT THE SCORER READS, AND ONLY THE SCORER DECIDES.
- * `repairRoundsMismatches` in `src/cost/b12/assemble.ts` runs the same
- * comparison over `scopeTelemetry`'s subset — the rows this observation OWNS —
- * while this one runs it over every row in the log. Driver ⊇ scorer, always, so
- * the disagreement is one-directional: this can warn where the run-level clause
- * stays silent, and it can never be silent where that clause fires. Named
- * 2026-08-14 by review, and left rather than closed, because the two are not
- * doing the same job — this one warns an operator mid-run and decides nothing,
- * and narrowing it to the scored set would hide from the operator exactly the
- * stray rows they are the only one positioned to explain.
+ * IT READS A DIFFERENT SET FROM THE SCORER — NOT A SUPERSET — AND ONLY THE
+ * SCORER DECIDES. `repairRoundsMismatches` in `src/cost/b12/assemble.ts` runs the
+ * same comparison, but over a different universe: the run-wide union of every
+ * VALID TREATMENT observation's identified rows (`assemble.ts:282`), narrowed per
+ * observation by `scopeTelemetry` (`assemble.ts:688`). This one runs over one
+ * worktree's own log. THE TWO SCOPING AXES ARE INDEPENDENT, so each set holds
+ * rows the other does not:
+ *   - driver-only: a foreign row written into this private worktree that is
+ *     neither a known invocation nor inside the scorer's window;
+ *   - scorer-only: a row archived by ANOTHER treatment observation whose
+ *     timestamp lands in this transcript's ±60 s window, or whose invocation id
+ *     this transcript recognises.
+ *
+ * THIS CORRECTS WHAT THIS COMMENT SAID BEFORE. It read "Driver ⊇ scorer, always,
+ * so the disagreement is one-directional: this can warn where the run-level
+ * clause stays silent, and it can never be silent where that clause fires." Both
+ * halves are false — the containment does not hold in either direction, so the
+ * driver CAN be silent where the clause fires. Introduced 2026-08-14 in the
+ * commit that claimed to state the two detectors' relation, and refuted the same
+ * day by adversarial review. The paragraph immediately below already said the
+ * scope was "not scoped by session or by invocation ownership", which contradicts
+ * a superset claim standing four lines above it.
+ *
+ * Left rather than closed, and that part survives: the two are not doing the same
+ * job — this one warns an operator mid-run and decides nothing, and narrowing it
+ * to the scored set would hide from the operator exactly the stray rows they are
+ * the only one positioned to explain.
  *
  * SCOPE, ALSO NARROWER THAN IT LOOKS. `archive.telemetry` is every parseable row
  * in the observation's worktree log up to the acceptance boundary
  * (`capture.ts:561`) — it is NOT scoped by session or by invocation ownership
- * the way scoring's `scopeTelemetry` is (`assemble.ts:658`). Each observation
+ * the way scoring's `scopeTelemetry` is (`assemble.ts:688`). Each observation
  * gets a fresh worktree, so a foreign row has to be written INTO that private
  * tree to appear here, but if one is, this invalidates an observation scoring
  * would have excluded as foreign. A false positive, visible in the reason text.

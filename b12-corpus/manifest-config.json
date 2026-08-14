@@ -356,7 +356,7 @@
   ],
   "pinned": {
     "ratesSha256": "6d74cafd7fa5702352d068825be2f75f3ae7dd0ef3df77cc9ff7f04826730c94",
-    "b12RunSha256": "c73abe8f3f8ef9855139ba9af01a7a05834fec2da95fbbdaf3a70dd7ac940200",
+    "b12RunSha256": "10a28a4edf05551b5a573c26d77a6dd61a6c7f23722c6a4cce429a97f847aea5",
     "claudeMdSha256": "a81a02652ccefaac797cbe524ca545e042add2c323bca9105d5a01a2c3535d2a",
     "scoringCommand": "node dist/cost/b12/emit.js <runId> --audit evidence/<runId>.b12.audit.json",
     "perArmTimeoutMs": 2700000,
