@@ -1429,11 +1429,30 @@ export function runlogBarrierViolation(diskText, headText) {
  * attempt that leaves no trace is retryable without limit — a forking path
  * bought to close a check.
  *
- * FAIL-CLOSED ON ABSENCE. A repair row carrying no numeric `detail.max_rounds`
- * predates the field or came from somewhere else, and "cannot tell" may not wear
- * the same answer as "matched" — the mistake `limits-unverifiable` exists for in
- * `b12-scorer-mac.sh`. ZERO REPAIR ROWS IS NOT A VIOLATION: the control arm has
- * no such tool, and a treatment session is free not to call it.
+ * FAIL-CLOSED ON ABSENCE OF THE FIELD. A repair row carrying no numeric
+ * `detail.max_rounds` predates the field or came from somewhere else, and
+ * "cannot tell" may not wear the same answer as "matched" — the mistake
+ * `limits-unverifiable` exists for in `b12-scorer-mac.sh`.
+ *
+ * BUT NOT FAIL-CLOSED ON ABSENCE OF THE ROW, and that is a real hole rather than
+ * an oversight. Zero repair rows returns []: the control arm has no such tool, a
+ * treatment session is free not to call it, and — the case that makes a guard
+ * impossible — a tool whose PREFLIGHT refuses emits no row at all while its
+ * result still sits in the transcript, so "every local invocation has a row" is
+ * FALSE on a path the design intends (`capture.ts`, which publishes
+ * `invocationsWithoutRow` as REPORTED, DECIDING NOTHING, and says why). A
+ * `repair` whose telemetry append failed — the writer swallows it by design,
+ * `telemetry.ts` — therefore escapes this check entirely. THIS DETECTOR IS
+ * COMPLETE OVER ROWS THAT EXIST AND OVER NOTHING ELSE. Named 2026-08-14 by an
+ * adversarial review, after the commit that added it claimed completeness.
+ *
+ * SCOPE, ALSO NARROWER THAN IT LOOKS. `archive.telemetry` is every parseable row
+ * in the observation's worktree log up to the acceptance boundary
+ * (`capture.ts:561`) — it is NOT scoped by session or by invocation ownership
+ * the way scoring's `scopeTelemetry` is (`assemble.ts:658`). Each observation
+ * gets a fresh worktree, so a foreign row has to be written INTO that private
+ * tree to appear here, but if one is, this invalidates an observation scoring
+ * would have excluded as foreign. A false positive, visible in the reason text.
  *
  * `budget_seconds` IS DELIBERATELY NOT CHECKED. It is an unregistered free
  * parameter (F7) — nothing freezes it, so there is no declared value to compare
