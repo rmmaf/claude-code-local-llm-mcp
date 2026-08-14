@@ -352,7 +352,15 @@ describe("the disposition table — every predicate FIRING, with its control", (
       },
     });
     const row = (maxRounds: number) => ({
-      ts: "2026-08-14T00:00:00.000Z",
+      // `at(0)`, NOT a real-world date. The first version of this test hardcoded
+      // 2026-08-14 and the check never fired; I blamed ownership — no tool result
+      // carrying the row's invocation id — and a review showed the real predicate
+      // was the TIMESTAMP: every fixture is stamped from EPOCH = Nov 2023, and
+      // `scopeTelemetry` admits an idless row by a ±60 s window around the
+      // observation's requests, so a row three years away is outside the window
+      // whatever its ownership. Diagnosing that from one failing assertion,
+      // without isolating, is the error this comment exists to keep visible.
+      ts: at(0),
       tool: "repair",
       latency_ms: 1,
       bytes_raw: 0,
@@ -360,18 +368,13 @@ describe("the disposition table — every predicate FIRING, with its control", (
       turns_collapsed: 0,
       detail: { max_rounds: maxRounds, budget_seconds: 240 },
     });
-    // WHAT THIS TEST DOES NOT YET SHOW, AND THE AMENDMENT MAY NOT BE SEALED
-    // UNTIL IT DOES: the void FIRING. The first attempt handed `obsOf` a
-    // fabricated repair row and asserted `fired === true`; it came back FALSE,
-    // and the reason is the design working. `scopeTelemetry` narrows to the rows
-    // the observation OWNS, and a row with no tool result carrying its
-    // invocation id is foreign — excluded, exactly as it should be, and exactly
-    // the property that keeps a stray row in a worktree from voiding a run.
-    // MEASURED, not assumed: the assertion failed where the clause reads the
-    // scoped set. The control this amendment owes must therefore build an OWNED
-    // row — a local tool result whose invocation id the telemetry row carries —
-    // and that fixture work is named here rather than faked with a looser check.
+    // THE CONTROL THE AMENDMENT'S sealingPrecondition DEMANDS: the void FIRING
+    // on a fabricated mismatch. The manifest freezes 3; this ran at 10.
     const mismatched = archiveOf({ observations: [obsOf("t1", { telemetry: [row(10)] })] });
+    const fired = check(assemble(mismatched, govern(true)).result, "amendment 2026-08-14");
+    expect(fired.fired).toBe(true);
+    expect(fired.detail).toMatch(/ran repair at a max_rounds other than the frozen one/);
+    expect(fired.detail).toMatch(/max_rounds 10 against a frozen repairMaxRounds of 3/);
 
     // GOVERNANCE IS THE GATE, and these three DO bind today. An ungoverned run
     // must not fire, and must not print the clean sentence either — "no

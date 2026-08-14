@@ -266,6 +266,10 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause5.amendment.sha256",
   "clause5.amendment.addedPaths",
   "clause5.amendment.governs",
+  "clause5.repairRoundsAmendment.path",
+  "clause5.repairRoundsAmendment.commit",
+  "clause5.repairRoundsAmendment.sha256",
+  "clause5.repairRoundsAmendment.governs",
   "clause5.anchor.taskId",
   "clause5.anchor.arm",
   "clause5.anchor.attempt",
@@ -940,6 +944,15 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     "clause5.amendment.sha256": orNone(facts.clause5.amendment.sha256),
     "clause5.amendment.addedPaths": joined(facts.clause5.amendment.addedPaths),
     "clause5.amendment.governs": facts.clause5.amendment.governs ? "yes" : "no",
+    // PUBLISHED, and the first attempt at this commit FAILED TO PUBLISH IT: the
+    // facts were computed and stored and never serialized, so `assemble.ts` read
+    // an absent key, chose UNKNOWN, and the rule could not fire on any real run.
+    // The test did not catch it because it supplies `inputs` by hand — it
+    // certified a path production cannot reach. Named 2026-08-14 by review.
+    "clause5.repairRoundsAmendment.path": facts.clause5.repairRoundsAmendment.path,
+    "clause5.repairRoundsAmendment.commit": orNone(facts.clause5.repairRoundsAmendment.commit),
+    "clause5.repairRoundsAmendment.sha256": orNone(facts.clause5.repairRoundsAmendment.sha256),
+    "clause5.repairRoundsAmendment.governs": facts.clause5.repairRoundsAmendment.governs ? "yes" : "no",
     "clause5.anchor.taskId": orNone(a?.taskId ?? null),
     "clause5.anchor.arm": orNone(a?.arm ?? null),
     "clause5.anchor.attempt": a === null ? "(none)" : String(a.attempt),
