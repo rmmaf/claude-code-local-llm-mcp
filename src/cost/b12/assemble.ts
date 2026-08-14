@@ -1003,10 +1003,24 @@ function buildArchiveChecks(ctx: ChecksContext): void {
   // file has no `tasks.length === 30` check, so an undersized manifest reaches
   // the cap trivially.
   //
-  // AND THE FROZEN TEXT CONTRADICTS ITSELF, which is why no predicate here can
-  // settle it: `admissionRule` 1 says every registered run owes a result
-  // carrying "the partial bracket", and clause 2 says no interim bracket may be
-  // derivable. Whichever wins is a pre-data amendment and is the owner's.
+  // THE FROZEN TEXT DOES NOT CONTRADICT ITSELF, and an earlier version of this
+  // comment said it did. Clause 2's "partial set" is a set that CAN STILL GROW;
+  // `admissionRule` 1's "partial bracket" is a bracket published WITHOUT the
+  // verdict it would have carried, which is PREMISES.md's own use of the word
+  // ("the artifact reads `partial` and renders no verdict"). Registered
+  // 2026-08-13 in docs/b12-scorer/FINDINGS.md, under the rationale that document
+  // already registered for the pilot's "No units": what must not exist is
+  // anything a STOPPING DECISION could read. `narrowPriorRun` had already chosen
+  // it — "the partial bracket either way" — and PREMISES.md assigns the disputed
+  // case elsewhere by name: "A run that walks all 30 and admits 19 is VOID under
+  // `voidConditions` 3". Cardinality is clause 3's; clause 2 is not a duplicate
+  // of it.
+  //
+  // So the predicate is not blocked on an amendment. It is just not written, and
+  // the half with teeth is not here anyway: "no interim bracket is derivable
+  // from committed data" is a property of the run's COMMIT HISTORY — the commit
+  // first introducing a bracket must be the one carrying the verdict — which
+  // `git log` decides and this function cannot see.
 
   // voidConditions 3's ORDER half, replayed from the runlog. Its count half is
   // `decide()`'s, at aggregate.ts's frozen-count refusal — two mechanisms, one

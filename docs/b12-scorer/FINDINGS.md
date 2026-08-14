@@ -1096,6 +1096,129 @@ an aggregate is precisely what would. Encoded with teeth: `assertPilotShape`
 (`scripts/b12-run.mjs`) refuses every aggregate/bracket spelling at any depth
 on every pilot write, and the negative controls hold it there.
 
+### THE "partial set" / "partial bracket" READING — registered 2026-08-13, BEFORE any scored observation
+
+`admissionRule` 1 says that from registration onward "the run OWES a committed
+`<run_id>.b12.result.json` carrying `scored` or `void`, the void clause BY NAME,
+the observation count, and **the partial bracket**". `voidConditions` 2 says
+"VOID if R, R_lo, R_hi, R_hi+ or any A_o/S_o aggregate was computed on a
+**partial set** … so no interim bracket is derivable from committed data", and
+`admissionRule` 2 repeats it: "`R`, `N` and `A` may not be computed on a partial
+set". Read one way, the design owes a bracket it also forbids.
+
+**The registered reading, in two parts. (i) Clause 2's "partial set" is a set
+that CAN STILL GROW, never a set smaller than 20. (ii) `admissionRule` 1's
+"partial bracket" is this file's own registered sense of the word — a bracket
+published WITHOUT the verdict it would have carried, as in "the completion's
+artifact reads `partial` and renders no verdict" (`PREMISES.md`, twice). Both
+texts are true at once, and neither one has to mean under-cardinality.**
+
+The rationale for (i) is the one this document already registered four days
+earlier for the pilot's "No units": **what must not exist is anything a stopping
+decision could read.** A bracket over a set that can still grow is exactly that
+— the optional stopping `admissionRule` 2 names when it says the committed order
+exists "without letting `n` be chosen after the data". A bracket published with a
+run's terminal verdict decides nothing, because there is nothing left to decide:
+a result "carrying `scored` or `void`" cannot be written before the run ends,
+since until then nobody knows which it is.
+
+Part (ii) came out of the adversarial panel and is the better half. It removes
+the strain part (i) carries on its own — that "partial" would have to mean
+mutability in clause 2 and shortfall in `admissionRule` 1, forty lines apart in
+one field. Under (ii) it means the same thing in both: incomplete in the sense
+of *not carrying a verdict*.
+
+**FOUR PIECES OF FROZEN OR REGISTERED TEXT MAKE THE CARDINALITY READING
+IMPOSSIBLE, not merely worse.**
+
+1. `PREMISES.md` adjudicates the disputed case BY NAME and does not assign it
+   here: "A run that walks all 30 and admits 19 is VOID under `voidConditions` 3
+   and CONSUMES an attempt under `voidConditions` 23." Cardinality is clause 3's
+   job. On the cardinality reading clause 2 is a DUPLICATE of clause 3 — which
+   the `admissionRule` preamble forbids in its first sentence, "two descriptions
+   of one rule, disagreeing, is worse than either being wrong".
+2. The result is "owed by every registered run whether it scores or voids"
+   (`design.artifacts`). A run voided under clause 3 for shortfall still owes a
+   bracket; under the cardinality reading clauses 1 and 3 are mutually
+   unsatisfiable.
+3. The closed disposition list ends with `not_started`, and `runPlan` phase 5
+   budgets "20–26 supervised sessions… Ordered manifest of 30" — so EVERY lawful
+   run, including a perfect one, ends with at least four entries `not_started`.
+   Clause 2's own gate, "refuses to run until all dispositions exist", can
+   therefore only mean the disposition set is CLOSED. It cannot mean all 30 ran,
+   and it cannot mean 20 admitted.
+4. A registered reading already prices an aggregate over fewer observations than
+   a floor: "a cell can be evaluable on five and priced on fewer" (`PREMISES.md`,
+   F21). Under the cardinality reading that shipped behaviour is a clause-2 void
+   on its face.
+
+The implementation had already chosen this without stating it. `archive.ts`'s
+`narrowPriorRun` documents clause 1 as "`scored` or the void clause BY NAME, and
+the partial bracket **either way**", and the committed-evidence finding above
+resolves an unshowable tree by publishing terms under the void "because the
+partial bracket is owed either way".
+
+**ONE REAL TENSION SURVIVES, AND IT IS NOT BETWEEN THESE TWO TEXTS.** `runPlan`
+phase 2 says the pilot has "No units, no bracket — the verdict command cannot
+produce one on fewer than the manifest's N". The pilot's five observations are
+complete and immutable — every task dispositioned, the tasks excluded from both
+sealed manifests — and the design still denies it a bracket. So immutability
+alone is not SUFFICIENT for a bracket, and any reading that says otherwise is
+overstated, including part (i) taken alone. The reconciliation is that the N
+floor belongs on the VERDICT and not on the numbers, which is exactly the
+`partial`-artifact behaviour of (ii); the pilot is denied a bracket for the
+independent reason that it is not a registered run and owes no `result.json` at
+all. That tension is between `runPlan` phase 2 and `voidConditions` 1, it is
+recorded here, and it is not what this entry resolves.
+
+**A THIRD READING, RECORDED AND NOT ADOPTED.** "Partial set" could mean the
+scoring invocation's INPUT DOMAIN was incomplete — which sessions the CLI
+happened to read, which is `voidConditions` 19's failure mode stated one clause
+earlier and which explains "machine-checkable, because the analysis session's
+transcript is committed" better than either part above. It agrees with this entry
+on every disputed case, so nothing turns on choosing it; it is written down
+because the next reader will think of it.
+
+**WHAT THIS SETTLES, AND IT IS THE PREDICATE.** A clause-2 check tests
+MUTABILITY, never cardinality. A cardinality predicate was written on 2026-08-13
+— the set is closed when `admitted >= 20 || notStarted === 0` — and refuted
+before shipping: `runPlan` phase 5 budgets 20–26 supervised sessions over an
+ordered manifest of 30, so 26 observations with 19 admitted and 4 tasks never
+reached is a LAWFUL run whose set cannot grow, and that predicate voids it at
+`emit`, after every session is paid for. Under this reading that shape is
+plainly closed, and the bracket `admissionRule` 1 owes for it is plainly owed.
+
+**STILL OWED, and now unblocked rather than contradictory.** No code implements
+clause 2, and the reading says what a correct one asks: not "are there 20?" but
+"could this set still change?".
+
+The half with teeth is SINGLE EMISSION, and it is decidable from committed data
+without knowing anything about the operator's intentions: **the commit that first
+introduces any of R, R_lo, R_hi, R_hi⁺ or any per-observation A_o/S_o unit total
+must be the same commit that carries the verdict artifact**, every earlier commit
+in the run's history carrying dispositions and covariates only. That is clause
+2's last sentence read literally — "per-observation unit totals are written by
+the same command that produces the verdict, so no interim bracket is derivable
+from committed data" — and `git log` over `evidence/<runId>*` answers it.
+
+**THE CLOSURE HALF IS NOT DECIDABLE FROM THE ARCHIVE ALONE, and the reason is a
+line of our own code.** `assemble.ts` SYNTHESISES `not_started` for every
+manifest task with no observation, so "every id carries a disposition" is
+trivially true at observation 1 and at observation 30 alike. A closure predicate
+that reads the synthesised dispositions is satisfied always and checks nothing.
+What would actually have to be established is that no lawful future event can
+still admit — the 20-admission cap, the 26-session ceiling, `admissionRule` 12's
+one discretionary re-run and the `void(version_drift)` re-runs that do not
+consume it, and disposition EXISTENCE rather than mere presence of an observation
+directory. Also unchecked here: manifest cardinality. `assemble.ts` has no
+`tasks.length === 30` predicate, so an undersized manifest reaches the cap
+trivially, and clause 2 written on cardinality would have been satisfiable by
+declaring fewer tasks.
+
+The enforcement point is BEFORE `aggregate()` runs — clause 2's own verb is
+"refuses to run", not "voids". Refusing there needs no result-schema change and
+breaks no reader; nulling the bracket fields on `B12Result` would need both.
+
 ### THE "per-task DENOMINATOR share" FORMULA — registered 2026-08-10, BEFORE the seal
 
 The frozen name (`thresholdArgument`) is "per-task DENOMINATOR share", and the
