@@ -460,9 +460,9 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
   // NOT A VOID. An unproven rule may not kill a run any more than it may bless
   // one; what it may do is stop the verdict being called FINAL, which is the
   // same distinction `{ran: false}` already carries for clauses 4–6.
-  if (gitAudit.ran && gitAudit.inputs["clause5.repairRoundsAmendment.governs"] === undefined) {
+  if (gitAudit.ran && regimeOf(gitAudit.inputs, REPAIR_ROUNDS_GOVERNS) === "unknown") {
     uncheckedClauses.push(
-      "amendment 2026-08-14 (repair's frozen max_rounds) — the committed audit carries no clause5.repairRoundsAmendment.governs, so which regime applies is unknown"
+      "amendment 2026-08-14 (repair's frozen max_rounds) — the committed audit carries no USABLE clause5.repairRoundsAmendment.governs (absent, or not one of \"yes\"/\"no\"), so which regime applies is unknown"
     );
   }
   if (gitAudit.ran && gitAudit.verdict === "void") {
@@ -848,6 +848,36 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
  * a row is therefore not evidence of compliance, and no guard can be built on
  * the contrary premise without voiding lawful observations.
  */
+/** Which regime a committed audit establishes. Absent and invalid are the same. */
+export type Regime = "governs" | "does-not-govern" | "unknown";
+
+/** The key every amendment's governance answer is published under. */
+export const REPAIR_ROUNDS_GOVERNS = "clause5.repairRoundsAmendment.governs";
+
+/**
+ * PRESENCE IS NOT VALIDITY, and reading it as validity was the defect.
+ *
+ * `audit.ts` writes this key with `facts…governs ? "yes" : "no"`, so those two
+ * strings are the entire domain. The first version tested `=== "yes"` for
+ * governance and `=== undefined` for unknown, which leaves everything in
+ * between — `"true"`, `"YES"`, `""`, a boolean surviving a hand-built `inputs`,
+ * a typo, a future encoding — landing in the `!governs` branch and printing the
+ * CONFIDENT sentence "does not govern this run". A value nobody can interpret is
+ * not evidence that the amendment is inapplicable; it is evidence that the
+ * question was not answered, and answering it the permissive way is exactly what
+ * `uncheckedClauses` exists to prevent. Named 2026-08-14 by adversarial review.
+ *
+ * Both readers go through here so they cannot drift: the clause that decides and
+ * the `uncheckedClauses` entry that stops the verdict being called FINAL.
+ */
+export function regimeOf(inputs: Readonly<Record<string, string>> | null, key: string): Regime {
+  if (inputs === null) return "unknown";
+  const raw = inputs[key];
+  if (raw === "yes") return "governs";
+  if (raw === "no") return "does-not-govern";
+  return "unknown";
+}
+
 export function repairRoundsMismatches(
   declared: number | null,
   scoped: ReadonlyArray<{ tool: string; detail?: Record<string, unknown> | undefined }>
@@ -1387,8 +1417,9 @@ function buildArchiveChecks(ctx: ChecksContext): void {
   // which is the distinction `uncheckedClauses` exists to preserve.
   const rmrInputs = ctx.gitAudit.ran ? ctx.gitAudit.inputs : null;
   const rmrPath = rmrInputs?.["clause5.repairRoundsAmendment.path"] ?? "(no committed audit)";
-  const rmrGoverns = rmrInputs?.["clause5.repairRoundsAmendment.governs"] === "yes";
-  const rmrUnknown = rmrInputs === null || rmrInputs["clause5.repairRoundsAmendment.governs"] === undefined;
+  const rmrRegime = regimeOf(rmrInputs, REPAIR_ROUNDS_GOVERNS);
+  const rmrGoverns = rmrRegime === "governs";
+  const rmrUnknown = rmrRegime === "unknown";
   const offenders = assessed.filter((a) => a.repairRounds.length > 0);
   const wouldHave =
     offenders.length > 0 ? `; ${offenders.length} observation(s) WOULD have fired it, reported and deciding nothing` : "";

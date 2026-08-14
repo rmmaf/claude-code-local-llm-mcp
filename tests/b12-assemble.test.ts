@@ -24,6 +24,7 @@ import {
   DISPOSITION_PRECEDENCE,
   instrumentWriteTriggers,
   pacingFacts,
+  regimeOf,
   repairRoundsMismatches,
 } from "../src/cost/b12/assemble.js";
 import { identify } from "../src/cost/b12/coverage.js";
@@ -411,6 +412,69 @@ describe("the disposition table — every predicate FIRING, with its control", (
     const clean = check(assemble(matched, govern(true)).result, "amendment 2026-08-14");
     expect(clean.fired).toBe(false);
     expect(clean.detail).toMatch(/ran at its task's frozen max_rounds/);
+  });
+
+  it("a regime key that is PRESENT but not yes/no is UNKNOWN, never 'does not govern'", () => {
+    // THE DEFECT THIS COVERS. The clause tested `=== "yes"` for governance and
+    // `=== undefined` for unknown, so every value in between — a plausible
+    // `"true"`, a case slip, an empty string, a raw boolean, a future encoding —
+    // fell into the `!governs` branch and printed the CONFIDENT sentence "does
+    // not govern this run". A value nobody can interpret is not evidence that
+    // the amendment is inapplicable; it is evidence the question went unanswered,
+    // and answering it permissively is what `uncheckedClauses` exists to stop.
+    //
+    // The old test only ever supplied "yes" and "no", so this whole space was
+    // uncovered — which is why the gap survived its own negative control.
+    const withGoverns = (raw: unknown): GitAudit => ({
+      ran: true,
+      verdict: "clean",
+      reasons: [],
+      inputs: {
+        head: "abc",
+        "clause5.repairRoundsAmendment.path": "evidence/2026-08-14-b12-amendment-repair-max-rounds.json",
+        "clause5.repairRoundsAmendment.governs": raw,
+      } as unknown as Record<string, string>,
+    });
+    const row = (maxRounds: number) => ({
+      ts: at(0),
+      tool: "repair",
+      latency_ms: 1,
+      bytes_raw: 0,
+      bytes_returned: 0,
+      turns_collapsed: 0,
+      detail: { max_rounds: maxRounds, budget_seconds: 240 },
+    });
+    const mismatched = archiveOf({ observations: [obsOf("t1", { telemetry: [row(10)] })] });
+
+    for (const bad of ["true", "YES", "Yes", "", "1", "no ", true, 0, null]) {
+      const out = assemble(mismatched, withGoverns(bad)).result;
+      const c = check(out, "amendment 2026-08-14");
+      expect(c.fired, `${JSON.stringify(bad)} must not fire`).toBe(false);
+      expect(c.detail, `${JSON.stringify(bad)} must read UNKNOWN`).toMatch(/regime is UNKNOWN/);
+      expect(c.detail, `${JSON.stringify(bad)} must not claim non-governance`).not.toMatch(/does not govern/);
+      // And it may not be published FINAL over a rule nobody established.
+      expect(out.uncheckedClauses.some((x) => /repairRoundsAmendment\.governs/.test(x))).toBe(true);
+      expect(out.final).toBe(false);
+    }
+
+    // THE TWO CONTROLS, so the loop above cannot be passing because everything
+    // reads UNKNOWN. Only the exact strings audit.ts writes are interpreted.
+    const yes = assemble(mismatched, withGoverns("yes")).result;
+    expect(check(yes, "amendment 2026-08-14").fired).toBe(true);
+    expect(yes.uncheckedClauses).toHaveLength(0);
+    const no = assemble(mismatched, withGoverns("no")).result;
+    expect(check(no, "amendment 2026-08-14").detail).toMatch(/does not govern this run/);
+    expect(no.uncheckedClauses).toHaveLength(0);
+  });
+
+  it("regimeOf: the three readings, and that absent and invalid are the same one", () => {
+    expect(regimeOf({ k: "yes" }, "k")).toBe("governs");
+    expect(regimeOf({ k: "no" }, "k")).toBe("does-not-govern");
+    expect(regimeOf({}, "k")).toBe("unknown");
+    expect(regimeOf(null, "k")).toBe("unknown");
+    for (const bad of ["true", "YES", "", "1", " no"]) {
+      expect(regimeOf({ k: bad }, "k"), bad).toBe("unknown");
+    }
   });
 
   it("repairRoundsMismatches: the comparison itself, away from the scoping", () => {
