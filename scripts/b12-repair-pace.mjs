@@ -38,7 +38,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BAR_MS = 300_000;
-const DEFAULT_MODEL = "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2";
+/**
+ * THE ID LM STUDIO SERVES, not the one the catalogue spells. Measured on mac-01
+ * 2026-08-14: the catalogue's `mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2`
+ * draws `selection: model … is not in the catalog; sending it to LM Studio
+ * anyway`, and the server answers to `qwen3-coder-30b-a3b-instruct-dwq-v2`.
+ * That divergence is worth more than this script: the treatment arm SELECTS from
+ * the catalogue, so a catalogue id the server does not serve degrades one arm
+ * silently for a whole run.
+ */
+const DEFAULT_MODEL = "qwen3-coder-30b-a3b-instruct-dwq-v2";
 
 const flag = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -84,17 +93,33 @@ async function main() {
     if (!existsSync(path.join(config.root, rel))) die(`${rel} is not in the measured tree — wrong worktree?`);
   }
 
-  // LM Studio has to be up, or three runs measure a failure path.
-  let reachable = false;
+  // LM STUDIO UP, AND SERVING THE MODEL BY THE NAME WE WILL ASK FOR. Both, in
+  // one probe, before anything expensive: the first attempt at this measurement
+  // spent a 31 s gate round and then sent an id the server does not have, and
+  // `selection` only WARNS about that ("not in the catalog; sending it to LM
+  // Studio anyway") rather than refusing. Two seconds here beats a minute there.
+  let served = null;
   try {
-    const r = await fetch(new URL("models", config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`), {
-      signal: AbortSignal.timeout(5000),
-    });
-    reachable = r.ok;
+    const base = config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`;
+    const r = await fetch(new URL("models", base), { signal: AbortSignal.timeout(5000) });
+    if (r.ok) {
+      const body = await r.json();
+      served = (body?.data ?? []).map((m) => m.id).filter((id) => typeof id === "string");
+    }
   } catch {
-    reachable = false;
+    served = null;
   }
-  if (!reachable) die(`${config.baseUrl} is not answering — start LM Studio's server (\`lms server start\`) and load ${MODEL}.`);
+  if (served === null) {
+    die(`${config.baseUrl} is not answering — start LM Studio's server (\`lms server start\`) and load ${MODEL}.`);
+  }
+  if (!served.includes(MODEL)) {
+    die(
+      `${config.baseUrl} does not serve ${JSON.stringify(MODEL)}.\n` +
+        `  it serves: ${served.length === 0 ? "(nothing loaded)" : served.map((s) => `\n    ${s}`).join("")}\n` +
+        `  pass --model with one of those. NOTE that a catalogue id the server does not serve is a\n` +
+        `  finding in its own right: the treatment arm selects from the catalogue.`
+    );
+  }
 
   process.stdout.write(`b12-repair-pace — task ${TASK}, ${RUNS} run(s)\n`);
   process.stdout.write(`  platform      ${process.platform} ${process.arch}, node ${process.versions.node}, ${os.cpus().length} cpu\n`);
