@@ -1535,18 +1535,31 @@ defect, and it pinned four of them in place.
     **`budget_seconds` is an unregistered free parameter** that silently truncates
     the registered `max_rounds` on any unit whose output is large enough. It must
     be fixed and recorded before the next exposure, not defaulted.
-  - **2026-08-14 — THE DEFAULT MOVED, AND IT MOVED THE WRONG WAY FOR THIS UNIT.**
+  - **2026-08-14 — THE DEFAULT MOVED, AND IT DOES NOT REACH THIS UNIT.**
     `DEFAULT_BUDGET_SECONDS` went 300 → 240 for a B12 pacing reason that has
     nothing to do with PHASE 3: at 300 the default was exactly `admissionRule`
     11's five-minute bar. On the B12 corpus that is safe — 65 of 65 tasks have a
     `fileScope` of one file and rounds cost a measured 89.4 s, so 240 still buys
-    2.7 rounds. On THIS unit it is not: `aggregate`'s rounds cost 106–132 s, so
-    240 buys **1.8–2.3**, where 300 bought 2.3–2.8 and already truncated the
-    registered `max_rounds: 3`. The truncation this entry demanded be fixed got
-    tighter instead. NOT A REGRESSION IN B12 — the two populations are different
-    and only the corpus one is measured — but the next PHASE 3 exposure must pass
-    `budget_seconds` explicitly rather than inherit it, which is what this entry
-    asked for in the first place and is still not done.
+    2.7 rounds. **A PHASE 3 EXPOSURE NEVER SEES IT AT ALL**: the harness pins
+    `budget_seconds: 600` and `max_rounds: 3` in the prompt
+    (`b12-scorer-mac.sh:255`, `:933-934`), pins `LOCAL_CODER_TIMEOUT_MS: 180000`
+    into the MCP config and refuses to run if it does not land there (`:660-662`),
+    and then VOIDs any unit whose telemetry row shows other limits, or none
+    (`:1102-1110`). An explicit argument wins over the default, so 240 changes
+    nothing here.
+  - **CORRECTION, SAME DAY, TO THE BULLET ABOVE.** As first written it said the
+    240 default buys `aggregate` 1.8–2.3 rounds against 300's 2.3–2.8, and that
+    passing `budget_seconds` explicitly "is still not done". **Both halves were
+    wrong, and the second one contradicted the very next bullet of this
+    document**, which registers the paired limits as done and VERIFIED. The
+    arithmetic described a hypothetical exposure that inherits the default, and
+    the harness forbids inheriting it. Left visible rather than deleted: the
+    error was asserting a gap without reading the harness that closes it, which
+    is the same failure this file records elsewhere under a different name.
+    WHAT SURVIVES OF IT: one path still inherits — `b12-preflight-mac.sh:505`
+    asks a scratch session to call `repair` with no limits at all. That is PHASE
+    1, its unit is a one-line type error, and no reading is taken from the
+    number, so it is named here rather than fixed.
   - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
     hedge that this would be its first real observation and not necessarily a bad
     one. Both halves resolved: real, and bad.
