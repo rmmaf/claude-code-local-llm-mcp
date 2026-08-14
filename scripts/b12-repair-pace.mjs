@@ -39,15 +39,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BAR_MS = 300_000;
 /**
- * THE ID LM STUDIO SERVES, not the one the catalogue spells. Measured on mac-01
- * 2026-08-14: the catalogue's `mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2`
- * draws `selection: model … is not in the catalog; sending it to LM Studio
- * anyway`, and the server answers to `qwen3-coder-30b-a3b-instruct-dwq-v2`.
- * That divergence is worth more than this script: the treatment arm SELECTS from
- * the catalogue, so a catalogue id the server does not serve degrades one arm
- * silently for a whole run.
+ * THE CATALOGUE'S ID, and the round trip that established it. Passing the SERVED
+ * id draws `selection: model … is not in the catalog; sending it to LM Studio
+ * anyway`, because the catalogue is what `selection` reads; passing the
+ * catalogue's id resolves cleanly — measured on mac-01 2026-08-14,
+ * `available: true, match: fuzzy`. An earlier version of this line had it
+ * backwards.
+ *
+ * THE MODEL IS PINNED HERE, NOT CHOSEN. Left to itself `selection` takes "the
+ * largest catalog model fitting usable free RAM", which on mac-01 with 14.6 GB
+ * free picked the 14B and not this one. A treatment arm whose model depends on
+ * how much RAM happens to be free is not one arm.
  */
-const DEFAULT_MODEL = "qwen3-coder-30b-a3b-instruct-dwq-v2";
+const DEFAULT_MODEL = "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2";
 
 const flag = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -93,41 +97,59 @@ async function main() {
     if (!existsSync(path.join(config.root, rel))) die(`${rel} is not in the measured tree — wrong worktree?`);
   }
 
-  // LM STUDIO UP, AND SERVING THE MODEL BY THE NAME WE WILL ASK FOR. Both, in
-  // one probe, before anything expensive: the first attempt at this measurement
-  // spent a 31 s gate round and then sent an id the server does not have, and
-  // `selection` only WARNS about that ("not in the catalog; sending it to LM
-  // Studio anyway") rather than refusing. Two seconds here beats a minute there.
-  let served = null;
-  try {
-    const base = config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`;
-    const r = await fetch(new URL("models", base), { signal: AbortSignal.timeout(5000) });
-    if (r.ok) {
-      const body = await r.json();
-      served = (body?.data ?? []).map((m) => m.id).filter((id) => typeof id === "string");
-    }
-  } catch {
-    served = null;
-  }
-  if (served === null) {
-    die(`${config.baseUrl} is not answering — start LM Studio's server (\`lms server start\`) and load ${MODEL}.`);
-  }
-  if (!served.includes(MODEL)) {
-    die(
-      `${config.baseUrl} does not serve ${JSON.stringify(MODEL)}.\n` +
-        `  it serves: ${served.length === 0 ? "(nothing loaded)" : served.map((s) => `\n    ${s}`).join("")}\n` +
-        `  pass --model with one of those. NOTE that a catalogue id the server does not serve is a\n` +
-        `  finding in its own right: the treatment arm selects from the catalogue.`
-    );
-  }
-
   process.stdout.write(`b12-repair-pace — task ${TASK}, ${RUNS} run(s)\n`);
   process.stdout.write(`  platform      ${process.platform} ${process.arch}, node ${process.versions.node}, ${os.cpus().length} cpu\n`);
   process.stdout.write(`  measured tree ${config.root}\n`);
   process.stdout.write(`  commit        ${head}  (${describe})\n`);
-  process.stdout.write(`  model         ${MODEL}\n`);
+  process.stdout.write(`  model         ${MODEL}  (PINNED, not selected)\n`);
   process.stdout.write(`  files         ${files.join(", ")}\n`);
-  process.stdout.write(`  budget        default (${BAR_MS} ms) — the number under test\n\n`);
+  process.stdout.write(`  budget        default (${BAR_MS} ms) — the number under test\n`);
+
+  // 1. IS THE SERVER UP AT ALL.
+  const base = config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`;
+  try {
+    const r = await fetch(new URL("models", base), { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error(String(r.status));
+  } catch {
+    die(`${config.baseUrl} is not answering — start LM Studio's server (\`lms server start\`).`);
+  }
+
+  // 2. UNLOAD EVERYTHING FIRST, because the occupied RAM is the PREVIOUS round's
+  //    model still resident. That residue is what made `fits` false for the 30B
+  //    on mac-01 — 14.6 GB usable free — and sent auto-selection to the 14B. A
+  //    measurement that begins with somebody else's model in memory measures the
+  //    leftovers, not the model.
+  const psBefore = sh(config.root, "lms", ["ps", "--json"]);
+  const loadedBefore = psBefore.status === 0 ? (psBefore.stdout ?? "").trim() : "(lms did not answer)";
+  const unload = sh(config.root, "lms", ["unload", "--all"]);
+  process.stdout.write(
+    `  unload        ${unload.status === 0 ? "lms unload --all OK" : `lms unload --all FAILED (${(unload.stderr ?? "").trim().slice(0, 120)}) — free the RAM by hand`}\n`
+  );
+
+  // 3. AND ONLY NOW ASK WHETHER THE PINNED MODEL FITS, through the product's own
+  //    answer rather than a second opinion.
+  const { loadModelCatalog } = await import(pathToFileURL(path.join(REPO, "dist", "models-csv.js")).href);
+  const { runStatus } = await import(pathToFileURL(path.join(REPO, "dist", "tools", "status.js")).href);
+  config.models = await loadModelCatalog(config.modelsCsvPath);
+  const status = await runStatus(config);
+  const entry = (status.catalog ?? []).find((m) => m.model === MODEL || m.resolved_id === MODEL);
+  const freeGb = status.memory?.usable_free_gb;
+  process.stdout.write(`  usable free   ${freeGb ?? "?"} GB after unload (was holding: ${loadedBefore.slice(0, 80)})\n`);
+  if (entry === undefined) {
+    die(`${MODEL} is not in the catalog (${(status.catalog ?? []).map((m) => m.model).join(", ") || "empty"}) — pass --model with a catalog id.`);
+  }
+  if (entry.available !== true) {
+    die(`${MODEL} resolves to ${JSON.stringify(entry.resolved_id)} but is not available (match: ${entry.available_match}).`);
+  }
+  if (entry.fits === false) {
+    die(
+      `${MODEL} still does NOT fit after unloading: ${entry.size_gb ?? "?"} GB against ${freeGb ?? "?"} GB usable free.\n` +
+        `  This is the finding, not an obstacle to route around: left to itself selection would take\n` +
+        `  "${status.auto_selection?.model ?? "?"}" instead, and a treatment arm whose model depends on free RAM is not one arm.\n` +
+        `  Close what is holding the memory, or pin a model that fits and say so.`
+    );
+  }
+  process.stdout.write(`  fit           ${entry.model} -> ${entry.resolved_id}, ${entry.size_gb ?? "?"} GB, fits: ${entry.fits}\n\n`);
 
   const totals = [];
   const modelMs = [];
