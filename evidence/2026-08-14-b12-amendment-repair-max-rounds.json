@@ -1,0 +1,44 @@
+{
+  "document": "b12-amendment-repair-max-rounds",
+  "schema": "b12-amendment/1",
+  "type": "pre-data amendment",
+  "written": "2026-08-14",
+  "headAtWriting": "ec550b678f6460998bb34191c9e8fd28a52124ba",
+  "amends": {
+    "artifact": "evidence/2026-08-05-b12-preregistration.json",
+    "clause": "design.artifacts 1 — the manifest item \"repair's frozen max_rounds\"",
+    "editsTheFrozenArtifact": false,
+    "frozenTextVerbatim": "evidence/<run_id>.b12.tasks.json — committed BEFORE the first billed request, as an ancestor of everything downstream, carrying: 30 ordered task ids; per task the prompt text and its sha256, the base commit SHA, the exact verification command string(s), the frozen gate `category`, repair's frozen max_rounds, the acceptance predicate and expected exit code, the declared verification stratum and expected subagent stratum, and the file scope; ...",
+    "theGapInOneSentence": "Artifact 1 requires the manifest to CARRY repair's frozen max_rounds. No clause requires an observation to RUN under it, and voidConditions 4 does not reach the case: 4 fires when a frozen item CHANGES, and a session calling repair at another value changes nothing — the manifest still declares what it declared."
+  },
+  "scope": "PROSPECTIVE. This amendment governs every B12 run whose FIRST SCORED OBSERVATION is committed after the commit that introduces this artifact. It governs no earlier run and may not be applied retroactively.",
+  "effect": "For a governed run: VOID if any scored observation's archived repair telemetry carries a detail.max_rounds different from that task's frozen repairMaxRounds, or carries no numeric detail.max_rounds at all. The disposition name is void(condition_not_as_registered).",
+  "whyRunLevelAndNotAnExclusion": "voidConditions 9 already settled this trade in the frozen text and states its own ground: it is 'run-level, so triggering it costs the run rather than buying an exclusion'. The same reasoning binds here and more sharply. repair is a TREATMENT-ONLY tool, so an exclusion rule would drop only treatment observations, the next task in the committed order would take the vacated admission slot, and whether the dropped tasks carry higher or lower savings than their replacements is unmeasured and unmeasurable before the run. That is a selection channel into the admitted set whose SIGN cannot be established, bought in exchange for a check. Run-level kills both arms together and selects on nothing.",
+  "whyFailClosedOnAnAbsentField": "A repair row carrying no numeric detail.max_rounds cannot be compared, and 'cannot tell' may not wear the same answer as 'matched' — the failure b12-scorer-mac.sh already voids on as limits-unverifiable. The field has existed since the telemetry detail was added; a row without it is a row from somewhere else, or from a build this run may not be scored against.",
+  "reason": "Found 2026-08-14 by adversarial review, pre-data. repairMaxRounds was refused when absent (b12-manifest.mjs:457), carried into the manifest (:480) and archived (archive.ts:256) — and then nothing transmitted or checked it. The observation session is handed task.prompt alone (b12-run.mjs), no corpus prompt mentions repair at all, and an observation matched the declared 3 only by COINCIDENCE of the tool's own default. A session calling max_rounds: 10 archived clean, and the only detail.max_rounds comparisons in the repository were unit tests of the tool itself. A frozen item nothing can violate is not frozen; it is decorative. This amendment supplies the sentence the frozen text does not carry.",
+  "whyNotDeliveredInstead": "The obvious repair — tell the session the number — is refused on purpose. The prompt is frozen by its own promptSha256 and the per-arm policy arrives from the committed out-of-repo blob, so delivering the limit would move the experiment's INPUT in order to satisfy a check on its output, and no arm's transcript would afterwards be comparable with one recorded before. Verification reads what happened; delivery changes what happens. Only the first is available to an amendment.",
+  "whatItDoesNotClose": [
+    "A repair call whose telemetry row never landed. The writer swallows append failures by design (src/telemetry.ts), and capture publishes invocationsWithoutRow as REPORTED, DECIDING NOTHING with a lawful counter-example beside it: a tool whose PREFLIGHT refuses emits no row while its result still sits in the transcript, so 'every local invocation has a row' is FALSE on a path the design intends. ABSENCE OF A ROW IS THEREFORE NOT EVIDENCE OF COMPLIANCE, and this amendment is evaluated over rows that exist and over nothing else. A guard built on the contrary premise would void lawful observations, which is why none is proposed.",
+    "The scope of what the driver reads. archive.telemetry is every parseable row in the observation's own worktree log up to the acceptance boundary (capture.ts:561); it is NOT the scoped subset scoring computes with scopeTelemetry (assemble.ts:658). Each observation gets a fresh worktree, so a foreign row must be written into that private tree to appear at all — but if one is, this amendment can void a run on a row scoring would have excluded as foreign.",
+    "The delivery gap itself. Nothing instructs the session to pass the frozen value; compliance is still reached by the tool's default happening to equal it. This amendment makes disobedience fatal to the run. It does not make obedience instructed, and a future change to DEFAULT_MAX_ROUNDS would silently make every compliant session non-compliant.",
+    "budget_seconds, which remains an unregistered free parameter (F7). Nothing freezes it, so there is no declared value to compare against, and this amendment does not create one — inventing a number here would register a condition by side effect, which is the defect it exists to answer, not to repeat."
+  ],
+  "doesNotChange": [
+    "the frozen pre-registration artifact, which is NOT edited — its sha256 pin stands",
+    "the outcome, the 30%/15% bands, the unit definition, the admission rule, the metric arithmetic, the acceptance predicates, the two sealed manifests",
+    "the 23 existing voidConditions, none of which is widened, narrowed or re-ordered — this adds a disposition, it does not edit one",
+    "the committed order, the admission cap of 20, or which attempt scores",
+    "any other clause, threshold, precedence rule or voiding condition"
+  ],
+  "stateAtWriting": {
+    "scoredObservations": 0,
+    "registeredRuns": 0,
+    "primaryRunStarted": false,
+    "note": "Written before the harness seal and before any registration, so no B12 residual exists to select against. It is nevertheless POST-FREEZE and must always be described as such: a governed run is governed by the 2026-08-05 pre-registration PLUS this artifact, never by the pre-registration alone."
+  },
+  "enforcedBy": "NOTHING YET, AND THIS FIELD MAY NOT BE SOFTENED UNTIL THAT CHANGES. The violation is DETECTED and REPORTED today — repairRoundsReasons in scripts/b12-run.mjs writes it to observation.repairRoundsFindings and prints it under a CONDITION NOT AS REGISTERED prefix — and it DECIDES NOTHING: no observation is invalidated and no void fires. The wiring this amendment requires is a void(condition_not_as_registered) raised in src/cost/b12/assemble.ts when this artifact's INTRODUCING commit is an ancestor of the run's freeze anchor, on the same governs-test src/cost/b12/audit.ts already applies to the conformance-paths amendment.",
+  "sealingPrecondition": "A run MAY NOT BE SEALED while this field reads NOTHING YET. An amendment whose rule no code applies is exactly the dead letter that produced it — a frozen item nothing can violate — and sealing over one would reproduce the defect at the level of the fix. The check is mechanical: the enforcement must exist, and a negative control must show the void FIRING on a fabricated mismatch before any registration commits.",
+  "reportedBesideIt": "observation.repairRoundsFindings is written on EVERY observation, governed or not, scored or pilot. On an ungoverned run those findings are REPORTED, DECIDING NOTHING, and may never be invoked to void or rescue it — they exist so that a reader can see a condition breach the amendment's clock does not reach.",
+  "adjudication": "docs/b12-scorer/FINDINGS.md and b12-corpus/manifest-config.json — the 2026-08-14 adversarial review of 8fedebc, whose third finding this answers",
+  "separateOnPurpose": "Committed alone. The conformance-paths amendment and the platform amendment still owed are distinct pre-data amendments and must not be folded into this one, nor it into them."
+}
