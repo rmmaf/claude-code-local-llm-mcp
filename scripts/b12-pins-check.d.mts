@@ -16,7 +16,21 @@ export interface IndexPin {
   readonly subject: string;
 }
 
-/** A pin that disagrees with the index, with both sides kept for the message. */
+/**
+ * A tree entry that is present but cannot carry a content pin — a symlink
+ * (120000) or a gitlink (160000). Kept as its raw shape so the refusal can name
+ * what it found instead of hashing the wrong object.
+ */
+export interface UnhashableEntry {
+  readonly mode: string;
+  readonly type: string;
+}
+
+/**
+ * A pin that disagrees with the tree, with both sides kept for the message.
+ * `declared` is the config's value rendered for display — the raw string when it
+ * is one, its JSON otherwise, and `null` when the key is absent entirely.
+ */
 export interface PinMismatch {
   readonly pin: string;
   readonly subject: string;
@@ -24,6 +38,9 @@ export interface PinMismatch {
   readonly measured: string | null;
   readonly why: string;
 }
+
+/** An unaskable git, as distinct from an answer about a pin. */
+export declare class GitUnaskable extends Error {}
 
 /**
  * The pins this guard covers. `ratesSha256` is deliberately absent: the CI alarm
@@ -35,19 +52,33 @@ export declare const INDEX_PINS: readonly IndexPin[];
 export declare function sha256(bytes: Uint8Array | string): string;
 
 /**
- * PURE. One entry per pin that disagrees. An absent pin and an absent index
- * entry are both mismatches, never skips.
+ * PURE. One entry per pin that disagrees. An absent pin, an absent tree entry
+ * and a non-regular-file entry are all mismatches, never skips. Tolerates a
+ * `declared` that is not an object.
  */
 export declare function pinMismatches(
-  measured: Readonly<Record<string, string>>,
-  declared: Readonly<Record<string, unknown>>
+  measured: Readonly<Record<string, string | UnhashableEntry>>,
+  declared: unknown
 ): PinMismatch[];
 
-/** sha256 of every subject as it stands IN THE INDEX. Absent where unstaged. */
-export declare function readIndexSubjects(
-  repo: string,
-  pins?: readonly IndexPin[]
-): Record<string, string>;
+/** Freeze what is staged into an immutable tree and return its id. */
+export declare function writeTree(repo: string): string;
 
-/** The manifest config AS STAGED, so a partial staging cannot pass. */
-export declare function readIndexConfig(repo: string, rel?: string): { pinned?: Record<string, unknown> };
+/**
+ * sha256 of every subject as it stands in `tree`. Absent where the tree has no
+ * such path; an `UnhashableEntry` where the path is not a regular file.
+ * Throws `GitUnaskable` rather than returning, so an unreadable object can never
+ * be reported as a stale pin.
+ */
+export declare function readTreeSubjects(
+  repo: string,
+  tree: string,
+  pins?: readonly IndexPin[]
+): Record<string, string | UnhashableEntry>;
+
+/** The manifest config as it stands in `tree`. Throws unless it is an object. */
+export declare function readTreeConfig(
+  repo: string,
+  tree: string,
+  rel?: string
+): { pinned?: unknown };

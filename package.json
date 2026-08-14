@@ -24,7 +24,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "prepare": "npm run build",
+    "prepare": "npm run hooks:install && npm run build",
+    "hooks:install": "git config core.hooksPath .githooks",
     "pretest": "npm run build",
     "test": "vitest run",
     "pins:check": "node scripts/b12-pins-check.mjs",
