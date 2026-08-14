@@ -2140,6 +2140,55 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R49 — R47 reproduced at a different commit, and the artifact is COMMITTED — 2026-08-14
+
+The fifth harness run, and the first whose evidence anyone else can open:
+`evidence/2026-08-14-win-dryrun-5.b12.firing.json`, base `3aff4db`, six green
+bookends, **all six controls FIRED**, zero problems, **13 of 13 budgeted runs**.
+
+**R43#4 IS CLOSED BY THIS COMMIT AND BY NOTHING BEFORE IT.** R43#4's charge was
+that "neither dry-run artifact is committed, so R42 cited runs nobody can
+replay" — and that stayed true through R47, whose numbers were quoted from a
+run that left no committed object either. This is the first firing artifact in
+the repository's history.
+
+**The specificity table reproduces R47's exactly**, at a different commit, on a
+different day, after R46's deadline change:
+
+| pair | fired | off-diagonal | R47 |
+|---|---|---|---|
+| m1 | yes | 2, both annotated | 2 |
+| m2 | yes | 0 | 0 |
+| m3 | yes | 1, annotated | 1 |
+| m4 | yes | **0** | 0 |
+| m5 | yes | 0 | 0 |
+| m6 | yes | 5, all annotated | 5 |
+
+Eight off-diagonal kills, every one annotated, none stale — the evaluator
+refuses a stale annotation and reported none.
+
+**m4 is the only line here that was PREDICTED before any run.** R45 argued its
+three "collateral" tests were never collateral but the F24 guards failing on
+their own. That prediction has now held twice. m1's, m3's and m6's annotations
+were written from run 1's output, so their stability is evidence for them and
+is still not the same as having predicted them — R47's residual circularity is
+unerased, not resolved.
+
+**What this does NOT establish, and the list has not shrunk.** It is win32
+while the scored sessions come from the Mac. The runId says `dryrun` because it
+is one. The artifact remains SELF-ASSERTED — the audit checks digests and
+coherence, never that the harness executed. And R48's independence objection
+stands: this is one more chained run on one machine, not an independent
+replication, and `specificityClean` is FALSE overall with eight kills that stay
+REPORTED, DECIDING NOTHING.
+
+**One runner defect was fixed before this ran** (`3aff4db`): `runsSpent` was
+`1 + 2 * registry.length` — the BUDGET, not the spend. A red pristine bookend
+skips its mutant invocation, and m5 was never mutated in run 1 for exactly that
+reason, so the field had reported thirteen runs on a matrix that made twelve.
+It is counted now, with `runsBudgeted` beside it. This run spent 13 of 13,
+which is only knowable because the two are reported separately.
+
 ### R47 — with the flake gone, the six fire and specificity becomes measurable — 2026-08-11
 
 The fourth harness run, and the first on a suite that answers the same thing
