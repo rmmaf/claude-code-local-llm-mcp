@@ -2411,6 +2411,41 @@ Pre-data, the answer is to bind both to a normalised toolchain identity and void
 on mismatch. Owed, and it belongs with the platform amendment `STATE.md` already
 lists.
 
+**THE PREMISE RE-VERIFIED AND THE CROSS-REFERENCE CORRECTED — 2026-08-14.** The
+premise still holds three days later: `decideAudit` compares the firing artifact's
+`baseCommit` with the attestation's `subjectCommit` and then checks coverage,
+firing and subject hashes, but never reads `fire.toolchain` (`audit.ts:817`); the
+artifact's own field is optional and labelled "REPORTED, DECIDING NOTHING"
+(`:533`); and `isFiringEvidence` accepts an artifact without inspecting it at all
+(`:1139`). **The suite attestation carries no runtime identity whatsoever** — its
+fields are commit, timestamp, `lockfileSha256`, file counters and test rows
+(`:543`, produced at `:1838`). The lockfile indirectly pins the installed vitest
+PACKAGE and identifies neither OS, arch, nor the node executable. So win32 firing
+evidence can still satisfy the audit against a Mac attestation whenever the commit
+and subject hashes agree.
+
+**The cross-reference above is wrong and is left standing with this correction
+beneath it.** `STATE.md` lists no amendment at all — it has five sections and none
+of them is an amendment list. The "platform amendment still owed" is real but is
+recorded in the two existing amendment ARTIFACTS
+(`evidence/2026-08-10-b12-amendment-conformance-paths.json:39` and
+`evidence/2026-08-14-b12-amendment-repair-max-rounds.json:46`), not in `STATE.md`.
+
+**And R43#3's proposed remedy is narrower than the problem it names.** Binding the
+firing artifact to the suite attestation makes those two agree with each other and
+binds NEITHER to the scored sessions. Two win32 proof artifacts that agree would
+pass such a check while the sessions they vouch for ran on the Mac. Any amendment
+here has to decide what the authoritative identity IS — the run's, not merely a
+consistency relation between two proofs — and that is a wider question than "compare
+or do not compare". **Confirmed authorable as a pre-data amendment** in the same
+shape as the existing two (`editsTheFrozenArtifact: false`, prospective from its
+introducing commit, enforced in `audit.ts`, which already owns clause 6 and the
+amendment-governance calculation at `:1442`). **No frozen clause reaches a platform
+mismatch today** — clause 6 requires the controls "shown FIRING" and says nothing
+about the environment; clauses 7, 21 and 22 compare versions across SESSIONS and
+ARMS, never the firing and suite runtimes. So voiding on mismatch would add a
+reason a clean run becomes void, and that is the owner's call, not the scorer's.
+
 **R43#4 — R42 overstated, sentence by sentence.** "R23 closes", "zero problems",
 "clean off-diagonal", "every declaration honoured exactly", "the red bookend was
 intermittency". And the load-bearing omission: **neither dry-run artifact is
