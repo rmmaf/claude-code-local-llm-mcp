@@ -64,9 +64,8 @@ export const sameCommittedText = (a: string, b: string): boolean =>
  * THE EVIDENCE CLAUSE 5 IS COMPUTED FROM, AS ONE CANONICAL DIGEST.
  *
  * The audit's clause-5 facts are derived from committed FILES — the runlog
- * (the row order and the sessionId join), the counterfactual (which
- * observation is the freeze anchor, by `aPlusSPositive`), and every
- * per-observation archive under `evidence/<runId>/`. R22 bound a committed
+ * (the row order and the sessionId join) and every per-observation archive
+ * under `evidence/<runId>/`. R22 bound a committed
  * audit to HEAD by refusing any change OUTSIDE `evidence/**` and re-hashing
  * the four evidence inputs the artifact named. That left this set free: an
  * observation appended after a clean audit changes the anchor's population
@@ -79,6 +78,22 @@ export const sameCommittedText = (a: string, b: string): boolean =>
  * text. Paths are inside the hashed lines ON PURPOSE — an added or removed
  * file moves the digest exactly as an edited one does. `null` means git
  * could not enumerate, which is a refusal at the caller, never "no evidence".
+ *
+ * THE COUNTERFACTUAL IS NOT IN THIS SET, AND ITS REMOVAL WAS FORCED (R50).
+ * It used to be, because the freeze anchor was read out of it. Under the
+ * one-scoring-invocation regime the anchor is derived from the committed
+ * ARCHIVE instead, so the counterfactual is an OUTPUT of the emission and not
+ * an input to the audit — and an output may not sit in the input digest.
+ *
+ * It is not a matter of tidiness. With ONE invocation, no counterfactual is
+ * committed when the audit runs and one IS committed immediately afterwards.
+ * `cat-file -e` below adds it conditionally, so leaving it here would make
+ * every later re-derivation compute a different digest than the audit
+ * recorded, and the emission-time binding refuses on exactly that difference —
+ * the audit would be unbindable the moment its own run was committed.
+ *
+ * INPUT-BINDING AND OUTPUT-POPULATION ARE DIFFERENT SETS. The counterfactual
+ * stays in `runEmittedArtifacts`, which is clause 5's re-emission escape.
  */
 export function runEvidenceDigest(
   runId: string,
@@ -90,9 +105,8 @@ export function runEvidenceDigest(
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l !== "");
-  for (const rel of [`evidence/${runId}.b12.runlog.jsonl`, `evidence/${runId}.b12.counterfactual.json`]) {
-    if (git(["cat-file", "-e", `HEAD:${rel}`]).ok) paths.push(rel);
-  }
+  const runlogRel = `evidence/${runId}.b12.runlog.jsonl`;
+  if (git(["cat-file", "-e", `HEAD:${runlogRel}`]).ok) paths.push(runlogRel);
   paths.sort();
   const lines: string[] = [];
   for (const rel of paths) {

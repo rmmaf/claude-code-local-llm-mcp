@@ -3271,3 +3271,55 @@ per-phase timings, child-process and active-handle capture at the deadline, and
 controlled load/no-load repetitions. None of that was done here, and this entry
 does not bring it closer. These twelve ran UNLOADED; R46's own check was 4/4 under
 deliberate load, and load is the variable most likely to matter for a deadline.
+
+## W8 — a fresh checkout of HEAD hashes identically, measured before it was relied on
+
+**Why it was asked.** Collapsing B12's operator loop to the ONE scoring
+invocation the frozen PHASE 6 text requires means the clause-5 freeze anchor can
+no longer be read from a COMMITTED counterfactual, because only `emit` writes
+one and that is what forced the second emit. One candidate repair scores a
+*detached checkout of HEAD* with the existing decoder, unmodified. That is only
+sound if a fresh checkout is byte-identical to the original — and
+`assemble.ts:1164-1183` makes rates byte-identity **verdict-bearing**, so a
+difference would not be cosmetic. It would flip a clause-4 comparison.
+
+**The specific hazard.** `git config core.autocrlf` on this machine returns
+**`true`**. A Windows checkout that materialises LF blobs as CRLF would hash
+differently, and `archive.ts:54-61` already exists because git performs exactly
+that transformation. This was the largest risk in the whole repair.
+
+**PREDICTION, written before measuring.** Byte-identical, because the suite is
+green on this Windows checkout and `tests/b12-plan.test.ts` already compares a
+committed blob's sha256 — which implies disk bytes equal blob bytes here. If the
+fresh checkout differed, `autocrlf` would be reaching these files and the premise
+would be wrong.
+
+**MEASURED, 2026-08-14, at `07e6b0d`.** `git worktree add --detach` into a
+scratch path, then sha256 of both copies:
+
+| File | Result |
+|---|---|
+| `.local-coder/rates.json` | SAME — `6d74cafd7fa5…` |
+| `MEASUREMENTS.jsonl` | SAME — `3d8e9dbd06aa…` |
+| `b12-corpus/manifest-config.json` | SAME — `d0e0bb2a2f4c…` |
+| `evidence/2026-08-05-b12-preregistration.json` | SAME — `5d42b19a899d…` |
+
+PREDICTION CONFIRMED. The mechanism is `.gitattributes`, which pins `eol=lf` for
+`*.json`, `*.jsonl`, `*.md`, `*.mjs`, `*.sh`, `*.patch` and `*.diff` (lines
+14-55) and so overrides `autocrlf` for every file the scorer reads. The measured
+`rates.json` digest equals the pinned `ratesSha256` exactly.
+
+**Also verified mechanically, same probe.** `git worktree add` works from INSIDE
+a linked worktree (this repository is one); the inner `HEAD` resolves to the
+detached SHA and not to the outer branch; and `git -C <tmp> show HEAD:<path>`
+reads the detached commit. The probe worktree was removed and `git worktree
+prune` run.
+
+**What this does NOT establish.** That the repair is the right one — that is a
+design question under review, not a measurement. That every input the scorer
+reads is tracked: `.local-coder/rates.json` and `MEASUREMENTS.jsonl` were
+confirmed tracked by `git ls-files --error-unmatch`, but `.gitignore` DOES
+exclude `.local-coder/telemetry.jsonl`, and any future scorer input that is
+untracked would be absent from a detached checkout and silently read as missing.
+That is a standing hazard of this approach and is written down here rather than
+discovered later.

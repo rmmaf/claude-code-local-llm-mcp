@@ -1,0 +1,52 @@
+{
+  "document": "b12-amendment-one-scoring-invocation",
+  "schema": "b12-amendment/1",
+  "type": "pre-data amendment",
+  "written": "2026-08-14",
+  "headAtWriting": "07e6b0d4204d29ffff09de9a0e8e2041e0486478",
+  "amends": {
+    "artifact": "evidence/2026-08-05-b12-preregistration.json",
+    "clause": "design.runPlan PHASE 6",
+    "editsTheFrozenArtifact": false,
+    "frozenTextVerbatim": "**PHASE 6 — VERDICT. One session, not in the manifest.** One scoring invocation over the ARCHIVE, never the live directory, using the committed command string. Emit `result.json` with the bracket, `R_hi⁺`, all five recomputations, the four strata, the three per-delivery figures with the asserted identity, both instrument-bias pairs, and the register of prior runs. Commit it. **This is the primary verdict and it is final at this commit.**",
+    "relatedFrozenText": "19. VOID if the scoring command differs from the one string committed at pre-registration, or if the id set the ambiguity check saw is not equal to the run's. invocationOwners is built from whatever sessions the CLI happened to read, so --session and --all produce different verdicts from identical bytes."
+  },
+  "scope": "PROSPECTIVE. This amendment governs every B12 run whose FIRST SCORED OBSERVATION is committed after the commit that introduces this artifact. It governs no earlier run and may not be applied retroactively.",
+  "ADDS_NO_VOID_CONDITION": "STATED FIRST BECAUSE IT IS THE POINT. This amendment creates no new way for a run to become VOID, and it REMOVES a way a run could look void without being void. Everything it enforces is a REFUSAL — retryable, writing no artifact, spending none of the three attempts. voidConditions still has 23 entries and this artifact adds none.",
+  "theContradiction": "The frozen PHASE 6 text requires ONE scoring invocation. The harness prescribed EIGHT steps containing TWO `emit` invocations (src/cost/b12/audit.ts:15-21). Both texts lived in this repository and b12-corpus/manifest-config.json:337-341 recorded that they could not both be obeyed, leaving the question to the owner. THE FROZEN TEXT GOVERNS. The harness is what changes, because the pre-registration may not be edited and because a scoring path is repairable only until the first scored observation exists — which is now.",
+  "whyThereWereEverTwo": "NOT a stylistic choice, which is why this needed an amendment rather than a comment fix. The clause-5 freeze anchor was read out of a COMMITTED counterfactual (audit.ts:1484), the counterfactual is written only by `emit` (emit.ts:293), and so the audit could not run until an emit had been committed — while the final artifacts could not carry `gitAudit.ran === true` until the audit had been committed. The cycle forced the second invocation. The anchor's real need is `aPlusSPositive` (assemble.ts:959), which marks the first ADMITTED observation; that is a fact the audit can derive for itself from the committed archive, so the cycle was engineered rather than inherent.",
+  "thePriceTheOldLoopPaid": [
+    "The pinned scoringCommand can carry ONE literal string and the loop invoked emit TWICE, so one of the two had to differ from the pin and fire voidConditions 19. Pinning the bare form would have voided the FINAL artifact, which is fatal; pinning the --audit form voided the FIRST instead. Step 2 of the old loop therefore COMMITTED a result.json carrying verdict:\"void\" for a run that was not void.",
+    "Downstream nothing could tell that artifact from a concluded VOID. narrowPriorRun returned a NON-NULL result without consulting `final` (archive.ts), priorRunsGate blocked only a null result (scripts/b12-register.mjs), and the attempt classification defaults to CONSUMED. A procedural intermediate read as an attempt spent out of three.",
+    "That reading is now closed at the register gate by a REFUSAL on any prior run whose committed result is not final, and by the same check on `open-b`, which parses the result itself and never passes through narrowPriorRun."
+  ],
+  "effect": "A governed run reaches its verdict through EXACTLY ONE invocation of the pinned scoring command. The audit derives the clause-5 freeze anchor from the COMMITTED archive rather than from a committed counterfactual, so it no longer requires a prior emission; and the emitter REFUSES — writing nothing — when it is asked to score without an audit that is present, committed, parseable and bound to the tree being emitted. Because the only path that writes the artifacts requires a bound audit, every committed result.json is FINAL by construction.",
+  "theLoopItEstablishes": [
+    "1. `audit <runId> --attest-suite` -> commit the suite attestation.",
+    "2. `audit <runId>` -> commit evidence/<runId>.b12.audit.json.",
+    "3. `node dist/cost/b12/emit.js <runId> --audit evidence/<runId>.b12.audit.json` -> commit the final artifacts.",
+    "THREE commits, ONE scoring invocation, and step 3 is literally the pinned string — so clause 19 is satisfied by the only invocation there is, instead of being violated by one of two."
+  ],
+  "whatItDoesNotClose": [
+    "That the single invocation was run from the repository root. invocationString is path.relative(cwd, argv[1]) (emit.ts:317), so another cwd still spells a different string and still voids on clause 19. The amendment removes the FORCED divergence, not the operator's ability to cause one.",
+    "The firing artifact's and the audit's self-assertion. Both are still claims by the producer; the emission re-derives the audit and requires agreement, which is a cross-check and never a proof that the harness executed.",
+    "Whether the archive being scored is the archive anyone intended. The anchor is now derived from committed evidence, which proves committedness and not intent.",
+    "Any statement about runs this amendment does not govern. Nothing here is retroactive."
+  ],
+  "doesNotChange": [
+    "the frozen pre-registration artifact, which is NOT edited — its sha256 pin stands",
+    "the set of conditions that can VOID a run — this amendment adds none and removes none",
+    "voidConditions 19 itself, which still compares the invocation against the pinned string by exact equality",
+    "the outcome, the 30%/15% bands, the unit definition, the admission rule, the metric arithmetic, the acceptance predicates, the two sealed manifests",
+    "any other clause, threshold, precedence rule or voiding condition"
+  ],
+  "stateAtWriting": {
+    "scoredObservations": 0,
+    "registeredRuns": 0,
+    "primaryRunStarted": false,
+    "harnessSealed": false,
+    "note": "Written before the harness seal and before any registration, so no B12 residual exists to select against. It is nevertheless POST-FREEZE and must always be described as such: a governed run is governed by the 2026-08-05 pre-registration PLUS this artifact, never by the pre-registration alone."
+  },
+  "adjudication": "docs/b12-scorer/FINDINGS.md — R50. Adjudicated against a Codex gpt-5.6-sol xhigh round and an independent in-repo verifier, with predictions written before either was dispatched; two of the five were falsified and both are recorded there. The reading that would have dissolved the conflict — that 'scoring invocation' means only an invocation of the pinned string — was considered and REFUTED: the bare invocation runs the same assembleRun, writes both artifacts and computes a bracket, and clause 19's own diagnostic calls a mismatching execution 'the scoring invocation'.",
+  "separateOnPurpose": "Committed alone. The conformance-paths, repair-max-rounds and run-toolchain amendments are distinct pre-data amendments and must not be folded into this one, nor it into them."
+}

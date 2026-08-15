@@ -12,13 +12,31 @@
  * entrypoint (`dist/cost/b12/audit.js`) AND this source counterpart — because
  * `dist/**` is the registered F24 hole.
  *
- * THE OPERATOR LOOP (each commit is the SESSION's act, never this file's):
- *   1. `emit` with no audit — both artifacts written, clauses 4–6 UNCHECKED;
- *   2. commit; 3. `audit <runId> --attest-suite` — writes ONLY the suite
- *   attestation and exits; 4. commit; 5. `audit <runId>` — reads COMMITTED
- *   state, writes `evidence/<runId>.b12.audit.json`; 6. commit;
- *   7. `emit <runId> --audit evidence/<runId>.b12.audit.json` — the final
- *   artifacts carry `gitAudit.ran === true`; 8. commit.
+ * THE OPERATOR LOOP — SIX STEPS AND **ONE** SCORING INVOCATION (each commit is
+ * the SESSION's act, never this file's):
+ *   1. `audit <runId> --attest-suite` — writes ONLY the suite attestation and
+ *   exits; 2. commit; 3. `audit <runId>` — reads COMMITTED state, writes
+ *   `evidence/<runId>.b12.audit.json`; 4. commit;
+ *   5. `emit <runId> --audit evidence/<runId>.b12.audit.json` — the final
+ *   artifacts, carrying `gitAudit.ran === true`; 6. commit.
+ *
+ * IT USED TO OPEN WITH A BARE `emit`, AND THAT WAS THE CONTRADICTION (R50).
+ * The frozen `runPlan` PHASE 6 says "**One** scoring invocation over the
+ * ARCHIVE … using the committed command string", and this comment prescribed
+ * two. `b12-corpus/manifest-config.json` recorded that the two texts could not
+ * both be obeyed and left the choice open. The frozen text governs; the
+ * harness is what changed.
+ *
+ * The first emit existed only because the clause-5 anchor was read out of a
+ * COMMITTED counterfactual, which only `emit` writes — a cycle. The anchor is
+ * now derived from the committed ARCHIVE, so the audit needs no prior
+ * emission, and the pinned `--audit` command is the only invocation there is.
+ * TWO HAZARDS DIED WITH IT: the pinned string can carry only one spelling, so
+ * the old first emit necessarily fired `voidConditions` 19 and COMMITTED a
+ * `verdict:"void"` for a run that was not void; and `emit` used to publish a
+ * NOT-FINAL result whenever the audit binding refused, which `open-b`
+ * accepted. `emit` now REFUSES and writes nothing, so every committed
+ * `result.json` is FINAL by construction.
  *
  * FAIL-CLOSED, IN TWO DIFFERENT WAYS. Git NOT ANSWERING — no repository, no
  * binary — is a REFUSAL: exit 2, no artifact, because an audit that could not
@@ -35,7 +53,8 @@ import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { runEvidenceDigest, sha256 } from "./archive.js";
+import { readRunArchive, runEvidenceDigest, sha256 } from "./archive.js";
+import { assembleRun } from "./assemble.js";
 import type { GitAudit } from "./types.js";
 
 /** The commit the pre-registration froze at; its blob may never drift. */
@@ -1463,7 +1482,130 @@ function isAncestor(git: Git, a: string, b: string): boolean | null {
   return false;
 }
 
-export function collectAuditFacts(repoRoot: string, runId: string, options: CollectorOptions = {}): AuditFacts {
+/**
+ * THE FREEZE ANCHOR, DERIVED FROM THE COMMITTED ARCHIVE (R50).
+ *
+ * The anchor is the FIRST ADMITTED observation in real runlog-row order —
+ * `aPlusSPositive` is `isAdmitted ? … : null` (`assemble.ts`), so "first
+ * non-null" IS "first admitted". Admission needs the terms, which needs the
+ * scorer, so the audit has to score to know where clause 5 begins.
+ *
+ * IT USED TO READ A COMMITTED COUNTERFACTUAL INSTEAD, AND THAT IS WHAT FORCED
+ * TWO SCORING INVOCATIONS — only `emit` writes a counterfactual, so the audit
+ * could not run until an emission had been committed, while the final
+ * artifacts could not be final until the audit had been. The frozen PHASE 6
+ * text says ONE invocation. So the cycle is cut here, at the input side.
+ *
+ * WHY A REAL CHECKOUT AND NOT A SECOND READER. Scoring the WORKING TREE would
+ * silently call mutable bytes a committed fact. Building a git-backed twin of
+ * `readRunArchive` would mean two decoders that must agree forever about
+ * directory grammar, missing files, identity checks and rate loading — and
+ * "almost equivalent" is the failure mode that produces an audit and an
+ * emission which disagree about the same run. A detached checkout keeps ONE
+ * decoder and makes the committed-only property structural: the directory IS
+ * the commit.
+ *
+ * EVERY GIT QUESTION HERE IS ASKED OF THE TEMPORARY WORKTREE. Mixing the two
+ * HEADs is the specific way this design fails — the original checkout's HEAD
+ * can move under a long audit, and an anchor half-derived from each would be
+ * an anchor for no tree at all.
+ */
+async function deriveAnchorFromCommittedArchive(
+  repoRoot: string,
+  runId: string,
+  headSha: string,
+  problems: string[],
+  /** The OUTER runner — possibly a test seam — used only to create and remove
+   * the checkout. Everything read INSIDE it goes through a real runner rooted
+   * at the checkout, because an injected runner is bound to `repoRoot` and
+   * would answer for the wrong tree. */
+  outerGit: Git
+): Promise<AuditFacts["clause5"]["anchor"]> {
+  const treeDir = path.join(
+    repoRoot,
+    ".b12-anchor-" + headSha.slice(0, 12) + "-" + process.pid.toString(36)
+  );
+  rmSync(treeDir, { recursive: true, force: true });
+  const added = outerGit(["worktree", "add", "--detach", treeDir, headSha]);
+  if (!added.ok) {
+    throw new AuditRefused(
+      `a detached worktree at ${headSha.slice(0, 12)} could not be created — the anchor is derived from the COMMITTED archive and there is nothing to read it from`
+    );
+  }
+  try {
+    // The checkout must BE the commit that was resolved, not whatever the name
+    // `HEAD` means by now. Cheap, and it is the whole premise.
+    const innerGit = gitIn(treeDir);
+    const innerHead = innerGit(["rev-parse", "HEAD"]);
+    if (!innerHead.ok || innerHead.out.trim() !== headSha) {
+      throw new AuditRefused(
+        `the detached worktree resolves HEAD to ${innerHead.out.trim().slice(0, 12) || "nothing"} and the audit resolved ${headSha.slice(0, 12)} — refusing to anchor on two different trees`
+      );
+    }
+    const archive = await readRunArchive(treeDir, runId);
+    // `{ ran: false }` and a null command on purpose: neither the audit's own
+    // verdict nor clause 19 can move `aPlusSPositive`, which is a function of
+    // admission and the terms. Passing anything else would let this internal
+    // scoring pass pretend to be the run's scoring invocation.
+    const { counterfactual } = assembleRun({ archive, gitAudit: { ran: false }, scoringCommandActual: null });
+
+    const rows = archive.runlog.rows;
+    const joined: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; started: string }> = [];
+    for (const o of counterfactual.observations) {
+      if (o.aPlusSPositive === null || o.aPlusSPositive === undefined) continue;
+      const obs = archive.observations.find(
+        (a) => a.taskId === o.taskId && a.arm === o.arm && a.attempt === o.attempt
+      );
+      const started = obs?.record?.started ?? null;
+      const sessionId = obs?.record?.sessionId ?? null;
+      if (started === null || sessionId === null) {
+        problems.push(
+          `the admitted observation ${o.taskId}/${o.arm} attempt ${o.attempt} carries no sessionId/started in the committed archive — the join has nothing to hold`
+        );
+        continue;
+      }
+      // THE UNIQUE ROW, kept verbatim from the old derivation (R7): zero rows
+      // cannot anchor, and two rows is a collision that may not be resolved by
+      // picking one.
+      const matches = rows
+        .map((row, i) => ({ row, i }))
+        .filter(
+          ({ row }) => row.sessionId === sessionId && row.runId === runId && row.taskId === o.taskId && row.arm === o.arm
+        );
+      if (matches.length !== 1) {
+        problems.push(
+          `${matches.length} runlog rows match ${o.taskId}/${o.arm} attempt ${o.attempt} by sessionId + (runId, taskId, arm) — the bijection the anchor requires does not hold`
+        );
+        continue;
+      }
+      joined.push({ taskId: o.taskId, arm: o.arm, attempt: o.attempt, rowIndex: matches[0]!.i, started });
+    }
+    if (problems.length > 0) return null;
+    joined.sort((a, b) => a.rowIndex - b.rowIndex);
+    const first = joined[0];
+    if (first === undefined) return null;
+
+    const dir = `evidence/${runId}/obs-${first.taskId}-${first.arm}${first.attempt === 1 ? "" : `-r${first.attempt}`}`;
+    // Asked of the WORKTREE's history, which is the captured commit's history.
+    const commit = orRefuse(introducingCommit(innerGit, dir), `the commit introducing ${dir}`);
+    if (commit === null) {
+      problems.push(`${dir} has no introducing commit — scored evidence that was never committed cannot anchor the freeze`);
+      return null;
+    }
+    return { taskId: first.taskId, arm: first.arm, attempt: first.attempt, started: first.started, commit };
+  } finally {
+    // PRECISE removal, not a global prune: another worktree's registration is
+    // none of this function's business. Cleanup failure is REPORTED, never
+    // swallowed — a leaked checkout is an operational fact the operator owns.
+    const removed = outerGit(["worktree", "remove", "--force", treeDir]);
+    if (!removed.ok) {
+      rmSync(treeDir, { recursive: true, force: true });
+      process.stderr.write(`b12 audit: the anchor worktree at ${treeDir} could not be removed by git; the directory was deleted and 'git worktree prune' may be owed\n`);
+    }
+  }
+}
+
+export async function collectAuditFacts(repoRoot: string, runId: string, options: CollectorOptions = {}): Promise<AuditFacts> {
   const git = options.gitRunner ?? gitIn(repoRoot);
   const head = git(["rev-parse", "HEAD"]);
   if (!head.ok) {
@@ -1478,165 +1620,15 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   const manifestBRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
   const registrationCommit = orRefuse(introducingCommit(git, manifestRel), `the commit introducing ${manifestRel}`);
 
-  // ---- clause 5: the anchor, from COMMITTED artifacts only ----------------
+  // ---- clause 5: the anchor, from the COMMITTED ARCHIVE (R50) -------------
+  // The runlog is still required and still fail-closed: it is the anchor's
+  // clock, and a missing one is not an empty ordering.
   const anchorProblems: string[] = [];
   let anchor: AuditFacts["clause5"]["anchor"] = null;
-  const cfShow = git(["show", `HEAD:evidence/${runId}.b12.counterfactual.json`]);
-  const runlogShow = git(["show", `HEAD:evidence/${runId}.b12.runlog.jsonl`]);
-  if (!cfShow.ok) {
-    anchorProblems.push(`HEAD carries no evidence/${runId}.b12.counterfactual.json — the anchor derivation needs the committed observations`);
-  } else if (!runlogShow.ok) {
+  if (!git(["cat-file", "-e", `HEAD:evidence/${runId}.b12.runlog.jsonl`]).ok) {
     anchorProblems.push(`HEAD carries no evidence/${runId}.b12.runlog.jsonl — real row order is the anchor's clock`);
   } else {
-    // THE CATCH COVERS THE COUNTERFACTUAL'S PARSE AND NOTHING ELSE (R32).
-    //
-    // It used to wrap the whole derivation below, including the MANDATORY
-    // directory probe that throws `AuditRefused` by design. A git that could
-    // not answer was therefore caught here, relabelled "the counterfactual
-    // does not parse" — a claim about a file that parsed perfectly — and
-    // `decideAudit` turned that fabricated anchor problem into a VOID. That
-    // inverts the whole doctrine: a refusal is retryable and writes no
-    // artifact; a VOID is a committable verdict that kills a paid run. A
-    // transient git failure may not spend the run.
-    type Counterfactual = {
-      observations?: Array<{ taskId?: unknown; arm?: unknown; attempt?: unknown; aPlusSPositive?: unknown }>;
-    };
-    let cf: Counterfactual | null = null;
-    try {
-      const parsed: unknown = JSON.parse(cfShow.out);
-      // `null` and scalars parse without throwing and carry no observations —
-      // the same nothing a broken file carries, said out loud rather than
-      // read as an empty population.
-      if (parsed === null || typeof parsed !== "object") throw new SyntaxError("not an object");
-      cf = parsed as Counterfactual;
-    } catch {
-      anchorProblems.push("the committed counterfactual does not parse — the anchor derivation has no observations to read");
-    }
-    if (cf !== null) {
-      const rows = runlogShow.out
-        .split("\n")
-        .filter((l) => l.trim() !== "")
-        .map((l, i) => {
-          try {
-            return { i, row: JSON.parse(l) as Record<string, unknown> };
-          } catch {
-            return null;
-          }
-        })
-        .filter((x): x is { i: number; row: Record<string, unknown> } => x !== null);
-      const joinedObs: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; sessionId: string; started: string; aPlusSPositive: unknown }> = [];
-      // THE POPULATION THE COUNTERFACTUAL CLAIMS, held against the population
-      // that is COMMITTED (R29).
-      //
-      // The anchor used to be derived from `counterfactual.observations`
-      // alone, and that list was never shown to cover anything. The
-      // counterfactual is written by the EMITTER, so an early unchecked emit
-      // followed by more observations leaves a STALE one committed: the loop
-      // below finds nothing to join, no anchor problem is raised, and clause 5
-      // reads "before the first scored observation — free". A pinned-path
-      // change made after the real first observation then gets a CLEAN audit,
-      // and the emission re-derives the same stale state and agrees with it.
-      //
-      // So the committed observation directories are enumerated and every one
-      // of them must be declared. Fail-closed: a probe that cannot answer may
-      // not wear the empty list a clean answer wears.
-      const declaredDirs = new Set<string>();
-      const dirProbe = git(["ls-tree", "-d", "--name-only", "HEAD", `evidence/${runId}/`]);
-      if (!dirProbe.ok) {
-        throw new AuditRefused(
-          `the committed observation directories under evidence/${runId}/ could not be enumerated — the anchor's population cannot be checked, and an empty answer is not a clean one`
-        );
-      }
-      const committedDirs = dirProbe.out
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l !== "" && l.includes("/obs-"));
-      for (const o of cf.observations ?? []) {
-        if (typeof o.taskId !== "string" || typeof o.arm !== "string" || typeof o.attempt !== "number") {
-          // Silently skipped until R29. A malformed entry is a counterfactual
-          // that cannot be checked against anything, not a free pass.
-          anchorProblems.push(
-            `a counterfactual observation carries no (taskId, arm, attempt) — the anchor's population cannot be joined to committed evidence`
-          );
-          continue;
-        }
-        const dir = `evidence/${runId}/obs-${o.taskId}-${o.arm}${o.attempt === 1 ? "" : `-r${o.attempt}`}`;
-        declaredDirs.add(dir);
-        const recShow = git(["show", `HEAD:${dir}/observation.json`]);
-        if (!recShow.ok) {
-          anchorProblems.push(`${dir}/observation.json is not committed — the attempt cannot be joined to its runlog row`);
-          continue;
-        }
-        let rec: Record<string, unknown>;
-        try {
-          rec = JSON.parse(recShow.out) as Record<string, unknown>;
-        } catch {
-          anchorProblems.push(`${dir}/observation.json does not parse`);
-          continue;
-        }
-        const sessionId = typeof rec.sessionId === "string" ? rec.sessionId : null;
-        const started = typeof rec.started === "string" ? rec.started : null;
-        if (sessionId === null || started === null) {
-          anchorProblems.push(`${dir}/observation.json carries no sessionId/started — the join has nothing to hold`);
-          continue;
-        }
-        // The UNIQUE row: sessionId + (runId, taskId, arm). Zero rows cannot
-        // anchor; two rows is the collision R7 named, and it may not be
-        // silently resolved by picking one.
-        const matches = rows.filter(
-          ({ row }) =>
-            row.sessionId === sessionId && row.runId === runId && row.taskId === o.taskId && row.arm === o.arm
-        );
-        if (matches.length !== 1) {
-          anchorProblems.push(
-            `${matches.length} runlog rows match ${o.taskId}/${o.arm} attempt ${o.attempt} by sessionId + (runId, taskId, arm) — the bijection the anchor requires does not hold`
-          );
-          continue;
-        }
-        joinedObs.push({
-          taskId: o.taskId,
-          arm: o.arm,
-          attempt: o.attempt,
-          rowIndex: matches[0]!.i,
-          sessionId,
-          started,
-          aPlusSPositive: o.aPlusSPositive,
-        });
-      }
-      // THE OTHER DIRECTION, and the one that was missing: committed evidence
-      // the counterfactual does not know about. One undeclared directory is
-      // enough — the list the anchor walks is not the run.
-      for (const dir of committedDirs) {
-        if (!declaredDirs.has(dir)) {
-          anchorProblems.push(
-            `${dir} is committed evidence the counterfactual does not declare — the anchor would be derived from a STALE population (re-emit before auditing)`
-          );
-        }
-      }
-      if (anchorProblems.length === 0) {
-        joinedObs.sort((a, b) => a.rowIndex - b.rowIndex);
-        const first = joinedObs.find((o) => o.aPlusSPositive !== null && o.aPlusSPositive !== undefined);
-        if (first !== undefined) {
-          const dir = `evidence/${runId}/obs-${first.taskId}-${first.arm}${first.attempt === 1 ? "" : `-r${first.attempt}`}`;
-          // `started` is CARRIED from the join, not shown and parsed a second
-          // time: the re-read was an unguarded `JSON.parse` over whatever a
-          // second `git show` returned, which is a SyntaxError wearing the
-          // counterfactual's name if HEAD moved underneath the audit.
-          const commit = orRefuse(introducingCommit(git, dir), `the commit introducing ${dir}`);
-          if (commit === null) {
-            anchorProblems.push(`${dir} has no introducing commit — scored evidence that was never committed cannot anchor the freeze`);
-          } else {
-            anchor = {
-              taskId: first.taskId,
-              arm: first.arm,
-              attempt: first.attempt,
-              started: first.started,
-              commit,
-            };
-          }
-        }
-      }
-    }
+    anchor = await deriveAnchorFromCommittedArchive(repoRoot, runId, headSha, anchorProblems, git);
   }
 
   // ---- clause 5: does the conformance-path amendment govern THIS run? -----
@@ -2239,7 +2231,7 @@ if (isMain) {
       writeFileSync(out, JSON.stringify(attestation, null, 2) + "\n", "utf8");
       process.stdout.write(`${out}\n(commit it; the audit reads the COMMITTED bytes)\n`);
     } else {
-      const facts = collectAuditFacts(repoRoot, runId);
+      const facts = await collectAuditFacts(repoRoot, runId);
       const { artifact } = buildAuditArtifact(facts);
       const out = evidenceArtifactPath(repoRoot, runId, ".b12.audit.json");
       writeFileSync(out, JSON.stringify(artifact, null, 2) + "\n", "utf8");

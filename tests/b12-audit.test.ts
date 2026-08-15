@@ -52,7 +52,7 @@ import { sha256 } from "../src/cost/b12/archive.js";
 // The BARRIER lives in the harness, not the scorer; imported here so the two
 // normalisers are compared against each other in one place.
 import { normaliseToolchainForBarrier, runToolchainRefusal } from "../scripts/b12-run.mjs";
-import { emitRun } from "../src/cost/b12/emit.js";
+import { EmitRefused, emitRun } from "../src/cost/b12/emit.js";
 import { at } from "./b12-fixtures.js";
 import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
@@ -616,7 +616,7 @@ describe("the collector over a deterministic scratch repository", () => {
   it("refuses OUTSIDE a repository — exit path, no facts, no artifact", async () => {
     const root = tempRoot();
     await fs.mkdir(path.join(root, "evidence"), { recursive: true });
-    expect(() => collectAuditFacts(root, "replay-01")).toThrow(AuditRefused);
+    await expect(collectAuditFacts(root, "replay-01")).rejects.toThrow(AuditRefused);
   });
 
   it("anchors the registration at the INTRODUCING commit and holds manifest B to the same act", async () => {
@@ -630,7 +630,7 @@ describe("the collector over a deterministic scratch repository", () => {
     await fs.writeFile(path.join(root, "evidence", "r1.b12.manifest-B.tasks.json"), `{"runId":"r1"}\n`, "utf8");
     commitAll(root, "manifest B, late");
 
-    const facts = collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json" });
+    const facts = await collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json" });
     expect(facts.registrationCommit).toBe(first);
     expect(facts.manifestA.registrationSha256).not.toBeNull();
     expect(facts.manifestA.headSha256).toBe(facts.manifestA.registrationSha256);
@@ -670,9 +670,9 @@ describe("fail-closed probes and the dirty-tree guard", () => {
     const { root, first } = await minimalRepo();
     const base = realGit(root);
     const failing: Git = (args) => (args[0] === "log" && args.includes("--format=%H %cI") ? { ok: false, out: "" } : base(args));
-    expect(() =>
+    await expect(
       collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: failing })
-    ).toThrow(/clause 5's history cannot be inspected/);
+    ).rejects.toThrow(/clause 5's history cannot be inspected/);
   });
 
   it("REFUSES when the introducing-commit log FAILS — an unaskable history is not 'does not govern'", async () => {
@@ -686,9 +686,9 @@ describe("fail-closed probes and the dirty-tree guard", () => {
     const { root, first } = await minimalRepo();
     const base = realGit(root);
     const failing: Git = (args) => (args[0] === "log" && args.includes("--diff-filter=A") ? { ok: false, out: "" } : base(args));
-    expect(() =>
+    await expect(
       collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: failing })
-    ).toThrow(/cannot be asked of this repository/);
+    ).rejects.toThrow(/cannot be asked of this repository/);
   });
 
   it("does NOT refuse when that log succeeds EMPTY — a path with no introducing commit IS an answer", async () => {
@@ -697,9 +697,9 @@ describe("fail-closed probes and the dirty-tree guard", () => {
     // succeed with no lines, and that must stay "does not govern" — which is
     // what the prospective-governance tests below depend on.
     const { root, first } = await minimalRepo();
-    expect(() =>
+    await expect(
       collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: realGit(root) })
-    ).not.toThrow();
+    ).resolves.toBeDefined();
   });
 
   // `lastCommit`'s REFUSAL IS UNEXERCISED, and that is measured rather than
@@ -725,9 +725,9 @@ describe("fail-closed probes and the dirty-tree guard", () => {
     commitAll(root, "attestation");
     const base = realGit(root);
     const failing: Git = (args) => (args[0] === "diff" ? { ok: false, out: "" } : base(args));
-    expect(() =>
+    await expect(
       collectAuditFacts(root, "r1", { preregFrozenCommit: first, preregPath: "prereg.json", gitRunner: failing })
-    ).toThrow(/drift cannot be inspected/);
+    ).rejects.toThrow(/drift cannot be inspected/);
   });
 
   it("names working-tree dirt outside evidence/ and stays quiet inside it", async () => {
@@ -758,7 +758,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
    */
   async function operatorLoop(
     hooks: { seed?: (root: string) => Promise<void>; beforeAttestation?: (root: string) => Promise<string> } = {}
-  ): Promise<{ root: string; registration: string; afterEmit: string; subject: string }> {
+  ): Promise<{ root: string; registration: string; subject: string }> {
     const root = tempRoot();
     await fs.cp(FIXTURE, root, { recursive: true });
     initRepo(root);
@@ -788,13 +788,18 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     );
     const registration = commitAll(root, "registration: fixture + both manifests");
 
-    // 1. emit, UNCHECKED — both artifacts, clauses 4–6 published as unchecked.
-    const unchecked = await emitRun(root, "replay-01");
-    expect(unchecked.verdict).toBe("void"); // 1 admitted of 20 — the arithmetic's own void
-    const afterEmit = commitAll(root, "first emit, unchecked");
-
-    // 2. the attestation, subject = the commit the suite would have run at.
-    const subject = (await hooks.beforeAttestation?.(root)) ?? afterEmit;
+    // 1. NOTHING. There is no first emit any more (R50).
+    //
+    // The old loop opened with a bare `emit` because the audit's freeze anchor
+    // was read out of a COMMITTED counterfactual, which only `emit` writes.
+    // That step is what forced TWO scoring invocations against a frozen PHASE 6
+    // text that says ONE — and, because the pinned command carries `--audit`,
+    // it also COMMITTED a `verdict:"void"` for a run that was not void.
+    //
+    // The anchor is now derived from the committed archive, so the audit needs
+    // no prior emission and the loop is: attest -> commit -> audit -> commit ->
+    // ONE pinned emit -> commit.
+    const subject = (await hooks.beforeAttestation?.(root)) ?? registration;
     const attestation = attestationOf(subject, { runId: "replay-01", lockfileSha256: sha256(LOCKFILE_TEXT) });
     await fs.writeFile(
       path.join(root, "evidence", "replay-01.b12.suite.json"),
@@ -829,14 +834,14 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
       "utf8"
     );
     commitAll(root, "suite attestation and firing matrix");
-    return { root, registration, afterEmit, subject };
+    return { root, registration, subject };
   }
 
   it("audit → commit → emit --audit lands gitAudit.ran === true with the clause check NOT fired", async () => {
     const { root, registration } = await operatorLoop();
 
     // 3. the audit, over COMMITTED state only.
-    const facts = collectAuditFacts(root, "replay-01", {
+    const facts = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
     });
@@ -893,7 +898,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     // the suite attestation moved underneath it, and clauses 4–6 would still
     // publish as clean over facts nobody audited.
     const { root, registration } = await operatorLoop();
-    const facts = collectAuditFacts(root, "replay-01", {
+    const facts = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
     });
@@ -902,11 +907,26 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     const auditRel = "evidence/replay-01.b12.audit.json";
     await fs.writeFile(path.join(root, auditRel), JSON.stringify(artifact, null, 2) + "\n", "utf8");
     commitAll(root, "the audit");
+    // R50: a binding failure REFUSES now instead of publishing a downgraded
+    // run, so the probe reports the refusal's reason rather than reading it off
+    // an artifact that is no longer written. `ran` stays in the shape so the
+    // clean case below still asserts the positive.
     const emit = async (): Promise<{ ran: boolean; problems: string[]; unchecked: string[] }> => {
-      const out = await emitRun(root, "replay-01", {
-        auditPath: auditRel,
-        auditCollectorOptions: { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" },
-      });
+      let out;
+      try {
+        out = await emitRun(root, "replay-01", {
+          auditPath: auditRel,
+          auditCollectorOptions: { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" },
+        });
+      } catch (error) {
+        if (!(error instanceof EmitRefused)) throw error;
+        // No "nothing was written" assertion HERE on purpose: this probe runs
+        // several times and the FIRST call succeeds, so the artifacts of that
+        // clean emission are legitimately still on disk. The write-nothing
+        // property is asserted where it can be asserted cleanly — in the
+        // dedicated refusal tests, against a root that never emitted.
+        return { ran: false, problems: [error.message], unchecked: ["clause 4", "clause 5", "clause 6"] };
+      }
       const result = JSON.parse(await fs.readFile(out.resultPath, "utf8")) as {
         gitAudit: { ran: boolean };
         uncheckedClauses: string[];
@@ -976,7 +996,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     await fs.writeFile(suitePath, JSON.stringify(attestation, null, 2) + "\n", "utf8");
     commitAll(root, "hostile: control flipped");
 
-    const flipped = collectAuditFacts(root, "replay-01", {
+    const flipped = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
     });
@@ -990,7 +1010,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     await fs.writeFile(path.join(root, "src", "cost", "hostile.ts"), "export const x = 1;\n", "utf8");
     commitAll(root, "hostile: pinned path touched");
 
-    const drifted = collectAuditFacts(root, "replay-01", {
+    const drifted = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
     });
@@ -1034,12 +1054,12 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     // this audit did until R37 — the path probe has nothing to say and the run
     // audits CLEAN, while every scored observation's saving was redefined
     // underneath it.
-    const blind = collectAuditFacts(root, "replay-01", { ...opts, emissionFencedFiles: [] });
+    const blind = await collectAuditFacts(root, "replay-01", { ...opts, emissionFencedFiles: [] });
     expect(blind.clause5.offenders).toEqual([]);
     expect(decideAudit(blind).verdict).toBe("clean");
 
     // With the fence: an offender no PATH can name, and a void that says so.
-    const seen = collectAuditFacts(root, "replay-01", opts);
+    const seen = await collectAuditFacts(root, "replay-01", opts);
     expect(seen.clause5.offenders).toEqual([]); // still none — that IS the finding
     expect(seen.clause5.emission.drifted).toHaveLength(1);
     expect(seen.clause5.emission.drifted[0]).toMatch(/src\/tools\/gate\.ts$/);
@@ -1067,7 +1087,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
         return commitAll(r, "the tool edited outside its emission, and prose rewritten inside it");
       },
     });
-    const facts = collectAuditFacts(root, "replay-01", {
+    const facts = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
     });
@@ -1107,90 +1127,85 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     return commitAll(root, "the control gutted — mid-run, BEFORE the attestation");
   };
 
-  it("a STALE counterfactual cannot make a scored run look anchorless", async () => {
-    // R29: the anchor walked `counterfactual.observations` and nothing ever
-    // proved that list covers the committed evidence. The counterfactual is
-    // written by the EMITTER, so an early unchecked emit followed by more
-    // observations leaves a stale one committed — and the audit then read
-    // "no observation scored yet, sources FREE" over a run that had scored.
-    // A pinned-path change after the real first observation got a CLEAN
-    // audit, and the emission re-derived the same stale state and agreed.
-    // The drift lands BEFORE the attestation and the attestation names it, so
-    // clause 6's own non-evidence check is silent: whatever fires here fires
-    // because of clause 5, and nothing else.
+  it("the committed counterfactual no longer touches the anchor — emptied OR corrupt, clause 5 still fires (R50)", async () => {
+    // WHAT R29 WAS ABOUT, CARRIED FORWARD. The anchor used to walk
+    // `counterfactual.observations`, a list written by the EMITTER that nothing
+    // proved covered the committed evidence — so an early unchecked emit
+    // followed by more observations left a stale one committed, the audit read
+    // "nothing scored yet, sources FREE" over a run that HAD scored, and a
+    // pinned-path change after the real first observation got a CLEAN audit.
+    //
+    // Under the one-invocation regime the anchor comes from the committed
+    // ARCHIVE, scored in a detached checkout of HEAD. So the whole class is
+    // gone rather than guarded: this test now proves the counterfactual is
+    // INERT. It is destroyed twice over — emptied of observations AND left
+    // unparseable — and the audit must still find the anchor and still void on
+    // the pinned path touched after the first score.
+    //
+    // The old assertion was `anchor === null`. That the SAME repository now
+    // yields a real anchor from bytes that used to erase it is the measurement.
     const cfRel = "evidence/replay-01.b12.counterfactual.json";
     const { root, registration } = await operatorLoop({
       beforeAttestation: async (r) => {
-        const cf = JSON.parse(await fs.readFile(path.join(r, cfRel), "utf8")) as { observations: unknown[] };
-        expect(cf.observations.length).toBeGreaterThan(0); // the run DID score
-        await fs.writeFile(path.join(r, cfRel), JSON.stringify({ ...cf, observations: [] }, null, 2) + "\n", "utf8");
+        // A counterfactual that is pure garbage — and, under the one-invocation
+        // loop, one that was never emitted in the first place. Either way the
+        // anchor must not care.
+        await fs.writeFile(path.join(r, cfRel), "{not json — and it does not matter\n", "utf8");
         await fs.mkdir(path.join(r, "src", "cost"), { recursive: true });
         await fs.writeFile(path.join(r, "src", "cost", "hostile.ts"), "export const x = 1;\n", "utf8");
-        return commitAll(r, "a stale counterfactual, and a pinned path touched after the first score");
+        return commitAll(r, "a garbage counterfactual, and a pinned path touched after the first score");
       },
     });
 
-    const facts = collectAuditFacts(root, "replay-01", {
+    const facts = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
     });
-    expect(facts.clause5.anchor).toBeNull(); // the stale list yields no anchor…
+    expect(facts.clause5.anchorProblems).toEqual([]);
+    expect(facts.clause5.anchor).not.toBeNull(); // derived from the ARCHIVE, not from those bytes
     const { verdict, reasons } = decideAudit(facts);
-    expect(verdict).toBe("void"); // …and that is a VOID, never a freedom
-    expect(facts.clause5.anchorProblems.join(" ")).toMatch(/committed evidence the counterfactual does not declare/);
-    expect(reasons.join(" ")).toMatch(/re-emit before auditing/);
-  }, 60_000);
+    expect(verdict).toBe("void"); // and the real defect — the pinned path — still fires
+    expect(reasons.join(" ")).toMatch(/clause 5/);
+    expect(facts.clause5.offenders.length).toBeGreaterThan(0);
+    // The old failure mode must not come back under any spelling.
+    expect(facts.clause5.anchorProblems.join(" ")).not.toMatch(/counterfactual/);
+  }, 120_000);
 
-  it("a failing MANDATORY probe refuses — it does not become a VOID wearing the counterfactual's name", async () => {
-    // R32. The anchor derivation sat inside one broad try/catch whose handler
-    // pushed "the committed counterfactual does not parse". The MANDATORY
-    // directory probe — R29's own fail-closed guard — throws `AuditRefused`
-    // from INSIDE that block, so a git that could not answer was caught,
-    // relabelled as a claim about a file that parsed perfectly, and handed to
-    // `decideAudit`, which turned it into a VOID.
+  it("a failing MANDATORY probe REFUSES — a checkout that cannot be made is not an anchorless run", async () => {
+    // R32, carried forward to the probe that is now mandatory. The rule is the
+    // one that must never invert: a refusal writes NO artifact and is
+    // retryable; a VOID is a committable verdict that kills a paid run.
+    // Transient git may not spend the run.
     //
-    // That inverts the two outcomes that must never be swapped: a refusal
-    // writes NO artifact and can be retried; a VOID is a committable verdict
-    // that kills a paid run. Transient git may not spend the run.
+    // The old mandatory probe was `ls-tree -d` over the observation
+    // directories. The new one is the detached checkout itself — if it cannot
+    // be created, the audit has no committed archive to score and must say so
+    // rather than report an absent anchor.
     const { root, registration } = await operatorLoop();
     const collector = { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" };
     const base: Git = (args) => {
       const r = spawnSync("git", args, { cwd: root, encoding: "utf8" });
       return { ok: r.status === 0, out: r.stdout ?? "" };
     };
-    // ONLY R29's probe — `ls-tree -d`. The R24 evidence digest enumerates the
-    // same directory with `-r` and refuses from OUTSIDE the block, so blinding
-    // both would let that second refusal stand in for the first and the
-    // control would pass against the defect. Discriminating on `-d` is what
-    // makes this a control rather than a coincidence.
+    // ONLY the worktree creation. Blinding more would let some other refusal
+    // stand in for this one and the control would pass against the defect.
     const failing: Git = (args) =>
-      args[0] === "ls-tree" && args.includes("-d") ? { ok: false, out: "" } : base(args);
+      args[0] === "worktree" && args[1] === "add" ? { ok: false, out: "" } : base(args);
 
     // Unwrapped, this repository audits without refusing at all…
-    expect(() => collectAuditFacts(root, "replay-01", collector)).not.toThrow();
-    // …and with the one mandatory probe blinded it REFUSES, by its own name.
+    await expect(collectAuditFacts(root, "replay-01", collector)).resolves.toBeDefined();
+    // …and with the mandatory probe blinded it REFUSES, by its own name.
     let thrown: unknown = null;
     try {
-      collectAuditFacts(root, "replay-01", { ...collector, gitRunner: failing });
+      await collectAuditFacts(root, "replay-01", { ...collector, gitRunner: failing });
     } catch (error) {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(AuditRefused);
-    expect(String(thrown)).toMatch(/committed observation directories/);
-    // The fabricated claim is the thing that must NOT come back.
+    expect(String(thrown)).toMatch(/detached worktree/);
+    // A refusal, never a verdict about the run.
     expect(String(thrown)).not.toMatch(/does not parse/);
-
-    // AND THE CATCH STILL DOES ITS REAL JOB: a counterfactual that genuinely
-    // does not parse is an anchor problem, not a refusal — narrowing the
-    // boundary did not delete the case it was written for.
-    const cfRel = "evidence/replay-01.b12.counterfactual.json";
-    await fs.writeFile(path.join(root, cfRel), "{not json", "utf8");
-    commitAll(root, "a corrupted counterfactual");
-    const facts = collectAuditFacts(root, "replay-01", collector);
-    expect(facts.clause5.anchorProblems.join(" ")).toMatch(/does not parse/);
-    expect(facts.clause5.anchor).toBeNull();
-    expect(decideAudit(facts).verdict).toBe("void");
-  }, 60_000);
+  }, 120_000);
 
   it("a FORGED clean audit — committed, correctly hashed — is refused by re-derivation", async () => {
     // R26: every binding check asked what the artifact SAYS about a handful
@@ -1202,7 +1217,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     // artifact with one input rewritten and the verdict flipped.
     const { root, registration } = await operatorLoop();
     const collector = { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" };
-    const { artifact } = buildAuditArtifact(collectAuditFacts(root, "replay-01", collector));
+    const { artifact } = buildAuditArtifact(await collectAuditFacts(root, "replay-01", collector));
     const auditRel = "evidence/replay-01.b12.audit.json";
     const forged = {
       ...artifact,
@@ -1213,15 +1228,17 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     };
     await fs.writeFile(path.join(root, auditRel), JSON.stringify(forged, null, 2) + "\n", "utf8");
     commitAll(root, "hostile: a hand-authored audit");
-    const out = await emitRun(root, "replay-01", { auditPath: auditRel, auditCollectorOptions: collector });
-    const result = JSON.parse(await fs.readFile(out.resultPath, "utf8")) as {
-      gitAudit: { ran: boolean };
-      uncheckedClauses: string[];
-      archiveProblems?: string[];
-    };
-    expect(result.gitAudit).toEqual({ ran: false });
-    expect(result.uncheckedClauses).toHaveLength(3);
-    expect((result.archiveProblems ?? []).join(" ")).toMatch(/clause5\.anchor\.taskId does not survive re-derivation/);
+    // R50: this used to DOWNGRADE — publish the run with gitAudit.ran false
+    // and the refusal in archiveProblems. A forged audit therefore still
+    // produced a committed result.json. It now refuses and writes nothing.
+    const attempt = emitRun(root, "replay-01", { auditPath: auditRel, auditCollectorOptions: collector });
+    await expect(attempt).rejects.toThrow(EmitRefused);
+    await expect(
+      emitRun(root, "replay-01", { auditPath: auditRel, auditCollectorOptions: collector })
+    ).rejects.toThrow(/clause5\.anchor\.taskId does not survive re-derivation/);
+    for (const rel of runEmittedArtifacts("replay-01")) {
+      await expect(fs.access(path.join(root, rel))).rejects.toThrow();
+    }
   }, 60_000);
 
   it("a forged VERDICT is refused even when every input is the truth", async () => {
@@ -1237,7 +1254,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     attestation.tests[0]!.status = "failed";
     await fs.writeFile(suitePath, JSON.stringify(attestation, null, 2) + "\n", "utf8");
     commitAll(root, "a control that did not pass");
-    const { artifact } = buildAuditArtifact(collectAuditFacts(root, "replay-01", collector));
+    const { artifact } = buildAuditArtifact(await collectAuditFacts(root, "replay-01", collector));
     expect(artifact.verdict).toBe("void");
     await fs.writeFile(
       path.join(root, auditRel),
@@ -1245,15 +1262,14 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
       "utf8"
     );
     commitAll(root, "hostile: the verdict rewritten");
-    const out = await emitRun(root, "replay-01", { auditPath: auditRel, auditCollectorOptions: collector });
-    const result = JSON.parse(await fs.readFile(out.resultPath, "utf8")) as {
-      gitAudit: { ran: boolean };
-      archiveProblems?: string[];
-    };
-    expect(result.gitAudit).toEqual({ ran: false });
-    expect((result.archiveProblems ?? []).join(" ")).toMatch(
+    await expect(
+      emitRun(root, "replay-01", { auditPath: auditRel, auditCollectorOptions: collector })
+    ).rejects.toThrow(
       /says clean and re-deriving it here says void — the verdict was not produced by these facts/
     );
+    for (const rel of runEmittedArtifacts("replay-01")) {
+      await expect(fs.access(path.join(root, rel))).rejects.toThrow();
+    }
   }, 60_000);
 
   it("the amendment, born BEFORE the anchor, puts the conformance files under clause 5", async () => {
@@ -1261,7 +1277,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
       seed: seedConformance(true),
       beforeAttestation: gutTheControl,
     });
-    const facts = collectAuditFacts(root, "replay-01", {
+    const facts = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
       amendmentPath: AMENDMENT_REL,
@@ -1289,7 +1305,7 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
       seed: seedConformance(false),
       beforeAttestation: gutTheControl,
     });
-    const facts = collectAuditFacts(root, "replay-01", {
+    const facts = await collectAuditFacts(root, "replay-01", {
       preregFrozenCommit: registration,
       preregPath: "evidence/replay-01.b12.tasks.json",
       amendmentPath: AMENDMENT_REL,
@@ -1313,6 +1329,36 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     expect(artifact.inputs["clause6.conformanceHashes"]).toMatch(/tests\/cost-meter\.test\.ts .*DIFFERS/);
     expect(artifact.inputs["clause6.conformanceHashes"]).toMatch(/session-token-walk\.test\.ts .*same/);
   }, 60_000);
+
+  // MOVED HERE FROM ITS OWN describe (R50). It needs a real emission, and an
+  // emission now needs a committed audit — which is what `operatorLoop` and the
+  // three steps below build. The control itself is unchanged in substance: the
+  // re-emission escape's population must be EXACTLY the emission's write list.
+  it("the re-emission escape's population is EXACTLY what the emission creates", async () => {
+    const { root, registration } = await operatorLoop();
+    const collector = { preregFrozenCommit: registration, preregPath: "evidence/replay-01.b12.tasks.json" };
+    const { artifact } = buildAuditArtifact(await collectAuditFacts(root, "replay-01", collector));
+    await fs.writeFile(
+      path.join(root, "evidence", "replay-01.b12.audit.json"),
+      JSON.stringify(artifact, null, 2) + "\n",
+      "utf8"
+    );
+    commitAll(root, "the audit");
+
+    const evidenceDir = path.join(root, "evidence");
+    const listing = async (): Promise<Set<string>> => new Set(await fs.readdir(evidenceDir));
+    const before = await listing();
+    await emitRun(root, "replay-01", {
+      auditPath: "evidence/replay-01.b12.audit.json",
+      scoringCommandActual: "node dist/cost/b12/emit.js replay-01",
+      auditCollectorOptions: collector,
+    });
+    const created = [...(await listing())].filter((f) => !before.has(f)).sort();
+
+    // A third emitted artifact, or one that stopped being written, breaks this
+    // — which is the whole point. R24 already paid for naming files by hand.
+    expect(created).toEqual(runEmittedArtifacts("replay-01").map((r) => path.basename(r)).sort());
+  }, 120_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -1327,22 +1373,8 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
 // ---------------------------------------------------------------------------
 
 describe("the re-emission escape's population", () => {
-  it("is EXACTLY what the emission creates — one list, not two spellings", async () => {
-    const root = tempRoot();
-    await fs.cp(FIXTURE, root, { recursive: true });
-    initRepo(root);
-    const evidenceDir = path.join(root, "evidence");
-    const listing = async (): Promise<Set<string>> => new Set(await fs.readdir(evidenceDir));
-
-    const before = await listing();
-    await emitRun(root, "replay-01");
-    const created = [...(await listing())].filter((f) => !before.has(f)).sort();
-
-    // A third emitted artifact, or one that stopped being written, breaks this
-    // — which is the whole point. R24 already paid for naming files by hand.
-    expect(created).toEqual(runEmittedArtifacts("replay-01").map((r) => path.basename(r)).sort());
-  }, 60_000);
-
+  // The population control itself moved into the e2e describe, where a real
+  // emission can be produced — an emission now requires a committed audit.
   it("and the READING is on the artifact's face, not only in a comment", () => {
     // A rule a replayer cannot see is a rule only its author can check.
     expect(AUDIT_INPUT_KEYS).toContain("clause5.reemission.population");
@@ -1351,38 +1383,54 @@ describe("the re-emission escape's population", () => {
 });
 
 // ---------------------------------------------------------------------------
-// R37#1 — `PREMISES.md`, a PRE-DATA rule: "The scoring invocation requires a
-// COMMITTED clause 4–6 audit artifact … Anything short of that is NO audit:
-// `assemble` publishes clauses 4–6 as UNCHECKED — never as 'clean' — and a
-// verdict emitted without one is not final." `uncheckedClauses` carried the
-// fact and nothing SAID it: the artifact had no finality field and the CLI
-// printed an ordinary `verdict: …` line.
+// R37#1 said a verdict emitted without a committed audit is NOT FINAL, and made
+// the emission SAY so. R50 goes further and stops it happening: the pre-data
+// rule in PREMISES.md is that "the scoring invocation requires a COMMITTED
+// clause 4–6 audit artifact", and an invocation that cannot satisfy its own
+// precondition should not produce a verdict to qualify.
+//
+// This describe used to assert the opposite — that the CLI permits the bare
+// form and the rule qualifies it. That permission is what committed a
+// provisional void under the old two-emit loop, and what let a NOT-FINAL
+// open verdict reach open-b.
 // ---------------------------------------------------------------------------
 
-describe("a verdict emitted without a committed audit", () => {
-  it("is published as NOT FINAL, on the artifact and out of the emission", async () => {
+describe("an emission without a committed audit", () => {
+  it("REFUSES, and writes nothing at all", async () => {
     const root = tempRoot();
     await fs.cp(FIXTURE, root, { recursive: true });
     initRepo(root);
 
-    // No `auditPath`: exactly the path an operator takes when they score
-    // before the audit exists — which the CLI permits and the rule qualifies.
-    const emitted = await emitRun(root, "replay-01");
-    expect(emitted.final).toBe(false);
+    await expect(emitRun(root, "replay-01")).rejects.toThrow(EmitRefused);
+    await expect(emitRun(root, "replay-01")).rejects.toThrow(/no --audit was given/);
 
-    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8")) as {
-      final: boolean;
-      uncheckedClauses: string[];
-      verdict: string;
-    };
-    expect(result.final).toBe(false);
-    // The two must agree, and `final` is DERIVED from this list rather than
-    // from `gitAudit.ran`, so a gap of any origin marks the verdict.
-    expect(result.uncheckedClauses.length).toBeGreaterThan(0);
-    // And the verdict is still published — the rule qualifies it, it does not
-    // suppress it. Minting a fourth verdict value would change the artifact's
-    // grammar, which the frozen text does not ask for.
-    expect(typeof result.verdict).toBe("string");
+    // NOTHING WAS WRITTEN. The refusal is only worth having if it is silent on
+    // disk — a half-written artifact would be the same hazard under a new name.
+    for (const rel of runEmittedArtifacts("replay-01")) {
+      await expect(fs.access(path.join(root, rel))).rejects.toThrow();
+    }
+  }, 60_000);
+
+  it("REFUSES an audit that is named but not committed", async () => {
+    const root = tempRoot();
+    await fs.cp(FIXTURE, root, { recursive: true });
+    initRepo(root);
+    const auditPath = "evidence/replay-01.b12.audit.json";
+
+    // Named, absent.
+    await expect(emitRun(root, "replay-01", { auditPath })).rejects.toThrow(EmitRefused);
+
+    // Present in the working tree, never committed — a fabrication.
+    await fs.writeFile(
+      path.join(root, auditPath),
+      JSON.stringify({ ran: true, verdict: "clean", reasons: [], inputs: { head: "x" } }),
+      "utf8"
+    );
+    await expect(emitRun(root, "replay-01", { auditPath })).rejects.toThrow(/not committed evidence/);
+
+    for (const rel of runEmittedArtifacts("replay-01")) {
+      await expect(fs.access(path.join(root, rel))).rejects.toThrow();
+    }
   }, 60_000);
 });
 

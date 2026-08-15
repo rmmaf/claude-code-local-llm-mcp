@@ -32,8 +32,8 @@ import {
   telemetryDrift,
 } from "../src/cost/b12/archive.js";
 import { assembleRun } from "../src/cost/b12/assemble.js";
-import { AUDIT_INPUT_KEYS, parseGitAudit } from "../src/cost/b12/audit.js";
-import { committedAuditCheck, emitRun, invocationString } from "../src/cost/b12/emit.js";
+import { AUDIT_INPUT_KEYS, parseGitAudit, runEmittedArtifacts } from "../src/cost/b12/audit.js";
+import { EmitRefused, committedAuditCheck, emitRun, invocationString, serializeResult } from "../src/cost/b12/emit.js";
 import { reduceFile } from "../src/cost/b12/capture.js";
 import { readTranscript } from "../src/cost/transcript.js";
 import { makeScratch, req, at } from "./b12-fixtures.js";
@@ -511,9 +511,13 @@ describe("readRunArchive — the hostile disk", () => {
       parsed.lineage[0].records.unshift(null);
       await fs.writeFile(file, JSON.stringify(parsed, null, 2), "utf8");
     });
-    const emitted = await emitRun(root, "replay-01");
-    expect(emitted.verdict).toBe("void"); // still a RESULT, never a crash
-    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
+    // THROUGH THE REAL DECODER AND SCORER, not through `emitRun` (R50). The
+    // emission now requires a committed, bound audit; what this test is about
+    // is that a hostile archive produces a RESULT rather than a crash, and
+    // that question lives one layer below the gate.
+    const archive = await readRunArchive(root, "replay-01");
+    const { result } = assembleRun({ archive, gitAudit: { ran: false }, scoringCommandActual: null });
+    expect(result.verdict).toBe("void"); // still a RESULT, never a crash
     expect(result.archiveProblems.join(" ")).toMatch(/not objects/);
   });
 });
@@ -578,12 +582,17 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     });
   });
 
-  it("emitRun writes BOTH artifacts even though the run is a void", async () => {
+  it("BOTH artifacts serialise even though the run is a void", async () => {
     const root = await fixtureCopy();
-    const emitted = await emitRun(root, "replay-01");
-    expect(emitted.verdict).toBe("void");
-    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
-    const counterfactual = JSON.parse(await fs.readFile(emitted.counterfactualPath, "utf8"));
+    // The REAL serializer over the REAL scored values, without the emission
+    // gate (R50): `emitRun` now refuses without a committed, bound audit, and
+    // standing up an operator loop here would make this a test of the gate
+    // rather than of the bytes. `serializeResult` is exported for exactly this.
+    const archive = await readRunArchive(root, "replay-01");
+    const assembled = assembleRun({ archive, gitAudit: { ran: false }, scoringCommandActual: null });
+    expect(assembled.result.verdict).toBe("void");
+    const result = JSON.parse(JSON.stringify(assembled.result, serializeResult, 2));
+    const counterfactual = JSON.parse(JSON.stringify(assembled.counterfactual, null, 2));
     expect(result.schema).toBe("b12-result/1");
     expect(counterfactual.schema).toBe("b12-counterfactual/1");
     // the Map serialises as an object, not as {}
@@ -651,13 +660,18 @@ describe("the emitter's small pure pieces", () => {
     expect(fabricated.ok).toBe(false);
     expect(fabricated.why).toMatch(/not committed evidence/);
 
-    // and end to end: emitRun with the fabricated audit still publishes
-    // clauses 4–6 as UNCHECKED, with the refusal on the artifact's face
-    const emitted = await emitRun(root, "replay-01", { auditPath });
-    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
-    expect(result.uncheckedClauses).toHaveLength(3);
-    expect(result.gitAudit).toEqual({ ran: false });
-    expect(result.archiveProblems.join(" ")).toMatch(/audit refused/);
+    // AND END TO END, THE INVARIANT THAT REPLACED THE OLD ONE (R50). This used
+    // to assert that `emitRun` published clauses 4–6 as UNCHECKED with the
+    // refusal on the artifact's face — a NOT-FINAL result, committed, that
+    // `open-b` would then accept because nothing on the register path read
+    // `final`. It now REFUSES and writes nothing.
+    await expect(emitRun(root, "replay-01", { auditPath })).rejects.toThrow(EmitRefused);
+    await expect(emitRun(root, "replay-01", { auditPath })).rejects.toThrow(/nothing was written/);
+    // And it means it: no artifact appears on disk from the refused emission.
+    const [cfRel, resultRel] = runEmittedArtifacts("replay-01");
+    for (const rel of [cfRel!, resultRel!]) {
+      await expect(fs.access(path.join(root, rel))).rejects.toThrow();
+    }
   });
 
   it("invocationString spells the command one way on every platform", () => {
