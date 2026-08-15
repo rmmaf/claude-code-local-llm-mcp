@@ -613,6 +613,23 @@ async function priorRunsGate(repoRoot, runId) {
   for (const r of abandoned) {
     reasons.push(`prior run ${r.runId} carries no committed result — clause 1 refuses a new registration over an abandoned one`);
   }
+  // NOT FINAL IS NOT CONCLUDED (R50). A committed result whose clauses 4–6 were
+  // never checked is a procedural intermediate, and `result === null` above
+  // does not catch it: `narrowPriorRun` hands back a NON-NULL result for it,
+  // bracket and all. That is how the old loop's step-2 artifact — a clause-19
+  // void written before the audit existed — read downstream as a concluded run
+  // with an attempt already spent.
+  //
+  // A REFUSAL, NOT A VOID: this blocks the registration and can be cleared by
+  // finishing the run's own emission. It spends nothing, which is the whole
+  // reason it lives here and not in the clause set.
+  for (const r of register.priorRuns) {
+    if (r.result !== null && r.result.final !== true) {
+      reasons.push(
+        `prior run ${r.runId} committed a result that is NOT FINAL (clauses 4–6 unchecked) — finish its scoring invocation and commit the final result before registering over it`
+      );
+    }
+  }
   return reasons;
 }
 
@@ -843,6 +860,21 @@ if (isMain) {
       fail("run 1's committed result does not parse");
     }
     if (run1.verdict !== "open") fail(`run 1's committed verdict is ${JSON.stringify(run1.verdict)} — manifest B opens only on 'open'`);
+    // AND IT MUST BE FINAL (R50). This path parses the result JSON itself and
+    // never goes through `narrowPriorRun`, so the gate added there does not
+    // cover it — the two sites had to be fixed separately.
+    //
+    // The hazard this closes is not hypothetical and not an operator error: an
+    // emission whose audit binding REFUSES continues with `gitAudit.ran:false`
+    // and writes both artifacts anyway (src/cost/b12/emit.ts:269-273). A
+    // correctly ordered scoring invocation can therefore commit an ordinary
+    // `open` that is NOT FINAL, and `open-b` used to accept it — spending the
+    // second of two sealed manifests on a verdict nothing had audited.
+    if (run1.final !== true) {
+      fail(
+        "run 1's committed result is NOT FINAL (clauses 4–6 unchecked) — manifest B may not be opened on a verdict no committed audit stands behind"
+      );
+    }
     // The SEALED B blob, byte-identical from the registration commit.
     const bRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
     const born = git(repoRoot, ["log", expectedHead, "--diff-filter=A", "--format=%H", "--", bRel]);

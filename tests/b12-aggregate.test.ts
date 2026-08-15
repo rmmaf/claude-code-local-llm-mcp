@@ -715,7 +715,7 @@ describe("the verdict — six states, and five of them were unreachable", () => 
         priorRuns: [
           {
             runId: "run-0",
-            result: { scored: false, voidClause: "voidConditions 7", bracket: { rLo: 0.1, rHi: 0.2 } },
+            result: { scored: false, final: true, voidClause: "voidConditions 7", bracket: { rLo: 0.1, rHi: 0.2 } },
             attempt: { consumed: true },
           },
         ],

@@ -427,9 +427,25 @@ export type DeliveryScore =
  * VOID**". So the register is a required argument rather than an optional one —
  * a missing field would be indistinguishable from a run with no predecessors.
  */
+/**
+ * `final` IS CARRIED BECAUSE IT WAS PRODUCED AND NEVER READ (R50).
+ *
+ * `assemble` sets `final` false whenever clauses 4–6 are UNCHECKED, and until
+ * R50 the only two reads in the repository were a copy into `EmitResult` and a
+ * terminal print. Nothing that DECIDED ever asked. So a `result.json` committed
+ * as a procedural intermediate — the provisional clause-19 void the old
+ * two-emit loop wrote, or any emission whose audit binding refused — was
+ * indistinguishable downstream from a concluded verdict.
+ *
+ * IT DECIDES NOTHING HERE. This field is REPORTED on the artifact's face and is
+ * enforced only at the REGISTRATION GATE, which REFUSES (retryable, spends no
+ * attempt). Non-finality is deliberately NOT a void condition: `voidConditions`
+ * has 23 entries, none of them this, and minting a 24th in code is exactly the
+ * normative overreach the amendment discipline exists to prevent.
+ */
 export type PriorResult =
-  | { scored: true; bracket: { rLo: number; rHi: number } }
-  | { scored: false; voidClause: string; bracket: { rLo: number; rHi: number } };
+  | { scored: true; final: boolean; bracket: { rLo: number; rHi: number } }
+  | { scored: false; final: boolean; voidClause: string; bracket: { rLo: number; rHi: number } };
 
 /**
  * `voidConditions` 23: a VOID CONSUMES AN ATTEMPT, except for three enumerated

@@ -20,6 +20,7 @@ import {
   committedEvidenceState,
   earliestSessionStart,
   narrowObservationRecord,
+  narrowPriorRun,
   narrowRunlogRow,
   parseJsonl,
   parseObsDirName,
@@ -172,6 +173,60 @@ describe("the register's pure core — the seventh adversarial round", () => {
     expect(broken.discrepancies.join(" ")).toMatch(/1 corrupt line/);
     expect(broken.discrepancies.join(" ")).toMatch(/not objects/);
     expect(broken.discrepancies.join(" ")).toMatch(/run_id is not a string/);
+  });
+});
+
+describe("narrowPriorRun — `final` is carried, and only the literal true is final (R50)", () => {
+  const base = { rLo: 0.1, rHi: 0.2, verdict: "hold" };
+
+  it("carries final:true through, on a scored result and on a void alike", () => {
+    const d: string[] = [];
+    const scored = narrowPriorRun("run-a", { ...base, final: true }, d);
+    expect(scored.result).toEqual({ scored: true, final: true, bracket: { rLo: 0.1, rHi: 0.2 } });
+
+    const voided = narrowPriorRun("run-b", { ...base, verdict: "void", voidClause: "19", final: true }, d);
+    expect(voided.result).toEqual({
+      scored: false,
+      final: true,
+      voidClause: "19",
+      bracket: { rLo: 0.1, rHi: 0.2 },
+    });
+    expect(d).toEqual([]);
+  });
+
+  it("FAILS CLOSED on every shape that is not the literal true", () => {
+    // The old two-emit loop's step-2 artifact is the first row: a clause-19
+    // void, written before any audit existed, carrying a real bracket. It must
+    // read as NOT final, or it is indistinguishable from a concluded run.
+    const cases: Array<[string, unknown]> = [
+      ["absent", undefined],
+      ["explicit false", false],
+      ["the string 'true'", "true"],
+      ["null", null],
+      ["1", 1],
+    ];
+    for (const [label, value] of cases) {
+      const d: string[] = [];
+      const raw: Record<string, unknown> = { ...base, verdict: "void", voidClause: "19" };
+      if (value !== undefined) raw.final = value;
+      const run = narrowPriorRun(`run-${label}`, raw, d);
+      expect(run.result, label).not.toBeNull();
+      expect(run.result!.final, label).toBe(false);
+    }
+  });
+
+  it("NOT FINAL is not the same state as NO COMMITTED RESULT", () => {
+    // `result === null` is clause 1's abandoned run. A non-final result is a
+    // committed result that is not yet a verdict, and collapsing the two would
+    // report an abandoned run where none exists — and would mislabel the
+    // attempt, which `attemptOf` defaults to consumed.
+    const d: string[] = [];
+    const notFinal = narrowPriorRun("run-c", { ...base, final: false }, d);
+    expect(notFinal.result).not.toBeNull();
+    expect(notFinal.result!.final).toBe(false);
+
+    const noBracket = narrowPriorRun("run-d", { verdict: "hold", final: true }, d);
+    expect(noBracket.result).toBeNull();
   });
 });
 

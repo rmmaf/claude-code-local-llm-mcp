@@ -693,11 +693,18 @@ export function narrowPriorRun(id: string, parsed: unknown, discrepancies: strin
     return { runId: id, result: null, attempt: attemptOf(parsed.attemptExempt) };
   }
   const bracket = { rLo, rHi };
+  // FAIL-CLOSED ON THE VALUE, not merely on absence (R50). Only the literal
+  // `true` is final: a missing field, a string "true", a null or any other
+  // shape is a result that cannot show it was produced against a committed
+  // clause 4–6 audit, and an unproven verdict is not a verdict. No committed
+  // `*.b12.result.json` predates this rule, so nothing legacy is being
+  // reinterpreted — the strict reading is the only reading there has been.
+  const final = parsed.final === true;
   if (parsed.verdict === "void") {
     const voidClause = str(parsed.voidClause) ?? "(void with no clause named)";
-    return { runId: id, result: { scored: false, voidClause, bracket }, attempt: attemptOf(parsed.attemptExempt) };
+    return { runId: id, result: { scored: false, final, voidClause, bracket }, attempt: attemptOf(parsed.attemptExempt) };
   }
-  return { runId: id, result: { scored: true, bracket }, attempt: attemptOf(parsed.attemptExempt) };
+  return { runId: id, result: { scored: true, final, bracket }, attempt: attemptOf(parsed.attemptExempt) };
 }
 
 /** Repo-relative with `/` separators on every platform — the identity source's spelling. */

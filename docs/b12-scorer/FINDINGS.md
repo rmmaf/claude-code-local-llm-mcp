@@ -2140,6 +2140,113 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R50 — the emits contradiction is REAL, and the remedy I predicted was impossible is the one to take — 2026-08-14
+
+`runPlan` PHASE 6 says "**One** scoring invocation over the ARCHIVE … using the
+committed command string", and `audit.ts:15-21` prescribes an eight-step loop
+with **two** `emit` invocations. `b12-corpus/manifest-config.json:337-341`
+recorded that the two cannot both be obeyed and left the question open. It is
+now adjudicated: **the conflict is real, the frozen text governs, and the
+harness changes.**
+
+Adjudicated against a Codex `gpt-5.6-sol` xhigh review and an independent
+in-repo verifier, both run against enumerated claims. **Predictions were written
+before either was dispatched** and are reproduced here with their outcomes,
+because two of them were wrong.
+
+| # | Predicted | Outcome |
+|---|---|---|
+| P1 | the second emit is FORCED by a data dependency, so "amend `audit.ts` to one invocation" is **not executable** | **FALSIFIED** |
+| P2 | the pinned `--audit` form obliges one emit to violate clause 19 | CONFIRMED |
+| P3 | HAZARD B is INDEPENDENT of the two-emit design | CONFIRMED |
+| P4 | "scoring invocation" may mean "invocation of the committed string", dissolving the conflict | **REFUTED** |
+| P5 | HAZARD A is a live defect under every reading | CONFIRMED, and worse than stated |
+
+**P1, and the shape of the error.** I wrote that `audit <runId>` *cannot run*
+before an emit is committed. It can. A missing counterfactual is an anchor
+problem (`audit.ts:1486`), anchor problems become clause-5 reasons
+(`audit.ts:877`), and `decideAudit` returns `"void"` rather than refusing
+(`audit.ts:1085`); the CLI still writes the artifact. "Cannot run" was wrong —
+the truth is "runs, and voids". More important: the anchor's real need is
+`aPlusSPositive`, and `assemble.ts:959` computes it as
+`isAdmitted ? terms.aO + terms.sLo > 0 : null`, so the anchor
+(`audit.ts:1618`, first non-null in runlog-row order) is **the first ADMITTED
+observation** — a scorer-computed fact the audit can derive IN-PROCESS from the
+committed archive. It does not need a previously-committed emitter output. The
+dependency is engineered, not inherent, and **the remedy I declared impossible
+is available.**
+
+**And the decoupling deletes a defect class rather than adding one.**
+`audit.ts:1531-1538` already records that the committed counterfactual can be
+STALE — an early unchecked emit followed by more observations — and the current
+mitigation is a two-direction population cross-check whose failure message is
+`"re-emit before auditing"` (`:1612`). The present design polices a staleness
+hazard that exists ONLY because the anchor is read from a committed emitter
+output. Computing it from the committed archive removes the hazard's cause.
+
+**P4, and why the reconciling reading fails.** `PREMISES.md:2458` (pre-declared
+2026-08-08, before any run) says "**The scoring invocation** requires a COMMITTED
+clause 4–6 audit artifact", which appears to fix the referent on step 7 and
+dissolve the conflict. It does not rescue the design, and the review's
+counter-argument is better than my reading: step 1 calls the same `assembleRun`
+(`emit.ts:277`), writes the full counterfactual and `result.json`
+(`emit.ts:293-294`), and computes a bracket — and clause 19's own diagnostic
+calls a *mismatching* execution "the scoring invocation"
+(`assemble.ts:1376`). Under `PREMISES.md`'s pre-declaration step 1 is therefore
+not a non-scoring step but an **illegal** one. **Both readings condemn step 1**,
+which is why the count question is settled by making it moot: with one emit
+there is exactly one scoring invocation under every reading.
+
+**P5, sharpened by the review.** "Expected, not a fault"
+(`manifest-config.json:319`) does not survive. Step 2 commits a
+`result.json` carrying `verdict:"void"`, and downstream nothing distinguishes a
+procedural intermediate from a concluded VOID: `narrowPriorRun` returns a
+NON-NULL result without consulting `final` (`archive.ts:696`), `priorRunsGate`
+blocks only `result === null` (`b12-register.mjs:611`), and `attemptOf` defaults
+to **`consumed: true`** (`archive.ts:676,683`). A procedural intermediate reads
+downstream as **an attempt spent out of three**.
+
+**`final` is written and never read.** `assemble.ts:529` produces it; the only
+reads in the repository are `emit.ts:301` (copy into `EmitResult`) and
+`emit.ts:352` (a terminal print). Zero reads in `scripts/**`. The field that
+says "clauses 4–6 were never checked" is printed to a console and consulted by
+nothing that decides.
+
+**ONE REVIEW FINDING REFINED, WITH THE REASON.** The review held that HAZARD B
+is not reachable on the prescribed path — that running the pinned form before
+the audit is committed is either substituting for step 1 or executing step 7 out
+of order. **That is incomplete.** `emit.ts:269-273`: when
+`auditBindingRefusal` returns non-null, `emit` sets `gitAudit = { ran: false }`
+and **continues to write both artifacts**. So a step 7 executed in the correct
+order, after a correctly committed step 6, still produces a NOT-FINAL result
+whenever the binding fails for any of the legitimate drift reasons at
+`emit.ts:150-228`. `open-b` accepts it (`b12-register.mjs:845`, no `final`
+check). No operator error is required. The review's route was one route, not the
+only one; the independence claim (P3) stands, and reachability is broader than
+either of us first wrote.
+
+**DECIDED — the frozen text governs.** Per the decision rule declared in the
+plan before this investigation began, and NOT decided here for the first time:
+the pre-registration may not be edited, `src/cost/**` is free until the first
+scored observation, and there are zero scored observations. Owed, in order:
+
+1. the registration path reads `result.final` — **both** sites, since `open-b`
+   parses the result JSON itself (`b12-register.mjs:837`) and never passes
+   through `narrowPriorRun`;
+2. the clause-5 anchor derived from the committed archive, not from a committed
+   counterfactual;
+3. the pinned `--audit` form as the SOLE scoring entrypoint — unmet
+   preconditions REFUSE and write nothing, instead of downgrading to
+   `ran: false` and emitting anyway;
+4. a pre-data amendment artifact recording the one-invocation loop, prospective
+   from its introducing commit, editing no frozen text.
+
+**NOT a documentation-only outcome.** The contradiction and both hazards were
+already documented, at `manifest-config.json:315-341` — and documented in the
+one file a reader of this ledger would never open. `FINDINGS.md` and `STATE.md`
+returned ZERO matches for `HAZARD`, `two emits`, `scoring invocation` and
+`clause 19` before this entry.
+
 ### R49 — R47 reproduced at a different commit, and the artifact is COMMITTED — 2026-08-14
 
 The fifth harness run, and the first whose evidence anyone else can open:
