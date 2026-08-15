@@ -41,7 +41,21 @@ else
   REPO=$(git rev-parse --show-toplevel 2>/dev/null)
   [ -n "$REPO" ] || REPO="$HOME/Documents/GitHub/claude-code-local-llm-mcp"
 fi
-BRANCH="claude/project-status-pdf-d726eb"
+# THE BRANCH THIS PRE-FLIGHT MEASURES. Overridable, and pinned by default
+# because a pre-flight has to name the tree it measured.
+#
+# IT WENT STALE ONCE AND THE SCRIPT COULD NOT NOTICE. It read
+# `claude/project-status-pdf-d726eb` until 2026-08-14, by which time that branch
+# was 279 commits behind the work — no one-scoring-invocation loop, no
+# `blobSha` tri-state, none of it. The tip check below would have passed, since
+# it compares HEAD against `origin/$BRANCH` and the Mac would have been exactly
+# at the tip OF THE WRONG BRANCH, producing an artifact that looks like a clean
+# pre-flight of an instrument nobody is going to run.
+#
+# So: override with B12_BRANCH when preflighting something else, and CHECK THIS
+# LINE against the branch you actually intend. The refusal below proves you are
+# at a tip; only this line says which.
+BRANCH="${B12_BRANCH:-claude/b12-orchestrator-pinning-check-ccc397}"
 MODEL="${B12_MODEL:-mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2}"
 # `acceptEdits` covers file edits; whether an MCP tool call still prompts in
 # `--print` mode I could not test from Windows. If the session comes back having
