@@ -3356,3 +3356,96 @@ is structurally unable to see.
 **Repaired** by rewriting the four bytes to `0x7C` (`|`), which is the separator
 the keys should always have used — it cannot occur in a taskId or an arm, where
 a space could.
+
+## PHASE 0 is CLOSED — and what that sentence is not allowed to mean
+
+**Committed record:** `evidence/2026-08-14-b12-phase0-closure.json`, written at
+`214b1cb`, with PHASE 0's frozen text extracted programmatically from the
+pre-registration rather than transcribed.
+
+**Why an artifact and not a commit message.** Until now the only assertion that
+PHASE 0 was complete lived in the message of `911d8d6` — "All ten pre-conditions
+are now in". A commit message is the one place a claim cannot be audited
+afterwards: it is not compared to anything, it is not re-read by any check, and
+it cannot be found by a reader who does not already know it exists. The four
+frozen deliverables now each carry a `file:line` a stranger can check.
+
+**CLOSED IN THE SENSE THE FROZEN TEXT DEFINES, AND IN NO WIDER SENSE.** The
+frozen `runPlan` PHASE 0 names four things — the ten `detector` repairs, the b12
+emitter, the six firing negative controls of VOID 6, and un-ignoring
+`evidence/**`. All four are present and evidenced. That is the whole claim.
+
+**What the record refuses to fold into a green light**, each named on its face:
+
+- **One of the ten repairs is under re-examination.** `wouldHaveAdded` on a
+  `byInvocation` MISS resolves against the `main` thread, which the comment
+  directly beneath it condemns. It is a frozen scoring path, so it gets its own
+  adjudication round and no edit before it. Counting it as "closed" would be
+  counting a question as an answer.
+- **The firing evidence is win32 and DIAGNOSTIC**, and `specificityClean` is
+  false: 8 off-diagonal kills. The matrix establishes SENSITIVITY, not
+  specificity, and a Mac artifact is still owed.
+- **PHASE 3 was closed at 1 of 3, INCONCLUSIVE.** The pre-registered rule said
+  the manifest may not be sealed on it. Closing it anyway was the owner's
+  decision, taken knowingly. It is recorded as an OPEN QUESTION the run carries,
+  never as a satisfied precondition — a reader who wants to discount the run on
+  that ground has the fact they need.
+- Five registered limits that never close by design (F20, F21, F17, F11, F13),
+  two open decisions rather than code (F25, F27), and six items owned by later
+  work.
+
+**One count corrected while writing it.** `b12-corpus/manifest-config.json` said
+"Every remaining null is MAC-LOCAL". There are **thirteen** null leaves under
+`pinned` and **twelve** are MAC-LOCAL: `settingsSha256s.settingsLocal` is a TRUE
+null, as `_macLocal` says in its own words ("NOT MAC-LOCAL"), measured across all
+65 corpus tags — none carries `.claude/settings.local.json`. The sentence was
+false by exactly one, and its cost was specific: it would have sent an operator
+to the Mac to fill a value no machine can supply. Found by COUNTING THE LEAVES
+rather than trusting the sentence.
+
+**And the plan's own premises did not survive contact.** W5's flake did not
+exist. W6's owed-list overstated the debt in three of six entries. W7b was
+already implemented. R47 had already run the matrix. W8's remedy, which I
+predicted was impossible, was available. Each is recorded as falsified where it
+was claimed, rather than quietly repaired — which is the only reason this record
+is worth more than the commit message it replaces.
+
+## `stdio.test.ts` failed once in the full suite, after the hardening — recorded, NOT explained
+
+**2026-08-14, at `214b1cb` plus the PHASE 0 closure record.** One full-suite run
+reported `numFailedTestSuites: 2` with **`numFailedTests: 0`** — a suite failing
+with no test failing, which is the exact shape W5 investigated. The only suite
+named was `tests/stdio.test.ts`, and its message field was EMPTY.
+
+**Measured immediately after, same bytes:**
+
+| Probe | Result |
+|---|---|
+| `tests/stdio.test.ts` SOLO, three consecutive runs | **3/3 green**, 5 tests each |
+| the FULL suite, re-run | **green**, 882 tests, zero failures |
+
+So the observed rate is **1 failure in 2 full-suite runs** and **0 in 3 solo
+runs**, on a total of five observations. That is the whole measurement.
+
+**WHAT IS NOT ESTABLISHED, and this is the point of the entry.** No cause. The
+run says WHICH suite, never WHY, and this project has made the mistake of
+naming a cause from a list of failures three times. Specifically NOT established:
+
+- that the W5 hardening failed — the hardened guard, had it fired, would have
+  printed the offending text, and the message was empty;
+- that this is the same mechanism as the `cost-meter.test.ts` flake measured in
+  W7a — different file, different signal, and the registered `KNOWN_FLAKY` class
+  does not name `stdio.test.ts` at all;
+- that it is full-suite-ONLY. Three solo runs cannot establish that; they only
+  fail to contradict it.
+
+**Why the evidence is thin, which is itself a registered defect.** R48 recorded
+that `--reporter=json` turns exactly this failure class into an empty or
+placeholder message, and the gate runs `--reporter=json`. The suite-level
+failure that the default reporter would have explained was erased before it
+reached me. That is the second time R48's defect has cost a diagnosis in this
+project, and it will cost a third unless the gate grows a way to re-run a
+failing file under the default reporter.
+
+**Status: OPEN, one occurrence, no mechanism.** Written down so the next
+occurrence is the second and not the first.

@@ -1,0 +1,130 @@
+{
+  "document": "b12-phase0-closure",
+  "schema": "b12-phase-closure/1",
+  "type": "phase closure record",
+  "written": "2026-08-14",
+  "headAtWriting": "214b1cb00ec045b08b43fb9f9d8b7ba0950812f9",
+  "phase": "PHASE 0 — INSTRUMENT REPAIRS AND HARNESS",
+  "frozenTextVerbatim": "**PHASE 0 — INSTRUMENT REPAIRS AND HARNESS. ~4–6 sessions. Free, and only free now:** B20's rule applies verbatim — the implementation may be repaired until the first scored observation and is frozen absolutely after it, because there is no answer to tune toward until a residual exists. Ship the ten repairs in `detector` (signed suppression; `clientTruncationCap`; turn-collapse out of the scored numerator; `repair` credited once from the last round; `wouldHaveAdded` thread-resolved and nullable; `unmatched` given a magnitude and added to `refusedRows`; the per-`requestId`-subset accessor; lineage-aware `invocationOwners`; `unitsAddedByInstallation`; `scripts/b12-run.mjs`), the b12 emitter, and the six firing negative controls of VOID 6. Un-ignore `evidence/**`. **Cost of skipping this phase: the run cannot be re-emitted, cannot be corrected, and cannot be re-adjudicated — which is exactly how B1 died.**",
+  "WHAT_THIS_IS_AND_IS_NOT": "STATED FIRST. This is a DURABLE, AUDITABLE claim that PHASE 0's four frozen deliverables exist, each with a file:line a reader can check, plus an explicit list of what is NOT closed and why. It is NOT a claim that the instrument is correct, that the run will produce an answer, or that anything measured here generalises. Until this artifact existed the only assertion of PHASE 0 completeness lived in a commit message (911d8d6, 'All ten pre-conditions are now in') — which is exactly where a claim cannot be audited later.",
+  "theFourFrozenDeliverables": [
+    {
+      "item": "The ten repairs in `detector` (src/cost/report.ts and neighbours)",
+      "state": "10 of 10",
+      "evidence": "src/cost/report.ts (signed suppression, clientTruncationCap, turn-collapse out of the scored numerator, repair credited once from the last round, wouldHaveAdded thread-resolved and nullable, unmatched given a magnitude, the per-requestId-subset accessor, lineage-aware invocationOwners, unitsAddedByInstallation), src/tools/repair.ts, scripts/b12-run.mjs",
+      "caveat": "ONE of the ten is under active re-examination and is NOT settled by this record: `wouldHaveAdded` on a byInvocation MISS resolves against the `main` thread (report.ts), which the comment immediately below it condemns. Tracked as W10; no edit has been made and none may be made without its own adjudication, because this is a frozen scoring path."
+    },
+    {
+      "item": "The b12 emitter",
+      "state": "present",
+      "evidence": "src/cost/b12/emit.ts — writes both artifacts, and since R50 REFUSES rather than writing an unaudited verdict",
+      "caveat": "Its contract changed materially during PHASE 0's own closing stretch: `--audit` became required. Recorded in evidence/2026-08-14-b12-amendment-one-scoring-invocation.json."
+    },
+    {
+      "item": "The six firing negative controls of voidConditions 6",
+      "state": "present, and SHOWN FIRING with a committed artifact",
+      "evidence": "src/cost/b12/audit.ts fixes the registry; evidence/2026-08-14-win-dryrun-5.b12.firing.json is the first firing artifact in the repository's history — all six FIRED, 13 of 13 budgeted runs, zero problems, base 3aff4db",
+      "caveat": "The firing evidence is win32 and DIAGNOSTIC. A Mac firing artifact is still owed before a Mac run, and specificityClean is false: 8 off-diagonal kills are recorded, so the matrix establishes SENSITIVITY and not specificity. That limitation is on the artifact's own face."
+    },
+    {
+      "item": "`evidence/**` un-ignored",
+      "state": "never was ignored",
+      "evidence": ".gitignore — evidence/ carries no ignore rule and the directory is versioned",
+      "caveat": "The plan that opened this phase listed this as work owed. It was not owed; it was already true. Recorded because a closure record that repeats a false premise is worth less than one that corrects it."
+    }
+  ],
+  "whatThisPlanClosed": [
+    {
+      "item": "W0 — the pin guard against the INDEX, not HEAD",
+      "commit": "see scripts/b12-pins-check.mjs and the `pins:check` script"
+    },
+    {
+      "item": "W1 — the false superset sentence, in both detectors",
+      "commit": "the two-direction non-containment is now stated where the superset claim was"
+    },
+    {
+      "item": "W2 — the repair-max-rounds amendment's `effect` said 'scored' and 'owned'; neither survives the code",
+      "commit": "corrected to 'any ASSESSED observation'"
+    },
+    {
+      "item": "W3 — the regime key is read three ways; an invalid value is UNKNOWN and non-final",
+      "commit": "one shared parser, so the two sites cannot diverge"
+    },
+    {
+      "item": "W4 — `introducingCommit` fail-closed: an unaskable ancestry REFUSES instead of silently selecting the pre-amendment regime",
+      "commit": "discriminated result; both amendments inherit it"
+    },
+    {
+      "item": "W5 — the stdio partial-line defect: PREDICTED, MEASURED, FALSIFIED, hardened anyway",
+      "commit": "bb5593b"
+    },
+    {
+      "item": "W6 — the F24 items closable on Windows; the owed-list overstated the debt in three of six entries",
+      "commit": "74c6557"
+    },
+    {
+      "item": "W7a — the conformance flake measured and BOUNDED; no cause declared from a list of failures",
+      "commit": "383ff13"
+    },
+    {
+      "item": "W7b — collateral may ANNOTATE the kill set and may never convert an off-diagonal failure into OK",
+      "commit": "already implemented; verified rather than rebuilt"
+    },
+    {
+      "item": "W7c — the run-toolchain identity amendment, and a PRE-RUN BARRIER that refuses and never voids",
+      "commit": "1a1476e, f905fed, dd9b2d9, 7fa8971"
+    },
+    {
+      "item": "W7d — the matrix run and the artifact committed; `runsSpent` was the budget wearing a counter's name",
+      "commit": "3aff4db, 4b48bdd, f45093d"
+    },
+    {
+      "item": "W8 — ONE scoring invocation, because the frozen text says one",
+      "commit": "07e6b0d, be25914, e3ff0e5, 214b1cb"
+    }
+  ],
+  "WHAT_IS_NOT_CLOSED": {
+    "note": "The point of the record. Each entry names WHY, and none of them is 'ran out of time'.",
+    "macOnly": [
+      "The `clientTruncationCap` measurement. voidConditions 8 VOIDS a run with no cap measured for the version that ran, and the probe runs on the machine that will run.",
+      "The `installedChars` re-probe with the orchestrator model in the calibration key. The refusal fires as soon as the policy blobs are sealed.",
+      "The per-arm policy blobs, which must resolve OUTSIDE this repository, on the run machine.",
+      "TWELVE MAC-LOCAL pins plus `captureSha256`. NOT thirteen: there are thirteen null leaves under `pinned`, and `settingsSha256s.settingsLocal` is a TRUE null — measured across all 65 corpus tags, none carries `.claude/settings.local.json`. b12-corpus/manifest-config.json used to assert 'every remaining null is MAC-LOCAL', which was false by exactly one and would have sent a reader to the Mac for a value no machine can supply. Corrected in the same commit as this record.",
+      "The end-to-end `scripts/b12-preflight-mac.sh` run. The committed artifact (283d58b, 2026-08-09) is OBSOLETE: the script changed in 46aecba and 17375a7.",
+      "A Mac firing artifact. The committed one is win32 and diagnostic."
+    ],
+    "needsARealRun": [
+      "The artifact-11 replay over a REAL run's archive. The committed replay runs over a FIXTURE, which is test material and never evidence.",
+      "The concurrent-execution test for the harness."
+    ],
+    "decisionsNotCode": [
+      "F25 — the frozen text demands a declaration and supplies no disposition for its absence.",
+      "F27 — `p` is not estimable before the run, and the pilot is a STOP screen rather than an estimator."
+    ],
+    "registeredLimitsThatNeverClose": [
+      "F20 — which sense of 'excluded' the selection guard takes is UNDETERMINED.",
+      "F21 — a hold cell can be evaluable on five observations and priced on three.",
+      "F17 — the frozen preflight screens for none of R_hi+'s new refusals.",
+      "F11 — the identity Sum_d R_d + R_other = R is false, and the oracle used to hide it.",
+      "F13 — R_other has no source data at all."
+    ],
+    "stillOpenAndOwnedByLaterWork": [
+      "W10 — `wouldHaveAdded` on a byInvocation MISS resolves against the `main` thread. A frozen scoring path; it gets its own adjudication round and NO edit before it.",
+      "The regression control for BOTH directions of driver/scorer non-containment.",
+      "`blobSha`'s tri-state: some nulls there are a legitimate verdict of blob-absent, so it needs three states rather than a general throw.",
+      "The unanswerable-control suppression at scripts/b12-firing.mjs, where `ok = passed || reason !== undefined` silences 'cannot answer for X'.",
+      "Three artifact omissions owed BEFORE the scored run: no embedded mutation find/replace, no raw vitest reports, no runner/evaluator digest.",
+      "`pinned.runToolchain` has no manifest-schema validation in scripts/b12-manifest.mjs."
+    ]
+  },
+  "PHASE_3_IS_NOT_A_PASS": "RECORDED AS UNRESOLVED, NOT AS ANSWERED. PHASE 3 (`repair` EXPOSURE) was closed at 1 of 3 — INCONCLUSIVE on both exposures. The pre-registered rule said the manifest may not be sealed on it. Closing it anyway was the OWNER's decision, taken knowingly, and it is written here as an open question the run carries rather than as a satisfied precondition. A reader who wants to discount the run on this ground has the fact they need.",
+  "whatRemainsForTheMac": [
+    "1. `scripts/b12-preflight-mac.sh` end to end, on the pinned binary (PHASE 1).",
+    "2. The five pilot manifests RUN, not merely assembled — b12-manifest.mjs refuses a pilot that was not run (PHASE 2).",
+    "3. The cap probe, the installedChars re-probe, the policy blobs, the twelve MAC-LOCAL pins and captureSha256 (PHASE 4).",
+    "4. Rename `mac-b12-run1-pending` / `run2-pending` BEFORE `build` (PHASE 4).",
+    "5. `build` -> `seal-harness` -> commit -> `register`. The seal is create-only forever (PHASE 4)."
+  ],
+  "theHonestSummary": "PHASE 0's four frozen deliverables are present and evidenced. The phase is CLOSED in the sense the frozen text defines — instrument repairs and harness — and in no wider sense. Three of the six negative controls' worth of confidence, the platform generality of the firing evidence, one of the ten detector repairs, and the whole of PHASE 3's premise remain open, and each is named above rather than folded into a green light.",
+  "adjudication": "docs/b12-scorer/FINDINGS.md and PREMISES.md carry the per-item reasoning. Every W item in this record was adversarially reviewed (Codex gpt-5.6-sol, effort xhigh) with named targets and enumerated claims, findings adjudicated rather than accepted; declined findings carry written reasons. Several of the plan's own premises were falsified in the process and are recorded as falsified, not quietly repaired."
+}
