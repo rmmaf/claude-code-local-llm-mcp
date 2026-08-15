@@ -3475,3 +3475,34 @@ the file by hand under the default reporter. Three occurrences is enough to stop
 calling it an annoyance: the gate needs a way to re-run a failing file under the
 default reporter, and until it has one, every diagnosis in this suite costs an
 extra full run.
+
+## `b12-audit.test.ts` costs 217 s solo since W8 — measured, with the obvious hypothesis NOT declared
+
+**Measured 2026-08-14 at `17881dc`:** `npx vitest run tests/b12-audit.test.ts`
+alone — **73 passed, 217.22 s**. For comparison in the same session,
+`tests/b12-firing.test.ts` runs 34 tests in **1.13 s**.
+
+**What changed.** W8 made the clause-5 anchor derive from a DETACHED CHECKOUT of
+the audited commit, and `collectAuditFacts` is called from ~21 places in that
+file. A worktree add + remove was measured at **~1.45 s** earlier in this
+session, so the checkouts plausibly account for a large part of the 217 s.
+
+**THE HYPOTHESIS I AM NOT DECLARING.** In the same stretch this file failed
+twice in the FULL suite with `Error: STACK_TRACE_ERROR` and passed solo both
+times. It is tempting to say the checkouts pushed individual tests past their
+60 s / 120 s timeouts under parallel load. That is a hypothesis with a
+mechanism, and it is exactly the shape of claim this project has got wrong three
+times by reading a cause off a list of failures. NOT ESTABLISHED, and it is
+written here as a lead rather than as an explanation:
+
+- no per-test timing was captured, so which tests consume the 217 s is unknown;
+- no run was made under controlled load, and R46's own check was 4/4 loaded;
+- the file was ALREADY in the registered `KNOWN_FLAKY` class before W8, so a
+  higher rate has to be shown against a baseline nobody measured.
+
+**What IS established:** the file is now the slowest in the suite by a wide
+margin, and the cost was introduced deliberately in exchange for deriving the
+anchor from committed state rather than from a committed emitter output. If the
+flake rate is later shown to have risen, the cheapest lever is a shared checkout
+per test file rather than one per `collectAuditFacts` call — recorded now so the
+option is on the table before anyone reaches for a timeout bump.

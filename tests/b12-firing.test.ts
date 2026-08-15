@@ -358,6 +358,64 @@ describe("the mutation harness evaluator", () => {
     expect(pair?.offDiagonal.find((o) => o.fullName === "suite beta")?.declared).toBe("shares the clamp under test");
   });
 
+  it("an annotation cannot silence a control the run could not answer for", () => {
+    // THE LAST PLACE A DECLARATION STILL CONVERTED SOMETHING INTO OK, and it
+    // was the worst of them. R43#2 removed the conversion from the whole-file
+    // sweep, where a declaration excused a FAILURE — at least the thing an
+    // annotation is about. It survived in the sibling loop, where the status it
+    // silenced is `unanswerable`: the mutant report has no entry for the
+    // control AT ALL.
+    //
+    // An annotation says "this test goes red as collateral". It cannot say why
+    // the report does not mention the test, because that is an ABSENCE OF
+    // EVIDENCE and no prose in a registry can supply it. A registry entry was
+    // buying silence about a question the run never answered.
+    //
+    // `suite beta` is simply MISSING from the mutant report here, and it is
+    // annotated. Against the previous code `ok` was true and no problem was
+    // pushed, so `fired` stayed true on a pair whose off-diagonal was unknown.
+    const missingBeta = report([t("suite alpha", "alpha", "failed", [assertionAt(6)])]);
+    const annotated: RegistryEntry[] = [
+      { ...M_ALPHA, collateral: [{ fullName: "suite beta", reason: "would be collateral, if it had run" }] },
+      M_BETA,
+    ];
+    const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: missingBeta } }, annotated);
+    const pair = pairOf(out, "m-alpha");
+
+    const beta = pair?.offDiagonal.find((o) => o.fullName === "suite beta");
+    expect(beta?.status).toBe("unanswerable");
+    expect(beta?.ok).toBe(false);
+    // The annotation is still PUBLISHED — it explains, it does not decide.
+    expect(beta?.declared).toBe("would be collateral, if it had run");
+    // And the unanswered question is now a problem, which gates `fired`.
+    expect(pair?.problems.join(" ")).toMatch(/cannot answer for suite beta/);
+    expect(pair?.fired).toBe(false);
+  });
+
+  it("and a DECLARED FAILURE is still not double-counted as unanswerable", () => {
+    // The control on the control: dropping the declaration from `ok` must not
+    // make a declared FAILURE produce a second problem. The whole-file sweep
+    // already records it, and `status !== "failed"` is what keeps this loop
+    // from saying it twice. `fired` stays true — sensitivity is what clause 6's
+    // frozen word asks for, and specificity is reported beside it.
+    const allRed = report([
+      t("suite alpha", "alpha", "failed", [assertionAt(6)]),
+      t("suite beta", "beta", "failed", [assertionAt(9)]),
+    ]);
+    const declared: RegistryEntry[] = [
+      { ...M_ALPHA, collateral: [{ fullName: "suite beta", reason: "shares the clamp under test" }] },
+      M_BETA,
+    ];
+    const out = evaluate({ ...BOTH_FIRE, "m-alpha": { applied: true, report: allRed } }, declared);
+    const pair = pairOf(out, "m-alpha");
+    expect(pair?.problems.join(" ")).not.toMatch(/cannot answer/);
+    expect(pair?.fired).toBe(true);
+    // `ok` is false now even for the declared failure — the annotation never
+    // made it acceptable, and the row says so on its face.
+    expect(pair?.offDiagonal.find((o) => o.fullName === "suite beta")?.ok).toBe(false);
+    expect(pair?.specificityClean).toBe(false);
+  });
+
   // ---- the two the probe measured, and the residual between them
 
   it("REFUSES a crash — a throwing hook is not a judgement", () => {

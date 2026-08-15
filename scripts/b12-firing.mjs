@@ -481,7 +481,23 @@ function evaluatePair({ entry, controls, baseIndex, mutants, sources, repoRoot }
     const o = lookupControl(mutantIndex, other);
     const status = o.ok ? o.entry.status : "unanswerable";
     const reason = declared.get(other.fullName);
-    const ok = status === "passed" || reason !== undefined;
+    // ONLY A PASS IS OK. This read `status === "passed" || reason !== undefined`,
+    // which is the last place a DECLARATION still converted something into OK —
+    // the exact conversion R43#2 removed from the whole-file sweep above and
+    // did not remove here.
+    //
+    // AND IT WAS WORSE HERE THAN IT WOULD HAVE BEEN THERE. Up there a
+    // declaration excused a FAILURE, which is at least the thing an annotation
+    // is about. Down here the status it silenced is `unanswerable` — the mutant
+    // report has no entry for that control at all. An annotation says "this
+    // test goes red as collateral"; it cannot say why the report does not
+    // mention the test, because those are not the same claim and the second one
+    // is an ABSENCE OF EVIDENCE. A registry entry was buying silence about a
+    // question the run never answered.
+    //
+    // The annotation is still published on the row as `declared`. It explains;
+    // it does not decide — which is the whole of R43#2 stated once more.
+    const ok = status === "passed";
     out.offDiagonal.push({
       fullName: other.fullName,
       status,
