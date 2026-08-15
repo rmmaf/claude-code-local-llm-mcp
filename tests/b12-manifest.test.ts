@@ -591,4 +591,49 @@ describe("b12 manifest — the assembler derives what a hand-written manifest wo
     built.manifestB.pilotRunId = "run-pilot-elsewhere";
     expect(assemblyRefusals(root, config, built).join("\n")).toMatch(/name different pilots/);
   }, 90_000);
+
+  it("REFUSES an UNREADABLE runToolchain, and still builds one that is simply ABSENT", async () => {
+    // THE SEAL IS CREATE-ONLY FOREVER, which is what makes this worth checking
+    // at build time rather than at run time. `runToolchain` is declared by the
+    // run-toolchain amendment and read by `assertRunToolchain` at EVERY
+    // observe; a declaration the barrier cannot parse seals cleanly and then
+    // refuses every arm. That is a brick, not a retry.
+    const root = tempRoot();
+    const { configPath } = await fullCorpus(root);
+    const config = okOf(parseManifestConfig(root, configPath)).config;
+    const built = okOf(assembleManifests(root, config));
+
+    // ABSENT IS LAWFUL AND MUST STAY BUILDABLE. The amendment is opt-in: a
+    // manifest with no `runToolchain` is not governed by it, and refusing that
+    // would turn an opt-in barrier into a mandatory one by the back door.
+    expect(assemblyRefusals(root, config, built).join("\n")).toBe("");
+
+    // Every shape the barrier rejects, refused HERE instead of on the run. The
+    // last one is the trap the audit's own reader was repaired for: a display
+    // string whose `vitest/` tag is malformed must not borrow the node version
+    // sitting beside it in the same string.
+    const unreadable: unknown[] = [
+      null,
+      "win32-x64",
+      { platform: "win32", arch: "x64" },
+      { platform: "win32", arch: "x64", node: "24.16" },
+      { platform: "", arch: "x64", node: "24.16", vitest: "4.1" },
+      { platform: "win32", arch: "x64", node: "24.16", vitest: "vitest/not-a-version win32-x64 node-v24.16.0" },
+    ];
+    for (const value of unreadable) {
+      built.manifestA.pinned.runToolchain = value;
+      expect(assemblyRefusals(root, config, built).join("\n"), JSON.stringify(value)).toMatch(
+        /manifest A: pinned\.runToolchain .* is not readable as \{platform, arch, node\|nodeVersion, vitest\}/
+      );
+    }
+
+    // And a READABLE one builds clean, in both spellings the barrier accepts.
+    for (const value of [
+      { platform: "win32", arch: "x64", node: "24.16", vitest: "4.1" },
+      { platform: "win32", arch: "x64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10 win32-x64 node-v24.16.0" },
+    ]) {
+      built.manifestA.pinned.runToolchain = value;
+      expect(assemblyRefusals(root, config, built).join("\n"), JSON.stringify(value)).toBe("");
+    }
+  }, 90_000);
 });

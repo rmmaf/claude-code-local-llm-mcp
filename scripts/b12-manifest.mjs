@@ -49,7 +49,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { corpusVerification, parseAuthorSpec, readCorpusTag, DEFAULT_SPEC_ROOT } from "./b12-author.mjs";
 import { checkCore, priorIntroductionRefusals } from "./b12-register.mjs";
-import { findPolicyBlob, hashMemoryDir, manifestDeclarationGaps } from "./b12-run.mjs";
+import { findPolicyBlob, hashMemoryDir, manifestDeclarationGaps, normaliseToolchainForBarrier } from "./b12-run.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
@@ -776,6 +776,47 @@ export function assemblyRefusals(repoRoot, config, built) {
   // plausible version is the trap, and it is free to refuse here.
   if (typeof pinned.claudeCodeVersion === "string" && !/^\d+\.\d+\.\d+$/.test(pinned.claudeCodeVersion)) {
     red.push(`pinned.claudeCodeVersion ${JSON.stringify(pinned.claudeCodeVersion)} is not a full x.y.z — assertPinned matches with .includes(), so a partial pin matches versions it did not mean`);
+  }
+
+  // `runToolchain` — SHAPE-CHECKED HERE BECAUSE THE SEAL IS FOREVER.
+  //
+  // The run-toolchain amendment made this an OPT-IN barrier: a manifest with no
+  // `runToolchain` is simply not governed, which is lawful and must stay
+  // buildable. But a manifest that DOES declare one and declares it
+  // unreadably is the worst of both — it seals, and then `assertRunToolchain`
+  // refuses at EVERY observe with "not readable as {platform, arch,
+  // node|nodeVersion, vitest}". The two sealed manifests are create-only
+  // forever, so that is a brick, not a retry.
+  //
+  // That is the exact failure this file exists to prevent, and its own comment
+  // sixty lines up says so about a different key: "A null sha passed assembly
+  // and refused at runtime, which is the whole failure mode this file exists to
+  // prevent."
+  //
+  // THE PARSER IS IMPORTED, NOT REIMPLEMENTED. `normaliseToolchainForBarrier`
+  // is the function the barrier itself calls. A second copy here could drift
+  // from it, and then a manifest would pass assembly and refuse on the run
+  // anyway — reintroducing the defect through the check meant to close it. One
+  // parser, one answer, in the same spirit as W8's one decoder.
+  //
+  // CHECKED ON WHAT GETS SEALED, not only on the config it came from.
+  // `pinnedFor` copies this key verbatim into all seven manifests, so the
+  // config is the origin — but the BUILT manifests are the bytes that seal, and
+  // `manifestDeclarationGaps` above already runs over those for the same
+  // reason. Both are named in the message so a reader knows which object to fix.
+  const toolchainSources = [["config", pinned]];
+  if (manifestA !== null && manifestA !== undefined) toolchainSources.push(["manifest A", manifestA.pinned ?? {}]);
+  if (manifestB !== null && manifestB !== undefined) toolchainSources.push(["manifest B", manifestB.pinned ?? {}]);
+  pilots.forEach(({ taskId, manifest }) => toolchainSources.push([`pilot manifest ${taskId}`, manifest.pinned ?? {}]));
+  for (const [label, obj] of toolchainSources) {
+    if (!Object.prototype.hasOwnProperty.call(obj, "runToolchain") || obj.runToolchain === undefined) continue;
+    if (normaliseToolchainForBarrier(obj.runToolchain) === null) {
+      red.push(
+        `${label}: pinned.runToolchain ${JSON.stringify(obj.runToolchain)} is not readable as {platform, arch, node|nodeVersion, vitest} — ` +
+          `the barrier would refuse EVERY observe on it (assertRunToolchain), and the sealed manifests are create-only forever. ` +
+          `Declare a readable identity or omit the key entirely, which is the lawful way to be ungoverned by the amendment`
+      );
+    }
   }
 
   // THE PINS `observe` DEREFERENCES THAT NO FROZEN VALIDATOR REQUIRES. Found by
