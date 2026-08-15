@@ -3648,3 +3648,86 @@ produce values that go into a manifest sealed LATER. They are only valid if
 nothing moves in between — `DISABLE_AUTOUPDATER=1` exists for exactly this, and
 a Claude Code update between this round and the seal invalidates M3 and M7
 together.
+
+## The Mac round, first results — M6 answered, M5 refused, and the refusal was mine
+
+Read from the operator's TERMINAL, 2026-08-15. The artifacts themselves have not
+come back yet; when they do, every number below is to be re-read from the JSON
+and any disagreement recorded rather than reconciled.
+
+### M6 — CONFIRMED, and it is the answer that mattered most
+
+```
+B12-SUBAGENT-PROBE verdict=inherits main=["claude-opus-5"] sub=["claude-opus-5"]
+INHERITS — subagents carry the main thread's rate key. The multi stratum is reachable.
+```
+
+**Predicted: the same rate key. Confidence: medium-low.** The low confidence was
+the reason to run it, and the prediction holds.
+
+**What this closes.** `voidConditions` 10 and `void(rate_key_mixed)` key on
+`rateKey(model, speed)` over an observation's OWN requests. Had the subagent
+served on a different key, every observation carrying one would be void at
+observation level, the `multi` stratum would hold fewer than 5 admitted
+observations, and `voidConditions` 3 would return `open` — never a hold, never a
+fall. On this axis the run is **not** unevaluable by construction, and it cost
+one scratch session instead of 20–26 paid ones.
+
+**WHAT IT DOES NOT CLOSE, and the probe said so itself on the way past:**
+
+> `! control shape (no --mcp-config). The primary observations are TREATMENT arm (admissionRule 13).`
+
+**The measurement is of the CONTROL shape.** The scored observations are the
+TREATMENT arm, which loads the MCP server and carries seven extra tool schemas
+plus the policy block. Nothing here establishes that a subagent under the
+treatment shape inherits the same key — that is a different session with a
+different system prompt, and "it inherited without the server" is not "it
+inherits". The script names the fix (`B12_REPO=<built checkout>` or
+`B12_MCP_CONFIG=<path>`), so this is a re-run, not a new instrument. **OWED
+before the seal**, and recorded as owed rather than counted as done.
+
+Also warned and NOT satisfied: `DISABLE_AUTOUPDATER is not 1`. The binary
+reported `2.1.221` and nothing suggests it moved mid-probe, but the guard exists
+because an auto-update would change the binary this artifact names, and it was
+off.
+
+### M2 / M3 — partially in hand, and one value contradicts the Windows box
+
+| Fact | Mac | This machine |
+|---|---|---|
+| `claudeCodeVersion` | **2.1.221** | (null) |
+| `claudeBinarySha256` | `7a181f36ed0f…` (prefix only, from the terminal) | (null) |
+| node | **v22.23.1** | 24.16 |
+| `lms` | present | absent by construction |
+
+**The node difference is the point, not a detail.** `runToolchain` compares
+`nodeMajorMinor`, so a declaration cut from this Windows box (`24.16`) would
+refuse EVERY observe on a Mac running `22.23`. The config already says not to
+guess it from here; this is that instruction earning its place with a number.
+`arch` and the vitest version are still unread — `npx vitest --version` was not
+part of the probe output.
+
+### M5 — REFUSED, and the refusal was correct
+
+The preflight stopped on ~100 tracked files showing as modified. **The archive
+was contaminated and I cut it.** `.gitattributes` pins `eol=lf` for `*.sh`,
+`*.mjs`, `*.json`, `*.jsonl`, `*.md`, `*.patch` and `*.diff` — and **not for
+`*.ts`**. With `core.autocrlf=true` on this machine every `.ts` checked out as
+CRLF, and the zip carried those bytes; on macOS git compared them against LF
+blobs and reported the whole source tree dirty.
+
+**The script was right and its guard is the reason nothing was spent:** "the
+working tree has tracked changes. Checking out over them would either fail or
+lose them, and neither belongs in a measurement run." A pre-flight that had
+continued would have measured a tree nobody could name.
+
+**Fixed by cutting the archive with `core.autocrlf=false` and `core.eol=lf`, and
+persisting both in the clone's own config** so the receiving machine does not
+re-convert. Verified before sending: **0 of 395 tracked files contain CRLF.**
+
+**AND IT EXPLAINS WHY W8's BYTE-IDENTITY MEASUREMENT MISSED THIS.** That probe
+compared `rates.json`, `MEASUREMENTS.jsonl`, `manifest-config.json` and the
+pre-registration — all `*.json`/`*.jsonl`, all covered by `.gitattributes`. It
+concluded "every probed file is byte-identical" and that conclusion was true of
+what it probed. `.ts` was never in the sample, and the generalisation I did not
+write down is the one that broke here.
