@@ -18,7 +18,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
-import { REGISTRY, applyMutation, blobSha } from "../scripts/b12-mutate.mjs";
+import { REGISTRY, applyMutation, blobSha, reduceReport } from "../scripts/b12-mutate.mjs";
 import { CONTROL_TESTS } from "../src/cost/b12/audit.js";
 
 const repoFile = (rel: string): Promise<string> => fs.readFile(path.join(process.cwd(), rel), "utf8");
@@ -134,5 +134,76 @@ describe("applyMutation", () => {
     const out = applyMutation(dir, { path: "src/gone.ts", find: "a", replace: "b", occurrences: 1 });
     expect(out.applied).toBe(false);
     if (!out.applied) expect(out.notApplied).toContain("does not exist");
+  });
+});
+
+describe("reduceReport — the report the artifact can be checked against", () => {
+  // THE THIRD OF THREE OMISSIONS the PHASE 0 closure record owed before a
+  // scored run: the firing artifact asserted an outcome per pair and carried
+  // nothing a reader could recompute it from. This is what it carries now, and
+  // the property that matters is that ABSENCE survives the reduction — because
+  // `evaluate` treats a control the report never mentions as `unanswerable`,
+  // and `notPassed` lists neither a pass nor an absence.
+  const CONTROLS = [
+    { file: "tests/cost-meter.test.ts", fullName: "suite alpha" },
+    { file: "tests/cost-meter.test.ts", fullName: "suite beta" },
+  ];
+  const report = (root: string) => ({
+    numTotalTests: 3,
+    numFailedTests: 1,
+    numFailedTestSuites: 1,
+    testResults: [
+      {
+        name: `${root}/tests/cost-meter.test.ts`,
+        assertionResults: [
+          { fullName: "suite alpha", status: "failed" },
+          { fullName: "unrelated one", status: "passed" },
+          { fullName: "unrelated two", status: "skipped" },
+        ],
+      },
+    ],
+  });
+
+  it("keeps every non-passed test, the totals, and a digest of the bytes", () => {
+    const root = "C:/tmp/tree";
+    const out = reduceReport(report(root), root, CONTROLS);
+    expect(out).not.toBeNull();
+    expect(out!.totals).toEqual({
+      tests: 3,
+      suites: 1,
+      reportedTotal: 3,
+      reportedFailed: 1,
+      reportedFailedSuites: 1,
+    });
+    // Paths are made repo-relative, so the digest set does not carry a
+    // machine's temp directory into committed evidence.
+    expect(out!.notPassed).toEqual([
+      { file: "tests/cost-meter.test.ts", fullName: "suite alpha", status: "failed" },
+      { file: "tests/cost-meter.test.ts", fullName: "unrelated two", status: "skipped" },
+    ]);
+    // A SKIPPED test is kept. It is not a failure and it is not a pass, and the
+    // off-diagonal sweep is entitled to see it.
+    expect(out!.notPassed.some((t) => t.status === "skipped")).toBe(true);
+    expect(out!.sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("records a registered control that the report never mentions as ABSENT", () => {
+    const root = "C:/tmp/tree";
+    const out = reduceReport(report(root), root, CONTROLS);
+    const beta = out!.registeredControls.find((c) => c.fullName === "suite beta");
+    // `suite beta` is in no assertionResults array anywhere in the payload.
+    // Without this field the reduction could not tell a reader whether the
+    // control passed or was never run, which is exactly the distinction
+    // `evaluate` turns into an `unanswerable` problem.
+    expect(beta?.status).toBe("absent");
+    expect(out!.registeredControls.find((c) => c.fullName === "suite alpha")?.status).toBe("failed");
+    // And absence is NOT inferable from `notPassed`, which is the reason the
+    // field exists rather than being derived at read time.
+    expect(out!.notPassed.some((t) => t.fullName === "suite beta")).toBe(false);
+  });
+
+  it("is null for a payload that is not a report at all", () => {
+    expect(reduceReport(null, "C:/tmp/tree", CONTROLS)).toBeNull();
+    expect(reduceReport("not an object", "C:/tmp/tree", CONTROLS)).toBeNull();
   });
 });

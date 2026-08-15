@@ -303,6 +303,73 @@ function parsedReport(run) {
  * Harmless today, since `runHarness` refuses more than one control file — but
  * a diagnostic that can be ambiguous later is one that will be.
  */
+/**
+ * ONE RUN'S REPORT, REDUCED TO WHAT THE EVALUATOR READ — plus a digest of the
+ * bytes it was reduced from.
+ *
+ * The artifact used to carry NO report at all, so a reader could see that the
+ * matrix said six controls fired and could not check that claim against
+ * anything. R43#4 made the same complaint about the runs themselves.
+ *
+ * IT IS A REDUCTION AND THE FIELD NAMES SAY SO. Embedding thirteen raw vitest
+ * payloads would add megabytes to an evidence file, and `--reporter=json`
+ * carries per-test durations and stack traces that decide nothing here. What is
+ * kept is exactly the evaluator's own input — `(file, fullName, status)` — for
+ * every test that is NOT passed, plus the status of every REGISTERED control
+ * whether or not it passed, plus the totals. That is enough to recompute the
+ * diagonal, the whole-file off-diagonal sweep, and the unanswerable check,
+ * which is every decision `evaluateMatrix` makes.
+ *
+ * `sha256` is over the raw payload as it was parsed. It does not let a reader
+ * reconstruct the payload; it lets a reader who is HANDED one prove it is the
+ * payload this artifact was computed from. Those are different claims and only
+ * the second is offered.
+ */
+export function reduceReport(report, repoRoot, controls) {
+  if (report === null || typeof report !== "object") return null;
+  const root = String(repoRoot ?? "").split("\\").join("/").replace(/\/+$/, "");
+  const relFile = (raw) => {
+    const norm = String(raw ?? "").split("\\").join("/");
+    return root !== "" && norm.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? norm.slice(root.length + 1) : norm;
+  };
+  const suites = Array.isArray(report.testResults) ? report.testResults : [];
+  const notPassed = [];
+  const seen = new Map();
+  let total = 0;
+  for (const suite of suites) {
+    const file = relFile(suite?.name);
+    for (const t of Array.isArray(suite?.assertionResults) ? suite.assertionResults : []) {
+      const fullName = typeof t?.fullName === "string" ? t.fullName : "";
+      const status = typeof t?.status === "string" ? t.status : "unknown";
+      total++;
+      seen.set(`${file}\u0000${fullName}`, status);
+      if (status !== "passed") notPassed.push({ file, fullName, status });
+    }
+  }
+  return {
+    sha256: sha256(JSON.stringify(report)),
+    totals: {
+      tests: total,
+      suites: suites.length,
+      // The reporter's own headline numbers, kept beside the recount so a
+      // disagreement between them is visible rather than resolved silently.
+      reportedTotal: typeof report.numTotalTests === "number" ? report.numTotalTests : null,
+      reportedFailed: typeof report.numFailedTests === "number" ? report.numFailedTests : null,
+      reportedFailedSuites: typeof report.numFailedTestSuites === "number" ? report.numFailedTestSuites : null,
+    },
+    notPassed,
+    // ABSENCE IS A VALUE HERE. `evaluate` distinguishes a control that passed
+    // from one the report never mentions — the second is `unanswerable` and is
+    // a problem — so a reader cannot check that distinction from `notPassed`
+    // alone, which lists neither.
+    registeredControls: (controls ?? []).map((c) => ({
+      file: c.file,
+      fullName: c.fullName,
+      status: seen.get(`${c.file}\u0000${c.fullName}`) ?? "absent",
+    })),
+  };
+}
+
 export function failedTestsIn(report, repoRoot) {
   const out = [];
   const suites =
@@ -434,6 +501,10 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
 
     const mutants = {};
     const bookends = [];
+    // Kept per pair, because a bookend is what licenses reading the mutant run
+    // as a firing — and the loop below otherwise drops the report the moment it
+    // has read `ok` off it.
+    const bookendReports = {};
     for (const entry of registry) {
       const pristine = makePristine(treeDir);
       if (!pristine.ok) throw new Error(`before ${entry.id}: ${pristine.why}`);
@@ -448,6 +519,7 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
         // be called intermittency — the harness had discarded the evidence.
         failed: bookend.ok ? [] : failedTestsIn(bookend.report, treeDir),
       });
+      bookendReports[entry.id] = reduceReport(bookend.report, treeDir, controls);
       if (!bookend.ok) {
         mutants[entry.id] = { applied: false, notApplied: `the pristine bookend was not green: ${bookend.why}`, report: null };
         continue;
@@ -502,6 +574,22 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
         sha256AtBase: blobSha(repoRoot, baseCommit, e.subject.path),
         sha256InTree: pristineSubjectShas[e.subject.path] ?? null,
         why: e.why,
+        /**
+         * THE MUTATION ITSELF, VERBATIM. The artifact named a subject file and
+         * two digests and never said what was DONE to it, so "m2 fired" could
+         * not be checked against the defect m2 claims to restore without
+         * opening the harness at the right commit and reading the registry.
+         *
+         * Both digests above pin the bytes the mutation was applied TO; these
+         * three fields pin the mutation. Together a reader can reproduce the
+         * mutated tree exactly, which is what makes the firing claim
+         * falsifiable rather than merely reported.
+         */
+        mutation: {
+          find: e.subject.find,
+          replace: e.subject.replace,
+          occurrences: e.subject.occurrences,
+        },
       })),
       conformance: [
         {
@@ -511,6 +599,46 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
         },
       ],
       bookends,
+      /**
+       * THE REPORTS THE VERDICT WAS COMPUTED FROM, one per conformance run.
+       *
+       * Reduced, not raw, and `reduceReport` states exactly what that costs.
+       * The artifact previously asserted an outcome per pair and published
+       * nothing a reader could recompute it from.
+       *
+       * The pristine bookends are here too, not only the mutant runs: a
+       * bookend is what licenses reading the mutant run as a firing at all, and
+       * one of them going red is how a pair gets skipped.
+       */
+      reports: {
+        baseline: reduceReport(baseline.report, treeDir, controls),
+        bookends: bookendReports,
+        mutants: Object.fromEntries(
+          registry.map((e) => [e.id, reduceReport(mutants[e.id]?.report ?? null, treeDir, controls)])
+        ),
+      },
+      /**
+       * WHICH TOOLS PRODUCED THIS, by digest.
+       *
+       * The artifact pinned the SUBJECT bytes and said nothing about the runner
+       * that mutated them or the evaluator that read the reports — so a change
+       * to either could alter every outcome in this file and leave no trace on
+       * its face. The suite attestation already learned this lesson through its
+       * `lockfileSha256`; this is the same fact for the harness itself.
+       *
+       * Both digests for each, for the same reason the subjects carry both: the
+       * committed blob and the bytes that actually ran can differ on a checkout,
+       * and publishing one while meaning the other is the claim that cannot be
+       * kept.
+       */
+      tooling: [
+        { path: "scripts/b12-mutate.mjs", role: "runner" },
+        { path: "scripts/b12-firing.mjs", role: "evaluator" },
+      ].map((t) => ({
+        ...t,
+        sha256AtBase: blobSha(repoRoot, baseCommit, t.path),
+        sha256InTree: worktreeSha(treeDir, t.path),
+      })),
       // BOTH, because the gap between them is itself the finding. When they
       // differ, a pair was skipped and the artifact says so on its face instead
       // of quietly reporting the budget as though it had been spent.

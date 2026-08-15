@@ -69,6 +69,31 @@ export function runConformance(
 ): { ok: boolean; why: string | null; report: unknown };
 
 /**
+ * One conformance run's report, REDUCED to what the evaluator reads, plus a
+ * sha256 of the payload it was reduced from.
+ *
+ * `registeredControls` carries `"absent"` as a status ON PURPOSE: `evaluate`
+ * distinguishes a control that passed from one the report never mentions, and
+ * `notPassed` lists neither.
+ */
+export function reduceReport(
+  report: unknown,
+  repoRoot: string,
+  controls: ReadonlyArray<{ file: string; fullName: string }>
+): {
+  sha256: string;
+  totals: {
+    tests: number;
+    suites: number;
+    reportedTotal: number | null;
+    reportedFailed: number | null;
+    reportedFailedSuites: number | null;
+  };
+  notPassed: Array<{ file: string; fullName: string; status: string }>;
+  registeredControls: Array<{ file: string; fullName: string; status: string }>;
+} | null;
+
+/**
  * 1 + 2N runs: one baseline, then per pair a pristine bookend and a mutant.
  * `generatedAt` is REQUIRED and never defaulted to the clock — the artifact has
  * to be byte-stable across re-runs of the same inputs.

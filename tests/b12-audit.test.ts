@@ -719,7 +719,19 @@ describe("fail-closed probes and the dirty-tree guard", () => {
     // repository audits without refusing at all, so the refusals above are the
     // blinding and not the fixture.
     await expect(collectAuditFacts(root, "r1", collector)).resolves.toBeDefined();
-  });
+    // 120 s, matching the other checkout-heavy tests in this file. FIVE
+    // `collectAuditFacts` calls here and each one takes a DETACHED WORKTREE
+    // before it can refuse — measured at ~1.45 s per add+remove unloaded — so
+    // this test asks for roughly 8 s of git before any parallel load, against
+    // the config's 30 s default. It flaked three times in the full suite and
+    // passed solo every time.
+    //
+    // NOT A CLAIM THAT THE TIMEOUT WAS THE CAUSE: no per-test timing was
+    // captured under load, and this file was in the registered KNOWN_FLAKY
+    // class before the checkouts existed. It IS a claim that a test five
+    // checkouts deep should not be running on the default budget while every
+    // other heavy test here declares its own.
+  }, 120_000);
 
   it("REFUSES when the introducing-commit log FAILS — an unaskable history is not 'does not govern'", async () => {
     // `introducingCommit` mapped a FAILED `git log` and a path with NO

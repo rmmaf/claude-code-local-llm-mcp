@@ -3506,3 +3506,37 @@ anchor from committed state rather than from a committed emitter output. If the
 flake rate is later shown to have risen, the cheapest lever is a shared checkout
 per test file rather than one per `collectAuditFacts` call — recorded now so the
 option is on the table before anyone reaches for a timeout bump.
+
+## The `stdio.test.ts` signature has now been seen TWICE, identically
+
+**Second occurrence, 2026-08-14, same session.** A full-suite run reported
+`numFailedTestSuites: 2` with **`numFailedTests: 0`**, one file named —
+`tests/stdio.test.ts` — and an **empty** message. That is byte-for-byte the
+shape of the first occurrence recorded above.
+
+**Running tally, and it is the whole of what is established:**
+
+| | full-suite runs | failures |
+|---|---|---|
+| `stdio.test.ts` | ~6 this session | 2, identical signature |
+| solo runs | 3 | 0 |
+
+**The second occurrence retires one candidate.** The first time, it was open
+whether the W5 hardening's guard had fired — it prints the offending text, so a
+guard failure would show a message. Both occurrences carry an EMPTY message and
+ZERO failing tests, twice. Whatever this is, it is not a test failing; it is the
+suite failing around the tests, which is where an unhandled rejection or a
+teardown fault lands. **That narrows the search. It does not name a cause, and
+none is named here.**
+
+**Both occurrences report TWO failed suites and name only ONE.** The second
+suite is unidentified in the payload both times. That is a fact about the
+reporter's output, not about the suites, and it is written down because a
+missing name is the kind of detail that gets read as "one suite" on a later
+skim.
+
+**Still not established:** any mechanism; whether the two occurrences share one;
+whether the rate is rising; whether it is load-dependent. Nobody has captured a
+failing run under the default reporter, because the gate uses
+`--reporter=json` and the failure lands where R48 erases it — for the fourth
+time in this session.
