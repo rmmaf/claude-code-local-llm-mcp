@@ -210,6 +210,24 @@ export const AMENDMENT_CONFORMANCE_PATHS = "evidence/2026-08-10-b12-amendment-co
 export const AMENDMENT_REPAIR_MAX_ROUNDS = "evidence/2026-08-14-b12-amendment-repair-max-rounds.json";
 
 /**
+ * THE PRE-DATA AMENDMENT that gives a run a declared toolchain identity.
+ *
+ * IT ADDS NO VOID CONDITION, and that is not a detail — it is what the owner
+ * chose on 2026-08-14 over R43#3's proposal to void on mismatch. There are three
+ * attempts and a VOID ordinarily consumes one, so exact version equality would
+ * let a node patch bump spend one. The enforcement is a PRE-RUN BARRIER in the
+ * harness, at the same seam as the manifest's `claudeCodeVersion` pin, which
+ * REFUSES an arm rather than voiding a run.
+ *
+ * WHAT THIS FILE DOES WITH IT IS THEREFORE REPORTING ONLY. The audit runs after
+ * the data exists, where refusing is no longer available and voiding is the very
+ * thing the amendment declines to do. It records the declared identity, what each
+ * surface observed, whether they agree, and whether the amendment governed — so a
+ * disagreement is CONSPICUOUS and still decides nothing.
+ */
+export const AMENDMENT_RUN_TOOLCHAIN = "evidence/2026-08-14-b12-amendment-run-toolchain.json";
+
+/**
  * The only spellings a run id may take when it becomes a FILENAME — the same
  * grammar `b12-register.mjs` applies at its own point of use, written here
  * because this file interpolates the id into paths it then WRITES.
@@ -303,6 +321,18 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause6.firingPairs",
   "clause6.firingSubjects",
   "clause6.firingToolchain",
+  // The run-toolchain amendment. REPORTED, DECIDING NOTHING — see
+  // AMENDMENT_RUN_TOOLCHAIN. `governs` is a three-way reading, not a boolean:
+  // an unaskable ancestry refuses before it reaches here, but a run with no
+  // declared identity must not be spelled the same way as one that agrees.
+  "clause6.toolchainAmendment.path",
+  "clause6.toolchainAmendment.commit",
+  "clause6.toolchainAmendment.sha256",
+  "clause6.toolchainAmendment.governs",
+  "clause6.runToolchain.declared",
+  "clause6.runToolchain.firing",
+  "clause6.runToolchain.suite",
+  "clause6.runToolchain.agreement",
   "tool.srcSha256",
 ];
 
@@ -482,6 +512,27 @@ export interface AuditFacts {
      */
     lockfileAtSubject: string | null;
     /**
+     * The run-toolchain amendment's identity and whether it governs THIS run,
+     * decided by the same prospective ancestry test as the other two.
+     */
+    toolchainAmendment: { path: string; commit: string | null; sha256: string | null; governs: boolean };
+    /**
+     * REPORTED, DECIDING NOTHING: the run's DECLARED toolchain identity and what
+     * each evidentiary surface actually ran on.
+     *
+     * The declared identity is the reference, never a relation between the two
+     * proofs: comparing the firing artifact against the attestation would make
+     * those two agree with each other and bind NEITHER to the scored sessions,
+     * so two artifacts from one wrong machine would agree perfectly.
+     */
+    runToolchain: {
+      declared: ToolchainReading;
+      firing: ToolchainReading;
+      suite: ToolchainReading;
+      firingAgreement: ToolchainAgreement;
+      suiteAgreement: ToolchainAgreement;
+    };
+    /**
      * `evidence/<runId>.b12.firing.json` at HEAD — the mutation harness's
      * matrix. Null when absent or unparseable.
      *
@@ -558,6 +609,126 @@ export interface SuiteAttestation {
   lockfileSha256: string;
   files: Array<{ file: string; total: number; passed: number; failed: number; skipped: number }>;
   tests: Array<{ file: string; fullName: string; status: string }>;
+  /**
+   * The runtime the suite ran on, under the run-toolchain amendment. Optional
+   * for the same reason the firing artifact's is: an attestation written before
+   * this field existed is not thereby void.
+   */
+  toolchain?: { platform?: string; arch?: string; nodeVersion?: string; vitest?: string | null };
+}
+
+// ---------------------------------------------------------------------------
+// The run toolchain identity (pre-data amendment, 2026-08-14).
+// ---------------------------------------------------------------------------
+
+/**
+ * A run's toolchain identity, NORMALISED. Compared for equality, never ordered.
+ *
+ * PATCH VERSIONS ARE ABSENT BY DESIGN, and this is the amendment's own reasoning
+ * rather than a shortcut: including them would let a node patch bump — which is
+ * irrelevant to whether a negative control fires — block a run at the barrier,
+ * reintroducing exactly the irrelevant-difference problem that made VOIDING on
+ * mismatch unattractive in the first place.
+ */
+export interface RunToolchain {
+  platform: string;
+  arch: string;
+  /** MAJOR.MINOR of the node that ran it. */
+  node: string;
+  /** MAJOR.MINOR of vitest. */
+  vitest: string;
+}
+
+/**
+ * A toolchain that could be read, or the reason it could not.
+ *
+ * THERE IS NO THIRD STATE THAT SILENTLY PASSES. An absent or malformed identity
+ * is `known: false`, and the amendment says such a reading is never a match —
+ * the same fail-closed shape as the regime-key reader in `assemble.ts`, and for
+ * the same reason: "cannot tell" must not be spelled the same way as "agrees".
+ */
+export type ToolchainReading =
+  | { readonly known: true; readonly id: RunToolchain }
+  | { readonly known: false; readonly why: string };
+
+/** Local, because this file has no shared object guard and importing one for
+ *  four call sites would couple the audit to a module it does not otherwise use. */
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+const majorMinor = (raw: unknown): string | null => {
+  if (typeof raw !== "string") return null;
+  const m = /(\d+)\.(\d+)/.exec(raw);
+  return m === null ? null : `${m[1]}.${m[2]}`;
+};
+
+/**
+ * Read a toolchain identity out of whatever shape carries it.
+ *
+ * Accepts the producers' shape (`nodeVersion`, and `vitest` as the DISPLAY
+ * STRING `"vitest/4.1.10 win32-x64 node-v24.16.0"`) and the manifest's declared
+ * shape (`node`, `vitest` as a bare version). The display string is why vitest
+ * is not simply regexed for the first number it contains: that string embeds
+ * the node version AND the platform a second time, so a naive read would make
+ * one field silently disagree with itself.
+ */
+export function normaliseToolchain(raw: unknown): ToolchainReading {
+  if (!isPlainObject(raw)) return { known: false, why: "no toolchain object" };
+  const platform = typeof raw.platform === "string" && raw.platform !== "" ? raw.platform : null;
+  const arch = typeof raw.arch === "string" && raw.arch !== "" ? raw.arch : null;
+  const node = majorMinor(raw.nodeVersion) ?? majorMinor(raw.node);
+  const vitestRaw = raw.vitest;
+  let vitest: string | null = null;
+  if (typeof vitestRaw === "string") {
+    const tagged = /vitest\/(\d+)\.(\d+)/.exec(vitestRaw);
+    vitest = tagged !== null ? `${tagged[1]}.${tagged[2]}` : majorMinor(vitestRaw);
+  }
+  const missing: string[] = [];
+  if (platform === null) missing.push("platform");
+  if (arch === null) missing.push("arch");
+  if (node === null) missing.push("node");
+  if (vitest === null) missing.push("vitest");
+  if (missing.length > 0) return { known: false, why: `missing or unreadable: ${missing.join(", ")}` };
+  return { known: true, id: { platform: platform!, arch: arch!, node: node!, vitest: vitest! } };
+}
+
+export type ToolchainAgreement =
+  | { readonly verdict: "match" }
+  | { readonly verdict: "mismatch"; readonly differences: readonly string[] }
+  | { readonly verdict: "unknown"; readonly why: string };
+
+/**
+ * Compare an observed identity against the run's DECLARED one.
+ *
+ * The declared identity is the reference on purpose. Comparing the firing
+ * artifact against the suite attestation instead would make those two agree
+ * with each other and bind NEITHER to the sessions that were scored — two
+ * artifacts from one wrong machine would agree perfectly.
+ */
+export function toolchainAgreement(declared: ToolchainReading, observed: ToolchainReading): ToolchainAgreement {
+  if (!declared.known) return { verdict: "unknown", why: `declared identity ${declared.why}` };
+  if (!observed.known) return { verdict: "unknown", why: `observed identity ${observed.why}` };
+  const differences: string[] = [];
+  for (const k of ["platform", "arch", "node", "vitest"] as const) {
+    if (declared.id[k] !== observed.id[k]) differences.push(`${k}: declared ${declared.id[k]}, observed ${observed.id[k]}`);
+  }
+  return differences.length === 0 ? { verdict: "match" } : { verdict: "mismatch", differences };
+}
+
+/** The stable one-line spelling used on the audit's face. */
+export function toolchainLabel(r: ToolchainReading): string {
+  return r.known ? `${r.id.platform}-${r.id.arch} node-${r.id.node} vitest-${r.id.vitest}` : `(unknown: ${r.why})`;
+}
+
+/**
+ * The agreement, spelled so the THREE readings stay three. "unknown" carries its
+ * reason because a reader who cannot tell whether a run was checked will assume
+ * it was, and that assumption is the one this amendment exists to prevent.
+ */
+export function agreementLabel(a: ToolchainAgreement): string {
+  if (a.verdict === "match") return "match";
+  if (a.verdict === "unknown") return `unknown (${a.why})`;
+  return `MISMATCH [${a.differences.join("; ")}]`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1051,6 +1222,25 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
             facts.clause6.firing.toolchain.vitest ?? "?",
           ].join(" ")
     ),
+    // SERIALIZED HERE, and the comment above `clause5.repairRoundsAmendment` is
+    // why this line exists at all: that rule's facts were computed, stored and
+    // never written out, so every consumer read an absent key and the clause
+    // could not fire on any real run. The unit test missed it because it hands
+    // `inputs` in by hand — it certified a path production cannot reach. The
+    // producer path is exercised deliberately in tests/b12-audit.test.ts.
+    "clause6.toolchainAmendment.path": facts.clause6.toolchainAmendment.path,
+    "clause6.toolchainAmendment.commit": orNone(facts.clause6.toolchainAmendment.commit),
+    "clause6.toolchainAmendment.sha256": orNone(facts.clause6.toolchainAmendment.sha256),
+    "clause6.toolchainAmendment.governs": facts.clause6.toolchainAmendment.governs ? "yes" : "no",
+    "clause6.runToolchain.declared": toolchainLabel(facts.clause6.runToolchain.declared),
+    "clause6.runToolchain.firing": toolchainLabel(facts.clause6.runToolchain.firing),
+    "clause6.runToolchain.suite": toolchainLabel(facts.clause6.runToolchain.suite),
+    // One line carrying BOTH comparisons, because a reader who sees only that
+    // "something disagreed" cannot tell which surface to go and look at.
+    "clause6.runToolchain.agreement": [
+      `firing=${agreementLabel(facts.clause6.runToolchain.firingAgreement)}`,
+      `suite=${agreementLabel(facts.clause6.runToolchain.suiteAgreement)}`,
+    ].join("; "),
     "clause6.firingSubjects": joined(
       facts.clause6.firingSubjectsAtBase
         .map((s) => `${s.path}=${String(s.claimed).slice(0, 12)}/${String(s.recomputed).slice(0, 12)}`)
@@ -1108,6 +1298,7 @@ export interface CollectorOptions {
   amendmentPath?: string;
   /** Test seam: where the repair-max-rounds amendment lives. */
   repairRoundsAmendmentPath?: string;
+  runToolchainAmendmentPath?: string;
   /** Test seam: wrap or replace the git runner — how the oracle makes a
    * MANDATORY probe fail without corrupting a repository. */
   gitRunner?: Git;
@@ -1479,6 +1670,28 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     rmrGoverns = anc;
   }
 
+  // The run-toolchain amendment, by the SAME prospective test and with the SAME
+  // fail-closed refusal on an unaskable ancestry. What differs is what governance
+  // BUYS: this one decides nothing about the verdict. It selects whether the
+  // comparison below is published as a governed regime's finding or as a bare
+  // observation, and nothing else — the amendment adds no void condition, so
+  // there is no branch here that can make a run void.
+  const toolchainAmendmentPath = options.runToolchainAmendmentPath ?? AMENDMENT_RUN_TOOLCHAIN;
+  const toolchainAmendmentCommit = orRefuse(
+    introducingCommit(git, toolchainAmendmentPath),
+    `the commit introducing ${toolchainAmendmentPath}`
+  );
+  let toolchainGoverns = false;
+  if (toolchainAmendmentCommit !== null && anchor !== null) {
+    const anc = isAncestor(git, toolchainAmendmentCommit, anchor.commit);
+    if (anc === null) {
+      throw new AuditRefused(
+        `ancestry of the run-toolchain amendment ${toolchainAmendmentCommit} against the anchor commit cannot be asked — which regime governs this run cannot be decided`
+      );
+    }
+    toolchainGoverns = anc;
+  }
+
   // ---- clause 5: the two probes, in union ---------------------------------
   const commitsTouchingPinned: Array<{ sha: string; committerDate: string }> = [];
   const offenders: string[] = [];
@@ -1695,6 +1908,29 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       firing = null;
     }
   }
+  // THE DECLARED IDENTITY, read from manifest A at HEAD. It is the reference the
+  // other two are compared against, so it is read from the run's own declaration
+  // rather than inferred from either proof — a proof cannot be its own reference.
+  // Unreadable, unparseable or undeclared all arrive as `known: false`, which the
+  // amendment says is never a match.
+  const manifestAShow = git(["show", `HEAD:evidence/${runId}.b12.tasks.json`]);
+  let declaredToolchain: ToolchainReading = { known: false, why: "manifest A is unreadable at HEAD" };
+  if (manifestAShow.ok) {
+    try {
+      const parsed = JSON.parse(manifestAShow.out) as unknown;
+      const pinned = isPlainObject(parsed) ? parsed.pinned : undefined;
+      declaredToolchain = isPlainObject(pinned)
+        ? normaliseToolchain(pinned.runToolchain)
+        : { known: false, why: "manifest A carries no pinned block" };
+    } catch {
+      declaredToolchain = { known: false, why: "manifest A does not parse" };
+    }
+  }
+  const firingToolchain: ToolchainReading =
+    firing === null ? { known: false, why: "no firing artifact" } : normaliseToolchain(firing.toolchain);
+  const suiteToolchain: ToolchainReading =
+    attestation === null ? { known: false, why: "no suite attestation" } : normaliseToolchain(attestation.toolchain);
+
   const firingSubjectsAtBase =
     firing === null
       ? []
@@ -1766,6 +2002,19 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       firing,
       firingSha256,
       firingSubjectsAtBase,
+      toolchainAmendment: {
+        path: toolchainAmendmentPath,
+        commit: toolchainAmendmentCommit,
+        sha256: blobSha(git, "HEAD", toolchainAmendmentPath),
+        governs: toolchainGoverns,
+      },
+      runToolchain: {
+        declared: declaredToolchain,
+        firing: firingToolchain,
+        suite: suiteToolchain,
+        firingAgreement: toolchainAgreement(declaredToolchain, firingToolchain),
+        suiteAgreement: toolchainAgreement(declaredToolchain, suiteToolchain),
+      },
       // Reported beside the verdict, never inside it.
       conformance: CONFORMANCE_FILES.map((file) => ({
         file,

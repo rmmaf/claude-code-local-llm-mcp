@@ -26,6 +26,10 @@ import {
   buildAuditArtifact,
   collectAuditFacts,
   CONFORMANCE_FILES,
+  normaliseToolchain,
+  toolchainAgreement,
+  toolchainLabel,
+  agreementLabel,
   CONTROL_TESTS,
   decideAudit,
   evidenceArtifactPath,
@@ -48,6 +52,9 @@ import { sha256 } from "../src/cost/b12/archive.js";
 import { emitRun } from "../src/cost/b12/emit.js";
 import { at } from "./b12-fixtures.js";
 import { makeTempRoot, removeTempRoot } from "./helpers.js";
+
+/** One normalised identity, reused so a disagreement in a test is deliberate. */
+const DEFAULT_TOOLCHAIN = { platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" } as const;
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -232,6 +239,24 @@ function factsOf(over: Partial<AuditFacts> = {}): AuditFacts {
         atRegistration: "c".repeat(64),
         atSubject: "c".repeat(64),
       })),
+      // The default facts describe a run under the run-toolchain amendment with
+      // all three surfaces agreeing. It decides nothing either way — these
+      // fields cannot change a verdict, which is the amendment's whole point —
+      // so the default is the uninteresting case and the tests that care about
+      // disagreement build it explicitly.
+      toolchainAmendment: {
+        path: "evidence/2026-08-14-b12-amendment-run-toolchain.json",
+        commit: "a".repeat(40),
+        sha256: "b".repeat(64),
+        governs: true,
+      },
+      runToolchain: {
+        declared: { known: true, id: DEFAULT_TOOLCHAIN },
+        firing: { known: true, id: DEFAULT_TOOLCHAIN },
+        suite: { known: true, id: DEFAULT_TOOLCHAIN },
+        firingAgreement: { verdict: "match" },
+        suiteAgreement: { verdict: "match" },
+      },
       // The default facts describe a harness matrix in which every one of the
       // six controls was shown FIRING on the very tree the attestation names.
       // Clause 6's frozen word is FIRING; passing is strictly weaker, since a
@@ -1571,5 +1596,117 @@ describe("clause 6 — the word FIRING", () => {
         decideAudit({ ...facts, clause6: { ...facts.clause6, firing: broken as never } })
       ).not.toThrow();
     }
+  });
+});
+
+describe("the run toolchain identity — the pre-data amendment's reader", () => {
+  it("reads the PRODUCERS' shape, including vitest's display string", () => {
+    // The firing artifact stores vitest as "vitest/4.1.10 win32-x64 node-v24.16.0",
+    // which embeds the platform and the node version a SECOND time. A reader that
+    // grabbed the first number it saw would make one field disagree with itself.
+    const r = normaliseToolchain({
+      platform: "win32",
+      arch: "x64",
+      nodeVersion: "v24.16.0",
+      vitest: "vitest/4.1.10 win32-x64 node-v24.16.0",
+    });
+    expect(r.known).toBe(true);
+    if (!r.known) throw new Error("unreachable");
+    expect(r.id).toEqual({ platform: "win32", arch: "x64", node: "24.16", vitest: "4.1" });
+  });
+
+  it("reads the MANIFEST's declared shape too, so one comparison spans both", () => {
+    const r = normaliseToolchain({ platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" });
+    expect(r.known).toBe(true);
+    if (!r.known) throw new Error("unreachable");
+    expect(r.id).toEqual({ platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" });
+  });
+
+  it("IGNORES patch versions, which is the amendment's reasoning and not a shortcut", () => {
+    // Including the patch would let a node bump block a run at the barrier —
+    // reintroducing exactly the irrelevant-difference problem that made VOIDING
+    // on mismatch unattractive. If this test ever goes red, read the amendment
+    // before "fixing" it.
+    const a = normaliseToolchain({ platform: "darwin", arch: "arm64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10" });
+    const b = normaliseToolchain({ platform: "darwin", arch: "arm64", nodeVersion: "v24.16.9", vitest: "vitest/4.1.99" });
+    expect(toolchainAgreement(a, b)).toEqual({ verdict: "match" });
+  });
+
+  it("an absent or malformed identity is UNKNOWN and is NEVER a match", () => {
+    for (const bad of [undefined, null, {}, "darwin", 42, [], { platform: "darwin" }, { platform: "", arch: "arm64", node: "24.16", vitest: "4.1" }]) {
+      const r = normaliseToolchain(bad);
+      expect(r.known, `${JSON.stringify(bad)} must not read as known`).toBe(false);
+      const known = normaliseToolchain({ platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" });
+      // Unknown on EITHER side, and in BOTH directions.
+      expect(toolchainAgreement(known, r).verdict).toBe("unknown");
+      expect(toolchainAgreement(r, known).verdict).toBe("unknown");
+    }
+  });
+
+  it("names WHICH field disagreed, because 'something disagreed' is not actionable", () => {
+    const declared = normaliseToolchain({ platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" });
+    const observed = normaliseToolchain({ platform: "win32", arch: "x64", node: "24.16", vitest: "4.1" });
+    const a = toolchainAgreement(declared, observed);
+    expect(a.verdict).toBe("mismatch");
+    if (a.verdict !== "mismatch") throw new Error("unreachable");
+    expect(a.differences.join(" ")).toMatch(/platform: declared darwin, observed win32/);
+    expect(a.differences.join(" ")).toMatch(/arch: declared arm64, observed x64/);
+    expect(a.differences).toHaveLength(2);
+    expect(agreementLabel(a)).toMatch(/^MISMATCH \[/);
+  });
+
+  it("THE CASE THE AMENDMENT EXISTS FOR: win32 firing against a darwin run", () => {
+    // Two proofs from one wrong machine agree with EACH OTHER perfectly, which
+    // is why the reference is the run's DECLARED identity and not a relation
+    // between the two artifacts.
+    const declared = normaliseToolchain({ platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" });
+    const winFiring = normaliseToolchain({ platform: "win32", arch: "x64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10" });
+    const winSuite = normaliseToolchain({ platform: "win32", arch: "x64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10" });
+    expect(toolchainAgreement(winFiring, winSuite)).toEqual({ verdict: "match" });
+    expect(toolchainAgreement(declared, winFiring).verdict).toBe("mismatch");
+    expect(toolchainAgreement(declared, winSuite).verdict).toBe("mismatch");
+  });
+
+  it("the unknown label carries its REASON onto the audit's face", () => {
+    // A reader who cannot tell whether a run was checked will assume it was.
+    expect(toolchainLabel(normaliseToolchain(undefined))).toBe("(unknown: no toolchain object)");
+    expect(agreementLabel({ verdict: "unknown", why: "no firing artifact" })).toBe("unknown (no firing artifact)");
+    expect(toolchainLabel({ known: true, id: { platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" } })).toBe(
+      "darwin-arm64 node-24.16 vitest-4.1"
+    );
+  });
+
+  it("the amendment's keys REACH THE ARTIFACT — the trap clause5's rule fell into", () => {
+    // clause5.repairRoundsAmendment was computed, stored, and never serialized,
+    // so every consumer read an absent key and the rule could not fire on any
+    // real run. auditInputs' key-set equality is what makes that impossible here.
+    const inputs = auditInputs(factsOf());
+    expect(inputs["clause6.toolchainAmendment.governs"]).toBe("yes");
+    expect(inputs["clause6.runToolchain.declared"]).toBe("darwin-arm64 node-24.16 vitest-4.1");
+    expect(inputs["clause6.runToolchain.agreement"]).toBe("firing=match; suite=match");
+  });
+
+  it("a MISMATCH is published and still decides NOTHING — the amendment adds no void", () => {
+    const declared = { known: true as const, id: DEFAULT_TOOLCHAIN };
+    const win = normaliseToolchain({ platform: "win32", arch: "x64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10" });
+    const base = factsOf();
+    const facts = factsOf({
+      clause6: {
+        ...base.clause6,
+        runToolchain: {
+          declared,
+          firing: win,
+          suite: win,
+          firingAgreement: toolchainAgreement(declared, win),
+          suiteAgreement: toolchainAgreement(declared, win),
+        },
+      },
+    });
+    const inputs = auditInputs(facts);
+    expect(inputs["clause6.runToolchain.agreement"]).toMatch(/firing=MISMATCH/);
+    expect(inputs["clause6.runToolchain.agreement"]).toMatch(/suite=MISMATCH/);
+    // The verdict is UNMOVED. If this ever goes red, someone has turned the
+    // report into a rule, which is precisely what the owner declined.
+    expect(decideAudit(facts).verdict).toBe(decideAudit(base).verdict);
   });
 });
