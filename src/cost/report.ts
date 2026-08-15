@@ -980,8 +980,45 @@ export function buildCounterfactual(
   const wouldHaveAdded = (entry: TelemetryRecord): { hi: number; lo: number } | null => {
     const source =
       entry.invocation_id !== undefined ? byInvocation.get(entry.invocation_id) : undefined;
-    const at = source?.timestampMs ?? Date.parse(entry.ts);
-    const thread = source?.thread ?? "main";
+    // AN UNKNOWN SOURCE IS AN UNKNOWN THREAD, AND THAT IS `null` (W10/R51).
+    //
+    // This read `source?.thread ?? "main"`, and `ToolResultRecord.thread` is a
+    // REQUIRED string — so the default never covered a missing field. It fired
+    // on one condition only: `source` absent, i.e. a row with no
+    // `invocation_id` or one this transcript's local results do not carry.
+    //
+    // THE FROZEN TEXT ALREADY DECIDED THIS, in three places, and the code did
+    // not match any of them:
+    //   - `design.detector` repair 5 — "`wouldHaveAdded` resolves the row's
+    //     thread via `byInvocation`, FALLING BACK TO THE ROW'S OWN THREAD, and
+    //     returns `null` — never 0 — when no request matches." A
+    //     `TelemetryRecord` has no thread field, so on a miss there is no
+    //     row's own thread to fall back to. `null` is what remains.
+    //   - `design.metric` — "If any refused magnitude is `null` ... `R_hi⁺` is
+    //     NOT EVALUABLE and the run returns `open`. An unknown may not be
+    //     summed as zero."
+    //   - `voidConditions` 6 requires, as one of the six controls SHOWN
+    //     FIRING, "an unmatchable `wouldHaveAdded` returning null and not 0".
+    //
+    // THE ARGUMENT IS EPISTEMIC, NOT DIRECTIONAL, and an earlier version of
+    // this reasoning got that wrong. Substituting "main" does not merely ADD
+    // candidates: `requestAtOrAfter` filters by strict thread equality, so it
+    // swaps one disjoint candidate set for another and can turn a number into
+    // a different number, or into null, as easily as null into a number. And
+    // the magnitude is SIGNED, so a sized value is not necessarily an inflation.
+    // The defect is not that main biases the figure upward — it is that on a
+    // miss NOTHING is known about the thread, and this returned a confident
+    // number anyway. `unsized` exists to carry exactly that.
+    //
+    // IT ALSO CLOSES AN INVALID-DATE HOLE. `at` used to be
+    // `Date.parse(entry.ts)` on this path, and the parser accepts any string as
+    // `ts` — so a malformed timestamp gave `NaN`, `request.timestampMs < NaN`
+    // is false for every row, the filter rejected nothing, and the helper
+    // returned the EARLIEST request in the assumed thread as a known answer.
+    // With the miss path gone, `at` is only ever a real `timestampMs`.
+    if (source === undefined) return null;
+    const at = source.timestampMs;
+    const thread = source.thread;
     // THE ROW'S OWN THREAD OR NOTHING. This first shipped falling back to main
     // when a subagent's thread had no later request, which does not compute an
     // approximate answer -- it computes a DIFFERENT one, against a thread that

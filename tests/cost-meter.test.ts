@@ -1940,8 +1940,12 @@ describe("telemetry and the counterfactual", () => {
     expect(result.byTool).toEqual([]);
     expect(result.unitsTotal).toBe(0);
     expect(result.savedFraction).toBe(0);
-    // Withheld, not hidden: the magnitude is reported so the exclusion is visible.
-    expect(result.unverifiableUnits.units).toBeGreaterThan(0);
+    // Withheld, not hidden — but UNSIZED rather than sized (W10/R51). This row
+    // carries no `invocation_id` at all, so its thread is unknown; the
+    // magnitude used to be computed against "main" and reported as known. The
+    // exclusion is still visible, as a row and as `unsized`.
+    expect(result.unverifiableUnits.unsized).toBe(1);
+    expect(result.unverifiableUnits.units).toBe(0);
   });
 });
 
@@ -2078,7 +2082,14 @@ describe("the cost-meter CLI", () => {
     expect(stdout).toContain("estimated savings from local tools");
     expect(stdout).toContain("nothing counted");
     expect(stdout).toContain("NOT counted");
-    expect(stdout).toContain("units withheld");
+    // W10/R51 — the WORDING moved and the intent did not. This row's thread is
+    // unknown, so its magnitude is UNSIZED rather than priced against "main",
+    // and `refused()` in the CLI therefore prints its unknown-branch sentence
+    // instead of "~N units withheld". The thing this test exists to prevent —
+    // an exclusion that is invisible because nothing was counted — is still
+    // asserted, and the new sentence states the ignorance outright.
+    expect(stdout).toContain("could not be sized at all");
+    expect(stdout).toContain("UNKNOWN");
   }, 30_000);
 
   it("says the log is empty rather than claiming rows were withheld", async () => {
@@ -4782,7 +4793,7 @@ describe("the four B12 scoring seams", () => {
     expect(result.ambiguousUnits.units).not.toBeCloseTo(41486.48648648649, 3);
   });
 
-  it("gives excludedForeign a magnitude, because R_hi+ is defined over all FOUR classes", async () => {
+  it("gives excludedForeign a ROW and an UNSIZED count, because its thread is unknown", async () => {
     // This class shipped as a bare counter while the other three carried
     // magnitudes, so `R_hi+` -- which grants every refused row its would-have
     // magnitude across all four -- was not computable as the frozen design
@@ -4805,13 +4816,25 @@ describe("the four B12 scoring seams", () => {
 
     expect(result.provenanceUnavailable).toBe(false);
     expect(result.excludedForeign).toBe(1);
-    expect(result.excludedForeignUnits.unsized).toBe(0);
-    // (10000 - 1000)/3.7 x 2.0, by the same hand derivation as above.
-    expect(result.excludedForeignUnits.units).toBeCloseTo(4864.864864864865, 6);
-    // A count with no magnitude is the silent exclusion the other three
-    // counters exist to prevent, and a zero here would read as "nothing worth
-    // having was refused".
-    expect(result.excludedForeignUnits.units).not.toBe(0);
+    // W10/R51 — THIS TEST USED TO ASSERT THE DEFECT. It expected `unsized === 0`
+    // and `units === 4864.86…`, a number produced by pricing this FOREIGN row
+    // against THIS transcript's MAIN thread, because `wouldHaveAdded` defaulted
+    // an unknown thread to "main". The frozen text says the opposite in three
+    // places, most directly `voidConditions` 6, which requires "an unmatchable
+    // wouldHaveAdded returning null and not 0" among the six controls SHOWN
+    // FIRING. Id B is absent from this transcript's local results, so nothing
+    // is known about which thread paid for it.
+    expect(result.excludedForeignUnits.unsized).toBe(1);
+    expect(result.excludedForeignUnits.units).toBe(0);
+    // AND THE DISTINCTION THAT MAKES THAT ZERO HONEST: `units === 0` beside
+    // `unsized === 1` reads "nothing could be sized", never "nothing worth
+    // having was refused". The class still carries its ROW, so the exclusion
+    // stays visible and `R_hi+` becomes NOT EVALUABLE rather than quietly
+    // smaller — which is exactly what the frozen metric prescribes.
+    const foreignRow = result.rows.find((r) => r.disposition === "excludedForeign");
+    expect(foreignRow).toBeDefined();
+    expect(foreignRow!.units).toBeNull();
+    expect(foreignRow!.unitsLo).toBeNull();
   });
 
   it("lists every row it saw, and the credited ones sum to the scored total", async () => {
@@ -5013,7 +5036,13 @@ describe("the four B12 scoring seams", () => {
     // still admits `null` and a consumer still has to say what it does about it.
     const refused = result.rows[1];
     if (refused?.disposition === "credited") throw new Error("fixture changed");
-    expect(refused?.units).toBeCloseTo(17_243.243243243243, 6);
+    // ACTUALLY null now (W10/R51). The second row carries no `invocation_id`,
+    // so its thread is unknown and it can no longer be sized against "main".
+    // The type admitted `null` all along; this is the first version of the
+    // test where the VALUE exercises it — which is the whole point of a
+    // discriminated union whose refused arm is nullable.
+    expect(refused?.units).toBeNull();
+    expect(refused?.unitsLo).toBeNull();
   });
 
   it("says a row could not report whether it closed, rather than saying it did not", async () => {

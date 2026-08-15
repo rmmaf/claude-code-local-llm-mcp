@@ -2140,6 +2140,79 @@ solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
 
+### R51 — `wouldHaveAdded` priced an unknown thread against `main`, and the FROZEN TEXT had already forbidden it — 2026-08-14
+
+`report.ts` read `const thread = source?.thread ?? "main"`. `ToolResultRecord.thread`
+is a REQUIRED `string`, so that default never guarded a missing field: it fired on
+exactly one condition — `source` absent, i.e. a row with no `invocation_id` or one
+this transcript's local results do not carry. On that condition it priced the
+refusal against **this** session's main thread and returned the number as known.
+
+**THE FROZEN TEXT DECIDED THIS BEFORE THE CODE WAS WRITTEN, in three places:**
+
+- `design.detector` repair **5** — "`wouldHaveAdded` resolves the row's thread via
+  `byInvocation`, **falling back to the row's own thread**, and returns `null` —
+  never 0 — when no request matches." A `TelemetryRecord` **has no thread field**
+  (`src/telemetry.ts`), so on a miss there is no row's own thread to fall back to.
+- `design.metric` — "**If any refused magnitude is `null`** … `R_hi⁺` is NOT
+  EVALUABLE and the run returns `open`. An unknown may not be summed as zero."
+- `voidConditions` **6** — among the six controls that must be SHOWN FIRING: "an
+  unmatchable `wouldHaveAdded` returning **null and not 0**".
+
+So this was never a judgement call. It was an addition that contradicted the
+pre-registration, and the commit that removed the *other* main fallback said so in
+its own message: "the frozen B12 design already said so — 'falling back to the
+row's own thread' — so this was my addition, not its instruction."
+
+**MY OWN ARGUMENT FOR THE FIX WAS WRONG, and the review refuted it.** I claimed the
+substitution was MONOTONE — that assuming main can only ADD candidates, so it can
+only turn an honest `null` into a number, and therefore only inflate `R_hi⁺`. False
+twice over. `requestAtOrAfter` filters by **strict thread equality**, so swapping
+the thread replaces one disjoint candidate set with another: it can produce
+null→number, number→null, or number→a different number. And the magnitude is
+**signed** (`bytes_returned` may exceed capped raw), so a sized value is not
+necessarily an inflation at all.
+
+**The sound argument is EPISTEMIC, not directional.** On a miss nothing is known
+about which thread paid for the call, and the function returned a confident number
+anyway. `RefusedMagnitude.unsized` exists for precisely that state.
+
+**What the repair costs, and why that cost is the design's own.** A `null` here does
+not merely shrink `R_hi⁺` — it makes it **NOT EVALUABLE**, and the verdict becomes
+`open`. That is not a design change: it is what `design.metric` prescribes in the
+sentence quoted above.
+
+**Two claims of mine the review also corrected.**
+`excludedForeign` does **not** prove foreign-session ownership — its own contract
+says "usually another session's" and warns the shorthand is inexact, and
+`MEASUREMENTS.jsonl` records the counterexample: a same-session failed `repair`
+whose result was not echoed lands in `excludedForeign` with `provenanceUnavailable`
+false. So "main" can happen to be RIGHT. It is still not a justified proxy, because
+the class establishes nothing about whether the missing source was main, subagent or
+foreign. And the doc's "exactly as the `provenance` degraded path is" IS broader
+than the timestamp — that path assumes `main` explicitly — but the analogy breaks
+downstream: the degraded row forces `savedFraction: null`, while an
+`excludedForeign` row withheld nothing.
+
+**A second defect closed as a side effect.** `at` was `Date.parse(entry.ts)` on the
+miss path, and the telemetry parser accepts any string as `ts`. A malformed
+timestamp gave `NaN`; `request.timestampMs < NaN` is false for every row, so the
+filter rejected nothing and the helper returned the EARLIEST request in the assumed
+thread as a known answer. With the miss path gone, `at` is only ever a real
+`timestampMs`.
+
+**FIVE TESTS PINNED THE DEFECT** and were inverted, each with the reason written in
+place: two in `cost-meter.test.ts` asserting a sized `excludedForeign` magnitude of
+`4864.86…` and a positive `unverifiable` magnitude; the discriminated-union test
+whose refused arm is nullable and now actually exercises `null`; `b12-terms.test.ts`;
+and the CLI test, where `refused()` now prints its unknown-branch sentence — the
+exclusion is still visible and the wording now states the ignorance outright.
+
+**Still UNVERIFIED and recorded rather than closed:** clock comparability between
+the telemetry writer's `ts` and the transcript's `timestampMs` (no calibration or
+skew allowance anywhere); and `byInvocation`'s silent last-write-wins if one
+admitted transcript carries a duplicate invocation id.
+
 ### R50 — the emits contradiction is REAL, and the remedy I predicted was impossible is the one to take — 2026-08-14
 
 `runPlan` PHASE 6 says "**One** scoring invocation over the ARCHIVE … using the

@@ -28,7 +28,7 @@ import {
   repairRoundsMismatches,
 } from "../src/cost/b12/assemble.js";
 import { identify } from "../src/cost/b12/coverage.js";
-import { isLocalToolResult } from "../src/cost/report.js";
+import { isLocalToolResult, scopeTelemetry } from "../src/cost/report.js";
 import type {
   ArchivedObservation,
   GitAudit,
@@ -494,6 +494,72 @@ describe("the disposition table — every predicate FIRING, with its control", (
     // and silence would be the worst answer available.
     expect(repairRoundsMismatches(null, [r({ max_rounds: 3 })])[0]).toMatch(/nothing to compare against/);
     expect(repairRoundsMismatches(null, [])).toHaveLength(0);
+  });
+
+  it("the driver and the scorer do NOT contain each other — both directions, shown", async () => {
+    // THE CONTROL W1 OWED AND DID NOT WRITE. The driver's comment used to claim
+    // "Driver ⊇ scorer, always, so the disagreement is one-directional". That
+    // was refuted in prose the same day it was written, and the prose has been
+    // right ever since — but a corrected sentence is not a control, and nothing
+    // in the suite would notice if the two scopes silently became nested again.
+    //
+    // The two axes are independent:
+    //   - the DRIVER (`repairRoundsReasons`) reads every parseable row in the
+    //     observation's own worktree log, with no session or invocation scoping;
+    //   - the SCORER runs `repairRoundsMismatches` over `scopeTelemetry`, which
+    //     admits a row on a KNOWN local invocation id OR a ±60 s window around
+    //     the transcript, over the run-wide union of treatment rows.
+    //
+    // So each set holds rows the other does not, and this proves both.
+    const { repairRoundsReasons } = await import("../scripts/b12-run.mjs");
+
+    const t0 = Date.parse("2026-08-14T12:00:00.000Z");
+    const iso = (ms: number): string => new Date(ms).toISOString();
+    // A one-request transcript, so the window is [t0 - 60s, t0 + 60s].
+    const transcript = transcriptFromRecords([
+      {
+        type: "assistant",
+        timestamp: iso(t0),
+        message: { model: "claude-opus-4", usage: { input_tokens: 10, output_tokens: 1 } },
+      },
+    ] as unknown as RawRecord[], { files: ["sess.jsonl"], skippedLines: 0 });
+    expect(transcript.requests).toHaveLength(1);
+
+    const repairRow = (id: string | undefined, ts: number): TelemetryRecord =>
+      ({ tool: "repair", ts: iso(ts), invocation_id: id, detail: { max_rounds: 99 } }) as unknown as TelemetryRecord;
+    // The driver takes plain records and the scorer takes `TelemetryRecord`.
+    // Same bytes, two type surfaces — which is part of why these two scopes
+    // could drift apart without anything noticing.
+    const asPlain = (r: TelemetryRecord): Record<string, unknown> => r as unknown as Record<string, unknown>;
+
+    // ---- DIRECTION 1: driver-only ----------------------------------------
+    // A foreign row written INTO this private worktree: no known invocation and
+    // a timestamp far outside the window. The driver sees it; the scorer's
+    // scope drops it, so the run-level clause stays silent.
+    const foreign = repairRow("an-id-this-transcript-never-saw", t0 + 3_600_000);
+    expect(repairRoundsReasons(3, [asPlain(foreign)], "t1").length).toBeGreaterThan(0);
+    expect(scopeTelemetry(transcript, [foreign])).toEqual([]);
+    expect(repairRoundsMismatches(3, scopeTelemetry(transcript, [foreign]))).toHaveLength(0);
+
+    // ---- DIRECTION 2: scorer-only, THE ONE THE OLD CLAIM DENIED -----------
+    // A row archived by ANOTHER treatment observation, so it is in the run-wide
+    // union the scorer reads but NOT in this worktree's log. Its timestamp
+    // lands inside this transcript's ±60 s window, so `scopeTelemetry` admits
+    // it and the clause FIRES — while the driver, reading only this worktree,
+    // says nothing. This is the direction the superset claim said was
+    // impossible: the driver CAN be silent where the clause fires.
+    const otherObservations = repairRow(undefined, t0 + 30_000);
+    expect(repairRoundsReasons(3, [], "t1")).toEqual([]); // this worktree's log is clean
+    expect(scopeTelemetry(transcript, [otherObservations])).toHaveLength(1);
+    expect(repairRoundsMismatches(3, scopeTelemetry(transcript, [otherObservations])).length).toBeGreaterThan(0);
+
+    // AND NEITHER SET IS A SUPERSET, stated as the single assertion the old
+    // sentence would have failed.
+    const driverOnly = repairRoundsReasons(3, [asPlain(foreign)], "t1").length > 0 &&
+      repairRoundsMismatches(3, scopeTelemetry(transcript, [foreign])).length === 0;
+    const scorerOnly = repairRoundsReasons(3, [], "t1").length === 0 &&
+      repairRoundsMismatches(3, scopeTelemetry(transcript, [otherObservations])).length > 0;
+    expect({ driverOnly, scorerOnly }).toEqual({ driverOnly: true, scorerOnly: true });
   });
 
   it("void(pacing) on a gap longer than the shortest TTL in play, and clause 20 reports it", () => {
