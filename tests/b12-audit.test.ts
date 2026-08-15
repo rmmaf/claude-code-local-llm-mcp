@@ -754,9 +754,11 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
    *
    * `seed` runs before the registration commit — the only place an artifact
    * can be born EARLIER than the freeze anchor, which is what a prospective
-   * amendment's clock turns on. `beforeAttestation` runs after the emit and
-   * may return a new commit to attest, which is how the window between the
-   * first scored observation and the attestation gets modelled at all.
+   * amendment's clock turns on. `beforeAttestation` runs after the registration
+   * commit and before the attestation, and may return a new commit to attest —
+   * which is how the window between the first scored observation and the
+   * attestation gets modelled at all. It used to be described as running "after
+   * the emit"; there is no emit in this helper any more (R50).
    */
   async function operatorLoop(
     hooks: { seed?: (root: string) => Promise<void>; beforeAttestation?: (root: string) => Promise<string> } = {}
@@ -1332,6 +1334,44 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     expect(artifact.inputs["clause6.conformanceHashes"]).toMatch(/session-token-walk\.test\.ts .*same/);
   }, 60_000);
 
+  it("a committed observation the scorer produces NO TERMS for is an anchor problem, not an invisible one", async () => {
+    // THE REGRESSION CONTROL FOR R50's OWN REPAIR, and it is here because the
+    // review found the defect rather than because I predicted it.
+    //
+    // R29's old guard compared the counterfactual's declared directories
+    // against the committed ones in BOTH directions. Deriving the anchor from
+    // the archive deleted that comparison, and `assembleRun` emits a
+    // counterfactual observation only where TERMS exist — so a committed
+    // `obs-*` directory that decodes but yields no terms (a declaration
+    // failure) simply vanished from the population the anchor walks. The
+    // anchor would then be the first observation that DID score, which can be
+    // LATER than the run's real first execution, and a pinned-path edit in
+    // between would escape clause 5 entirely.
+    //
+    // The fixture gets a SECOND observation directory whose `observation.json`
+    // is unreadable — `record === null` is one of the declared no-terms paths.
+    // Against the unrepaired derivation this test passes silently with a clean
+    // anchor on t1; the guard is what makes it fail.
+    const { root, registration } = await operatorLoop({
+      seed: async (r) => {
+        const from = path.join(r, "evidence", "replay-01", "obs-t1-treatment");
+        const to = path.join(r, "evidence", "replay-01", "obs-t2-treatment");
+        await fs.cp(from, to, { recursive: true });
+        await fs.writeFile(path.join(to, "observation.json"), "{ this does not parse", "utf8");
+      },
+    });
+
+    const facts = await collectAuditFacts(root, "replay-01", {
+      preregFrozenCommit: registration,
+      preregPath: "evidence/replay-01.b12.tasks.json",
+    });
+    expect(facts.clause5.anchorProblems.join(" ")).toMatch(/obs-t2-treatment/);
+    expect(facts.clause5.anchorProblems.join(" ")).toMatch(/the scorer produced no terms for/);
+    // Fail-closed: no anchor, and that is a VOID rather than a freedom.
+    expect(facts.clause5.anchor).toBeNull();
+    expect(decideAudit(facts).verdict).toBe("void");
+  }, 120_000);
+
   // MOVED HERE FROM ITS OWN describe (R50). It needs a real emission, and an
   // emission now needs a committed audit — which is what `operatorLoop` and the
   // three steps below build. The control itself is unchanged in substance: the
@@ -1350,12 +1390,24 @@ describe("the e2e — the operator loop over the committed replay fixture", () =
     const evidenceDir = path.join(root, "evidence");
     const listing = async (): Promise<Set<string>> => new Set(await fs.readdir(evidenceDir));
     const before = await listing();
-    await emitRun(root, "replay-01", {
+    const emitted = await emitRun(root, "replay-01", {
       auditPath: "evidence/replay-01.b12.audit.json",
       scoringCommandActual: "node dist/cost/b12/emit.js replay-01",
       auditCollectorOptions: collector,
     });
     const created = [...(await listing())].filter((f) => !before.has(f)).sort();
+
+    // AND BOTH ARTIFACTS ARE WRITTEN EVEN THOUGH THE RUN IS A VOID. That
+    // pairing used to be asserted in b12-archive.test.ts through a bare
+    // `emitRun`; when the emission gate closed, that test dropped to
+    // `assembleRun` and stopped proving anything about the WRITE. The review
+    // called that a real loss of coverage, and this is where it belongs now —
+    // the fixture is 1 admitted of 20, the arithmetic's own void.
+    expect(emitted.verdict).toBe("void");
+    expect(emitted.final).toBe(true); // void, and audited: a verdict, not an intermediate
+    for (const p of [emitted.resultPath, emitted.counterfactualPath]) {
+      await expect(fs.access(p)).resolves.toBeUndefined();
+    }
 
     // A third emitted artifact, or one that stopped being written, breaks this
     // — which is the whole point. R24 already paid for naming files by hand.

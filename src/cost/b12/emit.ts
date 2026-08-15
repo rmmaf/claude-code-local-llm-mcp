@@ -181,9 +181,13 @@ export async function auditBindingRefusal(
   }
   // AND THE EVIDENCE CLAUSE 5 WAS COMPUTED FROM (R24). Naming four evidence
   // files was not the same as covering `evidence/**`: the anchor, the
-  // offender set and the archive being scored all derive from the runlog, the
-  // counterfactual and the per-observation archives. An observation appended
-  // after a clean audit changes what is scored while the verdict rides along.
+  // offender set and the archive being scored all derive from the runlog and
+  // the per-observation archives. An observation appended after a clean audit
+  // changes what is scored while the verdict rides along.
+  //
+  // NOT the counterfactual, which left this set with R50: it is an OUTPUT of
+  // this emission, and an output inside the input digest would make the audit
+  // unbindable the moment its own run was committed.
   const recordedDigest = inputs["clause5.evidenceDigest"];
   if (recordedDigest === undefined) return "the audit records no clause-5 evidence digest — it cannot say what archive it judged";
   const current = runEvidenceDigest(runId, git);
@@ -219,15 +223,27 @@ export async function auditBindingRefusal(
   // a cross-check on what it claims, never a substitute for it.
   let recomputed: Record<string, string>;
   let recomputedVerdict: "clean" | "void";
+  let recomputedReasons: string[];
   try {
     const facts = await collectAuditFacts(repoRoot, runId, collectorOptions);
     recomputed = auditInputs(facts);
-    recomputedVerdict = decideAudit(facts).verdict;
+    const decided = decideAudit(facts);
+    recomputedVerdict = decided.verdict;
+    recomputedReasons = decided.reasons;
   } catch (error) {
     return `the audit could not be re-derived at HEAD (${error instanceof Error ? error.message : String(error)}) — an artifact this emission cannot recompute certifies nothing`;
   }
   if (recomputedVerdict !== audit.verdict) {
     return `the artifact says ${audit.verdict} and re-deriving it here says ${recomputedVerdict} — the verdict was not produced by these facts`;
+  }
+  // AND THE REASONS, which the review found unbound. Verdict and inputs were
+  // checked and `reasons` was not, so a committed audit carrying authentic
+  // facts and an authentic verdict could have its EXPLANATION rewritten or
+  // emptied — and `reasons` is what a reader is handed to understand a void.
+  // An artifact whose account of itself is forged is not the artifact that was
+  // produced, even when its answer happens to be right.
+  if (audit.reasons.join("\n") !== recomputedReasons.join("\n")) {
+    return `the audit's reasons do not survive re-derivation (${audit.reasons.length} recorded, ${recomputedReasons.length} re-derived) — the explanation was not produced by these facts`;
   }
   for (const key of AUDIT_INPUT_KEYS) {
     // The ONE key that must differ, and the audit's binding to HEAD is what

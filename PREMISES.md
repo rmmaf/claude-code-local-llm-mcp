@@ -3323,3 +3323,36 @@ exclude `.local-coder/telemetry.jsonl`, and any future scorer input that is
 untracked would be absent from a detached checkout and silently read as missing.
 That is a standing hazard of this approach and is written down here rather than
 discovered later.
+
+## The third NUL incursion — and the first that a fully green gate did not see
+
+**2026-08-14, `src/cost/b12/audit.ts`, four NUL bytes, line 1592.** Two template
+literals I wrote as `` `${o.taskId} ${o.arm} ${String(o.attempt)}` `` reached
+disk with the two separators as `\u0000` instead of `\u0020`.
+
+**WHY NOTHING CAUGHT IT, which is the part worth keeping.** `tsc` passed. All
+858 tests passed. The gate was GREEN twice over the corrupt bytes. It had to be:
+both sides of the comparison — the `Set` of represented keys and the lookup key
+— were built by the same two corrupted literals, so every key matched every
+other key exactly as intended. The program was CORRECT and the file was
+CORRUPT, and no test can tell those apart when the corruption is symmetrical.
+
+**What did catch it:** `grep -n "represented" src/cost/b12/audit.ts` answered
+`Binary file src/cost/b12/audit.ts matches`. A tool refusing to print the file
+was the whole signal.
+
+**The standing rule earns its place again.** Check bytes after EVERY edit, with
+`node -e "readFileSync(f).indexOf(0)"`. Not `grep -P '\x00'`, which fails on
+this locale with "supports only unibyte and UTF-8 locales" and, with
+`2>/dev/null`, prints "clean" while having measured nothing.
+
+**Count, and the trend.** Three incursions now. The first two were caught by the
+byte check with a red or unrun gate. This one is the first to pass a COMPLETE
+green gate — tsc plus the full suite — which retires the informal hope that a
+NUL would eventually announce itself through a failing test. It will not. The
+byte check is not a belt-and-braces on the gate; it measures something the gate
+is structurally unable to see.
+
+**Repaired** by rewriting the four bytes to `0x7C` (`|`), which is the separator
+the keys should always have used — it cannot occur in a taskId or an arm, where
+a space could.

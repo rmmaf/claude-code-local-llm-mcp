@@ -50,6 +50,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -1314,6 +1315,10 @@ export function buildAuditArtifact(facts: AuditFacts): {
 /** Git did not ANSWER — a refusal, never an artifact. */
 export class AuditRefused extends Error {}
 
+/** Distinguishes two anchor checkouts made by the SAME process at the SAME
+ * commit. Without it the pre-add delete can remove a live sibling checkout. */
+let anchorTreeSeq = 0;
+
 export interface CollectorOptions {
   /** Test seams only; the CLI always runs the frozen constants. The artifact
    * records what was used, so a divergence is on its face. */
@@ -1521,9 +1526,19 @@ async function deriveAnchorFromCommittedArchive(
    * would answer for the wrong tree. */
   outerGit: Git
 ): Promise<AuditFacts["clause5"]["anchor"]> {
+  // OUTSIDE THE REPOSITORY, AND UNIQUELY NAMED. Both were review findings and
+  // both are about not disturbing what the audit is measuring.
+  //
+  //   - Under `repoRoot` the checkout is an untracked directory inside the tree
+  //     being audited, and `workingTreeDirtOutsideEvidence` runs an UNSCOPED
+  //     `git status --porcelain`. One audit's scratch checkout would make a
+  //     concurrent audit refuse for dirt it did not create.
+  //   - `headSha + pid` collides for two audits of the same commit in ONE
+  //     process, and the pre-add delete below would then remove the other
+  //     call's live checkout out from under it.
   const treeDir = path.join(
-    repoRoot,
-    ".b12-anchor-" + headSha.slice(0, 12) + "-" + process.pid.toString(36)
+    tmpdir(),
+    `b12-anchor-${headSha.slice(0, 12)}-${process.pid.toString(36)}-${(anchorTreeSeq++).toString(36)}`
   );
   rmSync(treeDir, { recursive: true, force: true });
   const added = outerGit(["worktree", "add", "--detach", treeDir, headSha]);
@@ -1548,6 +1563,36 @@ async function deriveAnchorFromCommittedArchive(
     // admission and the terms. Passing anything else would let this internal
     // scoring pass pretend to be the run's scoring invocation.
     const { counterfactual } = assembleRun({ archive, gitAudit: { ran: false }, scoringCommandActual: null });
+
+    // R29'S POPULATION CHECK, REBUILT AGAINST THE COMMITTED ARCHIVE.
+    //
+    // The old derivation compared the counterfactual's DECLARED directories
+    // against the committed ones in both directions. Dropping it was a
+    // REGRESSION and the review caught it: `assembleRun` emits a counterfactual
+    // observation only where terms exist (`assemble.ts`), so a committed
+    // `obs-*` directory that decodes cleanly but produces NO terms — a
+    // declaration failure such as a missing calibrated `installedChars` — would
+    // simply not appear in the walk below. The anchor would then be the first
+    // observation that DID score, which can be LATER than the run's real first
+    // execution, and a pinned-path edit in between would escape clause 5.
+    //
+    // `committedOrderReplay` does not cover it: a directory can hold a valid
+    // record, session and runlog join and still yield no terms.
+    //
+    // So every decoded observation must be represented. Fail-closed: this is an
+    // anchor problem, which decides a VOID, not a refusal — the evidence is
+    // readable and it says the population is not what the scorer could score.
+    const represented = new Set(
+      counterfactual.observations.map((o) => `${o.taskId}|${o.arm}|${String(o.attempt)}`)
+    );
+    for (const obs of archive.observations) {
+      const key = `${obs.taskId}|${obs.arm}|${String(obs.attempt)}`;
+      if (!represented.has(key)) {
+        problems.push(
+          `evidence/${runId}/obs-${obs.taskId}-${obs.arm}${obs.attempt === 1 ? "" : `-r${obs.attempt}`} is committed evidence the scorer produced no terms for — the anchor would be derived from a population that omits it (re-check the observation's declarations before auditing)`
+        );
+      }
+    }
 
     const rows = archive.runlog.rows;
     const joined: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; started: string }> = [];
@@ -1597,10 +1642,26 @@ async function deriveAnchorFromCommittedArchive(
     // PRECISE removal, not a global prune: another worktree's registration is
     // none of this function's business. Cleanup failure is REPORTED, never
     // swallowed — a leaked checkout is an operational fact the operator owns.
-    const removed = outerGit(["worktree", "remove", "--force", treeDir]);
-    if (!removed.ok) {
-      rmSync(treeDir, { recursive: true, force: true });
-      process.stderr.write(`b12 audit: the anchor worktree at ${treeDir} could not be removed by git; the directory was deleted and 'git worktree prune' may be owed\n`);
+    //
+    // THE WHOLE THING IS WRAPPED because `gitIn` THROWS `AuditRefused` when git
+    // does not answer at all. A throw from here would skip the `rmSync`
+    // fallback AND replace whatever exception is already in flight — so a
+    // cleanup failure could mask the real reason the audit stopped.
+    let cleanupFailure: string | null = null;
+    try {
+      if (!outerGit(["worktree", "remove", "--force", treeDir]).ok) cleanupFailure = "git declined to remove it";
+    } catch (error) {
+      cleanupFailure = error instanceof Error ? error.message : String(error);
+    }
+    if (cleanupFailure !== null) {
+      try {
+        rmSync(treeDir, { recursive: true, force: true });
+      } catch {
+        // Reported below either way; the directory is scratch, not evidence.
+      }
+      process.stderr.write(
+        `b12 audit: the anchor worktree at ${treeDir} could not be removed by git (${cleanupFailure}); 'git worktree prune' may be owed\n`
+      );
     }
   }
 }
@@ -1625,8 +1686,12 @@ export async function collectAuditFacts(repoRoot: string, runId: string, options
   // clock, and a missing one is not an empty ordering.
   const anchorProblems: string[] = [];
   let anchor: AuditFacts["clause5"]["anchor"] = null;
-  if (!git(["cat-file", "-e", `HEAD:evidence/${runId}.b12.runlog.jsonl`]).ok) {
-    anchorProblems.push(`HEAD carries no evidence/${runId}.b12.runlog.jsonl — real row order is the anchor's clock`);
+  // AGAINST THE RESOLVED SHA, not the symbolic name (review finding). `headSha`
+  // was captured above and the checkout below is made at it; asking `HEAD:` here
+  // would let a concurrent commit make this prerequisite and the derivation
+  // speak about two different trees.
+  if (!git(["cat-file", "-e", `${headSha}:evidence/${runId}.b12.runlog.jsonl`]).ok) {
+    anchorProblems.push(`${headSha.slice(0, 12)} carries no evidence/${runId}.b12.runlog.jsonl — real row order is the anchor's clock`);
   } else {
     anchor = await deriveAnchorFromCommittedArchive(repoRoot, runId, headSha, anchorProblems, git);
   }

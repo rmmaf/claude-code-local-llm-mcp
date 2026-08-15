@@ -4,7 +4,9 @@
  * `tests/fixtures/b12-run/` (`design.artifacts` 11: the bracket, the
  * jackknives, `R_all`, `R_hi⁺`, the strata and every admission condition,
  * recomputed from the committed archive alone, through the REAL path
- * `readRunArchive → assembleRun → emitRun`).
+ * `readRunArchive → assembleRun`; the emission itself is exercised in
+ * `b12-audit.test.ts`'s e2e, because `emitRun` now requires a committed,
+ * bound audit and standing one up here would test the gate, not the decoder).
  *
  * What the replay over a FIXTURE archive does not prove is recorded in
  * `FINDINGS.md` rather than claimed: no archive of a REAL run exists until one
