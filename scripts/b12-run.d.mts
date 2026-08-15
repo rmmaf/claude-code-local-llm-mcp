@@ -375,3 +375,33 @@ export function validateInstalledCharsProbe(
     extraArgs: readonly string[];
   }
 ): InstalledCharsRecord;
+
+/** A normalised run toolchain identity — major.minor only, by amendment. */
+export interface BarrierToolchain {
+  platform: string;
+  arch: string;
+  node: string;
+  vitest: string;
+}
+
+/** This machine's toolchain, in the producers' shape. */
+export function runToolchainNow(): {
+  platform: string;
+  arch: string;
+  nodeVersion: string;
+  vitest: string | null;
+};
+
+/** Normalise either the producers' or the manifest's shape; null when unreadable. */
+export function normaliseToolchainForBarrier(raw: unknown): BarrierToolchain | null;
+
+/**
+ * The barrier's verdict: a refusal message, or null when there is nothing to
+ * refuse. An UNDECLARED `runToolchain` returns null — the amendment does not
+ * reach a manifest that never declared one — while a DECLARED but unreadable
+ * one refuses, because silence must not be mistaken for agreement.
+ */
+export function runToolchainRefusal(
+  pin: { runToolchain?: unknown } | null | undefined,
+  observedRaw: unknown
+): string | null;

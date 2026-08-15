@@ -49,6 +49,9 @@ import {
   type SuiteAttestation,
 } from "../src/cost/b12/audit.js";
 import { sha256 } from "../src/cost/b12/archive.js";
+// The BARRIER lives in the harness, not the scorer; imported here so the two
+// normalisers are compared against each other in one place.
+import { normaliseToolchainForBarrier, runToolchainRefusal } from "../scripts/b12-run.mjs";
 import { emitRun } from "../src/cost/b12/emit.js";
 import { at } from "./b12-fixtures.js";
 import { makeTempRoot, removeTempRoot } from "./helpers.js";
@@ -1708,5 +1711,65 @@ describe("the run toolchain identity — the pre-data amendment's reader", () =>
     // The verdict is UNMOVED. If this ever goes red, someone has turned the
     // report into a rule, which is precisely what the owner declined.
     expect(decideAudit(facts).verdict).toBe(decideAudit(base).verdict);
+  });
+});
+
+describe("the run-toolchain BARRIER — refuses, never voids", () => {
+  const declared = { platform: "darwin", arch: "arm64", node: "24.16", vitest: "4.1" };
+  const macNow = { platform: "darwin", arch: "arm64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10 darwin-arm64 node-v24.16.0" };
+  const winNow = { platform: "win32", arch: "x64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10 win32-x64 node-v24.16.0" };
+
+  it("an UNDECLARED runToolchain is not a violation — the amendment does not reach it", () => {
+    // Pre-amendment manifests exist and are not thereby unusable.
+    expect(runToolchainRefusal({}, winNow)).toBeNull();
+    expect(runToolchainRefusal({ runToolchain: undefined }, winNow)).toBeNull();
+    expect(runToolchainRefusal(null, winNow)).toBeNull();
+  });
+
+  it("a DECLARED but unreadable identity REFUSES — silence is not agreement", () => {
+    for (const bad of ["darwin", 42, {}, { platform: "darwin" }, []]) {
+      const why = runToolchainRefusal({ runToolchain: bad }, macNow);
+      expect(why, `${JSON.stringify(bad)} must refuse`).not.toBeNull();
+      expect(why!).toMatch(/not readable|never a match/);
+    }
+  });
+
+  it("matching toolchain passes; a mismatched one refuses and NAMES the fields", () => {
+    expect(runToolchainRefusal({ runToolchain: declared }, macNow)).toBeNull();
+    const why = runToolchainRefusal({ runToolchain: declared }, winNow);
+    expect(why).not.toBeNull();
+    expect(why!).toMatch(/toolchain mismatch on platform, arch/);
+    // The operator must be told this costs no attempt, or they will treat a
+    // refusal like a void and burn one of three attempts avoiding it.
+    expect(why!).toMatch(/REFUSING BEFORE SPENDING/);
+    expect(why!).toMatch(/not a VOID and costs no attempt/);
+  });
+
+  it("an UNREADABLE machine refuses rather than spending a session it cannot name", () => {
+    const why = runToolchainRefusal({ runToolchain: declared }, { platform: "darwin", arch: "arm64" });
+    expect(why).not.toBeNull();
+    expect(why!).toMatch(/could not be read/);
+  });
+
+  it("THE BARRIER AND THE AUDIT MUST NORMALISE IDENTICALLY", () => {
+    // Two readers, two files, one rule. If they drift, the barrier passes runs
+    // the audit then reports as mismatched — the worst of both, and silent.
+    for (const raw of [macNow, winNow, declared, { platform: "linux", arch: "x64", node: "22.9", vitest: "3.2.1" }]) {
+      const fromBarrier = normaliseToolchainForBarrier(raw);
+      const fromAudit = normaliseToolchain(raw);
+      expect(fromAudit.known, `${JSON.stringify(raw)}`).toBe(true);
+      if (!fromAudit.known) throw new Error("unreachable");
+      expect(fromBarrier).toEqual(fromAudit.id);
+    }
+    // ...and they must agree on what is UNREADABLE, too.
+    for (const bad of [undefined, null, {}, "x", { platform: "darwin" }]) {
+      expect(normaliseToolchainForBarrier(bad)).toBeNull();
+      expect(normaliseToolchain(bad).known).toBe(false);
+    }
+  });
+
+  it("a patch bump does NOT refuse — the reason the barrier was chosen over a void", () => {
+    const patched = { platform: "darwin", arch: "arm64", nodeVersion: "v24.16.99", vitest: "vitest/4.1.99" };
+    expect(runToolchainRefusal({ runToolchain: declared }, patched)).toBeNull();
   });
 });

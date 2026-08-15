@@ -896,6 +896,91 @@ function assertPinned(manifest, binary) {
   if (process.env.DISABLE_AUTOUPDATER !== "1") {
     refuse("DISABLE_AUTOUPDATER is not 1 — an update mid-run splits the observation set across layouts");
   }
+  assertRunToolchain(pin);
+}
+
+/**
+ * THE BARRIER of the run-toolchain amendment
+ * (`evidence/2026-08-14-b12-amendment-run-toolchain.json`).
+ *
+ * IT REFUSES; IT NEVER VOIDS, and the difference is the whole reason this lives
+ * here and not in the audit. There are three attempts and a VOID ordinarily
+ * consumes one, so a node patch bump — irrelevant to whether a control fires —
+ * must not be able to spend one. Refusing costs time and acts while the answer
+ * can still be fixed. That is why this sits beside the `claudeCodeVersion` pin,
+ * which has always refused an arm rather than voiding a run.
+ *
+ * UNDECLARED IS NOT A VIOLATION. A manifest with no `runToolchain` is a run the
+ * amendment does not reach — pre-amendment manifests exist and are not thereby
+ * unusable. A DECLARED but unreadable one IS a violation, because a declaration
+ * nobody can parse is the one case where silence would be mistaken for agreement.
+ *
+ * PATCH VERSIONS ARE EXCLUDED, matching `normaliseToolchain` in
+ * `src/cost/b12/audit.ts`. The two readers must agree or the barrier passes runs
+ * the audit reports as mismatched, so both are major.minor and a test pins it.
+ */
+export function runToolchainNow() {
+  let vitest = null;
+  try {
+    const r = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vitest", "--version"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      shell: process.platform === "win32",
+    });
+    if (r.status === 0 && typeof r.stdout === "string") vitest = r.stdout.trim();
+  } catch {
+    vitest = null;
+  }
+  return { platform: process.platform, arch: process.arch, nodeVersion: process.version, vitest };
+}
+
+/** major.minor, or null. The audit's `majorMinor` in one line, kept identical. */
+const mm = (raw) => {
+  if (typeof raw !== "string") return null;
+  const m = /(\d+)\.(\d+)/.exec(raw);
+  return m === null ? null : `${m[1]}.${m[2]}`;
+};
+
+/** Both shapes, normalised the same way the audit normalises them. */
+export function normaliseToolchainForBarrier(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const platform = typeof raw.platform === "string" && raw.platform !== "" ? raw.platform : null;
+  const arch = typeof raw.arch === "string" && raw.arch !== "" ? raw.arch : null;
+  const node = mm(raw.nodeVersion) ?? mm(raw.node);
+  let vitest = null;
+  if (typeof raw.vitest === "string") {
+    const tagged = /vitest\/(\d+)\.(\d+)/.exec(raw.vitest);
+    vitest = tagged !== null ? `${tagged[1]}.${tagged[2]}` : mm(raw.vitest);
+  }
+  if (platform === null || arch === null || node === null || vitest === null) return null;
+  return { platform, arch, node, vitest };
+}
+
+export function runToolchainRefusal(pin, observedRaw) {
+  const declaredRaw = pin?.runToolchain;
+  if (declaredRaw === undefined || declaredRaw === null) return null; // not governed
+  const declared = normaliseToolchainForBarrier(declaredRaw);
+  if (declared === null) {
+    return "manifest pins runToolchain but it is not readable as {platform, arch, node|nodeVersion, vitest} — a declaration nobody can parse cannot be shown to agree with anything, and the amendment says an unreadable identity is never a match";
+  }
+  const observed = normaliseToolchainForBarrier(observedRaw);
+  if (observed === null) {
+    return `manifest pins runToolchain ${JSON.stringify(declared)} and THIS machine's toolchain could not be read — refusing rather than spending a session whose environment cannot be named`;
+  }
+  const diff = ["platform", "arch", "node", "vitest"].filter((k) => declared[k] !== observed[k]);
+  if (diff.length === 0) return null;
+  return (
+    `toolchain mismatch on ${diff.join(", ")} — manifest declares ` +
+    `${declared.platform}-${declared.arch} node-${declared.node} vitest-${declared.vitest}, ` +
+    `this machine is ${observed.platform}-${observed.arch} node-${observed.node} vitest-${observed.vitest}. ` +
+    `REFUSING BEFORE SPENDING (the run-toolchain amendment): this is not a VOID and costs no attempt — ` +
+    `either run on the declared toolchain or change the declaration before registering`
+  );
+}
+
+function assertRunToolchain(pin) {
+  const why = runToolchainRefusal(pin, runToolchainNow());
+  if (why !== null) refuse(why);
 }
 
 function assertRatesFrozen(manifest, cwd) {
