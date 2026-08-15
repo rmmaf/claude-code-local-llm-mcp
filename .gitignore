@@ -35,3 +35,8 @@ coverage/
 # mac-check.sh probe, removed on exit; listed so an interrupted run cannot dirty the tree
 .mac-check-status.*.mts
 .b12/
+
+# The Mac round's output directory and its cut-time pin: both are produced by a
+# run, both travel back in a tarball, and neither is source.
+b12-mac-round/
+.b12-round-pin

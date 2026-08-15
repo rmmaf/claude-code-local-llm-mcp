@@ -3731,3 +3731,43 @@ pre-registration — all `*.json`/`*.jsonl`, all covered by `.gitattributes`. It
 concluded "every probed file is byte-identical" and that conclusion was true of
 what it probed. `.ts` was never in the sample, and the generalisation I did not
 write down is the one that broke here.
+
+## `stdio.test.ts` — THIRD occurrence, and the rate is now worth stating
+
+**2026-08-15, during work that touched only `.gitignore` and an untracked
+script.** Same signature a third time: `numFailedTestSuites: 2`,
+**`numFailedTests: 0`**, one file named — `tests/stdio.test.ts` — message EMPTY.
+Re-run immediately after: green.
+
+**The running total on this machine, and it is the whole of the evidence:**
+
+| | count |
+|---|---|
+| full-suite runs observed this session | ~14 |
+| failures with this exact signature | **3** |
+| solo runs of the file | 3, all green |
+| distinct signatures seen | **1** |
+
+Roughly **1 in 5 full-suite runs**, and every occurrence identical. Three
+observations of one signature is no longer "an occurrence"; it is a rate, and it
+belongs on the record as one.
+
+**What three identical observations rule out.** A guard firing — the W5
+hardening prints the offending text and all three messages are empty. A test
+failing — `numFailedTests` is 0 in all three. Whatever this is, it happens
+*around* the tests, which is where an unhandled rejection, a worker crash or a
+teardown fault lands.
+
+**What they still do NOT establish: any mechanism.** Nobody has captured one of
+these under the default reporter, because the gate runs `--reporter=json` and
+R48 recorded that this failure class arrives there as an empty message. That is
+now **five** diagnoses this defect has cost in one session.
+
+**Why it matters more than it did an hour ago.** M1 in the Mac round runs the
+full suite five times on macOS with the prediction **5/5 green**. At a measured
+~1-in-5 rate on Windows, five macOS runs is a genuinely discriminating
+experiment rather than a formality: seeing this signature there kills the
+"Windows fs/git timing" reading outright and puts the cause back in the code.
+The prediction was written before this rate was known, and it is not being
+revised now that it is — revising a prediction after seeing data is the move
+this file exists to prevent.
