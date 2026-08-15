@@ -292,8 +292,36 @@ ok "tree clean of tracked changes (git status ran, exit 0)"
 # command to undo the one mutation this script does not undo itself.
 START_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse HEAD 2>/dev/null || true)
 
+# OFFLINE MODE — for a machine that cannot reach the remote at all.
+#
+# The network is not what this block is for. What it is for is proving the tree
+# about to be measured is the tree anyone intended, and `origin/$BRANCH` is only
+# ONE way to say which commit that is. `B12_EXPECT_SHA=<40-hex>` says the same
+# thing directly: skip fetch/checkout/merge, and require HEAD to BE that commit.
+#
+# THE GUARANTEE IS NOT WEAKENED, IT IS RE-EXPRESSED. Online, the script asserts
+# HEAD == origin/$BRANCH. Offline it asserts HEAD == the sha the archive was cut
+# at, which is the same claim with the naming authority moved from the remote to
+# the operator who cut it. What WOULD weaken it is skipping the check, and this
+# refuses harder than the online path: there is no ff-merge to rescue a stale
+# checkout, so a mismatch is fatal rather than fixable.
+#
+# It is recorded on the artifact as `context.tipCheck`, so a reader can see the
+# run was offline and against which pin instead of inferring it from silence.
+if [ -n "${B12_EXPECT_SHA:-}" ]; then
+  case "$B12_EXPECT_SHA" in
+    ????????????????????????????????????????) : ;;
+    *) refuse "B12_EXPECT_SHA must be a full 40-character commit sha (got \"$B12_EXPECT_SHA\")" ;;
+  esac
+  info "OFFLINE: not fetching; HEAD must be $B12_EXPECT_SHA"
+  LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
+  [ "$LOCAL_SHA" = "$B12_EXPECT_SHA" ] || refuse \
+    "HEAD is \"$LOCAL_SHA\" but B12_EXPECT_SHA is \"$B12_EXPECT_SHA\". This archive is not the tree it claims to be, and a pre-flight of the wrong instrument says nothing about the right one."
+  REMOTE_SHA="$LOCAL_SHA"
+  ok "OFFLINE, at the pinned commit — $(git rev-parse --short HEAD)"
+else
 info "fetching origin/$BRANCH"
-git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable?"
+git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable? (no network: cut an archive and re-run with B12_EXPECT_SHA=<sha>)"
 if ! git checkout -q "$BRANCH" 2>/dev/null; then
   if ! git checkout -q -b "$BRANCH" "origin/$BRANCH" 2>/dev/null; then
     # The likeliest cause in a repository that uses worktrees, and git's own
@@ -325,6 +353,7 @@ esac
 [ "$LOCAL_SHA" = "$REMOTE_SHA" ] || refuse \
   "HEAD is $(git rev-parse --short HEAD) but origin/$BRANCH is $(git rev-parse --short origin/$BRANCH). The Mac is not at the tip, and a pre-flight of the wrong instrument says nothing about the right one."
 ok "at the tip of $BRANCH — $(git rev-parse --short HEAD)"
+fi
 
 # ---------------------------------------------------------------------------
 next "Build"
@@ -793,6 +822,12 @@ o.context = {
   branch: e.B12_BRANCH,
   claudeVersion: e.B12_CLAUDE_VER,
   host: "mac",
+  // HOW THE TREE WAS PROVEN TO BE THE RIGHT ONE. Online the script compares
+  // HEAD against origin/<branch>; offline it compares HEAD against a sha the
+  // operator pinned when cutting the archive. Same claim, different naming
+  // authority — and a reader must be able to tell which one stood behind this
+  // artifact rather than assume the remote did.
+  tipCheck: e.B12_EXPECT_SHA ? { mode: "offline", expectedSha: e.B12_EXPECT_SHA } : { mode: "origin", ref: `origin/${e.B12_BRANCH || "?"}` },
   // NAMED FOR WHAT EACH ONE IS. `model` used to be written here as fact from a
   // variable that only ever reached `lms load`; the server selects its own.
   modelRequestedFromLmStudio: e.B12_MODEL,
@@ -866,6 +901,7 @@ JS
     B12_LEFTOVER="$LEFTOVER" B12_UNTRACKED="$UNTRACKED" B12_TREE_RC="$TREE_RC" \
     B12_CLAUDE_EXIT="$CLAUDE_EXIT" B12_CLAUDE_LOG="$CLAUDE_LOG_TAIL" B12_PROBE="$PROBE" \
     B12_REPAIR_BUDGET="$REPAIR_BUDGET_SECONDS" B12_REPAIR_ROUNDS="$REPAIR_MAX_ROUNDS" \
+    B12_EXPECT_SHA="${B12_EXPECT_SHA:-}" \
     node "$MERGE_JS" "$ART" 2>&1)
   NCHECKS=""
   case "$MERGE_OUT" in
