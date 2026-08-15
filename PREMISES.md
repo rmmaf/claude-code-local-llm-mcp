@@ -3540,3 +3540,111 @@ whether the rate is rising; whether it is load-dependent. Nobody has captured a
 failing run under the default reporter, because the gate uses
 `--reporter=json` and the failure lands where R48 erases it — for the fourth
 time in this session.
+
+## The Mac round of 2026-08-15 — everything it will measure, predicted BEFORE it runs
+
+Written at `0c8ff83`, before the archive left this machine. The round was going
+to be the PHASE 1 preflight alone; the owner asked what else could be measured
+now, and the answer is: quite a lot, because several owed questions need no
+manifest, no seal, and no attempt. Each prediction below is recorded so the Mac
+can falsify it rather than confirm a story written afterwards.
+
+**The rule this section exists to obey:** nothing here may be reported as a
+success unless the prediction beside it was written first. Three of this
+project's worst errors were causes read off a list of failures after the fact.
+
+### TIER 1 — no Claude session, no attempt, minutes
+
+**M1 — does the Windows-only flake exist on macOS?** Run the full suite **five**
+times and record pass/fail per run plus any file named. On Windows this session:
+`stdio.test.ts` failed 2 of ~6 full runs with an identical signature (2 failed
+suites, ZERO failed tests, empty message), and `b12-audit.test.ts` 3 times with
+`Error: STACK_TRACE_ERROR` — all passing solo.
+**PREDICTION: 5 of 5 green on macOS, zero occurrences of either signature.**
+Confidence: medium. Rationale, and it is an argument not evidence: both files
+are fs/git-heavy and macOS fs/git is far faster — this repository's own suite
+takes ~430 s on Windows and ~47 s on Linux CI. If the Mac reproduces EITHER
+signature, the "Windows timing" reading is dead and the cause is in the code.
+**This is the measurement I most want to be wrong about**, because a
+reproduction on a second platform would be worth more than five green runs.
+
+**M2 — the `runToolchain` tuple.** `node -e "console.log(process.platform,
+process.arch, process.version)"` and `npx vitest --version`.
+**PREDICTION: `darwin`, `arm64`, node and vitest majors matching this repo's
+`engines`/lockfile.** Confidence: high for platform/arch, LOW for the versions —
+the Mac's node is not known from here, and if its major.minor differs from
+Windows' 24.16 that is exactly the value the barrier needs and the reason the
+key must be filled on the run machine rather than guessed.
+
+**M3 — `claudeCodeVersion` and `claudeBinarySha256`.** `claude --version` and
+`shasum -a 256 $(which claude)`. **PREDICTION: none.** These are facts about a
+machine, not hypotheses. Recorded only so the seal stops being blocked on them.
+
+### TIER 2 — the owed Mac firing artifact, no Claude session, ~30 min
+
+**M4 — do the six negative controls fire on macOS?**
+`node scripts/b12-mutate.mjs 2026-08-15-mac-dryrun-1 --at <iso8601>`.
+The committed firing artifact is **win32 only**, and the PHASE 0 closure record
+names a Mac artifact as still owed. This spends no attempt and decides nothing;
+it is diagnostic evidence.
+**PREDICTION: all six FIRE, and `specificityClean` is FALSE with an
+off-diagonal kill count near the win32 run's 8.** Confidence: medium-high on the
+firing, LOW on the exact off-diagonal count — collateral depends on which tests
+share a fixture, and nothing establishes that is platform-invariant.
+**A control that fires on win32 and NOT on macOS would be the finding of the
+round**, because clause 6 requires the six shown firing and the run happens here.
+
+### TIER 3 — paid Claude sessions, one question each
+
+**M5 — the PHASE 1 preflight.** The planned run.
+**PREDICTION: `provenanceUnavailable === false`, `ambiguous === 0`,
+`unmatched === 0`, `excludedForeign === 0`, `savedFraction !== null`, snapshot
+slug and id counts non-zero.** Confidence: medium. The committed artifact from
+2026-08-09 is OBSOLETE — the script changed twice since — so this is a fresh
+measurement and not a re-confirmation.
+
+**M6 — THE SUBAGENT RATE-KEY PROBE, and it outranks the preflight.**
+`bash scripts/b12-subagent-key-probe-mac.sh`. The question: inside a
+`claude --print` session, do a SUBAGENT's billed requests carry the SAME rate key
+as the main thread's?
+**Why it outranks everything else here:** `voidConditions` 10 and
+`void(rate_key_mixed)` both key on `rateKey(model, speed)` over an observation's
+OWN requests. If a subagent serves on a different key, **every observation
+carrying a subagent is void at observation level**, the `multi` stratum holds
+fewer than 5 admitted observations, and `voidConditions` 3 returns `open` —
+never a hold, never a fall. That is the run being **unevaluable by
+construction**, discoverable now for the cost of one scratch session or
+discoverable after 20–26 paid sessions.
+**PREDICTION: the same rate key.** Confidence: medium-low, and I want that
+number read as the point rather than the answer. This corpus ranges 0–78%
+subagent share; if the keys differ, the design needs to know before the seal.
+
+**M7 — `clientTruncationCap`.** `bash scripts/b12-truncationcap-probe-mac.sh`.
+`voidConditions` 8 VOIDS a run with no cap measured for the version that ran.
+**PREDICTION: a cap near 30,000 CHARACTERS**, because B2 measured a Bash result
+landing in the transcript at 30,000 (30,136 raw observed) on Windows. Confidence:
+low-medium — that was a different platform AND a different Claude Code version,
+and the cap is a client behaviour that can move between releases. A materially
+different number is a real finding, not an error.
+
+**M8 — the `installedChars` re-probe.**
+`bash scripts/b12-installedchars-probe-mac.sh`. Owed with the orchestrator model
+in the calibration key. **PREDICTION: a positive per-arm delta, k = 3
+replicates, with the treatment arm larger** (it carries seven tool schemas plus
+the policy block). Confidence: medium on the sign, none on the magnitude.
+
+### What this round deliberately does NOT do
+
+**The PHASE 2 pilot.** That is executing a phase, not measuring ahead of one: it
+needs built manifests, runs five real sessions, and its output is committed
+evidence that the register reads. Doing it out of order to "get ahead" is how a
+sequencing constraint becomes a void nobody planned.
+
+**Anything requiring the seal.** `evidence/b12-harness-seal.json` does not exist,
+is a barrier before ANY registration, and is create-only forever.
+
+**And a caveat that applies to every pin measured here.** M2, M3, M7 and M8
+produce values that go into a manifest sealed LATER. They are only valid if
+nothing moves in between — `DISABLE_AUTOUPDATER=1` exists for exactly this, and
+a Claude Code update between this round and the seal invalidates M3 and M7
+together.
