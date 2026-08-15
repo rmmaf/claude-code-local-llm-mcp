@@ -18,10 +18,19 @@
  * command string the manifest pins is compared against the actual invocation
  * (`voidConditions` 19) in `assemble`, which receives it from here verbatim.
  *
- * The clause 4–6 audit is an INPUT (`--audit <path>`): a committed artifact
- * carrying verdict and inputs. Absent, `assemble` publishes clauses 4–6 as
- * UNCHECKED and the pre-declaration (`PREMISES.md § B12`) bars a final verdict
- * — absence is reported, never read as "clean".
+ * The clause 4–6 audit is a REQUIRED INPUT (`--audit <path>`): a committed
+ * artifact carrying verdict and inputs. Absent — or uncommitted, unparseable,
+ * or not bound to this tree — this file REFUSES and writes nothing (R50).
+ *
+ * It used to emit anyway and let `assemble` publish clauses 4–6 as UNCHECKED,
+ * on the reading that absence is reported rather than read as "clean". The
+ * reporting was real and nothing that DECIDED ever read it: a NOT-FINAL result
+ * committed by that path was accepted by the registration gate and by `open-b`.
+ * `PREMISES.md § B12` pre-declared that "the scoring invocation requires a
+ * COMMITTED clause 4–6 audit artifact"; this is that rule enforced instead of
+ * merely stated. `assemble` still publishes UNCHECKED for `{ran:false}` — it is
+ * the lower layer and other callers exist — but no artifact leaves this file
+ * under that condition, so every committed `result.json` is FINAL.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -102,9 +111,12 @@ export function committedAuditCheck(
  *       manifest A, manifest B, the suite attestation — are RE-HASHED at
  *       HEAD and must equal what the artifact recorded, because (c) cannot
  *       see a change there;
- *   (e) and so is the whole set clause 5 was COMPUTED FROM — the runlog, the
- *       counterfactual, every per-observation archive — through the digest
- *       the artifact records. R22 stopped at (d) and claimed completeness;
+ *   (e) and so is the whole set clause 5 was COMPUTED FROM — the runlog and
+ *       every per-observation archive — through the digest the artifact
+ *       records. NOT the counterfactual: it left that set when the anchor
+ *       stopped reading it (R50), because it is an OUTPUT of this emission and
+ *       an output in the input digest would make the audit unbindable the
+ *       moment its own run was committed. R22 stopped at (d) and claimed completeness;
  *       R24 showed the claim was false, because an observation appended
  *       after a clean audit changes the anchor's population and the archive
  *       being scored while the verdict rides along unchanged.

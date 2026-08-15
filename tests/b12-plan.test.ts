@@ -148,11 +148,15 @@ describe("manifest-config.json agrees with the plan it declares", () => {
     // refuses a template without it; this asserts the config never stops being
     // one, which the assembler cannot say about a value it never sees.
     //
-    // The `--audit` form: the prescribed loop emits twice (audit.ts:15) and one
-    // of the two must diverge from the pin. Pinning the bare form voids the
-    // FINAL scored artifact; pinning this one voids the first, provisional
-    // emission instead — already final:false with clauses 4-6 UNCHECKED. The
-    // path is the only one committedAuditCheck accepts (emit.ts:57).
+    // The `--audit` form: it is the ONLY form (R50). The prescribed loop used
+    // to emit twice, so one of the two necessarily diverged from the pin and
+    // fired clause 19 — pinning the bare form would have voided the FINAL
+    // artifact, so the `--audit` form was pinned and the FIRST emission was
+    // voided instead, committing a `verdict:"void"` for a run that was not
+    // void. There is no first emission now: the audit derives its anchor from
+    // the committed archive, so the pin is the literal spelling of the one
+    // invocation there is, and clause 19 is satisfied rather than dodged.
+    // The path is the only one committedAuditCheck accepts (emit.ts:57).
     const command = (config().pinned as { scoringCommand: string }).scoringCommand;
     expect(command).toBe("node dist/cost/b12/emit.js <runId> --audit evidence/<runId>.b12.audit.json");
   });

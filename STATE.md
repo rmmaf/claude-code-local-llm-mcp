@@ -14,9 +14,11 @@ and DERIVES the pair rule. **Both constants DECIDED** pre-data (`b086a59`).
 
 **DECLARED IS NOT SEALABLE — see `_beforeYouBuild`,** four decisions and one hazard. The
 hard one first: `evidence/b12-harness-seal.json` does not exist, is a barrier before ANY
-registration, must run AFTER `build`, and is create-only forever. Then `pinned.scoringCommand`
-names the pilot and one string cannot serve A, B and both of `emit`'s invocations. Rename the
-three `*-pending` run ids before `build`.
+registration, must run AFTER `build`, and is create-only forever. `pinned.scoringCommand` is
+now a TEMPLATE resolved per manifest by the assembler, so A and B each carry one literal
+string — and since 2026-08-14 there is exactly ONE scoring invocation to name (R50), so the
+old problem of one string having to serve two invocations is gone. Rename the three
+`*-pending` run ids before `build`.
 
 ## Measured, and worth not re-deriving
 

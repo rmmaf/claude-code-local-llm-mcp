@@ -4,9 +4,11 @@
  * The decider is pure and every clause is shown FIRING and NOT firing over
  * constructed facts; the collector runs over DETERMINISTIC scratch git
  * repositories (local user.name/email, `core.autocrlf false`, no signing);
- * the e2e drives the operator loop's real sequence — emit (unchecked) →
- * commit → attestation → commit → audit → commit → emit `--audit` — over the
- * committed replay fixture, and then flips one hostile bit at a time.
+ * the e2e drives the operator loop's real sequence — attestation → commit →
+ * audit → commit → ONE `emit --audit` → commit — over the committed replay
+ * fixture, and then flips one hostile bit at a time. There is no first,
+ * unchecked emit: it was what forced two scoring invocations against a frozen
+ * text that says one, and it is gone (R50).
  */
 
 import { spawnSync } from "node:child_process";

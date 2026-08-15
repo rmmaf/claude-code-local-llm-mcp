@@ -864,12 +864,18 @@ if (isMain) {
     // never goes through `narrowPriorRun`, so the gate added there does not
     // cover it — the two sites had to be fixed separately.
     //
-    // The hazard this closes is not hypothetical and not an operator error: an
-    // emission whose audit binding REFUSES continues with `gitAudit.ran:false`
-    // and writes both artifacts anyway (src/cost/b12/emit.ts:269-273). A
-    // correctly ordered scoring invocation can therefore commit an ordinary
-    // `open` that is NOT FINAL, and `open-b` used to accept it — spending the
-    // second of two sealed manifests on a verdict nothing had audited.
+    // The hazard this closed was not hypothetical and not an operator error:
+    // an emission whose audit binding refused USED TO continue with
+    // `gitAudit.ran:false` and write both artifacts anyway, so a correctly
+    // ordered scoring invocation could commit an ordinary `open` that was NOT
+    // FINAL — and `open-b` accepted it, spending the second of two sealed
+    // manifests on a verdict nothing had audited.
+    //
+    // `emit` now REFUSES on that path and writes nothing (R50), so the
+    // producer can no longer make such an artifact. This check STAYS and is
+    // not redundant: it is the READER's half. A hostile, hand-written or
+    // historical result.json is still bytes in a file, and `open-b` reads
+    // bytes rather than the code that wrote them.
     if (run1.final !== true) {
       fail(
         "run 1's committed result is NOT FINAL (clauses 4–6 unchecked) — manifest B may not be opened on a verdict no committed audit stands behind"
