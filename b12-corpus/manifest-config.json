@@ -18,12 +18,15 @@
     "                pre-data, with the reasoning and the refutation attempt in _chosenConstants.",
     "",
     "Do not replace a null with a guess to make the tool quiet. The refusal is the deliverable.",
-    "TWELVE of the thirteen remaining nulls are MAC-LOCAL. The thirteenth is",
+    "THIRTEEN of the fourteen remaining nulls are MAC-LOCAL. The fourteenth is",
     "settingsSha256s.settingsLocal, and it is a TRUE null: _macLocal says so in its own words",
     "('NOT MAC-LOCAL'), MEASURED across all 65 corpus tags - none carries .claude/settings.local.json.",
     "This line used to say 'every remaining null is MAC-LOCAL', which was false by exactly one and",
     "would have sent a reader to the Mac to fill a value no machine can supply. Corrected 2026-08-14",
     "while writing the PHASE 0 closure record, by counting the leaves rather than trusting the count.",
+    "The count moved from 12/13 to 13/14 the same day, when runToolchain was added as an opt-in to",
+    "the run-toolchain amendment. RECOUNT THIS LINE RATHER THAN TRUSTING IT: it has been wrong once",
+    "already, and the way it was caught was counting the leaves under `pinned`.",
     "FOUR DECISIONS are open, plus one hazard that is not a",
     "decision at all; all five are in _beforeYouBuild. An earlier version of this line said",
     "nothing was open, which was true only while the sealed manifests did not exist."
@@ -387,6 +390,7 @@
     "claudeCodeVersion": null,
     "claudeBinarySha256": null,
     "clientTruncationCap": null,
+    "runToolchain": null,
     "settingsSha256s": {
       "settings": "75cd35da2e1975836d06e7bd2436e88c37cb265c6f25385c4eed0835ca4d867d",
       "settingsLocal": null
@@ -418,6 +422,7 @@
     "claudeCodeVersion": "The FULL x.y.z on the run machine. assertPinned compares with .includes(), so a partial pin like 2.1.2 silently matches 2.1.221 — the assembler refuses anything that is not x.y.z.  claude --version",
     "claudeBinarySha256": "sha256 of the Claude Code binary that will run.  shasum -a 256 $(which claude)",
     "clientTruncationCap": "The cap MEASURED for that version. voidConditions 8 VOIDS a run with no cap measured for the version that ran.  scripts/b12-truncationcap-probe-mac.sh",
+    "runToolchain": "{platform, arch, node|nodeVersion, vitest} for the machine that will RUN. Added 2026-08-14, and adding it is an OPT-IN: the run-toolchain amendment governs only runs that declare one, and an ABSENT key is the lawful way to be ungoverned. Declaring it here means the harness REFUSES any observe whose machine does not match — a refusal, never a void, so it costs time and no attempt.  node -e \"console.log(process.platform, process.arch, process.version)\" plus `npx vitest --version` on the Mac; only major.minor of node and vitest are compared, patch is excluded on purpose. THE NULL IS NOT A DECLARATION AND MUST NOT SHIP: an explicit null reads as an UNREADABLE identity, which assemblyRefusals now refuses at build time rather than letting it seal and then refuse at every arm. Fill it on the Mac or delete the key; do not guess it from the Windows box, where node and vitest differ. HAZARD, the same one claudeCodeVersion carries and worse for manifest B: run 1 and run 2 are WEEKS APART by design, and B inherits this declaration, so a node or vitest minor bump between them blocks run 2 on the pinned toolchain with no re-seal path. That is the price of the barrier and it is stated here rather than discovered at run 2.",
     "settingsSha256s": "BOTH keys required, and null is a legitimate value meaning 'this file does not exist' — omission declares nothing, null declares an absence. NOT MAC-LOCAL, which is why `settings` is filled: instructionHashesAt hashes .claude/settings.json out of each ARM's detached worktree (b12-run.mjs:2815), and those worktrees come from the corpus tags, so this is a property of the published trees and is knowable here. MEASURED across all 65 b12/corpus/* tags: every one carries .claude/settings.json as blob 34994e4f, 432 bytes, sha256 75cd35da…4d867d; none carries .claude/settings.local.json, so settingsLocal stays null and that null is TRUE. It was null before, which declared an absence that is false. Mechanically it would have sealed either way — b12-run.mjs:1068 shape-checks the keys and nothing ever compares these values to instructionHashesAt — so this is a correction to what the file SAYS, not a refusal that was being dodged.",
     "installedCharsProbe": "Path to the committed probe artifact, plus its sha256. The re-probe is OWED with the orchestrator model in the calibration key (PREMISES.md, sixth decision).  scripts/b12-installedchars-probe-mac.sh",
     "mcpConfig": "Path to the generated MCP config, plus its sha256. observe dereferences both and NO validator checks them; the path is machine-local, so presence is all this machine can assert.",

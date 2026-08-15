@@ -811,10 +811,20 @@ export function assemblyRefusals(repoRoot, config, built) {
   for (const [label, obj] of toolchainSources) {
     if (!Object.prototype.hasOwnProperty.call(obj, "runToolchain") || obj.runToolchain === undefined) continue;
     if (normaliseToolchainForBarrier(obj.runToolchain) === null) {
+      // `null` GETS ITS OWN SENTENCE, because it is the MAC-LOCAL owed state
+      // and not a typo. The config ships `runToolchain: null` the way it ships
+      // every other pin only the run machine can supply, and the refusal IS the
+      // deliverable — it blocks the build until the Mac fills it, exactly as
+      // `manifestDeclarationGaps` does for claudeCodeVersion. Telling that
+      // operator to "omit the key" would be telling them to opt out of the
+      // barrier they deliberately opted into.
+      const owed =
+        obj.runToolchain === null
+          ? ` — this is the MAC-LOCAL null: measure it ON THE RUN MACHINE and fill it before build, or delete the key to be ungoverned by the amendment. Do not guess it from another box`
+          : ` — declare a readable identity or omit the key entirely, which is the lawful way to be ungoverned by the amendment`;
       red.push(
         `${label}: pinned.runToolchain ${JSON.stringify(obj.runToolchain)} is not readable as {platform, arch, node|nodeVersion, vitest} — ` +
-          `the barrier would refuse EVERY observe on it (assertRunToolchain), and the sealed manifests are create-only forever. ` +
-          `Declare a readable identity or omit the key entirely, which is the lawful way to be ungoverned by the amendment`
+          `the barrier would refuse EVERY observe on it (assertRunToolchain), and the sealed manifests are create-only forever${owed}`
       );
     }
   }

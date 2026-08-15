@@ -612,8 +612,16 @@ describe("b12 manifest — the assembler derives what a hand-written manifest wo
     // last one is the trap the audit's own reader was repaired for: a display
     // string whose `vitest/` tag is malformed must not borrow the node version
     // sitting beside it in the same string.
+    // `null` IS THE SHIPPED CONFIG VALUE and has its own message, because it is
+    // the MAC-LOCAL owed state rather than a typo: the config declares the key
+    // to opt into the amendment and leaves the identity for the run machine, so
+    // the build must refuse it AND must not tell the operator to omit the key
+    // they deliberately added.
+    built.manifestA.pinned.runToolchain = null;
+    expect(assemblyRefusals(root, config, built).join("\n")).toMatch(/this is the MAC-LOCAL null: measure it ON THE RUN MACHINE/);
+    expect(assemblyRefusals(root, config, built).join("\n")).not.toMatch(/omit the key entirely/);
+
     const unreadable: unknown[] = [
-      null,
       "win32-x64",
       { platform: "win32", arch: "x64" },
       { platform: "win32", arch: "x64", node: "24.16" },
