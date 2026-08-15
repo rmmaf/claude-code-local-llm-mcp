@@ -680,8 +680,17 @@ export function normaliseToolchain(raw: unknown): ToolchainReading {
   const vitestRaw = raw.vitest;
   let vitest: string | null = null;
   if (typeof vitestRaw === "string") {
+    // NO UNANCHORED FALLBACK ACROSS THE WHOLE STRING, and this is a fix rather
+    // than a preference: the display string EMBEDS the node version, so
+    // "vitest/not-a-version win32-x64 node-v24.16.0" used to fail the tagged
+    // match, scan the whole field, find 24.16 in `node-v24.16.0` and report a
+    // malformed vitest as version 24.16 — the exact self-disagreement the
+    // comment above claims to prevent. A field carrying `vitest/` must parse
+    // THROUGH the tag or it is unknown; a bare version must look like one.
     const tagged = /vitest\/(\d+)\.(\d+)/.exec(vitestRaw);
-    vitest = tagged !== null ? `${tagged[1]}.${tagged[2]}` : majorMinor(vitestRaw);
+    if (tagged !== null) vitest = `${tagged[1]}.${tagged[2]}`;
+    else if (/vitest\//.test(vitestRaw)) vitest = null;
+    else vitest = /^\s*v?\d+\.\d+/.test(vitestRaw) ? majorMinor(vitestRaw) : null;
   }
   const missing: string[] = [];
   if (platform === null) missing.push("platform");

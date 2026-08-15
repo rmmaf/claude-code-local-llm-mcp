@@ -947,18 +947,34 @@ export function normaliseToolchainForBarrier(raw) {
   const platform = typeof raw.platform === "string" && raw.platform !== "" ? raw.platform : null;
   const arch = typeof raw.arch === "string" && raw.arch !== "" ? raw.arch : null;
   const node = mm(raw.nodeVersion) ?? mm(raw.node);
+  // Snapshotted ONCE, matching the audit's reader exactly. Reading the property
+  // twice let a side-effecting accessor hand the two normalisers different
+  // answers — unreachable through JSON, and removed anyway because "the two
+  // readers agree" is a claim worth not qualifying.
+  const vitestRaw = raw.vitest;
   let vitest = null;
-  if (typeof raw.vitest === "string") {
-    const tagged = /vitest\/(\d+)\.(\d+)/.exec(raw.vitest);
-    vitest = tagged !== null ? `${tagged[1]}.${tagged[2]}` : mm(raw.vitest);
+  if (typeof vitestRaw === "string") {
+    // See normaliseToolchain in src/cost/b12/audit.ts: no unanchored fallback,
+    // because the display string embeds the node version and a malformed vitest
+    // would otherwise borrow it and read as a valid identity.
+    const tagged = /vitest\/(\d+)\.(\d+)/.exec(vitestRaw);
+    if (tagged !== null) vitest = `${tagged[1]}.${tagged[2]}`;
+    else if (/vitest\//.test(vitestRaw)) vitest = null;
+    else vitest = /^\s*v?\d+\.\d+/.test(vitestRaw) ? mm(vitestRaw) : null;
   }
   if (platform === null || arch === null || node === null || vitest === null) return null;
   return { platform, arch, node, vitest };
 }
 
 export function runToolchainRefusal(pin, observedRaw) {
-  const declaredRaw = pin?.runToolchain;
-  if (declaredRaw === undefined || declaredRaw === null) return null; // not governed
+  // ABSENCE OF THE KEY is "not governed". An explicit `"runToolchain": null` is
+  // NOT absence — it is a declaration nobody can read, and it falls through to
+  // the unreadable branch below. Spelling the two the same way let a manifest
+  // opt out of the barrier by declaring nothing, which is the one shape an
+  // opt-in barrier must not accept.
+  if (pin === null || pin === undefined || !Object.prototype.hasOwnProperty.call(pin, "runToolchain")) return null;
+  const declaredRaw = pin.runToolchain;
+  if (declaredRaw === undefined) return null; // the key exists but was never set
   const declared = normaliseToolchainForBarrier(declaredRaw);
   if (declared === null) {
     return "manifest pins runToolchain but it is not readable as {platform, arch, node|nodeVersion, vitest} — a declaration nobody can parse cannot be shown to agree with anything, and the amendment says an unreadable identity is never a match";

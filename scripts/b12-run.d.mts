@@ -402,6 +402,8 @@ export function normaliseToolchainForBarrier(raw: unknown): BarrierToolchain | n
  * one refuses, because silence must not be mistaken for agreement.
  */
 export function runToolchainRefusal(
-  pin: { runToolchain?: unknown } | null | undefined,
+  /** The manifest's whole `pinned` block — it carries many other keys, and the
+   *  ABSENCE of `runToolchain` among them is what means "not governed". */
+  pin: Readonly<Record<string, unknown>> | null | undefined,
   observedRaw: unknown
 ): string | null;

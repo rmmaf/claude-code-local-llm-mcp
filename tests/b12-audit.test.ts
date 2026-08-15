@@ -1773,3 +1773,70 @@ describe("the run-toolchain BARRIER — refuses, never voids", () => {
     expect(runToolchainRefusal({ runToolchain: declared }, patched)).toBeNull();
   });
 });
+
+describe("the toolchain readers, after adversarial review of dd9b2d9", () => {
+  it("a MALFORMED vitest must not borrow the NODE version out of the same string", () => {
+    // Found by review. The display string embeds node, so the old unanchored
+    // fallback read "vitest/not-a-version win32-x64 node-v24.16.0" as vitest
+    // 24.16 — a malformed field passing as a valid identity, and matching a
+    // declaration of 24.16. This is the self-disagreement the reader exists to
+    // prevent, so it is a control, not a preference.
+    const poisoned = { platform: "win32", arch: "x64", nodeVersion: "v24.16.0", vitest: "vitest/not-a-version win32-x64 node-v24.16.0" };
+    expect(normaliseToolchain(poisoned).known).toBe(false);
+    expect(normaliseToolchainForBarrier(poisoned)).toBeNull();
+    // ...and it must therefore REFUSE rather than match a 24.16 declaration.
+    const why = runToolchainRefusal(
+      { runToolchain: { platform: "win32", arch: "x64", node: "24.16", vitest: "24.16" } },
+      poisoned
+    );
+    expect(why).not.toBeNull();
+  });
+
+  it("a bare version still reads, and junk still does not", () => {
+    expect(normaliseToolchain({ platform: "p", arch: "a", node: "24.16", vitest: "4.1.10" }).known).toBe(true);
+    expect(normaliseToolchain({ platform: "p", arch: "a", node: "24.16", vitest: "v4.1" }).known).toBe(true);
+    for (const junk of ["not-a-version", "vitest/x", "node-v24.16.0", ""]) {
+      const r = normaliseToolchain({ platform: "p", arch: "a", node: "24.16", vitest: junk });
+      expect(r.known, `vitest ${JSON.stringify(junk)} must not read`).toBe(false);
+      expect(normaliseToolchainForBarrier({ platform: "p", arch: "a", node: "24.16", vitest: junk })).toBeNull();
+    }
+  });
+
+  it("an explicit runToolchain:null is DECLARED-and-unreadable, not undeclared", () => {
+    // Found by review. Treating it as undeclared let a manifest opt out of the
+    // barrier by declaring nothing — the one shape an opt-in barrier must
+    // refuse. Key ABSENCE remains "not governed".
+    const now = { platform: "darwin", arch: "arm64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10" };
+    expect(runToolchainRefusal({ runToolchain: null }, now)).not.toBeNull();
+    expect(runToolchainRefusal({}, now)).toBeNull();
+    expect(runToolchainRefusal({ claudeCodeVersion: "1.2.3" }, now)).toBeNull();
+  });
+
+  it("A MISMATCH STILL BINDS — the report changes no verdict and no final flag", () => {
+    // Review noted the eight keys join AUDIT_INPUT_KEYS and so participate in
+    // the artifact's binding check, which can make an audit {ran:false} and a
+    // result not-final. That is TRUE OF EVERY KEY and is the anti-forgery
+    // property; an unbound reported field would be forgeable. What matters for
+    // the amendment's promise is narrower and is asserted here: a MISMATCH is
+    // not a binding difference, so it moves neither the verdict nor final.
+    const declared = { known: true as const, id: DEFAULT_TOOLCHAIN };
+    const win = normaliseToolchain({ platform: "win32", arch: "x64", nodeVersion: "v24.16.0", vitest: "vitest/4.1.10" });
+    const base = factsOf();
+    const mismatched = factsOf({
+      clause6: {
+        ...base.clause6,
+        runToolchain: {
+          declared,
+          firing: win,
+          suite: win,
+          firingAgreement: toolchainAgreement(declared, win),
+          suiteAgreement: toolchainAgreement(declared, win),
+        },
+      },
+    });
+    // Same verdict, and the artifact re-derives to its own inputs either way.
+    expect(decideAudit(mismatched).verdict).toBe(decideAudit(base).verdict);
+    expect(Object.keys(auditInputs(mismatched)).sort()).toEqual(Object.keys(auditInputs(base)).sort());
+    expect(auditInputs(mismatched)["clause6.runToolchain.agreement"]).toMatch(/MISMATCH/);
+  });
+});
