@@ -677,6 +677,50 @@ describe("fail-closed probes and the dirty-tree guard", () => {
     ).rejects.toThrow(/clause 5's history cannot be inspected/);
   });
 
+  it("blobSha's THREE states: absent is a verdict, unreadable is a refusal", async () => {
+    // A `git show <ref>:<path>` failure used to collapse to `null`, and `null`
+    // is a VERDICT here — clause 4 reads it as "the pre-registration is
+    // unreadable at its freeze commit" and VOIDS. So a transient git failure
+    // could spend one of only three attempts, which is the exact inversion R32
+    // caught in the anchor derivation: a refusal is retryable and writes
+    // nothing; a VOID is committable and kills a paid run.
+    const { root, first } = await minimalRepo();
+    const base = realGit(root);
+    const collector = { preregFrozenCommit: first, preregPath: "prereg.json" };
+
+    // STATE 1 — the ref resolves and the path is genuinely absent from its
+    // tree. A real answer, and clause 4 is RIGHT to void on it.
+    const absent = await collectAuditFacts(root, "r1", { ...collector, preregPath: "no-such-file.json" });
+    expect(absent.prereg.frozenSha256).toBeNull();
+    expect(absent.prereg.headSha256).toBeNull();
+    const { verdict, reasons } = decideAudit(absent);
+    expect(verdict).toBe("void");
+    expect(reasons.join(" ")).toMatch(/cannot be shown frozen/);
+
+    // STATE 2 — the REF does not resolve. Not a statement about the file at
+    // all, so it must REFUSE rather than void.
+    await expect(
+      collectAuditFacts(root, "r1", { ...collector, preregFrozenCommit: "0".repeat(40) })
+    ).rejects.toThrow(AuditRefused);
+    await expect(
+      collectAuditFacts(root, "r1", { ...collector, preregFrozenCommit: "0".repeat(40) })
+    ).rejects.toThrow(/does not resolve to a commit/);
+
+    // STATE 3 — the ref resolves, the object EXISTS, and `show` fails anyway:
+    // git failing on an object it has just confirmed. Also a refusal, and this
+    // is the state the old two-way collapse could not express at all.
+    const showBlind: Git = (args) =>
+      args[0] === "show" && args[1]?.includes("prereg.json") === true ? { ok: false, out: "" } : base(args);
+    await expect(
+      collectAuditFacts(root, "r1", { ...collector, gitRunner: showBlind })
+    ).rejects.toThrow(/exists as an object but could not be read/);
+
+    // AND THE CONTROL THAT MAKES THE THREE MEAN SOMETHING: unwrapped, this
+    // repository audits without refusing at all, so the refusals above are the
+    // blinding and not the fixture.
+    await expect(collectAuditFacts(root, "r1", collector)).resolves.toBeDefined();
+  });
+
   it("REFUSES when the introducing-commit log FAILS — an unaskable history is not 'does not govern'", async () => {
     // `introducingCommit` mapped a FAILED `git log` and a path with NO
     // introducing commit to the same `null`, and both then read as

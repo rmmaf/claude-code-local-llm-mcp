@@ -3449,3 +3449,29 @@ failing file under the default reporter.
 
 **Status: OPEN, one occurrence, no mechanism.** Written down so the next
 occurrence is the second and not the first.
+
+## A second flake occurrence, this one INSIDE the registered class
+
+**2026-08-14, `tests/b12-audit.test.ts`, the new `blobSha` three-state control.**
+One full-suite run failed it with `Error: STACK_TRACE_ERROR`; run SOLO with the
+default reporter it passed (1 passed, 72 skipped); the full suite re-run passed.
+
+**Unlike the `stdio.test.ts` occurrence recorded above, this one MATCHES the
+registered `KNOWN_FLAKY` class on every feature:** an fs/git-heavy B12 guard,
+the `Error: STACK_TRACE_ERROR` placeholder message, and failure only in the full
+suite. The new control creates scratch repositories and runs a dozen git
+commands, so it joined that population the moment it was written.
+
+**Still no cause claimed.** Matching a registered class is not a mechanism —
+it is a reason not to treat this as a new phenomenon, and nothing more. What it
+does establish is a cost: the class now touches a control written specifically
+to prove a fail-closed property, so a spurious red there reads as "the
+three-state repair is broken" to anyone who does not know the class exists.
+
+**R48 erased the evidence for the THIRD time in this session.** The gate runs
+`--reporter=json`, which turned this into `Error: STACK_TRACE_ERROR` with no
+line and no message. Each time, recovering the real failure has meant re-running
+the file by hand under the default reporter. Three occurrences is enough to stop
+calling it an annoyance: the gate needs a way to re-run a failing file under the
+default reporter, and until it has one, every diagnosis in this suite costs an
+extra full run.

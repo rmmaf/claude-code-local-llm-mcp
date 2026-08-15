@@ -1396,9 +1396,57 @@ export function isFiringEvidence(v: unknown): v is FiringEvidence {
   return true;
 }
 
+/**
+ * A blob's hash, in THREE states rather than two.
+ *
+ * `git show <ref>:<path>` failing used to collapse to `null`, and `null` is a
+ * VERDICT here: clause 4 reads it as "the pre-registration is unreadable at its
+ * freeze commit", "manifest A is not in the registration commit's tree",
+ * "manifest B is ABSENT from the registration commit". Each of those is a
+ * committable VOID.
+ *
+ * SO A TRANSIENT GIT FAILURE COULD SPEND ONE OF THREE ATTEMPTS. That is the
+ * same inversion R32 caught in the anchor derivation, in the same file, and the
+ * doctrine is stated there: a refusal writes NO artifact and is retryable; a
+ * VOID is a committable verdict that kills a paid run. Git NOT ANSWERING may
+ * not be read as git answering badly.
+ *
+ * The three states, and how they are told apart:
+ *   - the REF does not resolve      -> git cannot be asked -> REFUSE;
+ *   - the ref resolves and the path is absent from its tree -> a real answer,
+ *     `sha: null`, and clause 4 is right to void on it;
+ *   - the ref resolves, the object EXISTS, and `show` still fails -> git
+ *     failing on an object it just said was there -> REFUSE.
+ *
+ * `cat-file -e` is what separates the middle case from the last, and it is
+ * asked ONLY after the ref is known good — otherwise a bad ref and a missing
+ * file are again one answer.
+ */
+type BlobAnswer = { readonly ok: true; readonly sha: string | null } | { readonly ok: false; readonly why: string };
+
+function blobShaAnswer(git: Git, ref: string, rel: string): BlobAnswer {
+  if (!git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).ok) {
+    return { ok: false, why: `${ref} does not resolve to a commit in this repository` };
+  }
+  if (!git(["cat-file", "-e", `${ref}:${rel}`]).ok) return { ok: true, sha: null };
+  const show = git(["show", `${ref}:${rel}`]);
+  if (!show.ok) return { ok: false, why: `${ref}:${rel} exists as an object but could not be read` };
+  return { ok: true, sha: sha256(show.out) };
+}
+
+/**
+ * Force the answer, REFUSING where there is none — the same shape `orRefuse`
+ * gives `CommitAnswer`, so the two unaskable-question paths in this file behave
+ * identically instead of each inventing a convention.
+ */
 const blobSha = (git: Git, ref: string, rel: string): string | null => {
-  const r = git(["show", `${ref}:${rel}`]);
-  return r.ok ? sha256(r.out) : null;
+  const answer = blobShaAnswer(git, ref, rel);
+  if (!answer.ok) {
+    throw new AuditRefused(
+      `the blob ${rel} at ${ref} cannot be read (${answer.why}) — an absent file and an unreadable repository decide different things, and guessing between them would spend an attempt on a question nobody asked`
+    );
+  }
+  return answer.sha;
 };
 
 /**
