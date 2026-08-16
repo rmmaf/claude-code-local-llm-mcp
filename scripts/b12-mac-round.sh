@@ -215,7 +215,10 @@ fi
 # ---------------------------------------------------------------------------
 say "M8 — the installedChars re-probe"
 if wanted M8; then
-  bash scripts/b12-installedchars-probe-mac.sh > "$LOGS/M8.txt" 2>&1
+  # THE PIN REACHES THIS ONE TOO. On 2026-08-15 M8 refused on `git fetch` while
+  # the pre-flight beside it ran offline, because only the pre-flight had been
+  # given the mode. Passing it here is what makes the repair reach the round.
+  B12_EXPECT_SHA="$EXPECT_SHA" bash scripts/b12-installedchars-probe-mac.sh > "$LOGS/M8.txt" 2>&1
   rc=$?
   tail -4 "$LOGS/M8.txt" | sed 's/^/   /'
   [ "$rc" -eq 0 ] && record M8 ran 0 "probe completed" || record M8 ran "$rc" "probe failed — see logs/M8.txt"
