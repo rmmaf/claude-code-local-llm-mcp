@@ -106,7 +106,11 @@ writeFileSync(path.join(tree, ".b12-round-pin"), `${head}\n`, { encoding: "utf8"
 // which is how an archive once arrived without its own `.git`.
 const archive = path.join(outDir, `${treeName}.zip`);
 if (existsSync(archive)) rmSync(archive, { force: true });
-const packed = run(staging, "tar", ["-a", "-c", "-f", archive, "-C", tree, "."]);
+// `-f` gets the BASENAME and the cwd is the output directory, because bsdtar
+// parses an argument containing a colon as `host:path` — so a Windows absolute
+// path like C:\Users\...\out.zip fails with "Cannot connect to C: resolve
+// failed". `-C` is not parsed that way, so the source path may stay absolute.
+const packed = run(outDir, "tar", ["-a", "-c", "-f", path.basename(archive), "-C", tree, "."]);
 if (!packed.ok) {
   rmSync(staging, { recursive: true, force: true });
   refuse(`tar failed: ${packed.err || packed.out}`);
