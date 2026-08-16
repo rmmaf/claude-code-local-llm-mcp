@@ -1328,8 +1328,15 @@ if [ -n "$(git status --porcelain -- src/cost/b12 2>/dev/null)" ] || [ -f "$ART"
   # SILENTLY SKIPPED by git — and executable bits are exactly what archive
   # transport keeps losing. A guard whose execution depends on a file mode
   # surviving a zip is not a guard.
-  if ! node scripts/b12-pins-check.mjs >/dev/null 2>&1; then
-    warn "b12-pins-check REFUSED the staged bytes — NOT committing; the staged diff goes to the archive instead"
+  # The guard's own words are SHOWN, not swallowed: exit 2 here can be a pin
+  # refusal or an operational failure (unreadable index, missing config), and a
+  # message that collapses both into "refused the staged bytes" sends the
+  # operator to un-stage work that a broken environment never inspected. And
+  # the diff is written BEFORE any claim about it, in the one order that cannot
+  # claim a file that does not exist yet.
+  if ! PINS_OUT=$(node scripts/b12-pins-check.mjs 2>&1); then
+    warn "b12-pins-check did NOT pass the staged bytes — NOT committing. Its own words:"
+    printf '%s\n' "$PINS_OUT" | sed 's/^/      /'
     git diff --cached > "$OUT/staged-uncommitted.diff" 2>/dev/null
     [ -s "$OUT/staged-uncommitted.diff" ] && warn "staged diff written to staged-uncommitted.diff" \
       || warn "and the staged diff is EMPTY — nothing was staged, nothing leaves this machine"

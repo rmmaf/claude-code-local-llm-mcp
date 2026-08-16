@@ -666,8 +666,23 @@ MCP_SHA_AFTER=$(shasum -a 256 "$MCP_CFG" | cut -d' ' -f1)
 if [ $POLICY_SET -eq 1 ]; then
   # Git objects are immutable, so movement here means the OBJECT STORE moved
   # under the key — repo swapped, replaced or pruned mid-probe.
-  POLICY_T_SHA_AFTER=$(policy_blob_sha "$POLICY_T_PATH")
-  POLICY_C_SHA_AFTER=$(policy_blob_sha "$POLICY_C_PATH")
+  #
+  # RE-READ FROM THE STORE ON PURPOSE: this check exists to catch the store
+  # moving, so it must consult the store again, not the bytes captured before
+  # the sessions. Guarded like the first read — a failed re-read is a refusal,
+  # not an empty hash. (The original helper was deleted when the first read
+  # stopped using it, and these two calls were left behind: after the proof
+  # plus six paid arms the probe died on `command not found` and produced no
+  # artifact. Found by the fix review, not by me.)
+  policy_blob_sha_now() {
+    _b=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$1" 2>/dev/null && printf x) || return 1
+    _b=${_b%x}
+    printf '%s' "$_b" | shasum -a 256 | cut -d' ' -f1
+  }
+  POLICY_T_SHA_AFTER=$(policy_blob_sha_now "$POLICY_T_PATH") \
+    || refuse "could not re-read the treatment policy blob for the drift check — the object store itself moved or died mid-probe"
+  POLICY_C_SHA_AFTER=$(policy_blob_sha_now "$POLICY_C_PATH") \
+    || refuse "could not re-read the control policy blob for the drift check — the object store itself moved or died mid-probe"
   [ "$POLICY_T_SHA_AFTER" = "$POLICY_T_SHA" ] || refuse "the treatment policy blob's bytes changed mid-probe. The key moved; the probe is void. Re-run."
   [ "$POLICY_C_SHA_AFTER" = "$POLICY_C_SHA" ] || refuse "the control policy blob's bytes changed mid-probe. The key moved; the probe is void. Re-run."
 fi

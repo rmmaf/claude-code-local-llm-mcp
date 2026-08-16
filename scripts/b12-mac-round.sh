@@ -63,7 +63,11 @@ LOGS="$OUT/logs"
 # second invocation silently erased the first's ledger and logs — evidence of
 # paid measurements, gone, with the summary claiming they were never requested.
 if [ -e "$OUT" ]; then
-  PREV="$OUT-prev-$(date -u +%H%M%S)"
+  # Full UTC date+time, and a PID suffix if even that collides — BSD mv into an
+  # EXISTING directory silently NESTS the round inside it, and the message then
+  # names a path the state is not at.
+  PREV="$OUT-prev-$(date -u +%Y%m%d-%H%M%S)"
+  [ -e "$PREV" ] && PREV="$PREV-$$"
   mv "$OUT" "$PREV" || { printf 'REFUSED — %s exists and cannot be moved aside\n' "$OUT"; exit 2; }
   printf '   ! a previous round left state at %s — moved to %s, nothing deleted\n' "$OUT" "$PREV"
 fi
@@ -146,9 +150,14 @@ ok "at the pinned commit $(git rev-parse --short HEAD) (pin from $PIN_FROM)"
 # status: a failing `git status` printed nothing, `wc -l` said 0, and the gate
 # declared an UNINSPECTED tree clean — fail-open in the one check whose whole
 # job is to fail closed. The preflight got this right; the gate did not.
-GIT_STATUS_OUT=$(git status --porcelain --untracked-files=no 2>&1)
+# stderr goes to its own file, NOT merged into the porcelain output: a
+# successful `git status` can still print a warning (an unreadable global
+# ignore file, say), and merged streams counted that warning as a dirty file.
+GIT_STATUS_ERR="$OUT/.git-status-stderr"
+GIT_STATUS_OUT=$(git status --porcelain --untracked-files=no 2>"$GIT_STATUS_ERR")
 GIT_STATUS_RC=$?
-[ "$GIT_STATUS_RC" -eq 0 ] || die "git status failed (exit $GIT_STATUS_RC): $GIT_STATUS_OUT — an uninspected tree must not read as a clean one"
+[ "$GIT_STATUS_RC" -eq 0 ] || die "git status failed (exit $GIT_STATUS_RC): $(cat "$GIT_STATUS_ERR" 2>/dev/null) — an uninspected tree must not read as a clean one"
+rm -f "$GIT_STATUS_ERR"
 DIRTY=$(printf '%s\n' "$GIT_STATUS_OUT" | grep -c '[^[:space:]]' || true)
 [ "$DIRTY" = "0" ] || {
   git status --porcelain --untracked-files=no | head -20
@@ -262,9 +271,13 @@ printf '\n   It carries the summary, every step log, and the %s artifact(s) THIS
 CURRENT_STEP=""
 on_signal() {
   trap - INT TERM
-  if [ -n "$CURRENT_STEP" ] && ! grep -q "^$CURRENT_STEP$(printf '	')" "$LEDGER" 2>/dev/null; then
-    record "$CURRENT_STEP" failed 130 "interrupted by signal mid-step"
-  fi
+  # A LIST, not a scalar: the M2/M3 block runs two steps under one heading, and
+  # a scalar recorded only the first — an interrupt between its two record
+  # calls then recorded NOTHING, because M2 already had a row and M3 was never
+  # named. Each listed step without a row gets one.
+  for _s in $CURRENT_STEP; do
+    grep -q "^$_s$(printf '	')" "$LEDGER" 2>/dev/null || record "$_s" failed 130 "interrupted by signal mid-step"
+  done
   warn "interrupted — packaging the measurements that already ran"
   package_round
   exit 130
@@ -273,7 +286,7 @@ trap on_signal INT TERM
 
 # ---------------------------------------------------------------------------
 say "M2/M3 — the machine's own facts"
-CURRENT_STEP=M2
+CURRENT_STEP="M2 M3"
 if wanted M2; then
   {
     printf 'platform_arch_node: '; node -e "console.log(process.platform, process.arch, process.version)"
