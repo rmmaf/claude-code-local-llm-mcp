@@ -1,0 +1,68 @@
+{
+  "document": "clientTruncationCap probe — the measured cap voidConditions 8 requires",
+  "runId": "2026-08-16-mac-b12-truncationcap-6c4d2a0-174442",
+  "ts": "2026-08-16T17:44:42Z",
+  "context": {
+    "commit": "6c4d2a0e479d406a35cddd484ee4d723d2ad49df",
+    "host": "mac",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "claudeBinaryPath": "/Users/rodrigomonteiro/.local/bin/claude",
+    "claudeBinarySha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380",
+    "permissionMode": "acceptEdits",
+    "sessionCwd": "a throwaway directory under the probe's temp dir — its transcripts are calibration scratch in that cwd's slug, outside any project slug a run would snapshot",
+    "declaredPin": {
+      "version": null,
+      "binarySha256": null,
+      "note": "asserted when set; recorded either way"
+    }
+  },
+  "sentinel": {
+    "command": "node -e \"const l=[];for(let i=0;i<1000;i++)l.push('B12CAPSENTINEL '+String(i).padStart(4,'0')+' '+'x'.repeat(59));process.stdout.write(l.join('\\n')+'\\n')\"",
+    "chars": 80000,
+    "lines": 1000,
+    "lineLength": 80,
+    "sha256": "4b86bde61b0459574635456873b6de10b6f098e44b867b7dcad3147698658555",
+    "note": "pure ASCII, every line self-identifying; verified to be exactly 80,000 chars on this machine before any session ran"
+  },
+  "prompt": "Run this exact command with the Bash tool, exactly once, and then reply with exactly: done. Do not run any other command, do not retry it, and do not use any other tool.\n\nnode -e \"const l=[];for(let i=0;i<1000;i++)l.push('B12CAPSENTINEL '+String(i).padStart(4,'0')+' '+'x'.repeat(59));process.stdout.write(l.join('\\n')+'\\n')\"",
+  "argvShape": "claude --print --session-id <id> --strict-mcp-config --allowed-tools Bash --permission-mode <mode> --output-format json -- <prompt> (strict with NO --mcp-config: zero servers)",
+  "replicates": [
+    {
+      "sessionId": "2c762d8f-1558-4479-9245-fefb1ac6d091",
+      "toolUseId": "toolu_01K8ABvayUPkarhfTSELkYVN",
+      "stdoutChars": 29999,
+      "utf8Bytes": 29999,
+      "wrapperChars": 30702,
+      "isPrefix": true,
+      "storedSha256": "5b3cd70c17ce84198c48fec5b2ab1bebe6e509736374aa6a71a7d7b5df5d8595",
+      "storedHead": "B12CAPSENTINEL 0000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nB12CAPSENTINEL 0001 xxxxxxxxxxxxxxxxxxxx",
+      "storedTail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nB12CAPSENTINEL 0374 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "sessionId": "fd8bf9c5-7d56-4730-9bf6-70ff79b9a91f",
+      "toolUseId": "toolu_012BXu9w6FEuyz2385Rjs6sz",
+      "stdoutChars": 29999,
+      "utf8Bytes": 29999,
+      "wrapperChars": 30702,
+      "isPrefix": true,
+      "storedSha256": "5b3cd70c17ce84198c48fec5b2ab1bebe6e509736374aa6a71a7d7b5df5d8595",
+      "storedHead": "B12CAPSENTINEL 0000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nB12CAPSENTINEL 0001 xxxxxxxxxxxxxxxxxxxx",
+      "storedTail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nB12CAPSENTINEL 0374 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "sessionId": "8919bdaf-1bf5-4957-b92f-0d2c9f16d543",
+      "toolUseId": "toolu_01A57h5MFiZh4RYxg8BKhmUV",
+      "stdoutChars": 29999,
+      "utf8Bytes": 29999,
+      "wrapperChars": 30702,
+      "isPrefix": true,
+      "storedSha256": "5b3cd70c17ce84198c48fec5b2ab1bebe6e509736374aa6a71a7d7b5df5d8595",
+      "storedHead": "B12CAPSENTINEL 0000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nB12CAPSENTINEL 0001 xxxxxxxxxxxxxxxxxxxx",
+      "storedTail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nB12CAPSENTINEL 0374 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ],
+  "clientTruncationCap": 29999,
+  "unit": "chars",
+  "measurementsRow": "{\"run_id\":\"2026-08-16-mac-b12-truncationcap-6c4d2a0-174442\",\"ts\":\"2026-08-16T17:44:42Z\",\"machine\":\"mac-01\",\"metric\":\"client_truncation_cap_chars\",\"value\":29999,\"unit\":\"chars\",\"premise\":\"B12\",\"method\":\"scripts/b12-truncationcap-probe-mac.sh at 6c4d2a0 on claude 2.1.221 (Claude Code) (binary sha256 7a181f36ed0f...); 3 replicates, each ONE pinned Bash command printing an 80,000-char ASCII sentinel; measured string is toolUseResult.stdout from the transcript record LINKED by tool_use_id (never the serialized wrapper); per replicate: chars === utf8 bytes, 0 < chars < 80000, stored stdout a contiguous slice of the sentinel; artifact 2026-08-16-mac-b12-truncationcap-6c4d2a0-174442.probe.json\",\"note\":\"CAPS 29999, 29999, 29999 — IDENTICAL. The cap is in CHARACTERS (the meter divides chars; the gate measures raw.length). Wrapper sizes 30702, 30702, 30702 recorded beside the measurement to show the wrapper was NOT what was measured. voidConditions 8: this is the measured cap for claude 2.1.221 (Claude Code); the manifest seals it as pinned.clientTruncationCap with this artifact's path and sha256.\"}",
+  "measurementsRowTransport": "ts was read from this machine's clock by the command that authored the row; the committing machine transports the bytes VERBATIM and must refuse if the run_id already exists. Append command (run from the repo root on the committing machine): node -e \"const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const row=a.measurementsRow;const id=JSON.parse(row).run_id;const m=fs.readFileSync('MEASUREMENTS.jsonl','utf8');if(m.includes(id)){console.error('run_id already present: '+id);process.exit(1);}fs.appendFileSync('MEASUREMENTS.jsonl',row+'\\n');console.log('appended '+id);\" <this artifact file>"
+}

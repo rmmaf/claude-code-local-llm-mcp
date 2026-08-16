@@ -1,0 +1,198 @@
+{
+  "document": "installedChars paired probe — the measurement PREMISES.md § B12 pre-declared",
+  "runId": "2026-08-16-mac-b12-installedchars-6c4d2a0-174532",
+  "ts": "2026-08-16T17:45:32Z",
+  "context": {
+    "commit": "6c4d2a0e479d406a35cddd484ee4d723d2ad49df",
+    "branch": "claude/b12-orchestrator-pinning-check-ccc397",
+    "host": "mac",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "claudeBinaryPath": "/Users/rodrigomonteiro/.local/bin/claude",
+    "claudeBinarySha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380",
+    "mcpConfigSha256": "808622238bfa1de8b84572d65d2efd19a577e44134ca173a109a5e309fea1a5b",
+    "environmentSha256": "44cd497c5a43bc1f5742f0ad2f1c4a691fa706bbcbea852c67b76aaf544f2343",
+    "declaredPin": {
+      "version": null,
+      "binarySha256": null,
+      "note": "asserted when set; no manifest exists yet, so there is no sealed pin to consume"
+    },
+    "policyBlobSha256s": {
+      "treatment": null,
+      "control": null
+    },
+    "policyBlobProvenance": null,
+    "policyBlobNote": "EXPLORATORY — no policy blobs delivered; every registrable manifest seals blobs, so this probe must be re-taken under them",
+    "cwd": "/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0",
+    "prompt": "Reply with exactly: ok. Do not use any tools.",
+    "proofPrompt": "Call mcp__local-coder__status exactly once, then reply: done. Do not call any other tool.",
+    "argvShape": {
+      "treatment": "claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg> --output-format json -- <prompt>",
+      "control": "claude --print --session-id <id> --strict-mcp-config --output-format json -- <prompt>",
+      "note": "mirrors observe()'s arm flags and option order in scripts/b12-run.mjs (both arms strict since 2026-08-08 — the first probe run found ~30 claude.ai account connectors on the work Mac, unremovable by claude mcp remove; strict on both makes them arm-invariant: excluded from both, or present in both and cancelled by the paired subtraction). NOT byte-for-byte — no manifest exists, so no pinned.extraArgs and no sealed MCP config."
+    },
+    "mcpJsonPresentInClone": false,
+    "mcpList": "Checking MCP server health…\n\nclaude.ai Adobe Analytics: https://aa-mcp.adobe.io/mcp - ! Needs authentication\nclaude.ai Highspot: https://mcp.highspot.com/mcp - ! Needs authentication\nclaude.ai n8n: https://n8n.ai.telus.com/mcp-server/http - ! Needs authentication\nclaude.ai AWS Knowledge: https://knowledge-mcp.global.api.aws - ✔ Connected\nclaude.ai TDX Salesforce: https://api.salesforce.com/platform/mcp/v1/platform/sobject-reads - ! Needs authentication\nclaude.ai Adobe Marketing Agent: https://aep-ai-ama.adobe.io/mcp - ! Needs authentication\nclaude.ai Lucid: https://mcp.lucid.app/mcp - ! Needs authentication\nclaude.ai Microsoft Learn: https://learn.microsoft.com/api/mcp - ✔ Connected\nclaude.ai Customer Journey Analytics: https://mcp-gateway.adobe.io/cja/mcp - ✘ Failed to connect — HTTP 502: Streamable HTTP error: Error POSTing to endpoint: {\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/\",\"title\":\"Error 502: Bad gateway\",\"status\":502,\"detail\":\"The origin web server returned an invalid or incomplete response to Cloudflare. This typically indicates the origin is overloaded or misconfigured.\",\"instance\":\"a2c23fb8bfaaf1fb\",\"error_code\":502,\"error_name\":\"origin_bad_gateway\",\"error_category\":\"origin\",\"ray_id\":…\nclaude.ai Adobe Journey Optimizer: https://ajo-mcp.adobe.io/mcp - ! Needs authentication\nclaude.ai Adobe Experience Manager: https://mcp.adobeaemcloud.com/adobe/mcp/aem - ! Needs authentication\nclaude.ai ZoomInfo: https://mcp.zoominfo.com/mcp - ! Needs authentication\nclaude.ai Apollo.io: https://mcp.apollo.io/mcp - ! Needs authentication\nclaude.ai Ahrefs: https://api.ahrefs.com/mcp/mcp - ! Needs authentication\nclaude.ai WT Salesforce: https://mcp.salesforce.wtinternal.com/mcp - ! Needs authentication\nclaude.ai Amplitude: https://mcp.amplitude.com/mcp - ! Needs authentication\nclaude.ai Mermaid Chart: https://chatgpt.mermaid.ai/anthropic/mcp - ✔ Connected\nclaude.ai Excalidraw: https://mcp.excalidraw.com/mcp - ✔ Connected\nclaude.ai Google Drive: https://drivemcp.googleapis.com/mcp/v1 - ✔ Connected\nclaude.ai monday.com: https://mcp.monday.com/mcp - ! Needs authentication\nclaude.ai Box: https://mcp.box.com - ! Needs authentication\nclaude.ai Canva: https://mcp.canva.com/mcp - ! Needs authentication\nclaude.ai Make: https://mcp.make.com - ! Needs authentication\nclaude.ai Atlassian: https://mcp.atlassian.com/v1/mcp - ✔ Connected\nclaude.ai Figma: https://mcp.figma.com/mcp - ! Needs authentication\nclaude.ai Notion: https://mcp.notion.com/mcp - ! Needs authentication\nclaude.ai Slack: https://mcp.slack.com/mcp - ! Needs authentication\nclaude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ✔ Connected\nclaude.ai Google Calendar: https://calendarmcp.googleapis.com/mcp/v1 - ✔ Connected"
+  },
+  "preDeclaration": "PREMISES.md § B12, registered before this probe ran; k = 3 and tolerance 0 are CHOSEN constants, labelled there",
+  "proofSession": {
+    "arm": "proof",
+    "replicate": 0,
+    "sessionId": "5f400b95-6fbc-470c-950d-e1d2e44af6ef",
+    "transcript": "/Users/rodrigomonteiro/.claude/projects/-Users-rodrigomonteiro-Downloads-b12-mac-6c4d2a0/5f400b95-6fbc-470c-950d-e1d2e44af6ef.jsonl",
+    "toolsCalled": [
+      "ToolSearch",
+      "mcp__local-coder__status"
+    ],
+    "first": {
+      "requestId": "req_011Ce6qtCi8uYxiEu7kTxpXN",
+      "model": "claude-opus-5",
+      "input": 2,
+      "cacheCreation": 6386,
+      "cacheCreation5m": 0,
+      "cacheCreation1h": 6386,
+      "cacheRead": 16035,
+      "output": 102
+    },
+    "firstRecordRaw": "{\"parentUuid\":\"14371f12-19be-42a3-b561-11d208442769\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce6qtEFeuKXvQcSUYWPPe\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"I'll load the schema for that tool first, then call it.\"}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":6386,\"cache_read_input_tokens\":16035,\"output_tokens\":102,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":6386,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":102,\"cache_read_input_tokens\":16035,\"cache_creation_input_tokens\":6386,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":6386},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce6qtCi8uYxiEu7kTxpXN\",\"type\":\"assistant\",\"uuid\":\"05a4ece9-c484-448e-aa4d-5e4879d793e9\",\"timestamp\":\"2026-08-16T17:44:59.620Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0\",\"sessionId\":\"5f400b95-6fbc-470c-950d-e1d2e44af6ef\",\"version\":\"2.1.221\",\"gitBranch\":\"claude/b12-orchestrator-pinning-check-ccc397\"}",
+    "promptTokens": 22423
+  },
+  "replicates": [
+    {
+      "replicate": 1,
+      "treatment": {
+        "arm": "treatment",
+        "replicate": 1,
+        "sessionId": "10acbad9-c8d3-44a4-8cd1-8a6eb5597887",
+        "transcript": "/Users/rodrigomonteiro/.claude/projects/-Users-rodrigomonteiro-Downloads-b12-mac-6c4d2a0/10acbad9-c8d3-44a4-8cd1-8a6eb5597887.jsonl",
+        "toolsCalled": [],
+        "first": {
+          "requestId": "req_011Ce6qttMcD63uVuMmUgnw8",
+          "model": "claude-opus-5",
+          "input": 2,
+          "cacheCreation": 3279,
+          "cacheCreation5m": 0,
+          "cacheCreation1h": 3279,
+          "cacheRead": 19129,
+          "output": 4
+        },
+        "firstRecordRaw": "{\"parentUuid\":\"2e0a99a9-02e7-407b-be53-8129b66ecbef\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce6qtwQAc9WdK8FNq57fg\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3279,\"cache_read_input_tokens\":19129,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":3279,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":19129,\"cache_creation_input_tokens\":3279,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3279},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce6qttMcD63uVuMmUgnw8\",\"type\":\"assistant\",\"uuid\":\"145f273d-5869-4870-bd41-4dc05ba66683\",\"timestamp\":\"2026-08-16T17:45:09.211Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0\",\"sessionId\":\"10acbad9-c8d3-44a4-8cd1-8a6eb5597887\",\"version\":\"2.1.221\",\"gitBranch\":\"claude/b12-orchestrator-pinning-check-ccc397\"}",
+        "promptTokens": 22410
+      },
+      "control": {
+        "arm": "control",
+        "replicate": 1,
+        "sessionId": "1d0d9cb2-68cc-4e4d-b0b7-c8de0a143e7c",
+        "transcript": "/Users/rodrigomonteiro/.claude/projects/-Users-rodrigomonteiro-Downloads-b12-mac-6c4d2a0/1d0d9cb2-68cc-4e4d-b0b7-c8de0a143e7c.jsonl",
+        "toolsCalled": [],
+        "first": {
+          "requestId": "req_011Ce6quDp9EvRMuQgk4VJX6",
+          "model": "claude-opus-5",
+          "input": 2,
+          "cacheCreation": 3195,
+          "cacheCreation5m": 0,
+          "cacheCreation1h": 3195,
+          "cacheRead": 19129,
+          "output": 4
+        },
+        "firstRecordRaw": "{\"parentUuid\":\"1db3de38-51c8-4db1-8578-6f0e98730b4d\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce6quFhVraJ6gdMhrrXEs\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3195,\"cache_read_input_tokens\":19129,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":3195,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":19129,\"cache_creation_input_tokens\":3195,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3195},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce6quDp9EvRMuQgk4VJX6\",\"type\":\"assistant\",\"uuid\":\"97d63faa-8712-4f07-9181-8ffe20314d47\",\"timestamp\":\"2026-08-16T17:45:13.273Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0\",\"sessionId\":\"1d0d9cb2-68cc-4e4d-b0b7-c8de0a143e7c\",\"version\":\"2.1.221\",\"gitBranch\":\"claude/b12-orchestrator-pinning-check-ccc397\"}",
+        "promptTokens": 22326
+      },
+      "deltaTokens": 84
+    },
+    {
+      "replicate": 2,
+      "treatment": {
+        "arm": "treatment",
+        "replicate": 2,
+        "sessionId": "e58875a0-f952-4c40-8811-bd46cb23ffef",
+        "transcript": "/Users/rodrigomonteiro/.claude/projects/-Users-rodrigomonteiro-Downloads-b12-mac-6c4d2a0/e58875a0-f952-4c40-8811-bd46cb23ffef.jsonl",
+        "toolsCalled": [],
+        "first": {
+          "requestId": "req_011Ce6quWn75W7xysenxCymD",
+          "model": "claude-opus-5",
+          "input": 2,
+          "cacheCreation": 0,
+          "cacheCreation5m": 0,
+          "cacheCreation1h": 0,
+          "cacheRead": 22408,
+          "output": 4
+        },
+        "firstRecordRaw": "{\"parentUuid\":\"8ebb8ccc-a65f-4227-b6e3-9afd7bbd7287\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce6quYSKK2g4Yr9z7bcbP\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":22408,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":22408,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce6quWn75W7xysenxCymD\",\"type\":\"assistant\",\"uuid\":\"599d2316-4718-4ffd-bf70-79994b214f73\",\"timestamp\":\"2026-08-16T17:45:17.753Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0\",\"sessionId\":\"e58875a0-f952-4c40-8811-bd46cb23ffef\",\"version\":\"2.1.221\",\"gitBranch\":\"claude/b12-orchestrator-pinning-check-ccc397\"}",
+        "promptTokens": 22410
+      },
+      "control": {
+        "arm": "control",
+        "replicate": 2,
+        "sessionId": "56b1315e-8bae-4006-aeb9-8fb167737495",
+        "transcript": "/Users/rodrigomonteiro/.claude/projects/-Users-rodrigomonteiro-Downloads-b12-mac-6c4d2a0/56b1315e-8bae-4006-aeb9-8fb167737495.jsonl",
+        "toolsCalled": [],
+        "first": {
+          "requestId": "req_011Ce6qurL6YKHUvdZZv1zV2",
+          "model": "claude-opus-5",
+          "input": 2,
+          "cacheCreation": 0,
+          "cacheCreation5m": 0,
+          "cacheCreation1h": 0,
+          "cacheRead": 22324,
+          "output": 4
+        },
+        "firstRecordRaw": "{\"parentUuid\":\"0de917e3-0a65-4de1-94b0-823e25363b15\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce6qut1J71QWwdERSXMei\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":22324,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":22324,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce6qurL6YKHUvdZZv1zV2\",\"type\":\"assistant\",\"uuid\":\"cb727e34-a65a-48b8-baff-428483ec390f\",\"timestamp\":\"2026-08-16T17:45:22.088Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0\",\"sessionId\":\"56b1315e-8bae-4006-aeb9-8fb167737495\",\"version\":\"2.1.221\",\"gitBranch\":\"claude/b12-orchestrator-pinning-check-ccc397\"}",
+        "promptTokens": 22326
+      },
+      "deltaTokens": 84
+    },
+    {
+      "replicate": 3,
+      "treatment": {
+        "arm": "treatment",
+        "replicate": 3,
+        "sessionId": "391423e9-d9bc-4406-b691-eceb6413ebb2",
+        "transcript": "/Users/rodrigomonteiro/.claude/projects/-Users-rodrigomonteiro-Downloads-b12-mac-6c4d2a0/391423e9-d9bc-4406-b691-eceb6413ebb2.jsonl",
+        "toolsCalled": [],
+        "first": {
+          "requestId": "req_011Ce6qvAbh1gnkbCYGqM88u",
+          "model": "claude-opus-5",
+          "input": 2,
+          "cacheCreation": 0,
+          "cacheCreation5m": 0,
+          "cacheCreation1h": 0,
+          "cacheRead": 22408,
+          "output": 4
+        },
+        "firstRecordRaw": "{\"parentUuid\":\"e3768334-409d-4f01-b78e-c8396d9cb715\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce6qvCSZggPB8GrhEa3yB\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":22408,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":22408,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce6qvAbh1gnkbCYGqM88u\",\"type\":\"assistant\",\"uuid\":\"adac697c-4db9-4988-b51d-1952d0e70033\",\"timestamp\":\"2026-08-16T17:45:26.201Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0\",\"sessionId\":\"391423e9-d9bc-4406-b691-eceb6413ebb2\",\"version\":\"2.1.221\",\"gitBranch\":\"claude/b12-orchestrator-pinning-check-ccc397\"}",
+        "promptTokens": 22410
+      },
+      "control": {
+        "arm": "control",
+        "replicate": 3,
+        "sessionId": "17f9d524-08ed-4d75-b6a0-651ae34f82ed",
+        "transcript": "/Users/rodrigomonteiro/.claude/projects/-Users-rodrigomonteiro-Downloads-b12-mac-6c4d2a0/17f9d524-08ed-4d75-b6a0-651ae34f82ed.jsonl",
+        "toolsCalled": [],
+        "first": {
+          "requestId": "req_011Ce6qvVVz9RJc9zvqtroMH",
+          "model": "claude-opus-5",
+          "input": 2,
+          "cacheCreation": 0,
+          "cacheCreation5m": 0,
+          "cacheCreation1h": 0,
+          "cacheRead": 22324,
+          "output": 4
+        },
+        "firstRecordRaw": "{\"parentUuid\":\"3b6d12ad-61b7-4c90-9e12-605f11ea28ae\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce6qvX7ictFgRB9Ex9i5x\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":22324,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":22324,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce6qvVVz9RJc9zvqtroMH\",\"type\":\"assistant\",\"uuid\":\"2088ce5f-5fa7-4af2-88f5-19b3d4634a45\",\"timestamp\":\"2026-08-16T17:45:30.808Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/rodrigomonteiro/Downloads/b12-mac-6c4d2a0\",\"sessionId\":\"17f9d524-08ed-4d75-b6a0-651ae34f82ed\",\"version\":\"2.1.221\",\"gitBranch\":\"claude/b12-orchestrator-pinning-check-ccc397\"}",
+        "promptTokens": 22326
+      },
+      "deltaTokens": 84
+    }
+  ],
+  "deltasTokens": [
+    84,
+    84,
+    84
+  ],
+  "sustained": true,
+  "deltaTokens": 84,
+  "installedCharsAdapter": 310.8,
+  "verdictBranch": "repair-proceeds (F24 harness pass)",
+  "measurementsRow": "{\"run_id\":\"2026-08-16-mac-b12-installedchars-6c4d2a0-174532\",\"ts\":\"2026-08-16T17:45:32Z\",\"machine\":\"mac-01\",\"metric\":\"installed_system_prompt_token_delta_on_pinned_binary\",\"value\":84,\"unit\":\"tokens\",\"premise\":\"B12\",\"method\":\"scripts/b12-installedchars-probe-mac.sh at 6c4d2a0 on claude 2.1.221 (Claude Code) (binary sha256 7a181f36ed0f...); proof session showed mcp__local-coder__status callable; 3 replicates x (treatment --strict-mcp-config --mcp-config, control --strict-mcp-config), first billed assistant non-apiError request, TOTAL prompt tokens (input+cacheWrite+cacheRead, cache-invariant), treatment minus control; artifact 2026-08-16-mac-b12-installedchars-6c4d2a0-174532.probe.json\",\"note\":\"DELTAS 84, 84, 84 — IDENTICAL, SUSTAINED. installedChars adapter: 310.8 chars (tokens x 3.7, divisor cancels). Calibration key: binary sha256 7a181f36ed0f... x arm x mcp-config 808622238bfa... x env 44cd497c5a43... x policy blobs NONE (exploratory — the value is re-taken when blobs are sealed, and when a manifest pins extraArgs or its own MCP config). Branch: the F24 harness pass proceeds.\"}",
+  "measurementsRowTransport": "ts was read from this machine's clock by the command that authored the row; the committing machine transports the bytes VERBATIM and must refuse if the run_id already exists. Append command (run from the repo root on the committing machine): node -e \"const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const row=a.measurementsRow;const id=JSON.parse(row).run_id;const m=fs.readFileSync('MEASUREMENTS.jsonl','utf8');if(m.includes(id)){console.error('run_id already present: '+id);process.exit(1);}fs.appendFileSync('MEASUREMENTS.jsonl',row+'\\n');console.log('appended '+id);\" <this artifact file>"
+}

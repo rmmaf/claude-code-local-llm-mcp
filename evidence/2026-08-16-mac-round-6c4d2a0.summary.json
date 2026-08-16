@@ -1,0 +1,68 @@
+{
+  "document": "b12-mac-round",
+  "commit": "6c4d2a0e479d406a35cddd484ee4d723d2ad49df",
+  "generatedAt": "2026-08-16T17:45:32Z",
+  "host": "mac",
+  "steps": [
+    {
+      "id": "M2",
+      "status": "ran",
+      "exit": 0,
+      "note": "machine facts captured"
+    },
+    {
+      "id": "M3",
+      "status": "ran",
+      "exit": 0,
+      "note": "version and binary digest captured"
+    },
+    {
+      "id": "M1",
+      "status": "ran",
+      "exit": 0,
+      "note": "5/5 green"
+    },
+    {
+      "id": "M4",
+      "status": "ran",
+      "exit": 0,
+      "note": "matrix completed — ALL controls fired"
+    },
+    {
+      "id": "M6b",
+      "status": "ran",
+      "exit": 0,
+      "note": "verdict=inherits"
+    },
+    {
+      "id": "M5",
+      "status": "ran",
+      "exit": 0,
+      "note": "pre-flight completed"
+    },
+    {
+      "id": "M7",
+      "status": "ran",
+      "exit": 0,
+      "note": "cap probe completed"
+    },
+    {
+      "id": "M8",
+      "status": "ran",
+      "exit": 0,
+      "note": "probe completed"
+    }
+  ],
+  "ranIds": [
+    "M2",
+    "M3",
+    "M1",
+    "M4",
+    "M6b",
+    "M5",
+    "M7",
+    "M8"
+  ],
+  "failedIds": [],
+  "skippedIds": []
+}

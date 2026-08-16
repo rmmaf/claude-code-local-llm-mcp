@@ -4018,3 +4018,50 @@ where the experiment actually runs. Recorded as the next step, not taken.
 still falsified the 94% prediction, and LOAD is still not supported. What
 changes is that the pooled "Windows rate" of 4/26 was itself a category error —
 it averaged two invocation paths that may not have the same rate at all.
+
+## Mac round 2 — 8 of 8, and the three owed measurements exist
+
+**2026-08-16, archive `b12-mac-6c4d2a0.tgz`, cut by `b12-cut-mac-archive.mjs`,
+run by the operator as one command.** The transport itself was the first result:
+pin matched HEAD, zero tracked changes, LF throughout — after three failed
+transports in three rounds, the first archive cut by the script arrived whole.
+
+Scored against the predictions recorded before the FIRST round, which this
+round inherits:
+
+| step | predicted | measured | verdict |
+|---|---|---|---|
+| M1 | 5/5 green, zero signatures | 5/5 green | CONFIRMED — 10 consecutive green Mac full-suite runs across two rounds |
+| M2/M3 | darwin arm64, majors matching | darwin arm64, node v22.23.1, vitest 4.1.10, claude 2.1.221 | CONFIRMED |
+| M4 | all six FIRE; specificityClean FALSE, off-diagonal near 8 | **6/6 FIRED**, 13/13 runs, 0 problems; specificityClean false, offDiagonalKillCount **11** (2,0,4,0,0,5) | CONFIRMED on firing; 11 vs 8 within the LOW-confidence band the prediction drew for itself |
+| M5 | provenanceUnavailable false, ambiguous 0, unmatched 0, excludedForeign 0, savedFraction non-null | all five, plus 6 more checks ok — 11/11, tipCheck offline | CONFIRMED |
+| M6b | same rate key (medium-low) | inherits, main=sub=claude-opus-5 | CONFIRMED, second consistent run in treatment shape |
+| M7 | cap near 30,000 chars (low-medium) | **29,999 chars**, 3 replicates IDENTICAL, each a verified contiguous prefix of an 80,000-char sentinel | CONFIRMED — and the B2 Windows observation of ~30,000 now has a cross-platform partner |
+| M8 | positive delta, treatment larger (medium on sign, none on magnitude) | **+84 tokens**, 3 replicates identical, sustained; adapter 310.8 chars | CONFIRMED on sign; magnitude now exists. EXPLORATORY — no policy blobs sealed, the artifact says so itself and demands a re-take under sealed blobs |
+
+**What the round changes about PHASE 0/4 debts:**
+
+- **The Mac firing artifact exists.** `evidence/2026-08-16-mac-dryrun-6c4d2a0-174014.b12.firing.json`,
+  darwin, allFired true. The previous round's 0/6 is confirmed as the symlink
+  defect and nothing else — same controls, same machine, `realpathSync` applied,
+  all six fire. Clause 6's "shown FIRING" now has evidence from the platform the
+  experiment runs on.
+- **The cap exists.** 29,999 chars for claude 2.1.221 on binary `7a181f36…`.
+  `voidConditions` 8 wanted a cap measured for the version that runs; the
+  manifest seals `pinned.clientTruncationCap` from this artifact when it is
+  built. NOTE the coupling: the cap is FOR this binary. If the Mac's claude
+  updates before the scored runs, the probe is one command to re-take.
+- **installedChars has a magnitude** on the pinned binary, on a calibration key
+  that includes mcp-config and environment hashes. Not seal-grade — the blobs
+  are not sealed — but the harness pass can proceed on it.
+
+**Was anything NOT predicted?** One number: off-diagonal 11 vs win32's 8, with
+different per-pair distribution. Recorded, not alarming — the prediction itself
+said collateral is not established platform-invariant. And one absence worth a
+line: zero occurrences of the stdio signature in 10 Mac full-suite runs, under
+the DEFAULT reporter — consistent with the Windows split, which has never seen
+the signature under the default reporter either.
+
+**Still owed before the seal, updated:** the PHASE 2 pilot; the `*-pending`
+renames; `build → seal-harness → commit → register`; M8 re-taken under sealed
+blobs. The measurement debts of the round table are paid.
