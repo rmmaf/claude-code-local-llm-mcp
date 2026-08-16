@@ -3873,3 +3873,148 @@ diagnosis this has cost.
 Windows in a loop under the DEFAULT reporter until it fires, and keep the full
 output. Nobody has done this — every occurrence so far has been noticed inside a
 gate run and re-run away before the evidence was kept.
+
+## The `stdio.test.ts` capture run — predicted before it started
+
+**2026-08-16, at `cfa89a6`.** Six occurrences of R48's evidence erasure were
+enough: this loop runs the FULL suite under the DEFAULT reporter, keeps every
+run's complete output, and stops the moment one goes red.
+
+**Why the full suite and not the file.** The file has run SOLO three times and
+been green three times. The signature has only ever appeared in a full-suite
+run, so a loop over `stdio.test.ts` alone would be a loop over the case that
+does not reproduce.
+
+**PREDICTION, written before the first run.** At the measured Windows rate —
+about 4 failures in 16 full-suite runs, so p ≈ 0.25 — the chance of NOT firing
+in N runs is 0.75^N:
+
+| N | P(no fire) |
+|---|---|
+| 4 | 0.32 |
+| 6 | 0.18 |
+| 8 | 0.10 |
+| 10 | 0.06 |
+
+**I predict it fires within 10 runs (≈94%), and most likely by run 4.** If ten
+runs come back green, that is itself a finding: either the rate is lower than
+4-in-16 suggested, or something about the loop differs from the conditions that
+produced the four — and the most obvious candidate is LOAD, since every prior
+occurrence happened while I was doing other work on this machine and this loop
+runs alone.
+
+**What I expect to learn if it fires, stated now so it cannot be adjusted
+after.** Under the default reporter a suite-level failure prints the error and
+its stack rather than the empty string `--reporter=json` yields. The three
+things I want from it: whether it names an unhandled rejection, whether it names
+a file and line inside `tests/stdio.test.ts`, and whether it mentions the child
+process or its stdio streams.
+
+**What this run cannot establish even if it fires:** a cause. It captures the
+message that has been erased six times. Naming a mechanism from one captured
+message would be the same error this project has made three times.
+
+### The result: falsified, 10 for 10
+
+**2026-08-16, 12:50–13:44 local (5m20s per run, machine otherwise idle).**
+
+```
+run  1..10: exit=0 |  Test Files  38 passed (38)
+LOOP DONE
+```
+
+**The prediction was wrong.** I said it fires within ten runs with ≈94%
+confidence and most likely by the fourth. It fired zero times. Under the rate I
+assumed (p = 0.25), ten consecutive misses has probability 0.75^10 = **0.056**.
+
+**On the preregistration, since this registry cares:** the prediction above was
+on disk at 12:50:03 local and run 1 started at 12:50:11 local — **eight
+seconds**, not the three hours I told Rodrigo in chat. I had compared a local
+mtime against a `date -u` log line. It was written before, which is what
+matters, but "eight seconds before I hit go" is the honest description, and it
+was uncommitted until now. A prediction written into an uncommitted file
+moments before the run is weaker preregistration than a commit, and calling it
+anything stronger would be the failure mode this document exists to catch.
+
+**I named LOAD in advance as the explanation if this happened. It does not
+survive contact with the arithmetic.** Working-session runs: 4 fires in ~16.
+Idle-loop runs: 0 in 10. Fisher one-sided on that 2×2 gives **p = 0.122**. That
+is not a difference; that is two groups that a coin could have produced. Having
+pre-named a hypothesis does not make weak evidence for it strong, and the
+temptation to treat the pre-naming as though it were the evidence is exactly
+what I would have done here if I had not computed the number.
+
+**The boring explanation is the better one.** The pooled Windows rate across all
+full-suite runs is now 4 in 26 = **0.15**, and the "16" in the original
+denominator was always an *about* — I never counted it, I recalled it. A rate
+estimated from four events over a remembered denominator, then spent on a 94%
+claim, is the defect. The rate was overstated. Nothing else needs to be true.
+At p = 0.067 — a plausible read of 4-in-26 — ten green runs is a coin flip.
+
+**A post-hoc candidate, labelled as post-hoc so it is never quoted as more.**
+During the working sessions I was *writing into this worktree while the suite
+ran* — edits, git operations, codex output. That is sharper than "load" and it
+would explain the exact signature (failed SUITES, zero failed TESTS, empty
+message: a file changing under a running collector). But I generated it after
+seeing the result, it is one of several stories that fit, and the experiment
+that would test it — a loop under concurrent worktree writes — is confounded,
+because writes into the tree can break the fs/git-heavy B12 tests legitimately
+and I could not tell the two apart from the outcome alone.
+
+**DECISION: stop spending on this.** Not because it is solved — it is not — but
+because of what it is and is not. In six occurrences it has never produced a
+single failed *test*; it produces failed suites with erased messages. It has
+never appeared on macOS, where the experiment actually runs. Each further data
+point costs an hour of wall clock and the discriminating experiment is
+confounded. This stays in the KNOWN_FLAKY class with the rate revised to
+**4/26** and the mechanism recorded as **unknown**. It reopens on one trigger
+and one only: if it fires during a run that counts — a sealed B12 arm — where
+an erased message would cost a real attempt rather than a re-run.
+
+**What was actually bought for the hour:** the rate, corrected downward from a
+number I had made up from memory. That is a smaller result than the captured
+stack trace I went looking for, and it is the result.
+
+### Occurrence 7 — it fired on the eleventh run, and the eleventh was the GATE
+
+**Same afternoon, minutes after the loop closed.** A routine `mcp__local-coder__gate`
+run — which invokes `npm.cmd test --silent -- --reporter=json` — came back red
+with the signature exactly: `tests/stdio.test.ts`, `numFailedTestSuites: 2`,
+`numFailedTests: 0`, `message: ""`, five assertions in the file and none of them
+failed.
+
+**This splits the data along a line I had not been looking at.** Every run in
+the loop was bare `npm test` under the DEFAULT reporter: 10 for 10 green. Every
+occurrence on record — all seven — came through the gate under
+`--reporter=json`. Zero occurrences have ever been observed under the default
+reporter on this machine.
+
+| invocation | reporter | runs | fires |
+|---|---|---|---|
+| bare `npm test` | default | 10 | 0 |
+| gate | `--reporter=json` | ~17 | 7 |
+
+**Why I am not calling this the mechanism.** The two arms are not a controlled
+comparison — they differ in reporter AND in spawn (`shell: true` via the gate)
+AND in flags (`--silent`) AND in who was at the keyboard. I did not design them
+as arms; I am reading a split out of runs collected for other reasons, which is
+the same move that produced the LOAD hypothesis I have just had to withdraw.
+
+**It is, however, the first candidate with a plausible mechanism attached rather
+than a correlation.** The failing file is a test ABOUT stdio. A runner whose own
+stdio is a pipe rather than a tty, spawned through a shell, is a materially
+different environment for a test that spawns children and asserts on their
+streams. That is a story about the code rather than about the weather.
+
+**The measurement that would settle it, stated now:** ten runs of
+`npx vitest run --reporter=json` and ten of `npx vitest run`, same shell, same
+machine, nothing else running, alternating. If the json arm fires and the
+default arm does not, the reporter is implicated on its own. That is ~100
+minutes and it is NOT being spent today: the Mac round is the work in front of
+us, and this signature has never produced a failed test or appeared on macOS,
+where the experiment actually runs. Recorded as the next step, not taken.
+
+**The revision to the entry above stands.** Ten green under the default reporter
+still falsified the 94% prediction, and LOAD is still not supported. What
+changes is that the pooled "Windows rate" of 4/26 was itself a category error —
+it averaged two invocation paths that may not have the same rate at all.
