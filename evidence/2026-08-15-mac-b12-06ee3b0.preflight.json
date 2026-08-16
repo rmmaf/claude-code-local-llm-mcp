@@ -1,0 +1,247 @@
+{
+  "ts": "2026-08-15T23:49:44Z",
+  "checks": [
+    {
+      "name": "claude on PATH",
+      "ok": true,
+      "detail": "2.1.221 (Claude Code) 7a181f36ed0f"
+    },
+    {
+      "name": "DISABLE_AUTOUPDATER=1",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "snapshot covers every project slug",
+      "ok": true,
+      "detail": "22 slugs, 91 files, 1920 ids"
+    },
+    {
+      "name": "cost meter is built",
+      "ok": true,
+      "detail": "/Users/rodrigomonteiro/b12-mac3/dist/cost/cli.js"
+    },
+    {
+      "name": "provenanceUnavailable === false",
+      "ok": true,
+      "detail": "false"
+    },
+    {
+      "name": "ambiguous === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "unmatched === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "excludedForeign === 0",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "savedFraction !== null",
+      "ok": true,
+      "detail": "0.2972846956739388"
+    },
+    {
+      "name": "gate produced a row that did work",
+      "ok": true,
+      "detail": "1 call(s)"
+    },
+    {
+      "name": "repair produced a row that did work",
+      "ok": true,
+      "detail": "1 call(s)"
+    }
+  ],
+  "binary": {
+    "path": "/Users/rodrigomonteiro/.local/bin/claude",
+    "version": "2.1.221 (Claude Code)",
+    "sha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380"
+  },
+  "snapshot": {
+    "slugsWalked": 22,
+    "files": 91,
+    "ids": 1920
+  },
+  "scratch": {
+    "sessionId": "527d25fc-b91e-4a3e-ad50-9dd12a970ba7",
+    "counterfactual": {
+      "byTool": [
+        {
+          "tool": "repair",
+          "calls": 1,
+          "bytes": {
+            "clampedUncapped": 407743,
+            "signedUncapped": 407743,
+            "signedCapped": 29049
+          },
+          "unitsFromSuppression": {
+            "clampedUncapped": 220401.6216216216,
+            "signedUncapped": 220401.6216216216,
+            "signedCapped": 15702.162162162162
+          },
+          "turnsCollapsed": 1,
+          "unitsFromTurnCollapse": 2495.5,
+          "unitsTotal": 15702.162162162162,
+          "usd": 0.07851081081081081,
+          "unmatched": 0,
+          "rowsNetNegative": 0
+        },
+        {
+          "tool": "gate",
+          "calls": 1,
+          "bytes": {
+            "clampedUncapped": 0,
+            "signedUncapped": -823,
+            "signedCapped": -823
+          },
+          "unitsFromSuppression": {
+            "clampedUncapped": 0,
+            "signedUncapped": -467.1081081081081,
+            "signedCapped": -467.1081081081081
+          },
+          "turnsCollapsed": 1,
+          "unitsFromTurnCollapse": 2424.6,
+          "unitsTotal": -467.1081081081081,
+          "usd": -0.002335540540540541,
+          "unmatched": 0,
+          "rowsNetNegative": 1
+        }
+      ],
+      "unitsTotal": 15235.054054054053,
+      "usdTotal": 0.07617527027027027,
+      "sessionUnits": 36012.3,
+      "savedFraction": 0.2972846956739388,
+      "excludedForeign": 0,
+      "excludedForeignUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "ambiguous": 0,
+      "ambiguousUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "unverifiable": 0,
+      "unverifiableUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "unmatched": 0,
+      "unmatchedUnits": {
+        "units": 0,
+        "unsized": 0
+      },
+      "rows": [
+        {
+          "invocationId": "67168f77-2b9a-4993-aabe-f18f4250b716",
+          "tool": "gate",
+          "ts": "2026-08-15T23:48:06.047Z",
+          "disposition": "credited",
+          "thread": "main",
+          "index": 2,
+          "segmentSize": 4,
+          "ttl": "1h",
+          "multiplier": 2.1,
+          "rateKey": "claude-opus-5",
+          "bytesRaw": 257,
+          "bytesReturned": 1080,
+          "signed": -823,
+          "capped": -823,
+          "turnsCollapsed": 1,
+          "units": -467.1081081081081,
+          "unitsLo": -444.86486486486484,
+          "unitsUncapped": -467.1081081081081,
+          "unitsLoUncapped": -444.86486486486484,
+          "passed": false
+        },
+        {
+          "invocationId": "b42f16bd-8d4f-442b-885a-5152a4a3bebb",
+          "tool": "repair",
+          "ts": "2026-08-15T23:49:27.662Z",
+          "disposition": "credited",
+          "thread": "main",
+          "index": 3,
+          "segmentSize": 4,
+          "ttl": "1h",
+          "multiplier": 2,
+          "rateKey": "claude-opus-5",
+          "bytesRaw": 408694,
+          "bytesReturned": 951,
+          "signed": 407743,
+          "capped": 29049,
+          "turnsCollapsed": 1,
+          "units": 15702.162162162162,
+          "unitsLo": 15702.162162162162,
+          "unitsUncapped": 220401.6216216216,
+          "unitsLoUncapped": 220401.6216216216,
+          "passed": true
+        }
+      ],
+      "refusedRows": 0,
+      "provenanceUnavailable": false
+    }
+  },
+  "passed": true,
+  "context": {
+    "commit": "06ee3b04649ba73a02879df6a671e2f45cd8eaec",
+    "branch": "claude/b12-orchestrator-pinning-check-ccc397",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "host": "mac",
+    "tipCheck": {
+      "mode": "offline",
+      "expectedSha": "06ee3b04649ba73a02879df6a671e2f45cd8eaec"
+    },
+    "modelRequestedFromLmStudio": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2",
+    "modelServedAs": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+    "modelMatchQuality": "fuzzy",
+    "modelsServedByLmStudio": [
+      "moonshotai_kimi-linear-48b-a3b-instruct",
+      "gemma-4-12b-coder-fable5-composer2.5-v1",
+      "microsoft/phi-4-reasoning-plus",
+      "mlx-qwen3.5-35b-a3b-claude-4.6-opus-reasoning-distilled",
+      "qwen3.5-27b-claude-4.6-opus-distilled-mlx",
+      "qwen2.5-coder-14b-instruct-mlx@8bit",
+      "qwen2.5-coder-14b-instruct-mlx@4bit",
+      "qwen3-coder-30b-a3b-instruct-dwq-v2",
+      "text-embedding-nomic-embed-text-v1.5"
+    ],
+    "modelUsedByRepair": "qwen3-coder-30b-a3b-instruct-dwq-v2",
+    "repairLimits": {
+      "asked": {
+        "budget_seconds": 240,
+        "max_rounds": 3
+      },
+      "observed": {
+        "budget_seconds": 240,
+        "max_rounds": 3
+      },
+      "agreed": true,
+      "joinedBy": "invocation_id"
+    },
+    "serverEnv": {},
+    "strictMcpConfig": true,
+    "sessionId": "527d25fc-b91e-4a3e-ad50-9dd12a970ba7",
+    "treeCheckRan": true,
+    "treeAsFound": true,
+    "trackedChangesLeftBehind": [],
+    "untrackedFilesPresent": [
+      "?? evidence/2026-08-15-mac-b12-06ee3b0.preflight.json",
+      "?? evidence/2026-08-15-mac-dryrun-1.b12.firing.json"
+    ],
+    "scratchSession": {
+      "exitCode": 0,
+      "transcriptFound": true,
+      "toolsCalled": [
+        "ToolSearch",
+        "mcp__local-coder__gate",
+        "mcp__local-coder__repair"
+      ],
+      "log": "Both calls made, once each. Result: **green**.\n\n**Gate (before)** — 2 failing checks, one root cause:\n- `tsc`: `src/b12-scratch.ts:5:14` TS2322 — `Type 'string' is not assignable to type 'number'`\n- `npm-test`: same error, surfaced through the test command's exit 2\n\n**Repair** — passed in 1 of 3 allowed rounds, well inside the 240s budget (~13s model, ~61s gate). Diff, applied:\n\n```diff\n-export const answer: number = \"not a number\";\n+export const answer: number = 42;\n```\n\nReviewing it as required before trusting it: the change is the minimal correct one — it fixes the annotation violation at the assignment rather than widening the type or reaching for `as`, which would have silenced the check without satisfying it. Honesty fields are all clean: `restore_conflicts: []`, `restore_failed: []`, `unverified: []`, `check_side_effects: []` (an empty list, not the `null` that would mean \"couldn't tell\"), `remaining_failures: []`. Model was `qwen3-coder-30b-a3b-instruct-dwq-v2`.\n\nTwo things worth knowing for the comparison this run feeds:\n\n1. **The fixture consumed itself.** The line repair rewrote is the one whose own comment says it exists so the gate is \"mechanically red and `repair` has exactly one failure to close.\" The tree is now green, so re-running this preflight as-is exercises nothing — `repair` will report nothing to do. Re-arming it means restoring the deliberate error. I didn't touch it, per your instruction.\n\n2. **The gate's scope.** It autodetected only `npx tsc -p tsconfig.json --noEmit` and `npm test`; no lint command ran, so `passed: true` is silent on lint rather than clear of it. `coverage.changed_files` also lists `evidence/2026-08-15-mac-dryrun-1.b12.firing.json`, which neither command examines.\n\nLimits are on the record for comparability: `max_rounds: 3`, `budget_seconds: 240`, `checks` left at its default (`all`). Gate invocation `67168f77`, repair invocation `b42f16bd`."
+    }
+  }
+}

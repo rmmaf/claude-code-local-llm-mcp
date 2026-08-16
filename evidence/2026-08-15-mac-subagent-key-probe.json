@@ -1,0 +1,105 @@
+{
+  "schema": "b12-subagent-key-probe/2",
+  "ts": "2026-08-15T23:47:51.052Z",
+  "preDeclaredPrediction": "inherits. Written into scripts/b12-subagent-key-probe-mac.sh before this script was ever run; git log witnesses the commit that carried it. `differs` is the decision-relevant result. `no-subagent` and `suspect` are refusals, not passes.",
+  "context": {
+    "host": "mac",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "claudeBinaryPath": "/Users/rodrigomonteiro/.local/share/claude/versions/2.1.221",
+    "claudeBinaryPathIsCanonical": true,
+    "claudeBinarySha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380",
+    "disableAutoupdater": "1",
+    "argvShape": "treatment: --print --session-id <id> --strict-mcp-config --mcp-config <path> --output-format json -- <prompt>",
+    "mcpConfig": "/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T//b12-subagent-probe.AHSeBf/mcp.json",
+    "mcpConfigSource": "generated from B12_REPO",
+    "mcpConfigSha256": "0b4fa88b5a5faf1824c73571b681dd18f6dce404fa58d15461bc818ebc945560",
+    "mcpConfigSha256AfterSession": "0b4fa88b5a5faf1824c73571b681dd18f6dce404fa58d15461bc818ebc945560",
+    "cwd": "/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T//b12-subagent-probe.AHSeBf",
+    "prompt": "Use the Task tool to launch exactly one general-purpose subagent. That subagent's entire job is to reply with the single word: ok. When it returns, reply with the single word: done. Do not read files, do not run commands, do not use any other tool.",
+    "sessionId": "f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4"
+  },
+  "method": {
+    "fileUnion": "mirrors src/cost/transcript.ts sessionFiles — <slug>/<sessionId>.jsonl FIRST, then every *.jsonl under <slug>/<sessionId>/ recursively, sorted; order is load-bearing",
+    "admission": "mirrors PREMISES.md B20 — type=assistant with message.usage; isApiErrorMessage and model '<synthetic>' excluded BY FIELD, never by usage reading zero; record.sessionId equality required; de-duplicated by uuid; grouped by requestId",
+    "fieldSources": "model and isSidechain from the group's FIRST record, usage and speed from its LAST (src/cost/transcript.ts:514-532); rateKey per src/cost/rates.ts:93",
+    "discrepancyScan": "every *.jsonl under ~/.claude/projects read for records claiming this sessionId; any file outside the harness union is a REFUSAL, not a note",
+    "slugDir": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf",
+    "harnessUnion": [
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4.jsonl",
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4/subagents/agent-a518002eb08b80712.jsonl"
+    ],
+    "filesCarryingOurSession": [
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4.jsonl",
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4/subagents/agent-a518002eb08b80712.jsonl"
+    ],
+    "filesOutsideHarnessUnion": []
+  },
+  "counts": {
+    "filesScannedForDiscrepancy": 90,
+    "recordsScannedInUnion": 16,
+    "admittedRecords": 4,
+    "requestGroups": 3,
+    "mainGroups": 2,
+    "subagentGroups": 1,
+    "admittedWithoutUuid": 0,
+    "admittedWithoutSessionId": 0,
+    "unparsableLinesInUnion": 0,
+    "unparsableLinesAnywhere": 0,
+    "distinctFilesCarryingSidechainGroups": 1
+  },
+  "suspectReasons": [],
+  "mainRateKeys": [
+    "claude-opus-5"
+  ],
+  "subagentRateKeys": [
+    "claude-opus-5"
+  ],
+  "verdict": "inherits",
+  "why": "every billed request on both sides carries claude-opus-5",
+  "groups": [
+    {
+      "requestId": "req_011Ce5RjbnA8hD8fKCL1ojHP",
+      "isSidechain": false,
+      "model": "claude-opus-5",
+      "speed": "standard",
+      "key": "claude-opus-5",
+      "records": 2,
+      "firstFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4.jsonl",
+      "lastFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4.jsonl",
+      "firstRaw": "{\"parentUuid\":\"30ce1ad1-c586-4d64-81e1-218238bd7995\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce5RjeRAGqKUKEmttVxgF\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"CAISsgQKhwEIEBgCKkBhOhfs86Zz/R/P+RRASBA92xGNaeBSlOPYogGZyZp/D6BdwSOttVk2oTp9z17guoq//XEmyDWRPjToNsBHbY++Mg1jbGF1ZGUtb3B1cy01OAFCCHRoaW5raW5nWiQzMjJlN2I3ZS02Yzc1LTRjY2UtYmM1ZS0yNDBlMzgwZjllNDgSDCNb9PuNb9XOy9jkRxoMG8Z69AMOcvsJWGGhIjBJZyuzxOy4jYPGIlZEjhJhghTNbFKPtMmpVDN2XV3mkmBHGAzUSbMoqOUULDKY1ZIq1wID0o+zS82yK/kA2G34n11CSOnOlg0KyqHniTygHINjCIkFZHyhfYK98MNHVeCZtO1cl6/kHYHbMbB4sLBsUKhEIq9bOVKuBa9BDbeOaMMNLszL0zLmCLaj46UoOwnX6o+xQndSLnM6vdSwGgwIdZa3CjBkiFxIJ0rxdoEctcWIKOIGOGVq2SyrH8dRUUegxFzrjXT4EB78mJj/l9qACHQGrOxRbS6OcZIHUT8VnMaxkeHY9zk4Xu0OO803QEJQjDW/NOGVNkLaNyTl1DsWQKTd9nyEYulMPFzK7WGgtBfgxFgXFxq5CDmUzrngU/C7kTEC5tv6XcEw3JtFfei+7HaBsNXm01dWqgj/l9pdkFzx3sBTI5nX+cOIZeTPT4lWGh9x8crAgcziGv6WH4id45qcQMFOl/V+jsK60g5VnUz8fDMUNz4heHrXgol2xOs00TLpzXG/MtxeGAE=\"}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":5662,\"cache_read_input_tokens\":16035,\"output_tokens\":240,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":5662,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":240,\"cache_read_input_tokens\":16035,\"cache_creation_input_tokens\":5662,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":5662},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce5RjbnA8hD8fKCL1ojHP\",\"type\":\"assistant\",\"uuid\":\"5b7bcff2-785a-4a41-b4fa-8a21c364e1c3\",\"timestamp\":\"2026-08-15T23:47:45.616Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.AHSeBf\",\"sessionId\":\"f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}",
+      "lastRaw": "{\"parentUuid\":\"5b7bcff2-785a-4a41-b4fa-8a21c364e1c3\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce5RjeRAGqKUKEmttVxgF\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_016xh7YsJjnwDNsymE55f34B\",\"name\":\"Agent\",\"input\":{\"subagent_type\":\"general-purpose\",\"description\":\"Reply ok\",\"prompt\":\"Reply with the single word: ok\",\"run_in_background\":false},\"caller\":{\"type\":\"direct\"}}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":5662,\"cache_read_input_tokens\":16035,\"output_tokens\":240,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":5662,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":240,\"cache_read_input_tokens\":16035,\"cache_creation_input_tokens\":5662,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":5662},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce5RjbnA8hD8fKCL1ojHP\",\"type\":\"assistant\",\"uuid\":\"f4f0d133-80fc-46d7-b972-b7be77b0a05c\",\"timestamp\":\"2026-08-15T23:47:46.090Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.AHSeBf\",\"sessionId\":\"f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}"
+    },
+    {
+      "requestId": "req_011Ce5Rk5XGTvRynKnXXzDea",
+      "isSidechain": false,
+      "model": "claude-opus-5",
+      "speed": "standard",
+      "key": "claude-opus-5",
+      "records": 1,
+      "firstFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4.jsonl",
+      "lastFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4.jsonl",
+      "firstRaw": "{\"parentUuid\":\"6e93d0d0-1055-4029-a3eb-f139bb2a27f6\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce5Rk7MeXQg8SwQDq7vUY\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":342,\"cache_read_input_tokens\":21697,\"output_tokens\":3,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":342,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":3,\"cache_read_input_tokens\":21697,\"cache_creation_input_tokens\":342,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":342},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce5Rk5XGTvRynKnXXzDea\",\"type\":\"assistant\",\"uuid\":\"a8dd47e0-9397-44db-82a9-c2c63389ca80\",\"timestamp\":\"2026-08-15T23:47:49.600Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.AHSeBf\",\"sessionId\":\"f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}",
+      "lastRaw": null
+    },
+    {
+      "requestId": "req_011Ce5RjvtbzkeDgiGHxU3Vw",
+      "isSidechain": true,
+      "model": "claude-opus-5",
+      "speed": "standard",
+      "key": "claude-opus-5",
+      "records": 1,
+      "firstFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4/subagents/agent-a518002eb08b80712.jsonl",
+      "lastFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-AHSeBf/f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4/subagents/agent-a518002eb08b80712.jsonl",
+      "firstRaw": "{\"parentUuid\":\"82c616fd-d5e7-4ca5-ac99-8ba918855df3\",\"isSidechain\":true,\"agentId\":\"a518002eb08b80712\",\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011Ce5RjxfWjbtBC8SNv4Yvs\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":9369,\"cache_read_input_tokens\":0,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":9369},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":9369,\"cache_creation\":{\"ephemeral_5m_input_tokens\":9369,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011Ce5RjvtbzkeDgiGHxU3Vw\",\"attributionAgent\":\"general-purpose\",\"type\":\"assistant\",\"uuid\":\"11e5be37-eeff-4b3a-b137-8bcac480a62e\",\"timestamp\":\"2026-08-15T23:47:48.140Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.AHSeBf\",\"sessionId\":\"f8eb3f78-e3fa-4434-b0b2-39ec11d9d3f4\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}",
+      "lastRaw": null
+    }
+  ],
+  "doesNotEstablish": [
+    "nothing about the treatment MCP shape unless context.mcpConfig above is non-null",
+    "nothing about the sealed per-arm policy blobs — none were delivered",
+    "nothing about how many subagents a real manifest task spawns, or their share",
+    "nothing about nested subagents; sidechain cardinality is reported, never enforced",
+    "not a sandbox — the session's cwd is outside the repository and the prompt asks for no file access, but a working directory does not constrain a process",
+    "one session, one Claude Code build — the transcript layout is vendor-internal and has moved before"
+  ]
+}

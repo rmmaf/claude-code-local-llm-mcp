@@ -15,7 +15,7 @@
  * "shown FIRING" phrase, never as a seventh condition.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
@@ -455,7 +455,18 @@ export async function runHarness({ repoRoot, commit, runId, generatedAt, registr
   if (!head.ok) throw new Error(`cannot resolve ${commit ?? "HEAD"}: ${head.err}`);
   const baseCommit = head.out;
 
-  const treeDir = mkdtempSync(path.join(os.tmpdir(), "b12-mutate-"));
+  // REALPATH, AND macOS IS THE REASON. `os.tmpdir()` returns `/var/folders/…`
+  // there, which is a SYMLINK to `/private/var/folders/…`, and V8 reports the
+  // resolved path in stack traces. `framesInControl` compares a frame's path
+  // against this root by string prefix (`relativeTo`, no symlink resolution
+  // anywhere), so every frame missed, every control's assertion "named no frame
+  // in tests/cost-meter.test.ts", and the 2026-08-15 Mac matrix refused 6 of 6
+  // pairs whose controls had gone RED exactly as intended.
+  //
+  // The win32 matrix scored 6/6 on the same code because Windows temp paths
+  // carry no such symlink — a platform-specific harness defect that looked
+  // exactly like a scientific result about the controls.
+  const treeDir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "b12-mutate-")));
   rmSync(treeDir, { recursive: true, force: true });
   const added = git(repoRoot, ["worktree", "add", "--detach", treeDir, baseCommit]);
   if (!added.ok) throw new Error(`git worktree add refused: ${added.err}`);

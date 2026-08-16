@@ -202,6 +202,30 @@ describe("the mutation harness evaluator", () => {
     expect(pairOf(out, "m-alpha")?.detail).toContain("names no frame in");
   });
 
+  it("does NOT resolve symlinks — which is why the runner must hand it a real path", () => {
+    // THE DEFECT THE 2026-08-15 MAC MATRIX FOUND, and it refused 6 of 6 pairs
+    // whose controls had gone RED exactly as intended.
+    //
+    // `os.tmpdir()` on macOS is `/var/folders/…`, a SYMLINK to
+    // `/private/var/folders/…`, and V8 reports the RESOLVED path in stack
+    // traces. `relativeTo` compares by string prefix and resolves nothing, so
+    // every frame missed, `classifyFailure` reported "the assertion's stack
+    // names no frame in tests/cost-meter.test.ts", and a platform-specific
+    // harness defect looked exactly like a scientific result about the controls.
+    // The win32 matrix scored 6/6 on identical code because Windows temp paths
+    // carry no such symlink.
+    const symlinked = "/var/folders/4h/nzh88/T/b12-mutate-AbC";
+    const resolved = "/private/var/folders/4h/nzh88/T/b12-mutate-AbC";
+    const frame = `${resolved}/tests/cost-meter.test.ts`;
+
+    // The behaviour is CORRECT for a pure function over strings — it cannot
+    // know these name one directory — and is asserted so nobody "fixes" it here
+    // and breaks the Windows case-insensitive comparison beside it.
+    expect(relativeTo(symlinked, frame)).toBeNull();
+    // The repair belongs at the source: hand it the resolved root.
+    expect(relativeTo(resolved, frame)).toBe("tests/cost-meter.test.ts");
+  });
+
   it("resolves Windows backslash frames and file:// URLs", () => {
     expect(relativeTo(REPO, "C:\\repo\\tests\\fake.test.ts")).toBe(FILE);
     expect(relativeTo(REPO, `file:///${REPO}/tests/fake.test.ts`)).toBe(FILE);

@@ -3771,3 +3771,78 @@ experiment rather than a formality: seeing this signature there kills the
 The prediction was written before this rate was known, and it is not being
 revised now that it is — revising a prediction after seeing data is the move
 this file exists to prevent.
+
+## The Mac round of 2026-08-15 — eight measurements against eight predictions
+
+Run at `06ee3b0` on `darwin arm64`, node `v22.23.1`, vitest `4.1.10`, Claude Code
+`2.1.221` (`7a181f36ed0f…`). Read from the returned tarball, not the terminal.
+
+| | Predicted | Measured | |
+|---|---|---|---|
+| M1 | 5/5 green | **5/5 green**, 890 tests, 38 files | CONFIRMED |
+| M2 | darwin/arm64, versions unknown | darwin arm64, node 22.23, vitest 4.1 | CONFIRMED |
+| M3 | (no prediction) | 2.1.221, `7a181f36ed0f…` | captured |
+| M4 | **all six FIRE** | **0 of 6, all `refused`** | **FALSIFIED** |
+| M5 | preflight clean | completed, 11 checks | ran |
+| M6b | same rate key | **inherits**, TREATMENT shape | CONFIRMED |
+| M7 | cap near 30,000 chars | **REFUSED** — no transcript | no answer |
+| M8 | positive per-arm delta | **REFUSED** — needs the remote | no answer |
+
+### M4 — the falsification, and it is a HARNESS defect wearing a result's clothes
+
+**0 of 6, every pair `outcome: refused`, every one with the same sentence:**
+"the assertion's stack names no frame in tests/cost-meter.test.ts".
+
+**THE CONTROLS DID GO RED.** The embedded reports — added the day before, and
+this is their first use — show m1's mutant run at 163 tests, **3 failed, 2 failed
+suites**, with the registered control's own status `failed` and its two declared
+collateral tests failed beside it. The mutation worked. What failed is the step
+that LOCATES the failure.
+
+**The mechanism, reproduced here rather than inferred.** `mkdtempSync(os.tmpdir())`
+returns `/var/folders/…` on macOS, which is a **symlink** to `/private/var/folders/…`,
+and V8 reports the RESOLVED path in stack traces. `relativeTo` compares by string
+prefix and resolves nothing:
+
+```
+relativeTo("/var/folders/…/b12-mutate-AbC",
+           "/private/var/folders/…/b12-mutate-AbC/tests/cost-meter.test.ts")  =>  null
+```
+
+Every frame missed, so every pair refused. **The win32 matrix scored 6/6 on
+identical code because Windows temp paths carry no such symlink** — verified
+here: `realpathSync` is a no-op on this machine, so the repair cannot regress it.
+
+**This is exactly the outcome the prediction named as the round's best case** —
+"a control that fires on win32 and NOT on macOS would be the finding of the
+round" — and it turned out to be a harness defect, not a fact about the controls.
+Had the artifact carried no reports, the honest reading available would have been
+"the six controls do not fire on macOS", which is false and would have been very
+expensive to believe.
+
+**REPAIRED** by resolving the worktree's realpath at creation. The Mac matrix is
+therefore **still owed** — M4 has no answer for macOS yet.
+
+### M6b — the owed re-run, done
+
+The first probe ran in CONTROL shape and said so. This one ran with `B12_REPO`
+set, in the **TREATMENT** shape that the scored observations use, and returned
+`verdict=inherits` again. `voidConditions` 10 does not sink the `multi` stratum.
+
+### M7 and M8 — no answer, and one is my planning error
+
+M7 refused because `claude` wrote no transcript for its first replicate: "the cap
+lives in the transcript, so there is nothing to measure." A real refusal about a
+real absence.
+
+**M8 refused on `git fetch` — and I put it in the round knowing the Mac cannot
+reach the remote.** I had already written the offline mode for the pre-flight
+for exactly this reason and did not check whether the other probes shared the
+dependency. The round spent its slot on a step that could not run.
+
+### What this round changes about what is owed
+
+- the Mac firing matrix (M4), after the realpath repair;
+- the cap (M7), which `voidConditions` 8 requires before a scored run;
+- `installedChars` (M8), which needs either network or the same offline
+  treatment the pre-flight got.
