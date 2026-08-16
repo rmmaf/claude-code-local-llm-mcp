@@ -102,26 +102,59 @@ if (cloneDirty) {
 
 writeFileSync(path.join(tree, ".b12-round-pin"), `${head}\n`, { encoding: "utf8" });
 
-// `tar` and not PowerShell's Compress-Archive: the latter skips dot-entries,
-// which is how an archive once arrived without its own `.git`.
-const archive = path.join(outDir, `${treeName}.zip`);
+// GZIPPED TAR, NOT ZIP, and the reason is that the tooling lied twice.
+//
+// PowerShell's Compress-Archive skips dot-entries, which is how an archive once
+// arrived on the Mac without its own `.git`. So: tar. But `tar` on this machine
+// resolves to GNU tar 1.35 from Git for Windows, not the bsdtar in System32 —
+// and GNU tar does not write zip at all. Asked for `-a -c -f out.zip` it
+// cheerfully produced an UNCOMPRESSED TAR named .zip, 48 MB, which `unzip`
+// rejects as "not a zipfile". Nothing in that path errored.
+//
+// A gzipped tar is what both tars write natively and what macOS unpacks with no
+// extra tool, so the format no longer depends on which `tar` is first in PATH.
+//
+// `-f` takes the BASENAME with the cwd set to the output directory: GNU tar
+// parses an argument containing a colon as `host:path`, so a Windows absolute
+// path fails with "Cannot connect to C: resolve failed". `-C` is not parsed
+// that way and may stay absolute.
+const archive = path.join(outDir, `${treeName}.tgz`);
 if (existsSync(archive)) rmSync(archive, { force: true });
-// `-f` gets the BASENAME and the cwd is the output directory, because bsdtar
-// parses an argument containing a colon as `host:path` — so a Windows absolute
-// path like C:\Users\...\out.zip fails with "Cannot connect to C: resolve
-// failed". `-C` is not parsed that way, so the source path may stay absolute.
-const packed = run(outDir, "tar", ["-a", "-c", "-f", path.basename(archive), "-C", tree, "."]);
+const packed = run(outDir, "tar", ["-c", "-z", "-f", path.basename(archive), "-C", tree, "."]);
 if (!packed.ok) {
   rmSync(staging, { recursive: true, force: true });
   refuse(`tar failed: ${packed.err || packed.out}`);
 }
 
+// THE ARCHIVE IS OPENED AND CHECKED BEFORE IT IS HANDED OVER.
+//
+// Every transport failure in this project was invisible at cut time and cost a
+// day: the missing `.git`, the CRLF checkout, and the tar-named-.zip above. All
+// three would have been caught by listing the archive and looking for four
+// names. The cut is the only place that can catch them cheaply — on the Mac
+// they cost a session.
+const listing = run(outDir, "tar", ["-t", "-z", "-f", path.basename(archive)]);
+if (!listing.ok) {
+  rmSync(staging, { recursive: true, force: true });
+  refuse(`the archive just written cannot be read back: ${listing.err || listing.out}`);
+}
+const entries = new Set(
+  listing.out.split("\n").map((l) => l.trim().replace(/^\.\//, "").replace(/\/$/, ""))
+);
+const required = [".b12-round-pin", ".git/HEAD", "scripts/b12-mac-round.sh", "package.json"];
+const missing = required.filter((r) => !entries.has(r));
+if (missing.length) {
+  rmSync(staging, { recursive: true, force: true });
+  refuse(`the archive is missing ${missing.join(", ")} — do not send it`);
+}
+
 rmSync(staging, { recursive: true, force: true });
 
-console.log(`cut  ${archive}`);
-console.log(`pin  ${head}`);
-console.log(`from ${branch}`);
+console.log(`cut     ${archive}`);
+console.log(`pin     ${head}`);
+console.log(`from    ${branch}`);
+console.log(`entries ${entries.size}, all four required paths present`);
 console.log("");
 console.log("On the Mac:");
-console.log(`  mkdir -p ~/Downloads/${treeName} && unzip -q ~/Downloads/${treeName}.zip -d ~/Downloads/${treeName}`);
+console.log(`  mkdir -p ~/Downloads/${treeName} && tar -xzf ~/Downloads/${treeName}.tgz -C ~/Downloads/${treeName}`);
 console.log(`  cd ~/Downloads/${treeName} && bash scripts/b12-mac-round.sh`);
