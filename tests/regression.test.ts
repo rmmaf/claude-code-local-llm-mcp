@@ -112,6 +112,9 @@ describe("trailing-newline and empty-file round-trips", () => {
 
     expect(result.files_changed).toEqual(["fmt.ts"]);
     await execFileAsync("git", ["init", "-q"], { cwd: root });
+    // See tests/implement.test.ts: a bare `git init` inherits the developer's global
+    // `core.autocrlf`, and this test round-trips exact bytes through `git apply`.
+    await execFileAsync("git", ["config", "core.autocrlf", "false"], { cwd: root });
     await fs.writeFile(path.join(root, "r.patch"), result.diff);
     await execFileAsync("git", ["apply", "r.patch"], { cwd: root });
     expect(await fs.readFile(path.join(root, "fmt.ts"), "utf8")).toBe(updated);

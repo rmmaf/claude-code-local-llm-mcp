@@ -1,0 +1,13 @@
+diff --git a/src/tools/status.ts b/src/tools/status.ts
+index e465fe5..073a669 100644
+--- a/src/tools/status.ts
++++ b/src/tools/status.ts
+@@ -107,7 +107,7 @@ export async function runStatus(config: Config, deps: ToolDeps = {}): Promise<St
+     );
+   }
+ 
+-  let memory: MemoryInfo | null = null;
++  let memory: MemoryInfo = null;
+   try {
+     memory = await getMemoryInfo(deps.runner, deps.platform);
+   } catch (error) {

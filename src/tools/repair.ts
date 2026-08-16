@@ -56,7 +56,9 @@ export const repairInputSchema = {
     .int()
     .positive()
     .optional()
-    .describe("Hard wall-clock ceiling for the whole call, first gate run included (default 300)."),
+    .describe(
+      "Wall-clock ceiling on the loop — first gate run included, rollback and telemetry after it are not (default 240)."
+    ),
   context_files: z.array(z.string()).optional().describe("Read-only reference files."),
   model: z.string().optional().describe("Override the local model."),
 };
@@ -130,7 +132,34 @@ export interface RepairResult {
 }
 
 const DEFAULT_MAX_ROUNDS = 3;
-const DEFAULT_BUDGET_SECONDS = 300;
+
+/**
+ * 240, LOWERED FROM 300 ON 2026-08-14, and the reason is not about repair.
+ *
+ * In a B12 observation there is no human in the loop, so every inter-request gap
+ * IS a tool call. `admissionRule` 11 voids an observation whose max gap exceeds
+ * the shortest cache TTL in play — 300,000 ms whenever any owned request wrote
+ * to the 5-minute class, which a subagent does — and `voidConditions` 20 lifts
+ * that to the WHOLE run. At 300 this constant WAS that bar, exactly, so a repair
+ * that spent its budget produced a gap at the edge of it.
+ *
+ * MEASURED on mac-01 against `b12/corpus/selmatchfuzzy` with the 30B: three runs
+ * fixed in one round at 129.4, 115.6 and 120.1 s, per round a median 57.6 s of
+ * model plus 31.8 s of gate. One-round totals are not the margin: `max_rounds`
+ * is 3, and three rounds is 268 s at the median round and 293 s at the worst
+ * observed one — 89 to 98% of the bar. Two percent of headroom is not headroom.
+ *
+ * 240 leaves 2.7 rounds at that rate and puts a full-budget repair 20% clear of
+ * the bar. The cost is real and one-sided: `repair` is a treatment-only tool, so
+ * this trims the arm being measured and not its control. That is why it is a
+ * pre-data decision, taken before any observation exists, and recorded in
+ * `b12-corpus/manifest-config.json` rather than only here.
+ *
+ * It also BREAKS A TIE the code used to rely on: `config.timeoutMs` still
+ * defaults to 300 s, so the budget is now strictly the smaller of the two and
+ * `min(timeoutMs, remaining)` resolves to the budget rather than to a tie.
+ */
+const DEFAULT_BUDGET_SECONDS = 240;
 /** Failures fed back to the model per round. More context, worse focus. */
 const FAILURES_IN_PROMPT = 12;
 
@@ -629,10 +658,25 @@ async function repairLoop(
   const budgetMs = (args.budget_seconds ?? DEFAULT_BUDGET_SECONDS) * 1000;
   const category = args.checks ?? "all";
 
-  // A hard deadline for the whole call, not a between-rounds checkpoint. The
-  // first gate run counts against it, and every check and every model request is
-  // capped by what is left — otherwise `budget_seconds: 1` could still sit
-  // through a 300 s check timeout and then a full 300 s model request.
+  // A deadline for the LOOP, not a between-rounds checkpoint: the first gate run
+  // counts against it, and every check and every model request is capped by what
+  // is left — otherwise `budget_seconds: 1` could still sit through a 300 s check
+  // timeout and then a full 300 s model request.
+  //
+  // It is NOT a bound on the call. Named on 2026-08-14, when this comment said
+  // "the whole call" and a review showed it does not: `started` is taken by the
+  // caller (`:391`) but the deadline is only built here, so the preflight between
+  // them — snapshots and the tree fingerprint — is unchecked (it does consume the
+  // budget, which is why a slow one starves the loop rather than extending it);
+  // and after the loop, `restore`, the second `treeFingerprint` and the telemetry
+  // write all run uncapped. Both tails scale with `files.length`, which the schema
+  // does not cap. At B12's fileScope of 1 they are a git spawn apiece — about
+  // 200 ms measured — so a 240 s budget lands ~240 s and the 300 s pacing bar is
+  // not in reach; a caller passing hundreds of files is the case this does not
+  // cover, and it is the caller's own argument that puts it there.
+  //
+  // Cheap to close if it ever matters: pass `remainingMs()` down the rollback and
+  // fingerprint paths. Not done, because no measured caller is near the bar.
   const deadline = started + budgetMs;
   const remainingMs = (): number => deadline - now();
 
@@ -755,9 +799,13 @@ async function repairLoop(
        * `config.timeoutMs` left" and "the budget had more than that" onto the
        * same applied value, and `Math.max(1, ...)` folds every sub-millisecond
        * remainder onto 1 — so a tie is indistinguishable from a comfortable
-       * budget downstream. The tie is not a corner case either: `config.timeoutMs`
-       * and `DEFAULT_BUDGET_SECONDS` share a default, so round 1 hits it whenever
-       * the first gate costs nothing.
+       * budget downstream. The tie WAS not a corner case — `config.timeoutMs` and
+       * `DEFAULT_BUDGET_SECONDS` shared a default of 300 s, so round 1 hit it
+       * whenever the first gate cost nothing. Since 2026-08-14 the budget
+       * defaults to 240 and the timeout still to 300, so the two no longer tie
+       * and `min` resolves to the budget; the ambiguity returns the moment a
+       * caller passes `budget_seconds: 300` by hand, which is why the reading is
+       * still recorded rather than deleted.
        *
        * Re-declared per round, so a later round cannot be judged on an earlier
        * one's reading. `resolveModel` reads it too, before the attempt loop, and
@@ -845,10 +893,16 @@ async function repairLoop(
         // A request THIS CALL'S DEADLINE cut off is a budget stop, not a model
         // failure. The `budget` branch above only runs between rounds, so a
         // timeout inside generation used to be filed as `model_failed` — and
-        // `config.timeoutMs` defaults to exactly `DEFAULT_BUDGET_SECONDS`, so
-        // round 1 alone can consume the whole budget and then blame the model.
-        // Measured: 3 of 4 `model_failed` rows sat at 300-326 s against a 300 s
-        // budget, `run 2026-08-03-mac-06`.
+        // `config.timeoutMs` DEFAULTED TO EXACTLY `DEFAULT_BUDGET_SECONDS` until
+        // 2026-08-14, so round 1 alone could consume the whole budget and then
+        // blame the model. Measured: 3 of 4 `model_failed` rows sat at 300-326 s
+        // against a 300 s budget, `run 2026-08-03-mac-06`.
+        //
+        // The budget now defaults to 240 and the timeout still to 300, so the
+        // mislabel no longer arrives by default — it arrives whenever a caller
+        // passes `budget_seconds: 300`, or any budget at or above the timeout.
+        // The branch stays for that case, and because the measurement above is
+        // what put it here.
         //
         // Everything else here is the model's own failure, including a request
         // that hit `config.timeoutMs` with budget to spare: the ceiling it broke

@@ -24,16 +24,16 @@ all of them — `coverage.ts` joined the three when the run-level ledger landed 
 which is exactly why they need writing down: an oracle that cannot fail on a
 defect is not evidence the defect is absent.
 
-## Twenty-six findings, and only two of them are work
+## Twenty-seven findings, and only two of them are work
 
-**F1–F26, one number per finding except F2, which split. F18 does not exist and
+**F1–F27, one number per finding except F2, which split. F18 does not exist and
 never did** — the numbering skipped it, and that is recorded here rather than
 back-filled, because renumbering would break every citation in `git log`.
 
 The count says less than the split does. **Nineteen are closed — F23 repaired
 2026-08-09, in its own pass as its entry demanded, and F26 found and closed
-the same day the audit computer pinned the control registry. Of the seven
-open, one is code owed, one is a decision, and five will never close** — each of
+the same day the audit computer pinned the control registry. Of the eight
+open, one is code owed, two are decisions, and five will never close** — each of
 those five is a place the frozen design underdetermines what an implementer needs,
 every closing route was adjudicated and REFUSED, and what shipped is the literal
 reading plus enough published detail that a reader of a committed artifact can see
@@ -699,25 +699,95 @@ OWN SHAPE:**
 
 - **A re-probe of `installedChars` under the sealed policy blobs**, forced
   mechanically by the calibration-key refusal above the moment a manifest
-  carries blobs.
-- **The clause 4–6 audit computer** (see the UNIT 5 block above) — the input
-  seam and the pre-declaration exist; the tool does not.
+  carries blobs. **THE MACHINERY HAS LANDED; THE MEASUREMENT HAS NOT** — the
+  distinction matters, because it is the shape the three stale entries below
+  took. The harness already refuses a stale probe
+  (`scripts/b12-run.mjs:2037`), and the only committed probe
+  (`evidence/2026-08-08-mac-b12-installedchars-50de3b3-144422.probe.json:19`)
+  carries a null policy-blob hash and says on its face that it must be retaken.
+  No committed artifact carries the newer dual `policyBlobSha256s` key. Mac-only.
 - **A REAL run's committed archive** for artifact 11's replay — the fixture
-  replay exercises the full path; only a run can supply the real object.
-- **Identity stamps on the snapshot files** (harness-side): the fifth round's
-  binding covers `observation.json`, `archive.json` and the runlog because
-  those carry identity; the snapshots carry none, so their binding waits on
-  the harness writing one — a run-time change, not a scoring-time mint.
-- **A concurrent same-task execution test** (harness-side): the sixth round's
-  unique worktree path and commit retry are exercised by real sessions only —
-  two live processes on one task/arm belong to the real run's protocol, not
-  to a fixture that would prove the mock instead of the harness.
-- **A registration-row marker** (operator-side): the seventh round's row-alone
-  blind spot exists because the frozen clause pins no registration-row schema.
-  The registration COMMAND is operator tooling, not frozen instrument — a
-  marker field on future registration rows would make the row-alone direction
-  decidable without touching the design. Until then the limit stands as
-  registered.
+  replay exercises the full path; only a run can supply the real object. The
+  tracked inventory holds exactly one `archive.json`,
+  `tests/fixtures/b12-run/evidence/replay-01/obs-t1-treatment/archive.json`, and
+  `tests/b12-archive.test.ts:9` labels it fixture material in as many words.
+- **TWO concurrency tests, and they cannot be one test** (harness-side). The
+  sixth round's unique worktree path and commit retry are exercised by real
+  sessions only — two live processes belong to the real run's protocol, not to a
+  fixture that would prove the mock instead of the harness. **Split 2026-08-14,
+  because the single bullet this replaces asked for something unbuildable:** a
+  same-task loser is refused by the SESSION LOCK at `scripts/b12-run.mjs:2884`
+  before it can ever contend for the commit lock, so one same-task test cannot
+  exercise both paths. What is owed is (i) an end-to-end two-process SAME-TASK
+  `observe` test, reaching the process-unique worktree at `:2806`, and (ii) a
+  concurrent DIFFERENT-TASK test of the run-level commit-lock retry at `:388`.
+  Partial coverage exists and is not the thing: `tests/cost-meter.test.ts:3043`
+  holds a real second process contending for `acquireSessionLock` directly
+  (`:3055-3070`), which tests the lock and not a concurrent `observe`.
+- ~~"**A registration-row marker** (operator-side): the seventh round's
+  row-alone blind spot exists because the frozen clause pins no
+  registration-row schema. The registration COMMAND is operator tooling, not
+  frozen instrument — a marker field on future registration rows would make the
+  row-alone direction decidable without touching the design. Until then the
+  limit stands as registered."~~ **HALF CLOSED, and the halves must not be
+  conflated — corrected 2026-08-14.** This entry was written 2026-08-08
+  (`5432fca`); the marker landed the NEXT DAY in `a319c36` and the list was
+  never updated. **The operator half is done**: every row the act writes carries
+  `b12_registration: true` — `scripts/b12-register.mjs:770` for `register` and
+  `:881` for `open-b` — and the act already DECIDES on it, refusing a second
+  registration for one id at `:229`.
+
+  **What is still owed is the scorer half, and it is owed as a QUESTION rather
+  than as code.** `registrationRows` (`src/cost/b12/archive.ts:551-563`) keys
+  membership on `run_id` alone and never reads the marker. That is deliberate
+  and argued in `collectRegister`'s docstring at `:591-600`: the frozen clause
+  pins no registration-row schema, so REQUIRING the marker would void a run
+  over a field the design never asked for, and firing on the bare set
+  difference would void every run against this repository's own committed
+  history. So a marked row is today decidable BY A READER AND BY THE OPERATOR
+  ACT, and not by THE SCORER — "not by the computer" would be wrong, since the
+  act's own duplicate guard is a computer reading it. Whether the scorer should
+  report the marker as a fact that decides
+  nothing — the pattern the conformance-paths amendment already uses for its
+  `reportedBesideIt` hashes — is a scoring-path change and gets its own
+  adversarial round before any edit. **It is NOT resolved here, and the limit
+  stands as registered for the computer.**
+
+**THREE OF THE SIX ENTRIES WERE STALE, AND A FOURTH ASKED FOR SOMETHING
+UNBUILDABLE — corrected 2026-08-14.** Two were closed outright and are recorded
+below with their original wording; the third, the registration-row marker, was
+half closed and is corrected in place above; the fourth, the concurrency test,
+described one test that the session lock makes impossible and is now split into
+the two it always was. All are kept verbatim because a list of what a blocker
+owes is load-bearing, and an entry that OVERSTATES the debt is as wrong as one
+that understates it — it invites work already done and makes the blocker look
+larger than it is.
+
+**None of the three was found by re-reading this list. All three surfaced only
+when the code was opened in order to act on them**, which is the reproducible
+lesson: an owed-list is a claim about code and decays exactly like any other,
+and this one decayed **by the next calendar day in every case** — the three
+landings fall 24h18m, 24h27m and 24h52m after `5432fca`. An earlier draft of
+this sentence said "within a day", which is off by those minutes and is
+corrected rather than rounded.
+
+- ~~"**The clause 4–6 audit computer** (see the UNIT 5 block above) — the input
+  seam and the pre-declaration exist; the tool does not."~~ **The tool exists**:
+  `src/cost/b12/audit.ts`, 2 000 lines, with `tests/b12-audit.test.ts` carrying
+  51 tests across 12 describes. It is the right tool and not a namesake: its own
+  header calls it "THE CLAUSE 4–6 AUDIT COMPUTER" (`audit.ts:2`), the pure
+  decider implements clause 4 at `:659`, clause 5 at `:697` and clause 6 at
+  `:728`, and the CLI writes `<runId>.b12.audit.json` at `:1984`.
+- ~~"**Identity stamps on the snapshot files** (harness-side) … the snapshots
+  carry none, so their binding waits on the harness writing one — a run-time
+  change, not a scoring-time mint."~~ **The harness writes one and the scorer
+  enforces it.** `scripts/b12-run.mjs:701` takes an `identity`, the observe path
+  passes `{runId, taskId, arm, sessionId, phase}` at `:2944` and `:3024`, and it
+  reaches disk at `:3379-3380`. It is not a stamp nothing parses:
+  `src/cost/b12/archive.ts:970` REFUSES a snapshot carrying no identity —
+  "a swapped snapshot cannot be shown bound" — and `:975-986` checks every field
+  against the directory's task/arm, the archive's run id, `observation.json`'s
+  session id, and the file's own before/after phase.
 
 **Two readings of mine were REFUTED and are recorded as refuted:**
 
@@ -805,9 +875,12 @@ arithmetic:
 
 ## OPEN — a decision, not an implementation
 
-One. Its candidate route now has shipped behaviour (below), but the finding
+Two. F25's candidate route now has shipped behaviour (below), but the finding
 itself — an encoding gap in the frozen text — remains: a run that reaches the
-gap at scoring time still has no legal outcome.
+gap at scoring time still has no legal outcome. F27 is not a gap at all, and is
+complete as written: it is the arithmetic of a decision no implementation can
+take, worked out once so the operator is not deriving it on the day the money is
+committed. What stays open there is the decision, never the finding.
 
 ### F25 — the frozen text demands a declaration and supplies no disposition for its absence
 
@@ -876,6 +949,72 @@ arithmetic. A PRESENT-but-corrupt stratum string keeps its terms and flows
 through `partitionByStrata.unknownStratum`, the shipped defence in depth. The
 gap itself remains exactly as stated above: OPEN, an encoding gap in the
 frozen text.
+
+### F27 — `p` is not estimable before the run, and the pilot is a STOP screen, not an estimator
+
+`STATE.md` puts `p` at the top of "Still blocking a run" and `PREMISES.md` says
+it in capitals: **"THE EXPOSURE IS THEREFORE p, WHICH HAS NEVER BEEN MEASURED,
+AND NOT THE LENGTH, WHICH IS FROZEN."** `evidence/` confirms it — no pilot
+record, no runlog, no observation directory exists, because no session has ever
+run against a corpus base. This finding does not measure `p`. It works out what
+each value of it costs, and what the instrument designed to read it can and
+cannot say, so that neither has to be re-derived on the day the decision is made.
+
+**DERIVED, NOT MEASURED**, which is why it lives here and not in
+`MEASUREMENTS.jsonl`. `p` is the per-task admission probability; completion is
+`P(X >= 20)` for `X ~ Binomial(30, p)`, the pilot is `Binomial(5, p)`. Reproduced
+from the binomial pmf directly. **Calibration: it returns 29.1 / 58.6 / 93.6 at
+p = 0.60 / 0.667 / 0.77, which are the three figures `STATE.md` already records**
+— so the table agrees with the number that has been driving the decision.
+
+| p | run completes (>=20 of 30) | pilot <=1 of 5 | pilot 5 of 5 |
+|---|---|---|---|
+| 0.50 | 4.9% | 18.8% | 3.1% |
+| 0.55 | 13.5% | 13.1% | 5.0% |
+| 0.60 | 29.1% | 8.7% | 7.8% |
+| 0.667 | 58.6% | 4.5% | 13.2% |
+| 0.70 | 73.0% | 3.1% | 16.8% |
+| 0.75 | 89.4% | 1.6% | 23.7% |
+| 0.77 | 93.6% | 1.1% | 27.1% |
+| 0.80 | 97.4% | 0.7% | 32.8% |
+| 0.85 | 99.7% | 0.2% | 44.4% |
+
+**THE PILOT CANNOT ESTIMATE `p`, AND THE ARITHMETIC IS NOT CLOSE.** At n = 5 the
+95% half-width is **±0.43**; the range that decides everything, 0.60 to 0.77, is
+0.17 wide. Half-widths: ±0.43 at n=5, ±0.30 at n=10, ±0.22 at n=20, ±0.15 at
+n=40, ±0.12 at n=60. **Separating the 29% run from the 94% run would take on the
+order of sixty observations — more than PHASE 5 itself.** Any plan that treats
+the five-task pilot as a measurement of `p` is reading noise.
+
+**IT IS A ONE-SIDED SCREEN, AND THAT IS WORTH HAVING.** `<=1 of 5` occurs 1.1% of
+the time at p = 0.77 and 18.8% at p = 0.50, so a bad pilot is strong evidence of
+a catastrophic `p` and PHASE 5 should not be entered. `5 of 5` occurs 7.8% at
+p = 0.60 against 27.1% at p = 0.77 — a clean pilot barely moves anything. **The
+pilot can say STOP. It cannot say GO**, and the design never claimed otherwise:
+its committed output is the disposition distribution and the covariate vector,
+with no bracket, precisely so it cannot be read as a result.
+
+**WHAT MOVES `p`, GIVEN IT CANNOT BE MEASURED.** The live void classes are
+`task_failed` and `pacing` (`PREMISES.md`), and they are opposite in kind.
+`task_failed` is "did the session fix the defect" — irreducibly paid, and the
+only lever on it is task difficulty, which is selection on expected outcome and
+therefore not a lever at all. **`pacing` is operator discipline and context size,
+not luck**: measuring its historical rate would measure past discipline rather
+than future risk, so the move is to remove it by protocol, not to estimate it. It
+is the one term of `p` that can be driven toward zero for free.
+
+**AND ONE KNOWN BIAS, POINTING THE OTHER WAY.** Seven of the thirty types-only
+sites admit a false `FIXED` — a tsc-only predicate cannot tell a restored
+annotation from a behaviour-changing silencer. That INFLATES the observed `p`:
+the run is likelier to reach twenty than the real fix rate justifies. Good for
+completion, bad for validity, and the two effects do not cancel because they are
+not the same quantity.
+
+**WHAT THIS DOES NOT DECIDE.** Whether to enter PHASE 5 at an unknown `p`. The
+design already budgets for the answer being bad — a void consumes an attempt and
+there are two — and the amendment the numbers would justify, N = 35, is frozen
+and unavailable. `PREMISES.md` states the residual in the words this finding
+inherits: "What is left to manage is `p` itself." Manage, not measure.
 
 ---
 
@@ -1095,6 +1234,129 @@ a stopping decision could read, and a per-row byte count decides nothing while
 an aggregate is precisely what would. Encoded with teeth: `assertPilotShape`
 (`scripts/b12-run.mjs`) refuses every aggregate/bracket spelling at any depth
 on every pilot write, and the negative controls hold it there.
+
+### THE "partial set" / "partial bracket" READING — registered 2026-08-13, BEFORE any scored observation
+
+`admissionRule` 1 says that from registration onward "the run OWES a committed
+`<run_id>.b12.result.json` carrying `scored` or `void`, the void clause BY NAME,
+the observation count, and **the partial bracket**". `voidConditions` 2 says
+"VOID if R, R_lo, R_hi, R_hi+ or any A_o/S_o aggregate was computed on a
+**partial set** … so no interim bracket is derivable from committed data", and
+`admissionRule` 2 repeats it: "`R`, `N` and `A` may not be computed on a partial
+set". Read one way, the design owes a bracket it also forbids.
+
+**The registered reading, in two parts. (i) Clause 2's "partial set" is a set
+that CAN STILL GROW, never a set smaller than 20. (ii) `admissionRule` 1's
+"partial bracket" is this file's own registered sense of the word — a bracket
+published WITHOUT the verdict it would have carried, as in "the completion's
+artifact reads `partial` and renders no verdict" (`PREMISES.md`, twice). Both
+texts are true at once, and neither one has to mean under-cardinality.**
+
+The rationale for (i) is the one this document already registered four days
+earlier for the pilot's "No units": **what must not exist is anything a stopping
+decision could read.** A bracket over a set that can still grow is exactly that
+— the optional stopping `admissionRule` 2 names when it says the committed order
+exists "without letting `n` be chosen after the data". A bracket published with a
+run's terminal verdict decides nothing, because there is nothing left to decide:
+a result "carrying `scored` or `void`" cannot be written before the run ends,
+since until then nobody knows which it is.
+
+Part (ii) came out of the adversarial panel and is the better half. It removes
+the strain part (i) carries on its own — that "partial" would have to mean
+mutability in clause 2 and shortfall in `admissionRule` 1, forty lines apart in
+one field. Under (ii) it means the same thing in both: incomplete in the sense
+of *not carrying a verdict*.
+
+**FOUR PIECES OF FROZEN OR REGISTERED TEXT MAKE THE CARDINALITY READING
+IMPOSSIBLE, not merely worse.**
+
+1. `PREMISES.md` adjudicates the disputed case BY NAME and does not assign it
+   here: "A run that walks all 30 and admits 19 is VOID under `voidConditions` 3
+   and CONSUMES an attempt under `voidConditions` 23." Cardinality is clause 3's
+   job. On the cardinality reading clause 2 is a DUPLICATE of clause 3 — which
+   the `admissionRule` preamble forbids in its first sentence, "two descriptions
+   of one rule, disagreeing, is worse than either being wrong".
+2. The result is "owed by every registered run whether it scores or voids"
+   (`design.artifacts`). A run voided under clause 3 for shortfall still owes a
+   bracket; under the cardinality reading clauses 1 and 3 are mutually
+   unsatisfiable.
+3. The closed disposition list ends with `not_started`, and `runPlan` phase 5
+   budgets "20–26 supervised sessions… Ordered manifest of 30" — so EVERY lawful
+   run, including a perfect one, ends with at least four entries `not_started`.
+   Clause 2's own gate, "refuses to run until all dispositions exist", can
+   therefore only mean the disposition set is CLOSED. It cannot mean all 30 ran,
+   and it cannot mean 20 admitted.
+4. A registered reading already prices an aggregate over fewer observations than
+   a floor: "a cell can be evaluable on five and priced on fewer" (`PREMISES.md`,
+   F21). Under the cardinality reading that shipped behaviour is a clause-2 void
+   on its face.
+
+The implementation had already chosen this without stating it. `archive.ts`'s
+`narrowPriorRun` documents clause 1 as "`scored` or the void clause BY NAME, and
+the partial bracket **either way**", and the committed-evidence finding above
+resolves an unshowable tree by publishing terms under the void "because the
+partial bracket is owed either way".
+
+**ONE REAL TENSION SURVIVES, AND IT IS NOT BETWEEN THESE TWO TEXTS.** `runPlan`
+phase 2 says the pilot has "No units, no bracket — the verdict command cannot
+produce one on fewer than the manifest's N". The pilot's five observations are
+complete and immutable — every task dispositioned, the tasks excluded from both
+sealed manifests — and the design still denies it a bracket. So immutability
+alone is not SUFFICIENT for a bracket, and any reading that says otherwise is
+overstated, including part (i) taken alone. The reconciliation is that the N
+floor belongs on the VERDICT and not on the numbers, which is exactly the
+`partial`-artifact behaviour of (ii); the pilot is denied a bracket for the
+independent reason that it is not a registered run and owes no `result.json` at
+all. That tension is between `runPlan` phase 2 and `voidConditions` 1, it is
+recorded here, and it is not what this entry resolves.
+
+**A THIRD READING, RECORDED AND NOT ADOPTED.** "Partial set" could mean the
+scoring invocation's INPUT DOMAIN was incomplete — which sessions the CLI
+happened to read, which is `voidConditions` 19's failure mode stated one clause
+earlier and which explains "machine-checkable, because the analysis session's
+transcript is committed" better than either part above. It agrees with this entry
+on every disputed case, so nothing turns on choosing it; it is written down
+because the next reader will think of it.
+
+**WHAT THIS SETTLES, AND IT IS THE PREDICATE.** A clause-2 check tests
+MUTABILITY, never cardinality. A cardinality predicate was written on 2026-08-13
+— the set is closed when `admitted >= 20 || notStarted === 0` — and refuted
+before shipping: `runPlan` phase 5 budgets 20–26 supervised sessions over an
+ordered manifest of 30, so 26 observations with 19 admitted and 4 tasks never
+reached is a LAWFUL run whose set cannot grow, and that predicate voids it at
+`emit`, after every session is paid for. Under this reading that shape is
+plainly closed, and the bracket `admissionRule` 1 owes for it is plainly owed.
+
+**STILL OWED, and now unblocked rather than contradictory.** No code implements
+clause 2, and the reading says what a correct one asks: not "are there 20?" but
+"could this set still change?".
+
+The half with teeth is SINGLE EMISSION, and it is decidable from committed data
+without knowing anything about the operator's intentions: **the commit that first
+introduces any of R, R_lo, R_hi, R_hi⁺ or any per-observation A_o/S_o unit total
+must be the same commit that carries the verdict artifact**, every earlier commit
+in the run's history carrying dispositions and covariates only. That is clause
+2's last sentence read literally — "per-observation unit totals are written by
+the same command that produces the verdict, so no interim bracket is derivable
+from committed data" — and `git log` over `evidence/<runId>*` answers it.
+
+**THE CLOSURE HALF IS NOT DECIDABLE FROM THE ARCHIVE ALONE, and the reason is a
+line of our own code.** `assemble.ts` SYNTHESISES `not_started` for every
+manifest task with no observation, so "every id carries a disposition" is
+trivially true at observation 1 and at observation 30 alike. A closure predicate
+that reads the synthesised dispositions is satisfied always and checks nothing.
+What would actually have to be established is that no lawful future event can
+still admit — the 20-admission cap, the 26-session ceiling, `admissionRule` 12's
+one discretionary re-run and the `void(version_drift)` re-runs that do not
+consume it, and disposition EXISTENCE rather than mere presence of an observation
+directory. Also unchecked here: manifest cardinality. `assemble.ts` has no
+`tasks.length === 30` predicate, so an undersized manifest reaches the cap
+trivially, and clause 2 written on cardinality would have been satisfiable by
+declaring fewer tasks.
+
+The enforcement point is BEFORE `aggregate()` runs — clause 2's own verb is
+"refuses to run", not "voids". Refusing there needs no result-schema change and
+breaks no reader; nulling the bracket fields on `B12Result` would need both.
 
 ### THE "per-task DENOMINATOR share" FORMULA — registered 2026-08-10, BEFORE the seal
 
@@ -1877,6 +2139,749 @@ suite. In this round one SOLO run of `tests/b12-register.test.ts` failed 1/29
 solo runs on the same bytes were 29/29. The class is not being widened on one
 uncaptured line; it is written down so the next occurrence is the second, not
 the first.
+
+### R51 — `wouldHaveAdded` priced an unknown thread against `main`, and the FROZEN TEXT had already forbidden it — 2026-08-14
+
+`report.ts` read `const thread = source?.thread ?? "main"`. `ToolResultRecord.thread`
+is a REQUIRED `string`, so that default never guarded a missing field: it fired on
+exactly one condition — `source` absent, i.e. a row with no `invocation_id` or one
+this transcript's local results do not carry. On that condition it priced the
+refusal against **this** session's main thread and returned the number as known.
+
+**THE FROZEN TEXT DECIDED THIS BEFORE THE CODE WAS WRITTEN, in three places:**
+
+- `design.detector` repair **5** — "`wouldHaveAdded` resolves the row's thread via
+  `byInvocation`, **falling back to the row's own thread**, and returns `null` —
+  never 0 — when no request matches." A `TelemetryRecord` **has no thread field**
+  (`src/telemetry.ts`), so on a miss there is no row's own thread to fall back to.
+- `design.metric` — "**If any refused magnitude is `null`** … `R_hi⁺` is NOT
+  EVALUABLE and the run returns `open`. An unknown may not be summed as zero."
+- `voidConditions` **6** — among the six controls that must be SHOWN FIRING: "an
+  unmatchable `wouldHaveAdded` returning **null and not 0**".
+
+So this was never a judgement call. It was an addition that contradicted the
+pre-registration, and the commit that removed the *other* main fallback said so in
+its own message: "the frozen B12 design already said so — 'falling back to the
+row's own thread' — so this was my addition, not its instruction."
+
+**MY OWN ARGUMENT FOR THE FIX WAS WRONG, and the review refuted it.** I claimed the
+substitution was MONOTONE — that assuming main can only ADD candidates, so it can
+only turn an honest `null` into a number, and therefore only inflate `R_hi⁺`. False
+twice over. `requestAtOrAfter` filters by **strict thread equality**, so swapping
+the thread replaces one disjoint candidate set with another: it can produce
+null→number, number→null, or number→a different number. And the magnitude is
+**signed** (`bytes_returned` may exceed capped raw), so a sized value is not
+necessarily an inflation at all.
+
+**The sound argument is EPISTEMIC, not directional.** On a miss nothing is known
+about which thread paid for the call, and the function returned a confident number
+anyway. `RefusedMagnitude.unsized` exists for precisely that state.
+
+**What the repair costs, and why that cost is the design's own.** A `null` here does
+not merely shrink `R_hi⁺` — it makes it **NOT EVALUABLE**, and the verdict becomes
+`open`. That is not a design change: it is what `design.metric` prescribes in the
+sentence quoted above.
+
+**Two claims of mine the review also corrected.**
+`excludedForeign` does **not** prove foreign-session ownership — its own contract
+says "usually another session's" and warns the shorthand is inexact, and
+`MEASUREMENTS.jsonl` records the counterexample: a same-session failed `repair`
+whose result was not echoed lands in `excludedForeign` with `provenanceUnavailable`
+false. So "main" can happen to be RIGHT. It is still not a justified proxy, because
+the class establishes nothing about whether the missing source was main, subagent or
+foreign. And the doc's "exactly as the `provenance` degraded path is" IS broader
+than the timestamp — that path assumes `main` explicitly — but the analogy breaks
+downstream: the degraded row forces `savedFraction: null`, while an
+`excludedForeign` row withheld nothing.
+
+**A second defect closed as a side effect.** `at` was `Date.parse(entry.ts)` on the
+miss path, and the telemetry parser accepts any string as `ts`. A malformed
+timestamp gave `NaN`; `request.timestampMs < NaN` is false for every row, so the
+filter rejected nothing and the helper returned the EARLIEST request in the assumed
+thread as a known answer. With the miss path gone, `at` is only ever a real
+`timestampMs`.
+
+**FIVE TESTS PINNED THE DEFECT** and were inverted, each with the reason written in
+place: two in `cost-meter.test.ts` asserting a sized `excludedForeign` magnitude of
+`4864.86…` and a positive `unverifiable` magnitude; the discriminated-union test
+whose refused arm is nullable and now actually exercises `null`; `b12-terms.test.ts`;
+and the CLI test, where `refused()` now prints its unknown-branch sentence — the
+exclusion is still visible and the wording now states the ignorance outright.
+
+**Still UNVERIFIED and recorded rather than closed:** clock comparability between
+the telemetry writer's `ts` and the transcript's `timestampMs` (no calibration or
+skew allowance anywhere); and `byInvocation`'s silent last-write-wins if one
+admitted transcript carries a duplicate invocation id.
+
+### R50 — the emits contradiction is REAL, and the remedy I predicted was impossible is the one to take — 2026-08-14
+
+`runPlan` PHASE 6 says "**One** scoring invocation over the ARCHIVE … using the
+committed command string", and `audit.ts:15-21` prescribes an eight-step loop
+with **two** `emit` invocations. `b12-corpus/manifest-config.json:337-341`
+recorded that the two cannot both be obeyed and left the question open. It is
+now adjudicated: **the conflict is real, the frozen text governs, and the
+harness changes.**
+
+Adjudicated against a Codex `gpt-5.6-sol` xhigh review and an independent
+in-repo verifier, both run against enumerated claims. **Predictions were written
+before either was dispatched** and are reproduced here with their outcomes,
+because two of them were wrong.
+
+| # | Predicted | Outcome |
+|---|---|---|
+| P1 | the second emit is FORCED by a data dependency, so "amend `audit.ts` to one invocation" is **not executable** | **FALSIFIED** |
+| P2 | the pinned `--audit` form obliges one emit to violate clause 19 | CONFIRMED |
+| P3 | HAZARD B is INDEPENDENT of the two-emit design | CONFIRMED |
+| P4 | "scoring invocation" may mean "invocation of the committed string", dissolving the conflict | **REFUTED** |
+| P5 | HAZARD A is a live defect under every reading | CONFIRMED, and worse than stated |
+
+**P1, and the shape of the error.** I wrote that `audit <runId>` *cannot run*
+before an emit is committed. It can. A missing counterfactual is an anchor
+problem (`audit.ts:1486`), anchor problems become clause-5 reasons
+(`audit.ts:877`), and `decideAudit` returns `"void"` rather than refusing
+(`audit.ts:1085`); the CLI still writes the artifact. "Cannot run" was wrong —
+the truth is "runs, and voids". More important: the anchor's real need is
+`aPlusSPositive`, and `assemble.ts:959` computes it as
+`isAdmitted ? terms.aO + terms.sLo > 0 : null`, so the anchor
+(`audit.ts:1618`, first non-null in runlog-row order) is **the first ADMITTED
+observation** — a scorer-computed fact the audit can derive IN-PROCESS from the
+committed archive. It does not need a previously-committed emitter output. The
+dependency is engineered, not inherent, and **the remedy I declared impossible
+is available.**
+
+**And the decoupling deletes a defect class rather than adding one.**
+`audit.ts:1531-1538` already records that the committed counterfactual can be
+STALE — an early unchecked emit followed by more observations — and the current
+mitigation is a two-direction population cross-check whose failure message is
+`"re-emit before auditing"` (`:1612`). The present design polices a staleness
+hazard that exists ONLY because the anchor is read from a committed emitter
+output. Computing it from the committed archive removes the hazard's cause.
+
+**P4, and why the reconciling reading fails.** `PREMISES.md:2458` (pre-declared
+2026-08-08, before any run) says "**The scoring invocation** requires a COMMITTED
+clause 4–6 audit artifact", which appears to fix the referent on step 7 and
+dissolve the conflict. It does not rescue the design, and the review's
+counter-argument is better than my reading: step 1 calls the same `assembleRun`
+(`emit.ts:277`), writes the full counterfactual and `result.json`
+(`emit.ts:293-294`), and computes a bracket — and clause 19's own diagnostic
+calls a *mismatching* execution "the scoring invocation"
+(`assemble.ts:1376`). Under `PREMISES.md`'s pre-declaration step 1 is therefore
+not a non-scoring step but an **illegal** one. **Both readings condemn step 1**,
+which is why the count question is settled by making it moot: with one emit
+there is exactly one scoring invocation under every reading.
+
+**P5, sharpened by the review.** "Expected, not a fault"
+(`manifest-config.json:319`) does not survive. Step 2 commits a
+`result.json` carrying `verdict:"void"`, and downstream nothing distinguishes a
+procedural intermediate from a concluded VOID: `narrowPriorRun` returns a
+NON-NULL result without consulting `final` (`archive.ts:696`), `priorRunsGate`
+blocks only `result === null` (`b12-register.mjs:611`), and `attemptOf` defaults
+to **`consumed: true`** (`archive.ts:676,683`). A procedural intermediate reads
+downstream as **an attempt spent out of three**.
+
+**`final` is written and never read.** `assemble.ts:529` produces it; the only
+reads in the repository are `emit.ts:301` (copy into `EmitResult`) and
+`emit.ts:352` (a terminal print). Zero reads in `scripts/**`. The field that
+says "clauses 4–6 were never checked" is printed to a console and consulted by
+nothing that decides.
+
+**ONE REVIEW FINDING REFINED, WITH THE REASON.** The review held that HAZARD B
+is not reachable on the prescribed path — that running the pinned form before
+the audit is committed is either substituting for step 1 or executing step 7 out
+of order. **That is incomplete.** `emit.ts:269-273`: when
+`auditBindingRefusal` returns non-null, `emit` sets `gitAudit = { ran: false }`
+and **continues to write both artifacts**. So a step 7 executed in the correct
+order, after a correctly committed step 6, still produces a NOT-FINAL result
+whenever the binding fails for any of the legitimate drift reasons at
+`emit.ts:150-228`. `open-b` accepts it (`b12-register.mjs:845`, no `final`
+check). No operator error is required. The review's route was one route, not the
+only one; the independence claim (P3) stands, and reachability is broader than
+either of us first wrote.
+
+**DECIDED — the frozen text governs.** Per the decision rule declared in the
+plan before this investigation began, and NOT decided here for the first time:
+the pre-registration may not be edited, `src/cost/**` is free until the first
+scored observation, and there are zero scored observations. Owed, in order:
+
+1. the registration path reads `result.final` — **both** sites, since `open-b`
+   parses the result JSON itself (`b12-register.mjs:837`) and never passes
+   through `narrowPriorRun`;
+2. the clause-5 anchor derived from the committed archive, not from a committed
+   counterfactual;
+3. the pinned `--audit` form as the SOLE scoring entrypoint — unmet
+   preconditions REFUSE and write nothing, instead of downgrading to
+   `ran: false` and emitting anyway;
+4. a pre-data amendment artifact recording the one-invocation loop, prospective
+   from its introducing commit, editing no frozen text.
+
+**NOT a documentation-only outcome.** The contradiction and both hazards were
+already documented, at `manifest-config.json:315-341` — and documented in the
+one file a reader of this ledger would never open. `FINDINGS.md` and `STATE.md`
+returned ZERO matches for `HAZARD`, `two emits`, `scoring invocation` and
+`clause 19` before this entry.
+
+### R49 — R47 reproduced at a different commit, and the artifact is COMMITTED — 2026-08-14
+
+The fifth harness run, and the first whose evidence anyone else can open:
+`evidence/2026-08-14-win-dryrun-5.b12.firing.json`, base `3aff4db`, six green
+bookends, **all six controls FIRED**, zero problems, **13 of 13 budgeted runs**.
+
+**R43#4 IS CLOSED BY THIS COMMIT AND BY NOTHING BEFORE IT.** R43#4's charge was
+that "neither dry-run artifact is committed, so R42 cited runs nobody can
+replay" — and that stayed true through R47, whose numbers were quoted from a
+run that left no committed object either. This is the first firing artifact in
+the repository's history.
+
+**The off-diagonal counts reproduce R47's cell for cell** — 2/0/1/0/0/5 — at a
+different commit, on a different day, after R46's deadline change. The TABLES are
+not identical and an earlier draft of this sentence said they were: R47's columns
+are `pair | fired | specific | off-diagonal`, these are `pair | fired |
+off-diagonal | R47`. The counts match; the presentation does not, and "reproduces
+R47's table exactly" was the wrong claim to make.
+
+| pair | fired | off-diagonal | R47 |
+|---|---|---|---|
+| m1 | yes | 2, both annotated | 2 |
+| m2 | yes | 0 | 0 |
+| m3 | yes | 1, annotated | 1 |
+| m4 | yes | **0** | 0 |
+| m5 | yes | 0 | 0 |
+| m6 | yes | 5, all annotated | 5 |
+
+Eight off-diagonal kills, every one annotated, none stale — the evaluator
+refuses a stale annotation and reported none.
+
+**m4 is the only line here that was PREDICTED before any run.** R45 argued its
+three "collateral" tests were never collateral but the F24 guards failing on
+their own. That prediction has now held twice. m1's, m3's and m6's annotations
+were written from run 1's output, so their stability is evidence for them and
+is still not the same as having predicted them — R47's residual circularity is
+unerased, not resolved.
+
+**What this does NOT establish, and the list has not shrunk.** It is win32
+while the scored sessions come from the Mac. The runId says `dryrun` because it
+is one. The artifact remains SELF-ASSERTED — the audit checks digests and
+coherence, never that the harness executed. And R48's independence objection
+stands: this is one more chained run on one machine, not an independent
+replication, and `specificityClean` is FALSE overall with eight kills that stay
+REPORTED, DECIDING NOTHING.
+
+**WHAT THE ARTIFACT SUPPORTS ON ITS OWN, AND WHAT IT DOES NOT.** The distinction
+matters because the point of committing it is that a stranger can check it. From
+the JSON ALONE: 6/6 fired, six green bookends, every problems array empty,
+13 of 13, the base commit, and the per-pair counts summing to
+`offDiagonalKillCount: 8`. NOT from the JSON alone: that this is the fifth run,
+that it is the first committed artifact, that R47 left none, that m4 alone was
+predicted, and that m5 was skipped in run 1 — every one of those needs the
+repository's history or an earlier finding, and none is a claim the artifact makes.
+
+**"None stale" is the sharpest case, and the artifact cannot show it.** The
+evaluator DOES check — `b12-firing.mjs:473-476` raises a problem for an annotation
+naming a test that did not fail, and `problems` is empty — but the artifact omits
+the declared-collateral registry, so a reader cannot recompute the check. Verified
+against the registry by hand instead: the declarations match the observations
+2/0/1/0/0/5 exactly.
+
+**THREE OMISSIONS, OWED BEFORE THE SCORED RUN AND NOT BEFORE THIS ONE.** The
+artifact is replayable BY REFERENCE — base commit plus `--at` plus `--commit`
+reconstructs the command, and the base commit content-addresses the mutation
+definitions, the harness, the lockfile and the subjects — but it is not
+self-contained. It embeds neither the mutation `find`/`replace` pairs, nor the raw
+vitest reports, nor a digest of the runner and evaluator that produced it. So it
+cannot show that its producer ran the canonical harness at that commit; a third
+party must check out `3aff4db` and re-run. That is tolerable for a win32 DRY RUN.
+It will not be tolerable for the Mac artifact that becomes evidence of record, and
+closing these three is owed before then.
+
+**A provenance oddity, so nobody reads it as a contradiction.** `generatedAt` is
+`2026-08-14T00:00:00Z`, which is EARLIER than its own `baseCommit` was created.
+That is not an inconsistency: `--at` is operator-supplied and REQUIRED precisely
+so the artifact is byte-stable (`b12-mutate.mjs:614-615`), and it is therefore not
+a wall-clock record of when the harness executed. Nothing in this repository
+should ever read it as one.
+
+**One runner defect was fixed before this ran** (`3aff4db`): `runsSpent` was
+`1 + 2 * registry.length` — the BUDGET, not the spend. A red pristine bookend
+skips its mutant invocation, and m5 was never mutated in run 1 for exactly that
+reason, so the field had reported thirteen runs on a matrix that made twelve.
+It is counted now, with `runsBudgeted` beside it. This run spent 13 of 13,
+which is only knowable because the two are reported separately.
+
+### R47 — with the flake gone, the six fire and specificity becomes measurable — 2026-08-11
+
+The fourth harness run, and the first on a suite that answers the same thing
+twice. `f3f0ba9`, 13 runs, six green bookends, **all six controls FIRED**, zero
+problems.
+
+**The R45 inference is SUPPORTED — not confirmed — and it was written down before
+this run.** R45 argued that m4's three "collateral" tests were never collateral,
+that they were the F24 guards failing on their own. With the budget raised, **m4
+returns `specificityClean: true`, `offDiagonalFailures: 0`.** The prediction was
+recorded first precisely because R46's had been wrong.
+
+**CORRECTED BY R48: one clean run is not confirmation, and the arithmetic says
+so.** At the observed ~1/3 failure rate, **eight** independent clean executions
+are needed before persistence is excluded at 95% — (2/3)^8 ≈ 3.9% — and twelve
+for 99%. This run contains enough nominal opportunities (a baseline, six green
+bookends, a clean m4) but they are chained on one machine within minutes, so
+their independence is unestablished and the count cannot simply be added up.
+"Their prior failures WERE noise" and "the eight remaining kills have a KNOWN
+cause" both overstate: they are hypotheses consistent with one run, and they stay
+hypotheses until independently reproduced.
+
+**Specificity is measurable for the first time.** Eight off-diagonal kills, every
+one annotated, none stale:
+
+| pair | fired | specific | off-diagonal |
+|---|---|---|---|
+| m1 | yes | no | 2 |
+| m2 | yes | **yes** | 0 |
+| m3 | yes | no | 1 |
+| m4 | yes | **yes** | 0 |
+| m5 | yes | **yes** | 0 |
+| m6 | yes | no | 5 |
+
+**This corrects R43 in both directions, which is why it is written out.** R43 said
+every collateral declaration was suspect. The measurement says three of four were
+RIGHT: m1's 2, m3's 1 and m6's 5 are exactly what I declared from run 1, before
+the flake was known. Only m4's three were wrong, and they were wrong because they
+were noise. Convergence supports it — the contaminated run 3 showed m1 at FOUR
+kills; run 4 shows the declared two. Review found a real defect and overstated
+its reach, and both halves belong on the record.
+
+**What this establishes**: the six controls redden when their own subjects break,
+with the assertion inside the control's own body, over a proved-pristine tree
+with green bookends either side. Sensitivity, mechanically, which is clause 6's
+frozen word FIRING.
+
+**What it does not**: specificity is not clean — eight kills remain, now with a
+known cause (tests sharing the mutated subject). That stays REPORTED, DECIDING
+NOTHING; requiring it would mint a condition the frozen text does not carry.
+
+**The residual circularity, unerased.** m1's, m3's and m6's annotations were
+written from run 1's output. Their holding steady on a run with the flake removed
+is evidence for them; it is not the same as having predicted them before any run.
+Only m4's status was predicted in advance, and only m4's is therefore
+independent.
+
+**Still not evidence of record**: the runId says `dryrun`, the run came from
+win32 while the scored sessions come from the Mac, and the artifact remains
+self-asserted — the audit checks digests and coherence, never that the harness
+executed.
+
+### R46 — the flake had a cause, and it was a five-second budget — 2026-08-11
+
+**My hypothesis was wrong, and writing it down before measuring is why that is
+visible.** I predicted git's racy-clean problem and named the message I expected
+(`expected '' to be 'M …'`). What came back:
+
+```
+Error: Test timed out in 5000ms.
+Error: EBUSY: resource busy or locked, rmdir 'C:\…\Temp\cost-meter-test-LRjxiB'
+```
+
+The F24 guards build REAL git repositories and spawn dozens of `git` processes
+each, and under vitest's 5s default they sometimes exceed it; teardown then meets
+a live or locked resource and fails `EBUSY`.
+
+**CORRECTED BY R48 — this entry originally read the timeout as a proven root
+cause and named four hypotheses as falsified. That was wrong, and it is the third
+time in this file that I turned an observation into a causal claim it did not
+carry.** A deadline exceeded plus an `EBUSY` establishes that a test ran past 5s
+and that cleanup met something still alive. It does NOT establish that ordinary
+load was the cause, that `EBUSY` came after cancellation rather than before it,
+or that a deadlock, a leaked handle or an unawaited path inside
+`commitObservationRow` is excluded. Raising the deadline and seeing 4/4 pass
+shows those runs finished inside 60s — nothing more.
+
+So: **a mitigation that works, not a root cause.** Distinguishing the remaining
+hypotheses needs per-phase timings, child-process and active-handle capture at
+the deadline, and controlled load/no-load repetitions. None of that has been
+done.
+
+**A method failure worth more than the fix.** I chased this through
+`--reporter=json` for three rounds, and that reporter turns every one of these
+into the placeholder `Error: STACK_TRACE_ERROR`. I spent three rounds reading a
+channel that erased the evidence before I thought to change the channel.
+
+**The fix**: `{ timeout: 60_000 }` on the F24 describe — the figure
+`tests/b12-audit.test.ts` already gives its own git-heavy e2e tests, not a new
+number invented to make something pass. Verified the way this repository
+verifies: 4/4 green under DELIBERATE load (three suites running in parallel),
+zero 5000ms timeouts, and then the fix itself SHOWN FIRING — mutated to
+`{ timeout: 1 }` it produces `Test timed out in 1ms`, so the option is honoured
+rather than silently ignored. Restored byte-identically.
+
+**Why it reached past the harness.** `tests/cost-meter.test.ts` is a
+CONFORMANCE_FILE, and `--attest-suite` runs it in a clean worktree REQUIRING
+exit 0. Clause 6's attestation was therefore load-sensitive, which is not a
+property a pre-registration can carry silently. This edit moves a pinned
+conformance file, pre-data and free, and the audit's conformance hashes report
+the drift by design.
+
+### R45 — the conformance suite is FLAKY, and m4's "collateral" was never collateral — 2026-08-11
+
+Investigating the red bookend found something much larger, and it falsifies a
+registered fact of this repository.
+
+**`tests/cost-meter.test.ts` is nondeterministic on its own.** Two independent
+probes in the MAIN tree — no worktree, no `npm ci`, no `git clean`, no chained
+cycles, no harness machinery: 1 red in 6, then 1 red in 3. The red bookend of
+dry run 1 was never about `makePristine`, contention or ordering. Three of the
+four hypotheses die at once.
+
+**The signature is the registered KNOWN_FLAKY class's, and the class does not
+cover this — twice over.** Failing tests are fs/git-heavy F24 guards and the
+message is the exact vitest placeholder `Error: STACK_TRACE_ERROR`. But the
+registered class names three files and `tests/cost-meter.test.ts` is not among
+them, and it says those failures occur ONLY in the FULL suite — these are SOLO
+runs of one file. **That second half of the class is now falsified.** The class
+is NOT being widened to absorb this: widening a registered condition so an
+inconvenient observation stops counting is the exact move this project exists to
+refuse. It is recorded against the class instead.
+
+**And it explains R43#1.** Two of the four tests named here —
+"a checkout DURING the act never stages evidence on the branch it lands in" and
+"the refresh is bound to the POSITION of HEAD, not to the branch's name" — are
+two of the three m4 "collateral" tests. They were almost certainly never
+collateral: they are intermittently red with or without any mutation. Review
+found my causal reasons false; this is WHY they were false. A flake was read as
+a mutation's blast radius, and the declaration would have taught the harness to
+accept it forever.
+
+**What this costs the clause.** `tests/cost-meter.test.ts` is a `CONFORMANCE_FILE`
+— the file clause 6 names, where all six controls live, and the one
+`--attest-suite` runs in a clean worktree REQUIRING exit 0. A flaky conformance
+suite means an attestation can fail spuriously, and worse, that "the six controls
+passed" carries an error rate nobody has measured. This is owed before the seal,
+and it is now the largest open item on the harness.
+
+### R43 — the round that took R42 apart — adjudicated 2026-08-11
+
+Five findings, four `high`, all confirmed. **R42 below is superseded and its
+claims are withdrawn; it is kept unedited because this file does not rewrite what
+it once asserted.** R23 is REOPENED.
+
+**R43#1 — three collateral reasons were INVENTED.** I declared m4's three F24
+guards with "they assemble a run and assert on its dispositions". Review read
+them: they exercise `commitObservationRow` and assert on branch, index and runlog
+behaviour. They neither assemble a scored run nor inspect a disposition. The run
+told me WHICH tests failed and never WHY, and I wrote the why as measured fact.
+That is R40#2 one round later — a claim false about the code beside it — and it
+is worse the second time. Withdrawn; m4 no longer passes. m6's five reasons were
+unfalsifiable boilerplate, and review found the mechanism I had not looked for:
+`classify()` supplies `coveredSlugs=[a,b,c]` against `writtenSlugs=[a]`, and the
+mutation reads that valid SUBSET as outside coverage.
+
+**R43#2 — the declarations are a whitelist, and run 2 was circular.** They do not
+demonstrate specificity; they name every failure run 1 produced so run 2 accepts
+them. Reasons are unchecked prose, unused declarations are not rejected, and a
+declared failure becomes acceptable regardless of cause. "Clean off-diagonal"
+meant only "every red test was whitelisted", and a third identical run would not
+break it. The rule that costs no new voiding condition: **collateral may
+ANNOTATE the kill set and must never convert an off-diagonal failure to OK** —
+where coupling is unavoidable the harness reports that it established
+SENSITIVITY and not specificity. Owed.
+
+**R43#3 — the toolchain field decides nothing, and that is not defensible here.**
+`decideAudit` never compares it with the attestation, which carries no equivalent
+identity, so win32 evidence can clean a Mac attestation at the same commit —
+while the code's own comment admits controls can behave differently by platform.
+Pre-data, the answer is to bind both to a normalised toolchain identity and void
+on mismatch. Owed, and it belongs with the platform amendment `STATE.md` already
+lists.
+
+**THE PREMISE RE-VERIFIED AND THE CROSS-REFERENCE CORRECTED — 2026-08-14.** The
+premise still holds three days later: `decideAudit` compares the firing artifact's
+`baseCommit` with the attestation's `subjectCommit` and then checks coverage,
+firing and subject hashes, but never reads `fire.toolchain` (`audit.ts:817`); the
+artifact's own field is optional and labelled "REPORTED, DECIDING NOTHING"
+(`:533`); and `isFiringEvidence` accepts an artifact without inspecting it at all
+(`:1139`). **The suite attestation carries no runtime identity whatsoever** — its
+fields are commit, timestamp, `lockfileSha256`, file counters and test rows
+(`:543`, produced at `:1838`). The lockfile indirectly pins the installed vitest
+PACKAGE and identifies neither OS, arch, nor the node executable. So win32 firing
+evidence can still satisfy the audit against a Mac attestation whenever the commit
+and subject hashes agree.
+
+**The cross-reference above is wrong and is left standing with this correction
+beneath it.** `STATE.md` lists no amendment at all — it has five sections and none
+of them is an amendment list. The "platform amendment still owed" is real but is
+recorded in the two existing amendment ARTIFACTS
+(`evidence/2026-08-10-b12-amendment-conformance-paths.json:39` and
+`evidence/2026-08-14-b12-amendment-repair-max-rounds.json:46`), not in `STATE.md`.
+
+**And R43#3's proposed remedy is narrower than the problem it names.** Binding the
+firing artifact to the suite attestation makes those two agree with each other and
+binds NEITHER to the scored sessions. Two win32 proof artifacts that agree would
+pass such a check while the sessions they vouch for ran on the Mac. Any amendment
+here has to decide what the authoritative identity IS — the run's, not merely a
+consistency relation between two proofs — and that is a wider question than "compare
+or do not compare". **Confirmed authorable as a pre-data amendment** in the same
+shape as the existing two (`editsTheFrozenArtifact: false`, prospective from its
+introducing commit, enforced in `audit.ts`, which already owns clause 6 and the
+amendment-governance calculation at `:1442`). **No frozen clause reaches a platform
+mismatch today** — clause 6 requires the controls "shown FIRING" and says nothing
+about the environment; clauses 7, 21 and 22 compare versions across SESSIONS and
+ARMS, never the firing and suite runtimes. So voiding on mismatch would add a
+reason a clean run becomes void, and that is the owner's call, not the scorer's.
+
+**R43#4 — R42 overstated, sentence by sentence.** "R23 closes", "zero problems",
+"clean off-diagonal", "every declaration honoured exactly", "the red bookend was
+intermittency". And the load-bearing omission: **neither dry-run artifact is
+committed**, so R42 cited runs nobody can replay. A later green run shows
+nondeterminism, not whether the first red came from vitest, environment, retained
+`node_modules`, or `makePristine` itself. Not widening KNOWN_FLAKY on one
+occurrence was right; calling the unexplained red harmless was not.
+
+**R43#5 — the PREMISES amendment claims more than git proves.** "Same standing"
+and "post-data this question would be unanswerable" overreach: git proves WHEN
+text was committed, not that it carries equivalent evidentiary standing, and
+post-data adoption would be contaminated rather than unanswerable.
+
+### R42 — the harness RAN, twice, and R23 closes — SUPERSEDED BY R43, 2026-08-11
+
+**Every claim below was withdrawn the same day by R43.** It is left unedited
+because this file does not rewrite what it once asserted; the correction lives
+above it, where a reader meets it first.
+
+
+
+Not a review round: the first EXECUTION of the mutation harness against the real
+controls, and the thing R23 left open since it asked for mechanical proof of
+firing.
+
+**Run 1 (efe53b4).** Five of six diagonals fired, each with its assertion inside
+the control's own body. Only m2 COUNTED, because the other four carried
+collateral nobody had declared — precisely what R40's whole-file specificity
+check was built to surface, working on its first outing. m5 was never tested at
+all: its pristine bookend came back RED, so the pair was refused before the
+mutation was applied.
+
+**The collateral, then declared from the measurement.** Eleven tests across four
+pairs, each with its own reason: m1 moves two fixtures carrying zero-byte rows,
+m3 the one other test asserting on the `unsized` channel, m4 three F24 guards
+that assert on run dispositions, m6 five `classifyRun` tests — its own subject's
+suite. Five of 162 is the widest blast radius of the six, and that narrowness is
+what the declaration records. R40 caught me declaring collateral I had NOT seen;
+this is the opposite order, and the order is the whole difference.
+
+**Run 2 (b3731da). ALL SIX FIRED** over 13 runs: zero problems, six green
+bookends, clean off-diagonal, every declaration honoured exactly. m5 fired at
+`:1055` — its first real measurement.
+
+**The red bookend was intermittency.** Same commit, same machine, same pristine
+cycle, green on the second pass. ONE occurrence, recorded and NOT absorbed into
+the KNOWN_FLAKY class: that class requires reproduction, and one is not
+reproduction. If it returns it is the second, not the first.
+
+**What this does not establish**, none of it a surprise: the controls are not
+shown to cover the defect space AROUND them (R38#4, declined deliberately); the
+artifact stays self-asserted; and this is not evidence of record — the runId says
+`dryrun` and the run came from win32 while the scored sessions come from the Mac.
+The toolchain field added the same day is what makes that legible on the
+artifact's own face.
+
+### R41 — clause 6's firing reader, and an argument that wanted both sides — adjudicated 2026-08-11
+
+Five findings. Three mechanical, one about coverage, and one about a sentence.
+
+**R41#3 is the one that matters, and it is not about code.** The `PREMISES.md`
+entry declaring this change ADMITTED that requiring a committed machine artifact
+NARROWS how clause 6's "shown" may be satisfied — thirty hand demonstrations in
+this file are also showings — and then, one sentence later, said corrections owe
+no amendment. Having it both ways. The review is right, and this project's whole
+defence against minted conditions is that the distinction stays unnegotiable
+exactly when it is inconvenient. Rewritten with the split it should have had:
+closing the gap between the frozen word FIRING and the code's PASSING is a
+**correction**; the named path, schema, green baseline, exact control set, commit
+relationship and digest binding are a **pre-data amendment**, recorded as one.
+
+**R41#1 — a forged matrix that ran nothing read CLEAN.** With
+`controlsEvaluated` listing all six and `pairs: []`, every loop stayed quiet and
+`allFired: true` survived. Same species as the empty-`subjects` hole found while
+writing the fixture. Now exactly one pair per listed control, one-to-one, with
+unique ids.
+
+**R41#2 — the audit THREW where it should have voided.** Validation stopped at
+the top level, so a missing `baseline` or a null row reached the decider and
+raised a TypeError. An audit that throws on hostile input is an audit hostile
+input can silence. A full nested validator now turns malformed committed bytes
+into the same VOID as absent bytes — and the control written for it caught more
+than the review predicted: validating in the COLLECTOR was not enough, because
+`decideAudit` is pure and can be handed anything, so it re-checks.
+
+**R41#5 — the canonical serialization was order-dependent.** Two artifacts
+asserting identical facts in different array orders produced different audit
+inputs, against the stated purpose of the one-spelling representation. Sorted.
+
+**Two gaps recorded rather than closed.** The artifact remains SELF-ASSERTED:
+recomputing subject digests proves those bytes exist at that commit, not that the
+harness executed them — the same trust boundary the suite attestation had before
+`--attest-suite`, and the equivalent answer is an `--attest-firing` that runs the
+harness from the auditor. And the e2e uses `harness-subjects/**` because the real
+subject paths ARE `PINNED_PATHS`, so nothing tests those files serving as firing
+subjects and pinned sources at once.
+
+### R40 — the runner, and two mutations that lied about themselves — adjudicated 2026-08-11
+
+The hardest of the three harness rounds. Four findings, three `high`, and two of
+them land on the registry itself rather than on plumbing.
+
+**R40#2 is the one that matters, and it is a new species of defect for this
+file: a claim that was false about the code beside it.** Two entries said they
+replayed a historical bug and did not. `m2` clamped `saving.bytes.signedUncapped`
+— a DISPLAY aggregate. Its control went red, so every firing predicate was
+satisfied, but it went red on a display assertion while the SCORED figure stayed
+negative: the harness would have certified a historical replay that never
+restored the historical defect. Fixed by clamping `signed` at its source, where
+the shipped clamp actually lived, which moves `rowsNetNegative`, `signedUncapped`
+and `unitsTotal` together. `m5` raised the ambiguity threshold, which makes NO id
+ambiguous and so has both sessions credit the call — count-both, under a label
+saying first-wins. There the MUTATION is fine: count-both is production-reachable
+and the control catches it. The CLAIM was wrong, so the claim was corrected —
+relabelled `kind: "invariant"`, renamed, and the entry now says why genuine
+first-wins was not implemented (it needs a restructure, and this registry admits
+no mutation it cannot anchor as an exact literal). Every pair now carries a
+`kind`, so "historical replay" is a checkable assertion rather than a flourish.
+
+**R40#1 — `expectFailures` was licence for any non-zero exit.** A worker crash,
+an OOM, a bail or a late unhandled rejection all produce a parseable JSON line,
+and all of them were handed to the evaluator as valid mutant evidence. Two fixes,
+and the second is the general one: vitest must exit 0 or 1 (0 passes through so
+the evaluator can say "did not fire" by name; anything else is the process
+failing, not a control judging), AND specificity is now checked over the WHOLE
+conformance file rather than the six registered controls. That second change also
+closes the collateral the review found in `m1`, which reddens unrelated zero-byte
+turn-collapse tests that the six-control sweep could not see.
+
+**R40#3 — the artifact's byte-level binding did not bind bytes.** `blobSha`
+hashed `git show`'s stdout through a helper that `trimEnd()`s it, and every one
+of these files ends in a newline, so the recorded digest already disagreed with
+the blob it named — before CRLF conversion on this checkout was even considered.
+Now the committed blob is hashed as raw bytes, and the artifact publishes
+`sha256InTree` beside `sha256AtBase` so a reader SEES the line-ending conversion
+instead of being told it did not happen.
+
+**R40#4 — Windows cleanup could leak a worktree permanently.** `rmSync` ran
+before `prune` with no nested recovery, so a lingering child or a locked `.git`
+entry masked the error and skipped the prune, and the next run mints a fresh
+`mkdtemp` path and never repairs the old one. Now `git worktree remove --force`
+is asked first, removal retries, prune runs in its own `finally`, and what could
+not be released is reported rather than swallowed.
+
+Two of the six claims came back in my favour, which is worth recording: the
+`CONTROL_TESTS` import is snapshotted before the first mutation, so no pair can
+be evaluated against a mutated control list; and `node_modules/.vite` survives
+the clean but holds only scheduling.
+
+### R39 — the evaluator, reviewed the day it was written — adjudicated 2026-08-11
+
+Targeted at `scripts/b12-firing.mjs` and its self-test, six named claims. NO-SHIP
+again, four findings, three `high`. Two of the six claims I asked Codex to attack
+came back saying I was wrong to worry, which is worth as much as the rest:
+`indexRun`'s normalisation IS byte-identical to `attestationFromVitest`'s, so the
+harness and the audit key alike; and all six real controls use ordinary `expect`
+matchers, so the `AssertionError` prefix rule breaks none of them.
+
+**R39#1 — `allFired` quantified over the wrong set.** `evaluateMatrix` trusted
+the `controls` array it was handed and only checked set equality against the
+registry, so a one-control matrix with a green baseline returns `allFired: true`.
+Worse, the self-test NORMALISED the defect by asserting `allFired` over two
+synthetic controls — a reduced-coverage bug would have passed all twenty. Fixed
+in two places rather than one: the evaluator now refuses duplicate mutation ids
+and duplicate control keys (either lets two pairs consume one report), and the
+artifact publishes `controlsEvaluated` so the six-ness is decided by the
+audit-side reader, where `CONTROL_TESTS` actually lives.
+
+**R39#2 — the line scanner's central claim was false, and the defect was
+deliberate.** Its header said next-declaration ranges "can never exclude a real
+in-body assertion". `BOUNDARY_RE` matched `// it(` **on purpose**, so a
+commented-out declaration inside a body truncated the enclosing test and dropped
+every assertion after it; a template literal opening with `it(` did the same; a
+title on the line after the call recorded no title at all. Replaced with a real
+TypeScript parse, which has none of those failure modes because a comment is not
+a `CallExpression` — and which yields the EXACT body range, so hooks are
+naturally disjoint rather than carved out by hand.
+
+**R39#3 — the stack matcher was unsafe in both directions.** It searched for the
+substring `/<controlFile>:`, which missed Windows backslash frames and `file://`
+URLs (a false "did not fire") and matched
+`…/tests/fixtures/x/tests/cost-meter.test.ts` (an assertion in another file
+credited to the frozen control). The collision is not hypothetical: this
+repository carries `tests/fixtures/**`. Now resolved against the repository root
+with exact equality. One improvement beyond the finding: ANY frame in the body
+counts, not the first, so an assertion raised inside a helper the test calls
+still credits the test — while a hook's chain still never reaches the body.
+
+**R39#4 — recorded, not fixed.** The shared `tests/[^/]+` expression cannot
+express `tests/<dir>/<file>`. Both conformance files are direct children of
+`tests/` and pinned under the 2026-08-10 amendment, so the nested case cannot
+arise for the six; changing it would move the attestation's keys too, which is a
+bigger act than this branch. Written down so the next person meets it as a known
+limit rather than a surprise.
+
+All four fixes were shown FIRING by hand with byte-identical restores: restoring
+the suffix matcher reddens exactly 1 test, inverting `classifyFailure` reddens 5,
+collapsing duplicates reddens 1. Sensitivity and specificity, on the watchman.
+
+### R38 — the first round against a PLAN, and the first NO-SHIP — adjudicated 2026-08-11
+
+Every round before this one reviewed a diff. R38 reviewed
+`docs/b12-scorer/MUTATION-HARNESS-PLAN.md` — a design for the mutation harness
+R23 left open — **before a line of it was written**, and returned NO-SHIP on all
+five claims it was pointed at. Four confirmed whole, one in part. The cheapest
+round in the file: it killed a design instead of a day of code.
+
+**R38#2 is the round, and it is the NINTH instance of the pattern.** The plan
+argued that reading firing evidence in `voidConditions` would mint a voiding
+condition and owe a pre-data amendment, so the artifact should stay advisory.
+That was a rationalisation. Clause 6's frozen text says the six controls must be
+**shown FIRING**; the audit computer checks that they are **PASSING**
+(`audit.ts:632-675`). Passing is strictly weaker — a gutted control that keeps
+its title and asserts nothing passes. The gap was never between the code and a
+condition someone wanted to add; it was between the code and the frozen sentence
+the code already claimed to implement. By this project's own distinction that
+makes it a **correction**, and corrections owe no amendment. Firing evidence
+moves inside clause 6's existing evaluator, reported as failure of the existing
+phrase. No seventh condition, no new clause.
+
+One residual is settled rather than argued away: requiring the evidence be
+*machine-produced* does narrow how "shown" may be satisfied, since a hand
+demonstration in this file is also a showing. That narrowing is declared
+**pre-data** in `PREMISES.md`, ordered by `git log -p`, exactly as the two owner
+decisions of 2026-08-11 were.
+
+**R38#1** — the three-part firing predicate admitted a mutant keyed to the
+diagonal test's own fixture id: builds, kills only `C_i`, proves nothing. The
+sub-point was better than the headline: a failure in `beforeEach` is attributed
+by vitest to the test, so a mutation that breaks only shared setup reads as a
+firing while the control's own assertions never run. Six conditions now, adding
+*the kill is located in the named test's body* and *the mutant names no test-only
+identifier*.
+
+**R38#3** — the plan promised per-pair bookends and then budgeted seven runs.
+Arithmetic that cannot hold, mine. Worse half: restoring the subject's BYTES does
+not restore the TREE — `tsc` does not delete obsolete output, so a restored
+source with a stale `dist/` still runs the mutant, and a later pair failing on an
+earlier pair's residue records as a firing. Pristine is now PROVED (`git clean
+-xfd -e node_modules`, `git status --porcelain` empty, `dist/` deleted and
+rebuilt) and the budget is stated honestly at 1 + 2N = 13.
+
+**R38#5** — the vacuous seventh control was theatre. The plan called living
+outside `CONFORMANCE_FILES` a virtue; outside is precisely what makes it travel a
+different lookup path, so it cannot catch an acceptance rule inverted for
+registered controls only. Replaced by synthetic `--reporter=json` fixtures pushed
+through the *same* parsing and acceptance functions — including the duplicate
+`fullName` case the audit already treats as unanswerable (`audit.ts:672`).
+
+**R38#4 — CONFIRMED AS A LIMITATION, RECOMMENDATION DECLINED.** Replaying each
+control's historical bug does show only that it is a regression test for the
+defect it was born from. True. But the recommendation — *require* each control to
+kill several non-equivalent mutants — argues for a goal the clause does not set
+and would mint exactly the condition R38#2 refuses to mint. Declined. The
+invariant-derived operator catalogue ships instead as **reported, deciding
+nothing**, naming surviving mutants beside the six that decide.
 
 ### THE TARGETED ROUNDS (R35, R36, R37) — adjudicated 2026-08-11
 

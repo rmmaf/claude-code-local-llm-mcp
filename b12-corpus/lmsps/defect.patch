@@ -1,0 +1,13 @@
+diff --git a/src/lms.ts b/src/lms.ts
+index f53aa63..17f10c5 100644
+--- a/src/lms.ts
++++ b/src/lms.ts
+@@ -36,7 +36,7 @@ export interface LmsLoadedModel {
+  */
+ const ID_KEYS = ["path", "modelKey", "key", "displayName", "identifier", "name"];
+ const SIZE_KEYS = ["sizeBytes", "size_bytes", "size"];
+-const CONTEXT_KEYS = ["contextLength", "context_length", "contextSize"];
++const CONTEXT_KEYS = ["contextLength", "contextSize"];
+ const MAX_CONTEXT_KEYS = ["maxContextLength", "max_context_length"];
+ 
+ function positiveNumberOf(row: Record<string, unknown>, keys: string[]): number | null {

@@ -39,7 +39,7 @@ import { DEFAULT_RATES } from "../src/cost/rates.js";
 import { transcriptFromRecords } from "../src/cost/transcript.js";
 import type { RawRecord } from "../src/cost/transcript.js";
 import type { TelemetryRecord } from "../src/telemetry.js";
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 /** Epoch base shared by every fixture, so timestamps are comparable across files. */
 export const EPOCH = 1_700_000_000_000;
@@ -57,7 +57,7 @@ export function makeScratch(): { tempRoot: () => string; cleanup: () => Promise<
     async cleanup(): Promise<void> {
       while (roots.length > 0) {
         const root = roots.pop();
-        if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+        await removeTempRoot(root);
       }
     },
   };

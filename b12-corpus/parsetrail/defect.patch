@@ -1,0 +1,13 @@
+diff --git a/src/parse.ts b/src/parse.ts
+index c13a0ad..8401067 100644
+--- a/src/parse.ts
++++ b/src/parse.ts
+@@ -13,7 +13,7 @@ import { log } from "./logger.js";
+  */
+ export function stripThinkBlocks(text: string): string {
+   let out = text.replace(/<think>[\s\S]*?<\/think>/g, "");
+-  const unclosed = out.indexOf("<think>");
++  const unclosed = out.indexOf("</think>");
+   if (unclosed !== -1) out = out.slice(0, unclosed);
+   return out;
+ }

@@ -1,0 +1,13 @@
+diff --git a/src/models-csv.ts b/src/models-csv.ts
+index 62da863..92ae3dd 100644
+--- a/src/models-csv.ts
++++ b/src/models-csv.ts
+@@ -107,7 +107,7 @@ export function parseModelsCsv(text: string): ModelEntry[] {
+     } else if (record.length > 2) {
+       log.warn(`models-csv: row for ${JSON.stringify(model)} has ${record.length} columns; using only the first two`);
+     }
+-    entries.push({ model, objective: (record[1] ?? "").trim() });
++    entries.push({ model, objective: (record[2] ?? "").trim() });
+   }
+   return entries;
+ }

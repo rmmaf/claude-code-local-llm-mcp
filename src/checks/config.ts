@@ -21,7 +21,31 @@ export interface CheckSpec {
 
 export const CHECKS_REL_PATH = path.join(".local-coder", "checks.json");
 
-const DEFAULT_TIMEOUT_MS = 300_000;
+/**
+ * Five minutes stopped being enough for this repository's own suite.
+ *
+ * MEASURED, 2026-08-13, on the `npm-test` check here: gates that finished took 270, 276, 283
+ * and 291 s; one failed at 299.6 s; then three in a row timed out at 300.0 s. The gate could
+ * no longer verify the repository it ships in — and CLAUDE.md tells every session here to
+ * verify through the gate and nothing else, so a marginal ceiling does not degrade gracefully.
+ * It removes the only sanctioned instrument, and the fallback is the raw output this tool
+ * exists to avoid.
+ *
+ * WHAT IS NOT ESTABLISHED, because a run says WHICH and never WHY. The same command measured
+ * 189.6 s standalone and 215 s standalone with `--reporter=json`, both including the `pretest`
+ * build — so the build is NOT what crossed the line, and an earlier draft of this comment said
+ * it was. The 55-85 s the gate's own runs cost on top of that is unexplained: output capture
+ * through a pipe and machine load from concurrent work are both candidates, and this change
+ * separated neither. What is measured is the MARGIN, and the margin is what is being fixed.
+ *
+ * TEN MINUTES, NOT MORE, for the reason `vitest.config.ts` gives about its own budgets: a
+ * timeout exists to catch a HUNG check, and one so large nothing can reach it has stopped
+ * being a check. Roughly 2x the observed worst case is margin; 10x would be an off switch.
+ *
+ * A project needing longer should say so in `.local-coder/checks.json` with its own
+ * `timeoutMs`, which is what that field is for, rather than moving this floor again.
+ */
+const DEFAULT_TIMEOUT_MS = 600_000;
 
 async function readJson(file: string): Promise<unknown> {
   try {

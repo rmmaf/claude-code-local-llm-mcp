@@ -9,7 +9,7 @@ import type { ProcessResult, ProcessRunner } from "../src/exec.js";
 import { ToolError } from "../src/fs-safety.js";
 import { runGate } from "../src/tools/gate.js";
 import { readTelemetry } from "../src/telemetry.js";
-import { makeTempRoot, testConfig, writeFileTree } from "./helpers.js";
+import { makeTempRoot, removeTempRoot, testConfig, writeFileTree } from "./helpers.js";
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -20,7 +20,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 

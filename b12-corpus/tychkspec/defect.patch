@@ -1,0 +1,13 @@
+diff --git a/src/checks/config.ts b/src/checks/config.ts
+index 32d3b9b..4df472b 100644
+--- a/src/checks/config.ts
++++ b/src/checks/config.ts
+@@ -40,7 +40,7 @@ async function exists(file: string): Promise<boolean> {
+   }
+ }
+ 
+-function isCategory(value: unknown): value is CheckCategory {
++function isCategory(value: string): value is CheckCategory {
+   return typeof value === "string" && (CHECK_CATEGORIES as readonly string[]).includes(value);
+ }
+ 

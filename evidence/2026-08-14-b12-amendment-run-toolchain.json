@@ -1,0 +1,45 @@
+{
+  "document": "b12-amendment-run-toolchain",
+  "schema": "b12-amendment/1",
+  "type": "pre-data amendment",
+  "written": "2026-08-14",
+  "headAtWriting": "f20ca71fdfafc0695230b9ba3ecda35a088b72cc",
+  "amends": {
+    "artifact": "evidence/2026-08-05-b12-preregistration.json",
+    "clause": "design.voidConditions 6",
+    "editsTheFrozenArtifact": false,
+    "frozenTextVerbatim": "6. VOID if the conformance suite (tests/cost-meter.test.ts, tests/session-token-walk.test.ts) was not passing at the commit the run was produced from, or if any of the required negative controls is absent or not shown FIRING: a failed repair row crediting zero units; a byte-negative row carried signed; an unmatchable wouldHaveAdded returning null and not 0; a two-worktree fixture where a resumed session returns inherited > 0; a per-session scoring invocation REFUSING where the full-set invocation credits; and a run whose snapshot covered fewer slugs than it wrote to being rejected."
+  },
+  "scope": "PROSPECTIVE. This amendment governs every B12 run whose FIRST SCORED OBSERVATION is committed after the commit that introduces this artifact. It governs no earlier run and may not be applied retroactively.",
+  "ADDS_NO_VOID_CONDITION": "STATED FIRST BECAUSE IT IS THE POINT. This amendment creates no new way for a run to become VOID. R43#3 proposed voiding on toolchain mismatch; that was considered and DECLINED BY THE OWNER on 2026-08-14. A mismatch discovered after registration is REPORTED and decides nothing. The enforcement here is a PRE-RUN BARRIER — it refuses to start, in the same way and at the same seam as the manifest's existing claudeCodeVersion pin, which REFUSES an arm rather than voiding a run.",
+  "effect": "A governed run declares ONE authoritative run toolchain identity in its manifest before registration, and the harness refuses to spend a session whose toolchain does not match it. The declared identity is the reference for all three evidentiary surfaces: the scored sessions, the suite attestation, and the firing artifact. Where any of the three can be checked BEFORE scored data exists, a divergence REFUSES. Where a divergence can only be observed afterwards, it is written onto the audit's face and decides nothing.",
+  "reason": "The firing artifact records platform, arch, node and vitest, and the code labels that block REPORTED, DECIDING NOTHING. R43#3 found the consequence: decideAudit compares the firing artifact's baseCommit against the attestation's subjectCommit and then checks coverage, firing and subject hashes, but never reads the toolchain (src/cost/b12/audit.ts:817), and the suite attestation carries no runtime identity at all (:543) — its lockfileSha256 pins the installed vitest PACKAGE and identifies neither OS, arch, nor the node executable. So firing evidence produced on win32 satisfies the audit against a Mac attestation whenever the commit and subject hashes agree, in a repository whose own STATE.md records a suite that is red on Windows and green on the Mac. THE PROBLEM IS PROVENANCE, NOT CONSISTENCY: binding the firing artifact to the attestation would make those two agree with each other and bind NEITHER to the sessions that were actually scored — two win32 proofs that agreed would pass while the run happened on the Mac. That is why the reference is the RUN's declared identity and not a relation between two proofs.",
+  "whyABarrierAndNotAVOID": "There are three attempts and a VOID ordinarily consumes one (voidConditions 23). Exact equality of a node or vitest version would let a patch bump — scientifically irrelevant to whether a control fires — spend an attempt. A barrier costs time and never costs an attempt, and it acts while the answer can still be fixed rather than after the evidence is spent. This follows the repository's existing preflight-and-seal philosophy rather than inventing a new class of annulment, and it is the reading that adds the least normative text to a frozen design.",
+  "declaredWhere": "manifest.pinned.runToolchain — beside pinned.claudeCodeVersion and pinned.claudeBinarySha256, which are the exact precedent: declared in the manifest, checked before an arm runs, and enforced by REFUSING (scripts/b12-run.mjs:890-894) rather than by voiding.",
+  "identityAndNormalisation": "The identity is the tuple {platform, arch, nodeMajorMinor, vitestMajorMinor}, compared for EQUALITY after normalisation. Normalised on purpose rather than compared raw: the firing artifact today stores vitest as the display string 'vitest/4.1.10 win32-x64 node-v24.16.0', which embeds platform and node a second time and would make a single field disagree with itself. Patch versions are excluded from the comparison DELIBERATELY — including them would reintroduce, at the barrier, exactly the irrelevant-difference problem that made voiding unattractive. An ABSENT or MALFORMED identity on either side is never a match; it is UNKNOWN, and an unknown refuses at the barrier and is reported afterwards.",
+  "enforcedBy": "src/cost/b12/audit.ts, which already owns clause 6 and the prospective amendment-governance calculation (:1442). The audit records the declared identity, each surface's observed identity, whether they matched, and whether this amendment governed — so a reader can always tell which regime produced the verdict and can disagree with it.",
+  "reportedBesideIt": "Every toolchain identity the audit can see is REPORTED on the artifact's face whether or not it matches, including for runs this amendment does not govern. Those reports may never be invoked to void or to rescue a run.",
+  "whatItDoesNotClose": [
+    "A run whose declared identity is simply WRONG. The barrier proves the three surfaces agree with the declaration; it cannot prove the declaration describes the machine anyone intended.",
+    "Toolchain drift AFTER the barrier passes. This is the acknowledged cost of the owner's choice: a barrier without verdict-time annulment can lapse, and a divergence appearing after registration is reported rather than acted on. That is deliberate, not an oversight.",
+    "Whether a control that fires on one platform would fire on another. Equality of an identity is a fence, not evidence about behaviour, and this amendment produces no cross-platform firing data.",
+    "The existing win32 dry run (evidence/2026-08-14-win-dryrun-5.b12.firing.json). It remains diagnostic evidence and is not made governing by this amendment; a Mac firing artifact is still owed before a Mac run.",
+    "The firing artifact's self-assertion. The audit checks digests and coherence, never that the harness executed, and a toolchain field is a claim by the same producer."
+  ],
+  "doesNotChange": [
+    "the frozen pre-registration artifact, which is NOT edited — its sha256 pin stands",
+    "voidConditions 6's requirement that each negative control be SHOWN FIRING, which is semantic and unchanged",
+    "the set of conditions that can VOID a run — this amendment adds none and removes none",
+    "the outcome, the 30%/15% bands, the unit definition, the admission rule, the metric arithmetic, the acceptance predicates, the two sealed manifests",
+    "any other clause, threshold, precedence rule or voiding condition"
+  ],
+  "stateAtWriting": {
+    "scoredObservations": 0,
+    "registeredRuns": 0,
+    "primaryRunStarted": false,
+    "harnessSealed": false,
+    "note": "Written before the harness seal and before any registration, so no B12 residual exists to select against. It is nevertheless POST-FREEZE and must always be described as such: a governed run is governed by the 2026-08-05 pre-registration PLUS this artifact, never by the pre-registration alone."
+  },
+  "adjudication": "docs/b12-scorer/FINDINGS.md — R43#3, whose premise was re-verified 2026-08-14 and whose proposed remedy was found narrower than the problem it named. The choice between disclosure, post-run annulment, a pre-run barrier and a declared run identity was the owner's, and the barrier-with-declared-identity regime recorded here is the one he took.",
+  "separateOnPurpose": "Committed alone. The conformance-paths amendment and the repair-max-rounds amendment are distinct pre-data amendments and must not be folded into this one, nor it into them. This artifact is the 'platform amendment still owed' that both of them name."
+}

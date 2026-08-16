@@ -196,6 +196,16 @@ Model choice is driven by a catalog + size-vs-memory fit. The catalog is a
 headerless CSV (`model,objective`) pointed at by `LOCAL_CODER_MODELS_CSV`; with
 none set, a built-in default catalog keeps the zero-config path working.
 
+- **An external CSV is the right answer for ordinary use and the wrong one for a
+  MEASURED run**, and `1eba3dc` is why. `LOCAL_CODER_MODELS_CSV` was set in
+  `~/.claude.json` for run mac-07 against a file that did not exist;
+  `loadModelCatalog` fell back to the built-in catalog with a warning nobody was
+  reading, and a MEASUREMENTS row recorded the catalog that had been REQUESTED
+  rather than the one in force — "the variable being set says what was requested,
+  not what took effect". The correction was to let the built-in catalog in
+  `models-csv.ts` be the one in force: a catalog inside the repository is
+  reproducible from a commit, and a path on somebody's disk is neither pinnable
+  nor hashable. Anything being measured pins the catalog by commit.
 - **Decision locus is Claude Code, not the server.** The server exposes the
   data — a `models` tool returning, per catalog model, its objective, `/models`
   availability, `lms ls` size, and whether it fits free RAM — and Claude matches

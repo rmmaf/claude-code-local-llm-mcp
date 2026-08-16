@@ -41,13 +41,68 @@ else
   REPO=$(git rev-parse --show-toplevel 2>/dev/null)
   [ -n "$REPO" ] || REPO="$HOME/Documents/GitHub/claude-code-local-llm-mcp"
 fi
-BRANCH="claude/project-status-pdf-d726eb"
+# THE BRANCH THIS PRE-FLIGHT MEASURES. Overridable, and pinned by default
+# because a pre-flight has to name the tree it measured.
+#
+# IT WENT STALE ONCE AND THE SCRIPT COULD NOT NOTICE. It read
+# `claude/project-status-pdf-d726eb` until 2026-08-14, by which time that branch
+# was 279 commits behind the work — no one-scoring-invocation loop, no
+# `blobSha` tri-state, none of it. The tip check below would have passed, since
+# it compares HEAD against `origin/$BRANCH` and the Mac would have been exactly
+# at the tip OF THE WRONG BRANCH, producing an artifact that looks like a clean
+# pre-flight of an instrument nobody is going to run.
+#
+# So: override with B12_BRANCH when preflighting something else, and CHECK THIS
+# LINE against the branch you actually intend. The refusal below proves you are
+# at a tip; only this line says which.
+BRANCH="${B12_BRANCH:-claude/b12-orchestrator-pinning-check-ccc397}"
 MODEL="${B12_MODEL:-mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2}"
 # `acceptEdits` covers file edits; whether an MCP tool call still prompts in
 # `--print` mode I could not test from Windows. If the session comes back having
 # called nothing, that is the likely cause -- re-run with
 # B12_PERMISSION_MODE=bypassPermissions. Named here rather than guessed at.
 PERMISSION_MODE="${B12_PERMISSION_MODE:-acceptEdits}"
+# THE LIMITS THE SCRATCH SESSION RUNS UNDER, PASSED RATHER THAN INHERITED.
+# Until 2026-08-14 the prompt below asked for a `repair` call with no limits at
+# all, so what it ran under was whatever the product happened to default to that
+# day -- and that number moved (300 -> 240) for reasons having nothing to do with
+# this script. An artifact that cannot say which limits produced it is the defect
+# this whole registry exists to prevent, and `b12-scorer-mac.sh` already refuses
+# to run without pinning its own pair (:254-256).
+#
+# 240 and 3 are the VALUES a PHASE 5 observation ends up under: `b12-run.mjs`
+# pins neither `budget_seconds` nor `LOCAL_CODER_TIMEOUT_MS`, so an observation
+# inherits `DEFAULT_BUDGET_SECONDS` (240) and reaches 3 rounds by the tool's own
+# default. PHASE 3's 600/180000 pair is deliberately NOT copied: that harness
+# asks whether `repair` CAN close a large unit, and a rehearsal at limits no
+# observation uses rehearses nothing.
+#
+# CORRECTED 2026-08-14, SAME DAY, after an adversarial review: this block first
+# said an observation "takes max_rounds from the task's own repairMaxRounds".
+# IT DOES NOT. `repairMaxRounds` is validated (b12-manifest.mjs:457), carried
+# into the manifest (:480) and archived (archive.ts:256), and then nothing
+# transmits it: `b12-run.mjs:2880` hands the session `task.prompt` alone, and no
+# corpus prompt mentions `repair` at all. The observation matches 3 by COINCIDENCE
+# of the tool's default, and would archive clean at `max_rounds: 10`. That is a
+# gap in PHASE 5, not in this script, and `scripts/b12-run.mjs` is inside clause
+# 5's PINNED_PATHS, so closing it is the owner's decision and not this commit's.
+#
+# WHICH IS ALSO WHY THE PROMPT PINNING THEM IS A DIVERGENCE, NAMED RATHER THAN
+# HIDDEN: PHASE 5 delivers no limits, this rehearsal delivers two. The pin buys a
+# deterministic scratch run and an artifact that can be compared with the next
+# one; it does NOT exercise the inheritance path an observation actually takes.
+# And the scratch defect is a one-line type error that has always closed in one
+# round, so neither the third round nor the 240-second deadline is reached: these
+# limits are RECORDED here, never BOUND. A green preflight is not evidence that
+# budget enforcement works.
+#
+# What the probe below DOES verify, since 2026-08-14: it joins the telemetry row
+# by `invocation_id` and reads `detail.budget_seconds` / `detail.max_rounds` back,
+# so the artifact carries asked AND observed and says whether they agreed. Before
+# that it could only ever record what was asked -- the limits live on the
+# telemetry row and never on the returned result.
+REPAIR_BUDGET_SECONDS="${B12_REPAIR_BUDGET_SECONDS:-240}"
+REPAIR_MAX_ROUNDS="${B12_REPAIR_MAX_ROUNDS:-3}"
 SCRATCH_SRC="src/b12-scratch.ts"
 OUT_DIR="$HOME/Desktop"
 [ -d "$OUT_DIR" ] || OUT_DIR="$HOME"
@@ -237,8 +292,36 @@ ok "tree clean of tracked changes (git status ran, exit 0)"
 # command to undo the one mutation this script does not undo itself.
 START_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse HEAD 2>/dev/null || true)
 
+# OFFLINE MODE — for a machine that cannot reach the remote at all.
+#
+# The network is not what this block is for. What it is for is proving the tree
+# about to be measured is the tree anyone intended, and `origin/$BRANCH` is only
+# ONE way to say which commit that is. `B12_EXPECT_SHA=<40-hex>` says the same
+# thing directly: skip fetch/checkout/merge, and require HEAD to BE that commit.
+#
+# THE GUARANTEE IS NOT WEAKENED, IT IS RE-EXPRESSED. Online, the script asserts
+# HEAD == origin/$BRANCH. Offline it asserts HEAD == the sha the archive was cut
+# at, which is the same claim with the naming authority moved from the remote to
+# the operator who cut it. What WOULD weaken it is skipping the check, and this
+# refuses harder than the online path: there is no ff-merge to rescue a stale
+# checkout, so a mismatch is fatal rather than fixable.
+#
+# It is recorded on the artifact as `context.tipCheck`, so a reader can see the
+# run was offline and against which pin instead of inferring it from silence.
+if [ -n "${B12_EXPECT_SHA:-}" ]; then
+  case "$B12_EXPECT_SHA" in
+    ????????????????????????????????????????) : ;;
+    *) refuse "B12_EXPECT_SHA must be a full 40-character commit sha (got \"$B12_EXPECT_SHA\")" ;;
+  esac
+  info "OFFLINE: not fetching; HEAD must be $B12_EXPECT_SHA"
+  LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
+  [ "$LOCAL_SHA" = "$B12_EXPECT_SHA" ] || refuse \
+    "HEAD is \"$LOCAL_SHA\" but B12_EXPECT_SHA is \"$B12_EXPECT_SHA\". This archive is not the tree it claims to be, and a pre-flight of the wrong instrument says nothing about the right one."
+  REMOTE_SHA="$LOCAL_SHA"
+  ok "OFFLINE, at the pinned commit — $(git rev-parse --short HEAD)"
+else
 info "fetching origin/$BRANCH"
-git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable?"
+git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable? (no network: cut an archive and re-run with B12_EXPECT_SHA=<sha>)"
 if ! git checkout -q "$BRANCH" 2>/dev/null; then
   if ! git checkout -q -b "$BRANCH" "origin/$BRANCH" 2>/dev/null; then
     # The likeliest cause in a repository that uses worktrees, and git's own
@@ -270,6 +353,7 @@ esac
 [ "$LOCAL_SHA" = "$REMOTE_SHA" ] || refuse \
   "HEAD is $(git rev-parse --short HEAD) but origin/$BRANCH is $(git rev-parse --short origin/$BRANCH). The Mac is not at the tip, and a pre-flight of the wrong instrument says nothing about the right one."
 ok "at the tip of $BRANCH — $(git rev-parse --short HEAD)"
+fi
 
 # ---------------------------------------------------------------------------
 next "Build"
@@ -502,7 +586,7 @@ DISABLE_AUTOUPDATER=1 claude --print \
   --session-id "$SESSION_ID" \
   --permission-mode "$PERMISSION_MODE" \
   -- \
-  "Call mcp__local-coder__gate exactly once. It will be red: src/b12-scratch.ts has a type error. Then call mcp__local-coder__repair exactly once to fix that file. Do not edit any file yourself, do not use Bash, and do not call any other tool." \
+  "Call mcp__local-coder__gate exactly once. It will be red: src/b12-scratch.ts has a type error. Then call mcp__local-coder__repair EXACTLY ONCE, with these arguments and no others: files: [\"$SCRATCH_SRC\"], spec: \"the type error in $SCRATCH_SRC must be fixed so the checks pass\", max_rounds: $REPAIR_MAX_ROUNDS, budget_seconds: $REPAIR_BUDGET_SECONDS. Pass max_rounds and budget_seconds explicitly even though they have defaults — this run is only comparable to another if the limits it ran under are known. Do not edit any file yourself, do not use Bash, and do not call any other tool." \
   >"$CLAUDE_LOG" 2>&1
 CLAUDE_EXIT=$?
 
@@ -525,12 +609,22 @@ const { readdirSync, readFileSync, existsSync } = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const sessionId = process.argv[2];
+const repo = process.argv[3] || "";
 const root = path.join(os.homedir(), ".claude", "projects");
 // `transcriptFound` is decided HERE and nowhere else. Both consumers -- the
 // shell's terminal warning and the artifact's provenance block -- used to derive
 // it themselves from the shape of this JSON, which is two implementations of a
 // one-line rule that could disagree the moment this file changes.
-const out = { transcript: null, transcriptFound: false, tools: [], repairModel: null };
+const out = {
+  transcript: null,
+  transcriptFound: false,
+  tools: [],
+  repairModel: null,
+  // The id `repair` returns AND writes on its telemetry row, which is what makes
+  // the join below exact rather than a guess over a time window.
+  repairInvocationId: null,
+  repairLimits: null,
+};
 const walk = (d, depth) => {
   if (depth > 3 || out.transcript !== null) return;
   let entries;
@@ -557,7 +651,10 @@ const dig = (v, depth) => {
   }
   if (Array.isArray(v)) { for (const x of v) dig(x, depth + 1); return; }
   if (typeof v === "object") {
-    if ("rounds_used" in v && typeof v.model === "string") out.repairModel = v.model;
+    if ("rounds_used" in v && typeof v.model === "string") {
+      out.repairModel = v.model;
+      if (typeof v.invocation_id === "string") out.repairInvocationId = v.invocation_id;
+    }
     for (const k of Object.keys(v)) dig(v[k], depth + 1);
   }
 };
@@ -574,9 +671,35 @@ if (out.transcript) {
   }
 }
 out.transcriptFound = out.transcript !== null;
+// WHAT THE CALL ACTUALLY RAN UNDER. The limits reach the model through prose and
+// live on the telemetry row's `detail`, never on the returned result, so the
+// result alone cannot answer this and an artifact built from it could only ever
+// say what was ASKED. Joined by `invocation_id`, which `repair` both returns and
+// writes: exact, so a second repair call in the same window cannot be mistaken
+// for this one, and no time-window heuristic is needed.
+//
+// Absent telemetry, an absent id and an unreadable file all leave `repairLimits`
+// null. Null is "not known", which is a different answer from a mismatch, and
+// the artifact keeps them apart.
+if (repo && out.repairInvocationId) {
+  try {
+    const tel = readFileSync(path.join(repo, ".local-coder", "telemetry.jsonl"), "utf8");
+    for (const line of tel.split("\n")) {
+      if (!line.trim()) continue;
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      if (!row || row.tool !== "repair" || row.invocation_id !== out.repairInvocationId) continue;
+      const d = row.detail || {};
+      out.repairLimits = {
+        budget_seconds: typeof d.budget_seconds === "number" ? d.budget_seconds : null,
+        max_rounds: typeof d.max_rounds === "number" ? d.max_rounds : null,
+      };
+    }
+  } catch { /* leaves null */ }
+}
 process.stdout.write(JSON.stringify(out));
 JS
-PROBE=$(node "$PROBE_JS" "$SESSION_ID" 2>/dev/null || true)
+PROBE=$(node "$PROBE_JS" "$SESSION_ID" "$REPO" 2>/dev/null || true)
 case "$PROBE" in
   '{'*) : ;;
   *) PROBE=""; warn "could not read the session back; the artifact will record that as unknown rather than as absent" ;;
@@ -599,6 +722,34 @@ if [ -n "$PROBE" ]; then
     *)
       warn "the probe answered but did not say whether a transcript exists; the"
       warn "artifact records that as unknown rather than as either answer."
+      ;;
+  esac
+  # THE LIMITS, READ BACK RATHER THAN ASSUMED. Every branch is matched
+  # positively and the fall-through is named unknown, the same shape as the
+  # transcript check above and for the same reason: a probe whose output stops
+  # carrying one of these substrings must not land on the good outcome.
+  case "$PROBE" in
+    *'"repairLimits":null'*|*'"repairLimits": null'*)
+      warn "the repair call's limits could not be read back from telemetry, so the"
+      warn "artifact records what the prompt ASKED and nothing about what ran."
+      ;;
+    *'"repairLimits":{'*)
+      # Substring match on the pair the prompt demanded. Exact numbers, so a
+      # session that passed something else cannot satisfy it.
+      case "$PROBE" in
+        *"\"budget_seconds\":$REPAIR_BUDGET_SECONDS,\"max_rounds\":$REPAIR_MAX_ROUNDS"*)
+          ok "limits verified in telemetry: budget ${REPAIR_BUDGET_SECONDS}s, max_rounds $REPAIR_MAX_ROUNDS"
+          ;;
+        *)
+          warn "THE REPAIR CALL RAN UNDER LIMITS THE PROMPT DID NOT ASK FOR. The"
+          warn "session did not pass budget ${REPAIR_BUDGET_SECONDS}s / max_rounds $REPAIR_MAX_ROUNDS."
+          warn "Read repairLimits.observed in the artifact; this run is not"
+          warn "comparable with one that ran under the asked-for pair."
+          ;;
+      esac
+      ;;
+    *)
+      warn "the probe said nothing about the repair limits; recorded as unknown."
       ;;
   esac
 fi
@@ -671,6 +822,12 @@ o.context = {
   branch: e.B12_BRANCH,
   claudeVersion: e.B12_CLAUDE_VER,
   host: "mac",
+  // HOW THE TREE WAS PROVEN TO BE THE RIGHT ONE. Online the script compares
+  // HEAD against origin/<branch>; offline it compares HEAD against a sha the
+  // operator pinned when cutting the archive. Same claim, different naming
+  // authority — and a reader must be able to tell which one stood behind this
+  // artifact rather than assume the remote did.
+  tipCheck: e.B12_EXPECT_SHA ? { mode: "offline", expectedSha: e.B12_EXPECT_SHA } : { mode: "origin", ref: `origin/${e.B12_BRANCH || "?"}` },
   // NAMED FOR WHAT EACH ONE IS. `model` used to be written here as fact from a
   // variable that only ever reached `lms load`; the server selects its own.
   modelRequestedFromLmStudio: e.B12_MODEL,
@@ -682,6 +839,33 @@ o.context = {
   modelMatchQuality: e.B12_MATCH_Q || null,
   modelsServedByLmStudio: (e.B12_REACHABLE || "").split(",").filter(Boolean),
   modelUsedByRepair: probe && probe.repairModel ? probe.repairModel : null,
+  // WHAT THE PROMPT ASKED FOR, which is not the same as what the call ran under.
+  // The limits reach the model through prose, so a session that dropped one
+  // would be recorded here as if it had not — the scorer closes that gap by
+  // reading `detail.budget_seconds` back out of telemetry and VOIDing on a
+  // mismatch, and this script does not. `asked` is the honest word.
+  // ASKED and OBSERVED, kept apart on purpose. The limits travel to the model
+  // through prose, so what the prompt demanded and what the call ran under are
+  // two different facts and only the second one is a measurement. `agreed` is
+  // null when either side is unknown -- absent telemetry is not agreement, and
+  // it is not a mismatch either.
+  //
+  // `asked` is null when the variable did not arrive, DELIBERATELY and not by way
+  // of a NaN that JSON.stringify would quietly flatten to the same thing.
+  repairLimits: (() => {
+    const num = (x) => (Number.isFinite(Number(x)) ? Number(x) : null);
+    const asked = { budget_seconds: num(e.B12_REPAIR_BUDGET), max_rounds: num(e.B12_REPAIR_ROUNDS) };
+    const observed = (probe && probe.repairLimits) || null;
+    const both = observed !== null && asked.budget_seconds !== null && asked.max_rounds !== null;
+    return {
+      asked,
+      observed,
+      agreed: both
+        ? observed.budget_seconds === asked.budget_seconds && observed.max_rounds === asked.max_rounds
+        : null,
+      joinedBy: probe && probe.repairInvocationId ? "invocation_id" : null,
+    };
+  })(),
   serverEnv: {},
   strictMcpConfig: true,
   sessionId: e.B12_SESSION,
@@ -716,6 +900,8 @@ JS
     B12_MATCH_ID="$MATCH_ID" B12_MATCH_Q="$MATCH_Q" \
     B12_LEFTOVER="$LEFTOVER" B12_UNTRACKED="$UNTRACKED" B12_TREE_RC="$TREE_RC" \
     B12_CLAUDE_EXIT="$CLAUDE_EXIT" B12_CLAUDE_LOG="$CLAUDE_LOG_TAIL" B12_PROBE="$PROBE" \
+    B12_REPAIR_BUDGET="$REPAIR_BUDGET_SECONDS" B12_REPAIR_ROUNDS="$REPAIR_MAX_ROUNDS" \
+    B12_EXPECT_SHA="${B12_EXPECT_SHA:-}" \
     node "$MERGE_JS" "$ART" 2>&1)
   NCHECKS=""
   case "$MERGE_OUT" in

@@ -1,0 +1,105 @@
+{
+  "schema": "b12-subagent-key-probe/2",
+  "ts": "2026-08-12T05:06:33.683Z",
+  "preDeclaredPrediction": "inherits. Written into scripts/b12-subagent-key-probe-mac.sh before this script was ever run; git log witnesses the commit that carried it. `differs` is the decision-relevant result. `no-subagent` and `suspect` are refusals, not passes.",
+  "context": {
+    "host": "mac",
+    "claudeVersion": "2.1.221 (Claude Code)",
+    "claudeBinaryPath": "/Users/rodrigomonteiro/.local/share/claude/versions/2.1.221",
+    "claudeBinaryPathIsCanonical": true,
+    "claudeBinarySha256": "7a181f36ed0fc4fbac6cee4ecf2b615eff93d8b434221fff5d7c878dc5ebf380",
+    "disableAutoupdater": "1",
+    "argvShape": "treatment: --print --session-id <id> --strict-mcp-config --mcp-config <path> --output-format json -- <prompt>",
+    "mcpConfig": "/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T//b12-subagent-probe.2fy5yM/mcp.json",
+    "mcpConfigSource": "generated from B12_REPO",
+    "mcpConfigSha256": "0e963bc5ceeed123b0bc076666cf388dd6187bc4d62a4f4acbc1ab633f4d45da",
+    "mcpConfigSha256AfterSession": "0e963bc5ceeed123b0bc076666cf388dd6187bc4d62a4f4acbc1ab633f4d45da",
+    "cwd": "/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T//b12-subagent-probe.2fy5yM",
+    "prompt": "Use the Task tool to launch exactly one general-purpose subagent. That subagent's entire job is to reply with the single word: ok. When it returns, reply with the single word: done. Do not read files, do not run commands, do not use any other tool.",
+    "sessionId": "728e5e41-2144-494f-8aad-d6a92924e240"
+  },
+  "method": {
+    "fileUnion": "mirrors src/cost/transcript.ts sessionFiles — <slug>/<sessionId>.jsonl FIRST, then every *.jsonl under <slug>/<sessionId>/ recursively, sorted; order is load-bearing",
+    "admission": "mirrors PREMISES.md B20 — type=assistant with message.usage; isApiErrorMessage and model '<synthetic>' excluded BY FIELD, never by usage reading zero; record.sessionId equality required; de-duplicated by uuid; grouped by requestId",
+    "fieldSources": "model and isSidechain from the group's FIRST record, usage and speed from its LAST (src/cost/transcript.ts:514-532); rateKey per src/cost/rates.ts:93",
+    "discrepancyScan": "every *.jsonl under ~/.claude/projects read for records claiming this sessionId; any file outside the harness union is a REFUSAL, not a note",
+    "slugDir": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM",
+    "harnessUnion": [
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240.jsonl",
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240/subagents/agent-a18de1e0151a7ee90.jsonl"
+    ],
+    "filesCarryingOurSession": [
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240.jsonl",
+      "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240/subagents/agent-a18de1e0151a7ee90.jsonl"
+    ],
+    "filesOutsideHarnessUnion": []
+  },
+  "counts": {
+    "filesScannedForDiscrepancy": 82,
+    "recordsScannedInUnion": 16,
+    "admittedRecords": 4,
+    "requestGroups": 3,
+    "mainGroups": 2,
+    "subagentGroups": 1,
+    "admittedWithoutUuid": 0,
+    "admittedWithoutSessionId": 0,
+    "unparsableLinesInUnion": 0,
+    "unparsableLinesAnywhere": 0,
+    "distinctFilesCarryingSidechainGroups": 1
+  },
+  "suspectReasons": [],
+  "mainRateKeys": [
+    "claude-opus-5"
+  ],
+  "subagentRateKeys": [
+    "claude-opus-5"
+  ],
+  "verdict": "inherits",
+  "why": "every billed request on both sides carries claude-opus-5",
+  "groups": [
+    {
+      "requestId": "req_011CdxGoRusFb8Uq5FV8yT2K",
+      "isSidechain": false,
+      "model": "claude-opus-5",
+      "speed": "standard",
+      "key": "claude-opus-5",
+      "records": 2,
+      "firstFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240.jsonl",
+      "lastFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240.jsonl",
+      "firstRaw": "{\"parentUuid\":\"75cfd203-d35e-4dc6-a434-e96eb7041c80\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011CdxGoU1Nw9Mk5AcRjzBE3\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"I'll launch one general-purpose subagent for this.\"}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":21405,\"cache_read_input_tokens\":0,\"output_tokens\":184,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":21405,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":184,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":21405,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":21405},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011CdxGoRusFb8Uq5FV8yT2K\",\"type\":\"assistant\",\"uuid\":\"376f236c-d4fa-4345-ae7b-4f99375656a0\",\"timestamp\":\"2026-08-12T05:06:25.304Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.2fy5yM\",\"sessionId\":\"728e5e41-2144-494f-8aad-d6a92924e240\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}",
+      "lastRaw": "{\"parentUuid\":\"376f236c-d4fa-4345-ae7b-4f99375656a0\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011CdxGoU1Nw9Mk5AcRjzBE3\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_01RUWVwPXFfQnuyitgrXwGga\",\"name\":\"Agent\",\"input\":{\"subagent_type\":\"general-purpose\",\"description\":\"Reply with ok\",\"prompt\":\"Reply with the single word: ok\\n\\nDo not use any tools. Do not read files. Your entire response should be the word \\\"ok\\\".\",\"run_in_background\":false},\"caller\":{\"type\":\"direct\"}}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":21405,\"cache_read_input_tokens\":0,\"output_tokens\":184,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":21405,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":184,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":21405,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":21405},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011CdxGoRusFb8Uq5FV8yT2K\",\"type\":\"assistant\",\"uuid\":\"78c28a99-0375-41bd-9f7b-ae4e9cf79066\",\"timestamp\":\"2026-08-12T05:06:27.135Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.2fy5yM\",\"sessionId\":\"728e5e41-2144-494f-8aad-d6a92924e240\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}"
+    },
+    {
+      "requestId": "req_011CdxGozKmH73jKmu8Ea7j4",
+      "isSidechain": false,
+      "model": "claude-opus-5",
+      "speed": "standard",
+      "key": "claude-opus-5",
+      "records": 1,
+      "firstFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240.jsonl",
+      "lastFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240.jsonl",
+      "firstRaw": "{\"parentUuid\":\"ebf5a38a-3121-4765-bebb-e8724c722f8f\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011CdxGp2FbzEvS5DQmF7RJ3\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":292,\"cache_read_input_tokens\":21405,\"output_tokens\":3,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":292,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":3,\"cache_read_input_tokens\":21405,\"cache_creation_input_tokens\":292,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":292},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011CdxGozKmH73jKmu8Ea7j4\",\"type\":\"assistant\",\"uuid\":\"468294b5-48c2-4b78-88f0-9a613c22c46f\",\"timestamp\":\"2026-08-12T05:06:32.440Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.2fy5yM\",\"sessionId\":\"728e5e41-2144-494f-8aad-d6a92924e240\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}",
+      "lastRaw": null
+    },
+    {
+      "requestId": "req_011CdxGomeX2epTgofu4Q5r3",
+      "isSidechain": true,
+      "model": "claude-opus-5",
+      "speed": "standard",
+      "key": "claude-opus-5",
+      "records": 1,
+      "firstFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240/subagents/agent-a18de1e0151a7ee90.jsonl",
+      "lastFile": "-private-var-folders-4h-nzh88m693x1b6lrcgxxdsl0w0000gn-T-b12-subagent-probe-2fy5yM/728e5e41-2144-494f-8aad-d6a92924e240/subagents/agent-a18de1e0151a7ee90.jsonl",
+      "firstRaw": "{\"parentUuid\":\"2105b60a-6c98-4fa7-a5fe-96ed8a289257\",\"isSidechain\":true,\"agentId\":\"a18de1e0151a7ee90\",\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011CdxGooTAoswbhPk1wMzUh\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":9397,\"cache_read_input_tokens\":0,\"output_tokens\":4,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":9397},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":9397,\"cache_creation\":{\"ephemeral_5m_input_tokens\":9397,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"diagnostics\":null},\"requestId\":\"req_011CdxGomeX2epTgofu4Q5r3\",\"attributionAgent\":\"general-purpose\",\"type\":\"assistant\",\"uuid\":\"aeee1689-bde3-4880-b545-a36be1143061\",\"timestamp\":\"2026-08-12T05:06:30.104Z\",\"effort\":\"xhigh\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/private/var/folders/4h/nzh88m693x1b6lrcgxxdsl0w0000gn/T/b12-subagent-probe.2fy5yM\",\"sessionId\":\"728e5e41-2144-494f-8aad-d6a92924e240\",\"version\":\"2.1.221\",\"gitBranch\":\"HEAD\"}",
+      "lastRaw": null
+    }
+  ],
+  "doesNotEstablish": [
+    "nothing about the treatment MCP shape unless context.mcpConfig above is non-null",
+    "nothing about the sealed per-arm policy blobs — none were delivered",
+    "nothing about how many subagents a real manifest task spawns, or their share",
+    "nothing about nested subagents; sidechain cardinality is reported, never enforced",
+    "not a sandbox — the session's cwd is outside the repository and the prompt asks for no file access, but a working directory does not constrain a process",
+    "one session, one Claude Code build — the transcript layout is vendor-internal and has moved before"
+  ]
+}

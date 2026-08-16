@@ -90,7 +90,16 @@ else
   REPO=$(git rev-parse --show-toplevel 2>/dev/null)
   [ -n "$REPO" ] || REPO="$HOME/local-coder"
 fi
-BRANCH="${B12_PROBE_BRANCH:-claude/b12-installedchars-probe}"
+# THE DEFAULT NAMED A BRANCH THAT DOES NOT EXIST. `claude/b12-installedchars-probe`
+# is not in this repository — `git rev-parse` calls it an unknown revision — so
+# the online path refused on every machine, and had done for as long as nobody
+# ran it. A default that cannot resolve is not a default; it is a script with no
+# working configuration, and it hid behind a `git fetch` failure that read like a
+# network problem.
+#
+# Pinned to the work branch and still overridable. Offline runs skip this
+# entirely (see B12_EXPECT_SHA below), which is the path that actually gets used.
+BRANCH="${B12_PROBE_BRANCH:-claude/b12-orchestrator-pinning-check-ccc397}"
 PERMISSION_MODE="${B12_PERMISSION_MODE:-acceptEdits}"
 OUT_DIR="$HOME/Desktop"
 [ -d "$OUT_DIR" ] || OUT_DIR="$HOME"
@@ -223,8 +232,35 @@ ok "tree clean of tracked changes"
 
 START_REF=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse HEAD 2>/dev/null || true)
 
+# OFFLINE MODE — identical in shape and semantics to the pre-flight's.
+#
+# `B12_EXPECT_SHA=<40-hex>` skips fetch/checkout/merge and requires HEAD to BE
+# that commit. The guarantee is re-expressed, not weakened: online this asserts
+# HEAD == origin/$BRANCH, offline it asserts HEAD == the sha the archive was cut
+# at — the same claim, with the naming authority moved from the remote to the
+# operator who cut it. It refuses harder, since there is no ff-merge to rescue a
+# stale checkout.
+#
+# WHY THIS PROBE NEEDED IT TWICE OVER. On 2026-08-15 it refused on `git fetch`
+# for a Mac that cannot reach the remote — and it would have refused on ANY
+# machine anyway, because `BRANCH` defaulted to `claude/b12-installedchars-probe`,
+# a branch that does not exist in this repository. A default naming a
+# nonexistent ref is a script that cannot run, and nobody noticed because
+# nobody had run it since the branch went away.
+if [ -n "${B12_EXPECT_SHA:-}" ]; then
+  case "$B12_EXPECT_SHA" in
+    ????????????????????????????????????????) : ;;
+    *) refuse "B12_EXPECT_SHA must be a full 40-character commit sha (got \"$B12_EXPECT_SHA\")" ;;
+  esac
+  info "OFFLINE: not fetching; HEAD must be $B12_EXPECT_SHA"
+  LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)
+  [ "$LOCAL_SHA" = "$B12_EXPECT_SHA" ] || refuse \
+    "HEAD is \"$LOCAL_SHA\" but B12_EXPECT_SHA is \"$B12_EXPECT_SHA\". This archive is not the tree it claims to be, and a probe of the wrong instrument says nothing about the right one."
+  REMOTE_SHA="$LOCAL_SHA"
+  ok "OFFLINE, at the pinned commit — $(git rev-parse --short HEAD)"
+else
 info "fetching origin/$BRANCH"
-git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable?"
+git fetch origin "$BRANCH" --quiet || refuse "git fetch failed — is the remote reachable? (no network: re-run with B12_EXPECT_SHA=<sha>)"
 if ! git checkout -q "$BRANCH" 2>/dev/null; then
   if ! git checkout -q -b "$BRANCH" "origin/$BRANCH" 2>/dev/null; then
     HOLDER=$(git worktree list 2>/dev/null | grep "\[$BRANCH\]" | head -1 || true)
@@ -250,6 +286,7 @@ case "$REMOTE_SHA" in
 esac
 [ "$LOCAL_SHA" = "$REMOTE_SHA" ] || refuse "HEAD is $(git rev-parse --short HEAD) but origin/$BRANCH is $(git rev-parse --short origin/$BRANCH) — not at the tip"
 ok "at the tip of $BRANCH — $(git rev-parse --short HEAD)"
+fi
 
 # ---------------------------------------------------------------------------
 next "MCP environment, recorded"
@@ -368,10 +405,6 @@ POLICY_T_SHA=""
 POLICY_C_SHA=""
 TREATMENT_POLICY=""
 CONTROL_POLICY=""
-policy_blob_sha() {
-  # $1 path inside the policy repo. Bytes from the object store, hashed as bytes.
-  git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$1" 2>/dev/null | shasum -a 256 | cut -d' ' -f1
-}
 if [ $POLICY_SET -eq 1 ]; then
   case "$POLICY_COMMIT" in
     ????????????????????????????????????????) : ;;
@@ -381,17 +414,30 @@ if [ $POLICY_SET -eq 1 ]; then
   POLICY_SHALLOW=$(git -C "$POLICY_REPO" rev-parse --is-shallow-repository 2>/dev/null)
   [ "$POLICY_SHALLOW" = "false" ] || refuse "the policy repo at $POLICY_REPO is shallow or not a git repository — an object store that cannot prove its history cannot prove the sealed commit"
   git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT^{commit}" 2>/dev/null || refuse "sealed commit $POLICY_COMMIT is not reachable in $POLICY_REPO"
-  git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null || refuse "$POLICY_COMMIT:$POLICY_T_PATH is not readable in $POLICY_REPO"
-  git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null || refuse "$POLICY_COMMIT:$POLICY_C_PATH is not readable in $POLICY_REPO"
+  # TYPE, NOT EXISTENCE. `cat-file -e` accepts a TREE — point either path at a
+  # directory and the existence check passes, the blob read then fails, and the
+  # old pipeline hashed its EMPTY stdout as e3b0c442..., delivering six paid
+  # sessions with an empty policy while reporting "policy blobs resolved".
+  T_TYPE=$(git -C "$POLICY_REPO" cat-file -t "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null)
+  [ "$T_TYPE" = "blob" ] || refuse "$POLICY_COMMIT:$POLICY_T_PATH is ${T_TYPE:-unreadable}, not a blob — a policy path must name a FILE in the sealed commit"
+  C_TYPE=$(git -C "$POLICY_REPO" cat-file -t "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null)
+  [ "$C_TYPE" = "blob" ] || refuse "$POLICY_COMMIT:$POLICY_C_PATH is ${C_TYPE:-unreadable}, not a blob — a policy path must name a FILE in the sealed commit"
   # Content EXACT, trailing newlines preserved: bare $(cat) strips them, and
   # the run harness (b12-run.mjs) delivers the blob byte-exactly — a probe
   # that delivered different bytes would calibrate a different system prompt.
-  TREATMENT_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null; printf x)
+  # `&& printf x`, so a failed read leaves no x and the guard refuses — the old
+  # `; printf x` form appended the x unconditionally and a failure became an
+  # empty policy delivered as though it were the sealed one.
+  TREATMENT_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null && printf x) \
+    || refuse "could not read the treatment blob $POLICY_COMMIT:$POLICY_T_PATH from the object store"
   TREATMENT_POLICY=${TREATMENT_POLICY%x}
-  CONTROL_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null; printf x)
+  CONTROL_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null && printf x) \
+    || refuse "could not read the control blob $POLICY_COMMIT:$POLICY_C_PATH from the object store"
   CONTROL_POLICY=${CONTROL_POLICY%x}
-  POLICY_T_SHA=$(policy_blob_sha "$POLICY_T_PATH")
-  POLICY_C_SHA=$(policy_blob_sha "$POLICY_C_PATH")
+  # Hashed from the BYTES JUST CAPTURED — the same bytes the sessions deliver —
+  # not from a second git read that could disagree with the first.
+  POLICY_T_SHA=$(printf '%s' "$TREATMENT_POLICY" | shasum -a 256 | cut -d' ' -f1)
+  POLICY_C_SHA=$(printf '%s' "$CONTROL_POLICY" | shasum -a 256 | cut -d' ' -f1)
   printf '%s' "$POLICY_T_SHA" | grep -qE '^[0-9a-f]{64}$' || refuse "could not hash the treatment policy blob"
   printf '%s' "$POLICY_C_SHA" | grep -qE '^[0-9a-f]{64}$' || refuse "could not hash the control policy blob"
   ok "policy blobs resolved — treatment $(printf '%s' "$POLICY_T_SHA" | cut -c1-12)…, control $(printf '%s' "$POLICY_C_SHA" | cut -c1-12)…"
@@ -620,8 +666,23 @@ MCP_SHA_AFTER=$(shasum -a 256 "$MCP_CFG" | cut -d' ' -f1)
 if [ $POLICY_SET -eq 1 ]; then
   # Git objects are immutable, so movement here means the OBJECT STORE moved
   # under the key — repo swapped, replaced or pruned mid-probe.
-  POLICY_T_SHA_AFTER=$(policy_blob_sha "$POLICY_T_PATH")
-  POLICY_C_SHA_AFTER=$(policy_blob_sha "$POLICY_C_PATH")
+  #
+  # RE-READ FROM THE STORE ON PURPOSE: this check exists to catch the store
+  # moving, so it must consult the store again, not the bytes captured before
+  # the sessions. Guarded like the first read — a failed re-read is a refusal,
+  # not an empty hash. (The original helper was deleted when the first read
+  # stopped using it, and these two calls were left behind: after the proof
+  # plus six paid arms the probe died on `command not found` and produced no
+  # artifact. Found by the fix review, not by me.)
+  policy_blob_sha_now() {
+    _b=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$1" 2>/dev/null && printf x) || return 1
+    _b=${_b%x}
+    printf '%s' "$_b" | shasum -a 256 | cut -d' ' -f1
+  }
+  POLICY_T_SHA_AFTER=$(policy_blob_sha_now "$POLICY_T_PATH") \
+    || refuse "could not re-read the treatment policy blob for the drift check — the object store itself moved or died mid-probe"
+  POLICY_C_SHA_AFTER=$(policy_blob_sha_now "$POLICY_C_PATH") \
+    || refuse "could not re-read the control policy blob for the drift check — the object store itself moved or died mid-probe"
   [ "$POLICY_T_SHA_AFTER" = "$POLICY_T_SHA" ] || refuse "the treatment policy blob's bytes changed mid-probe. The key moved; the probe is void. Re-run."
   [ "$POLICY_C_SHA_AFTER" = "$POLICY_C_SHA" ] || refuse "the control policy blob's bytes changed mid-probe. The key moved; the probe is void. Re-run."
 fi
@@ -702,7 +763,11 @@ const artifact = {
     environmentSha256: e.B12_ENV_HASH,
     declaredPin: {
       version: e.B12_EXPECT_VER || null,
-      binarySha256: e.B12_EXPECT_SHA || null,
+      // RENAMED away from B12_EXPECT_SHA, which now means the COMMIT pin for
+      // the offline tip check. One name meaning a commit in one half of the
+      // file and a binary digest in the other is a defect waiting for whoever
+      // deletes the explicit override two hundred lines below.
+      binarySha256: e.B12_EXPECT_CLAUDE_SHA || null,
       note: "asserted when set; no manifest exists yet, so there is no sealed pin to consume",
     },
     // DUAL — both arms deliver their own blob via --append-system-prompt in
@@ -753,7 +818,7 @@ VERDICT_OUT=$(B12_SHA="$LOCAL_SHA" B12_SHA_SHORT="$(git rev-parse --short HEAD)"
   B12_CLAUDE_SHA="$CLAUDE_SHA" B12_MCP_SHA="$MCP_SHA" B12_ENV_HASH="$ENV_HASH_0" B12_REPO="$REPO" \
   B12_PROMPT="$PROMPT" B12_PROOF_PROMPT="$PROOF_PROMPT" B12_MCP_LIST="$MCP_LIST" \
   B12_MCP_JSON_PRESENT="$MCP_JSON_PRESENT" \
-  B12_EXPECT_VER="${B12_EXPECT_CLAUDE_VERSION:-}" B12_EXPECT_SHA="${B12_EXPECT_CLAUDE_SHA256:-}" \
+  B12_EXPECT_VER="${B12_EXPECT_CLAUDE_VERSION:-}" B12_EXPECT_CLAUDE_SHA="${B12_EXPECT_CLAUDE_SHA256:-}" \
   B12_POLICY_REPO="$POLICY_REPO" B12_POLICY_COMMIT="$POLICY_COMMIT" \
   B12_POLICY_T_PATH="$POLICY_T_PATH" B12_POLICY_C_PATH="$POLICY_C_PATH" \
   B12_POLICY_T_SHA="$POLICY_T_SHA" B12_POLICY_C_SHA="$POLICY_C_SHA" \

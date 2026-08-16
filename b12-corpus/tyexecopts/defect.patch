@@ -1,0 +1,13 @@
+diff --git a/src/exec.ts b/src/exec.ts
+index 99c804e..be72a64 100644
+--- a/src/exec.ts
++++ b/src/exec.ts
+@@ -70,7 +70,7 @@ export async function runGit(
+ ): Promise<string | null> {
+   try {
+     const budget = Math.min(GIT_TIMEOUT_MS, timeoutMs ?? GIT_TIMEOUT_MS);
+-    const result = await runner("git", args, { cwd: root, timeoutMs: budget });
++    const result = await runner("git", args, { cwd: root, timeout: budget });
+     if (result.code !== 0 || result.timedOut) return null;
+     return result.stdout;
+   } catch {

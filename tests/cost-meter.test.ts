@@ -33,7 +33,7 @@ import { listSessionIds, listTranscripts, projectTranscriptDir, readTranscript, 
 import { assembleRun } from "../src/cost/b12/assemble.js";
 import { createTelemetryWriter, readTelemetry, TELEMETRY_REL_PATH } from "../src/telemetry.js";
 import { archiveOf, billed, obsOf, PINNED, taskOf } from "./b12-fixtures.js";
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -46,7 +46,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 
@@ -1940,8 +1940,12 @@ describe("telemetry and the counterfactual", () => {
     expect(result.byTool).toEqual([]);
     expect(result.unitsTotal).toBe(0);
     expect(result.savedFraction).toBe(0);
-    // Withheld, not hidden: the magnitude is reported so the exclusion is visible.
-    expect(result.unverifiableUnits.units).toBeGreaterThan(0);
+    // Withheld, not hidden — but UNSIZED rather than sized (W10/R51). This row
+    // carries no `invocation_id` at all, so its thread is unknown; the
+    // magnitude used to be computed against "main" and reported as known. The
+    // exclusion is still visible, as a row and as `unsized`.
+    expect(result.unverifiableUnits.unsized).toBe(1);
+    expect(result.unverifiableUnits.units).toBe(0);
   });
 });
 
@@ -2078,7 +2082,14 @@ describe("the cost-meter CLI", () => {
     expect(stdout).toContain("estimated savings from local tools");
     expect(stdout).toContain("nothing counted");
     expect(stdout).toContain("NOT counted");
-    expect(stdout).toContain("units withheld");
+    // W10/R51 — the WORDING moved and the intent did not. This row's thread is
+    // unknown, so its magnitude is UNSIZED rather than priced against "main",
+    // and `refused()` in the CLI therefore prints its unknown-branch sentence
+    // instead of "~N units withheld". The thing this test exists to prevent —
+    // an exclusion that is invisible because nothing was counted — is still
+    // asserted, and the new sentence states the ignorance outright.
+    expect(stdout).toContain("could not be sized at all");
+    expect(stdout).toContain("UNKNOWN");
   }, 30_000);
 
   it("says the log is empty rather than claiming rows were withheld", async () => {
@@ -3373,12 +3384,29 @@ describe("the B12 harness", () => {
         expect(new Set([first.dir, second.dir, third.dir]).size).toBe(3);
         expect(path.basename(second.dir)).toBe("obs-t1-treatment-r2");
       } finally {
-        await fs.rm(root, { recursive: true, force: true });
+        await removeTempRoot(root);
       }
     });
   });
 
-  describe("the F24 pass: every new guard shown FIRING", () => {
+  /**
+   * SIXTY SECONDS, and the reason is measured (R46).
+   *
+   * These guards build REAL git repositories in temp directories and spawn
+   * dozens of `git` processes each. Under vitest's 5s default they pass on an
+   * idle machine and time out on a busy one — then teardown races the still-
+   * running child and fails with `EBUSY: rmdir`. That is the whole of the
+   * intermittency chased across R42–R45: not racy-clean, not `makePristine`
+   * residue, not ordering. A load-sensitive budget.
+   *
+   * It mattered beyond this file: `tests/cost-meter.test.ts` is a
+   * CONFORMANCE_FILE, and `--attest-suite` runs it in a clean worktree
+   * REQUIRING exit 0 — so clause 6's attestation was load-sensitive too.
+   *
+   * The number matches what `tests/b12-audit.test.ts` already gives its own
+   * git-heavy e2e tests. This is the house figure, not a new one.
+   */
+  describe("the F24 pass: every new guard shown FIRING", { timeout: 60_000 }, () => {
     // The house rule — `DECISIONS.md § a check that cannot fail is worse than no
     // check` — applied to the guards this pass added, the same shape VOID 6
     // demands of the meter's own six controls. All on the exported pure
@@ -4310,6 +4338,66 @@ describe("the B12 harness", () => {
       expect(instructionDriftReasons(base, { ...base, settingsLocal: "appeared" })).toHaveLength(1);
     });
 
+    it("REPORTS a repair call that did not run at the manifest's frozen max_rounds", async () => {
+      // The gap this detects was a DEAD LETTER, not a bug: `repairMaxRounds` was
+      // refused when absent, carried into the manifest and archived, and then
+      // nothing transmitted or checked it. The session is handed `task.prompt`
+      // alone and no corpus prompt mentions `repair`, so an observation matched
+      // the declared 3 only by coincidence of the tool's own default — and a
+      // session calling `max_rounds: 10` archived clean.
+      //
+      // REPORTS, and does not invalidate. The first version of this pushed into
+      // `invalidReasons`, which excluded the observation by a route no clause of
+      // the frozen pre-registration can name — `assemble.ts` still published it
+      // as `scored` while admission dropped it. The findings now travel in their
+      // own field and decide nothing until a pre-data amendment names the
+      // violation. What this test pins is the DETECTOR; that it must not decide
+      // is a property of the CALL SITE, which no test here reaches.
+      const { repairRoundsReasons } = await load();
+      const row = (maxRounds: unknown) => ({
+        tool: "repair",
+        invocation_id: "i",
+        detail: maxRounds === undefined ? {} : { max_rounds: maxRounds, budget_seconds: 240 },
+      });
+
+      // The registered condition: silence.
+      expect(repairRoundsReasons(3, [row(3)], "t")).toHaveLength(0);
+      // Two calls, both compliant, still silence — the rule is per row.
+      expect(repairRoundsReasons(3, [row(3), row(3)], "t")).toHaveLength(0);
+
+      // NOT the registered condition, in either direction. A SMALLER value is a
+      // violation too: it is a different condition, not a safer one.
+      const over = repairRoundsReasons(3, [row(10)], "selmatchfuzzy");
+      expect(over).toHaveLength(1);
+      expect(over[0]).toMatch(/repair ran at max_rounds 10 while the manifest freezes repairMaxRounds 3 for selmatchfuzzy/);
+      expect(repairRoundsReasons(3, [row(1)], "t")).toHaveLength(1);
+      // Each offending row is named on its own; one bad call does not hide
+      // behind a good one.
+      expect(repairRoundsReasons(3, [row(3), row(10)], "t")).toHaveLength(1);
+
+      // FAIL-CLOSED. "Cannot tell" may not wear the same answer as "matched" —
+      // this is the `limits-unverifiable` mistake the scorer already voids on.
+      expect(repairRoundsReasons(3, [row(undefined)], "t")[0]).toMatch(/carries no numeric detail\.max_rounds/);
+      expect(repairRoundsReasons(3, [row(null)], "t")).toHaveLength(1);
+      expect(repairRoundsReasons(3, [row("3")], "t")).toHaveLength(1);
+      expect(repairRoundsReasons(3, [row(Number.NaN)], "t")).toHaveLength(1);
+
+      // ZERO REPAIR ROWS IS NOT A VIOLATION: the control arm has no such tool,
+      // and a treatment session is free not to call it. Rows from other tools
+      // are not this rule's business either.
+      expect(repairRoundsReasons(3, [], "t")).toHaveLength(0);
+      expect(repairRoundsReasons(3, null, "t")).toHaveLength(0);
+      expect(repairRoundsReasons(3, [{ tool: "gate", detail: { max_rounds: 99 } }], "t")).toHaveLength(0);
+      // And with no repair row, a manifest carrying no declared value is not
+      // this check's problem to report — the manifest gate already refused it.
+      expect(repairRoundsReasons(null, [], "t")).toHaveLength(0);
+
+      // A declared value that is not a number leaves the comparison with no
+      // right-hand side. Silence would be the worst answer available.
+      expect(repairRoundsReasons(null, [row(3)], "t")[0]).toMatch(/has nothing to compare against/);
+      expect(repairRoundsReasons(undefined, [row(3)], "t")).toHaveLength(1);
+    });
+
     it("accepts only committed evidence as a probe source", async () => {
       // The review's high finding: with the path unconstrained and the sha
       // compared only if pinned, a fabricated working-tree JSON with
@@ -4705,7 +4793,7 @@ describe("the four B12 scoring seams", () => {
     expect(result.ambiguousUnits.units).not.toBeCloseTo(41486.48648648649, 3);
   });
 
-  it("gives excludedForeign a magnitude, because R_hi+ is defined over all FOUR classes", async () => {
+  it("gives excludedForeign a ROW and an UNSIZED count, because its thread is unknown", async () => {
     // This class shipped as a bare counter while the other three carried
     // magnitudes, so `R_hi+` -- which grants every refused row its would-have
     // magnitude across all four -- was not computable as the frozen design
@@ -4728,13 +4816,25 @@ describe("the four B12 scoring seams", () => {
 
     expect(result.provenanceUnavailable).toBe(false);
     expect(result.excludedForeign).toBe(1);
-    expect(result.excludedForeignUnits.unsized).toBe(0);
-    // (10000 - 1000)/3.7 x 2.0, by the same hand derivation as above.
-    expect(result.excludedForeignUnits.units).toBeCloseTo(4864.864864864865, 6);
-    // A count with no magnitude is the silent exclusion the other three
-    // counters exist to prevent, and a zero here would read as "nothing worth
-    // having was refused".
-    expect(result.excludedForeignUnits.units).not.toBe(0);
+    // W10/R51 — THIS TEST USED TO ASSERT THE DEFECT. It expected `unsized === 0`
+    // and `units === 4864.86…`, a number produced by pricing this FOREIGN row
+    // against THIS transcript's MAIN thread, because `wouldHaveAdded` defaulted
+    // an unknown thread to "main". The frozen text says the opposite in three
+    // places, most directly `voidConditions` 6, which requires "an unmatchable
+    // wouldHaveAdded returning null and not 0" among the six controls SHOWN
+    // FIRING. Id B is absent from this transcript's local results, so nothing
+    // is known about which thread paid for it.
+    expect(result.excludedForeignUnits.unsized).toBe(1);
+    expect(result.excludedForeignUnits.units).toBe(0);
+    // AND THE DISTINCTION THAT MAKES THAT ZERO HONEST: `units === 0` beside
+    // `unsized === 1` reads "nothing could be sized", never "nothing worth
+    // having was refused". The class still carries its ROW, so the exclusion
+    // stays visible and `R_hi+` becomes NOT EVALUABLE rather than quietly
+    // smaller — which is exactly what the frozen metric prescribes.
+    const foreignRow = result.rows.find((r) => r.disposition === "excludedForeign");
+    expect(foreignRow).toBeDefined();
+    expect(foreignRow!.units).toBeNull();
+    expect(foreignRow!.unitsLo).toBeNull();
   });
 
   it("lists every row it saw, and the credited ones sum to the scored total", async () => {
@@ -4936,7 +5036,13 @@ describe("the four B12 scoring seams", () => {
     // still admits `null` and a consumer still has to say what it does about it.
     const refused = result.rows[1];
     if (refused?.disposition === "credited") throw new Error("fixture changed");
-    expect(refused?.units).toBeCloseTo(17_243.243243243243, 6);
+    // ACTUALLY null now (W10/R51). The second row carries no `invocation_id`,
+    // so its thread is unknown and it can no longer be sized against "main".
+    // The type admitted `null` all along; this is the first version of the
+    // test where the VALUE exercises it — which is the whole point of a
+    // discriminated union whose refused arm is nullable.
+    expect(refused?.units).toBeNull();
+    expect(refused?.unitsLo).toBeNull();
   });
 
   it("says a row could not report whether it closed, rather than saying it did not", async () => {

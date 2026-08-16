@@ -1,0 +1,13 @@
+diff --git a/src/contract-probe.ts b/src/contract-probe.ts
+index 21cda6b..b9972e0 100644
+--- a/src/contract-probe.ts
++++ b/src/contract-probe.ts
+@@ -48,7 +48,7 @@ const COMMENT_ONLY = /^(?:\/\/|#|\*|\/\*|<!--)/;
+  * elision.
+  */
+ const ELISION_PHRASES: RegExp[] = [
+-  /(?:rest|remainder) of (?:the )?(?:file|code|content|function|method|class|implementation|module)/i,
++  /(?:rest|remainder) of (?:the )?(?:code|content|function|method|class|implementation|module)/i,
+   /(?:code|content|lines|body|implementation|imports?|functions?) (?:remains?|stays?|are|is)? ?(?:unchanged|the same|as before|omitted|identical)/i,
+   /unchanged (?:from|as in) (?:the )?(?:original|above|before|input)/i,
+   /\bomitted\b/i,

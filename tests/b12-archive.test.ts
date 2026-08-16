@@ -4,7 +4,9 @@
  * `tests/fixtures/b12-run/` (`design.artifacts` 11: the bracket, the
  * jackknives, `R_all`, `R_hi⁺`, the strata and every admission condition,
  * recomputed from the committed archive alone, through the REAL path
- * `readRunArchive → assembleRun → emitRun`).
+ * `readRunArchive → assembleRun`; the emission itself is exercised in
+ * `b12-audit.test.ts`'s e2e, because `emitRun` now requires a committed,
+ * bound audit and standing one up here would test the gate, not the decoder).
  *
  * What the replay over a FIXTURE archive does not prove is recorded in
  * `FINDINGS.md` rather than claimed: no archive of a REAL run exists until one
@@ -20,6 +22,7 @@ import {
   committedEvidenceState,
   earliestSessionStart,
   narrowObservationRecord,
+  narrowPriorRun,
   narrowRunlogRow,
   parseJsonl,
   parseObsDirName,
@@ -31,8 +34,8 @@ import {
   telemetryDrift,
 } from "../src/cost/b12/archive.js";
 import { assembleRun } from "../src/cost/b12/assemble.js";
-import { AUDIT_INPUT_KEYS, parseGitAudit } from "../src/cost/b12/audit.js";
-import { committedAuditCheck, emitRun, invocationString } from "../src/cost/b12/emit.js";
+import { AUDIT_INPUT_KEYS, parseGitAudit, runEmittedArtifacts } from "../src/cost/b12/audit.js";
+import { EmitRefused, committedAuditCheck, emitRun, invocationString, serializeResult } from "../src/cost/b12/emit.js";
 import { reduceFile } from "../src/cost/b12/capture.js";
 import { readTranscript } from "../src/cost/transcript.js";
 import { makeScratch, req, at } from "./b12-fixtures.js";
@@ -172,6 +175,60 @@ describe("the register's pure core — the seventh adversarial round", () => {
     expect(broken.discrepancies.join(" ")).toMatch(/1 corrupt line/);
     expect(broken.discrepancies.join(" ")).toMatch(/not objects/);
     expect(broken.discrepancies.join(" ")).toMatch(/run_id is not a string/);
+  });
+});
+
+describe("narrowPriorRun — `final` is carried, and only the literal true is final (R50)", () => {
+  const base = { rLo: 0.1, rHi: 0.2, verdict: "hold" };
+
+  it("carries final:true through, on a scored result and on a void alike", () => {
+    const d: string[] = [];
+    const scored = narrowPriorRun("run-a", { ...base, final: true }, d);
+    expect(scored.result).toEqual({ scored: true, final: true, bracket: { rLo: 0.1, rHi: 0.2 } });
+
+    const voided = narrowPriorRun("run-b", { ...base, verdict: "void", voidClause: "19", final: true }, d);
+    expect(voided.result).toEqual({
+      scored: false,
+      final: true,
+      voidClause: "19",
+      bracket: { rLo: 0.1, rHi: 0.2 },
+    });
+    expect(d).toEqual([]);
+  });
+
+  it("FAILS CLOSED on every shape that is not the literal true", () => {
+    // The old two-emit loop's step-2 artifact is the first row: a clause-19
+    // void, written before any audit existed, carrying a real bracket. It must
+    // read as NOT final, or it is indistinguishable from a concluded run.
+    const cases: Array<[string, unknown]> = [
+      ["absent", undefined],
+      ["explicit false", false],
+      ["the string 'true'", "true"],
+      ["null", null],
+      ["1", 1],
+    ];
+    for (const [label, value] of cases) {
+      const d: string[] = [];
+      const raw: Record<string, unknown> = { ...base, verdict: "void", voidClause: "19" };
+      if (value !== undefined) raw.final = value;
+      const run = narrowPriorRun(`run-${label}`, raw, d);
+      expect(run.result, label).not.toBeNull();
+      expect(run.result!.final, label).toBe(false);
+    }
+  });
+
+  it("NOT FINAL is not the same state as NO COMMITTED RESULT", () => {
+    // `result === null` is clause 1's abandoned run. A non-final result is a
+    // committed result that is not yet a verdict, and collapsing the two would
+    // report an abandoned run where none exists — and would mislabel the
+    // attempt, which `attemptOf` defaults to consumed.
+    const d: string[] = [];
+    const notFinal = narrowPriorRun("run-c", { ...base, final: false }, d);
+    expect(notFinal.result).not.toBeNull();
+    expect(notFinal.result!.final).toBe(false);
+
+    const noBracket = narrowPriorRun("run-d", { verdict: "hold", final: true }, d);
+    expect(noBracket.result).toBeNull();
   });
 });
 
@@ -456,9 +513,13 @@ describe("readRunArchive — the hostile disk", () => {
       parsed.lineage[0].records.unshift(null);
       await fs.writeFile(file, JSON.stringify(parsed, null, 2), "utf8");
     });
-    const emitted = await emitRun(root, "replay-01");
-    expect(emitted.verdict).toBe("void"); // still a RESULT, never a crash
-    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
+    // THROUGH THE REAL DECODER AND SCORER, not through `emitRun` (R50). The
+    // emission now requires a committed, bound audit; what this test is about
+    // is that a hostile archive produces a RESULT rather than a crash, and
+    // that question lives one layer below the gate.
+    const archive = await readRunArchive(root, "replay-01");
+    const { result } = assembleRun({ archive, gitAudit: { ran: false }, scoringCommandActual: null });
+    expect(result.verdict).toBe("void"); // still a RESULT, never a crash
     expect(result.archiveProblems.join(" ")).toMatch(/not objects/);
   });
 });
@@ -523,12 +584,17 @@ describe("the replay — artifact 11 over the committed fixture archive, real pa
     });
   });
 
-  it("emitRun writes BOTH artifacts even though the run is a void", async () => {
+  it("BOTH artifacts serialise even though the run is a void", async () => {
     const root = await fixtureCopy();
-    const emitted = await emitRun(root, "replay-01");
-    expect(emitted.verdict).toBe("void");
-    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
-    const counterfactual = JSON.parse(await fs.readFile(emitted.counterfactualPath, "utf8"));
+    // The REAL serializer over the REAL scored values, without the emission
+    // gate (R50): `emitRun` now refuses without a committed, bound audit, and
+    // standing up an operator loop here would make this a test of the gate
+    // rather than of the bytes. `serializeResult` is exported for exactly this.
+    const archive = await readRunArchive(root, "replay-01");
+    const assembled = assembleRun({ archive, gitAudit: { ran: false }, scoringCommandActual: null });
+    expect(assembled.result.verdict).toBe("void");
+    const result = JSON.parse(JSON.stringify(assembled.result, serializeResult, 2));
+    const counterfactual = JSON.parse(JSON.stringify(assembled.counterfactual, null, 2));
     expect(result.schema).toBe("b12-result/1");
     expect(counterfactual.schema).toBe("b12-counterfactual/1");
     // the Map serialises as an object, not as {}
@@ -596,13 +662,18 @@ describe("the emitter's small pure pieces", () => {
     expect(fabricated.ok).toBe(false);
     expect(fabricated.why).toMatch(/not committed evidence/);
 
-    // and end to end: emitRun with the fabricated audit still publishes
-    // clauses 4–6 as UNCHECKED, with the refusal on the artifact's face
-    const emitted = await emitRun(root, "replay-01", { auditPath });
-    const result = JSON.parse(await fs.readFile(emitted.resultPath, "utf8"));
-    expect(result.uncheckedClauses).toHaveLength(3);
-    expect(result.gitAudit).toEqual({ ran: false });
-    expect(result.archiveProblems.join(" ")).toMatch(/audit refused/);
+    // AND END TO END, THE INVARIANT THAT REPLACED THE OLD ONE (R50). This used
+    // to assert that `emitRun` published clauses 4–6 as UNCHECKED with the
+    // refusal on the artifact's face — a NOT-FINAL result, committed, that
+    // `open-b` would then accept because nothing on the register path read
+    // `final`. It now REFUSES and writes nothing.
+    await expect(emitRun(root, "replay-01", { auditPath })).rejects.toThrow(EmitRefused);
+    await expect(emitRun(root, "replay-01", { auditPath })).rejects.toThrow(/nothing was written/);
+    // And it means it: no artifact appears on disk from the refused emission.
+    const [cfRel, resultRel] = runEmittedArtifacts("replay-01");
+    for (const rel of [cfRel!, resultRel!]) {
+      await expect(fs.access(path.join(root, rel))).rejects.toThrow();
+    }
   });
 
   it("invocationString spells the command one way on every platform", () => {

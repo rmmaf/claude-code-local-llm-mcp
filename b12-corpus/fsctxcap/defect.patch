@@ -1,0 +1,13 @@
+diff --git a/src/fs-safety.ts b/src/fs-safety.ts
+index 5bb25e2..c4aafb9 100644
+--- a/src/fs-safety.ts
++++ b/src/fs-safety.ts
+@@ -177,7 +177,7 @@ export function enforceContextCaps(
+   maxFileKb: number,
+   maxContextKb: number
+ ): void {
+-  const oversized = files.filter((f) => f.bytes > maxFileKb * 1024);
++  const oversized = files.filter((f) => f.bytes > maxContextKb * 1024);
+   if (oversized.length > 0) {
+     throw new ToolError(
+       `File(s) exceed the ${maxFileKb} KB per-file limit: ` +

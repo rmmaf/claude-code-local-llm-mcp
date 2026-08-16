@@ -1,0 +1,72 @@
+{
+  "document": "b12-mac-round",
+  "commit": "06ee3b04649ba73a02879df6a671e2f45cd8eaec",
+  "generatedAt": "2026-08-15T23:49:54Z",
+  "host": "mac",
+  "steps": [
+    {
+      "id": "M2",
+      "status": "ran",
+      "exit": 0,
+      "note": "machine facts captured"
+    },
+    {
+      "id": "M3",
+      "status": "ran",
+      "exit": 0,
+      "note": "version and binary digest captured"
+    },
+    {
+      "id": "M1",
+      "status": "ran",
+      "exit": 0,
+      "note": "5/5 green"
+    },
+    {
+      "id": "M4",
+      "status": "ran",
+      "exit": 1,
+      "note": "matrix did NOT complete — see logs/M4.txt"
+    },
+    {
+      "id": "M6b",
+      "status": "ran",
+      "exit": 0,
+      "note": "verdict=inherits"
+    },
+    {
+      "id": "M5",
+      "status": "ran",
+      "exit": 0,
+      "note": "pre-flight completed"
+    },
+    {
+      "id": "M7",
+      "status": "ran",
+      "exit": 1,
+      "note": "cap probe failed — see logs/M7.txt"
+    },
+    {
+      "id": "M8",
+      "status": "ran",
+      "exit": 1,
+      "note": "probe failed — see logs/M8.txt"
+    }
+  ],
+  "ranIds": [
+    "M2",
+    "M3",
+    "M1",
+    "M4",
+    "M6b",
+    "M5",
+    "M7",
+    "M8"
+  ],
+  "failedIds": [
+    "M4",
+    "M7",
+    "M8"
+  ],
+  "skippedIds": []
+}

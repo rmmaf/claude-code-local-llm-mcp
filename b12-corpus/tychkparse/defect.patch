@@ -1,0 +1,13 @@
+diff --git a/src/checks/parsers.ts b/src/checks/parsers.ts
+index 36759fd..6676c90 100644
+--- a/src/checks/parsers.ts
++++ b/src/checks/parsers.ts
+@@ -183,7 +183,7 @@ function firstMeaningfulLine(text: string): string {
+   return text.trim();
+ }
+ 
+-function firstLineIn(stack: string, file: string | null): number | null {
++function firstLineIn(stack: string, file: string | null): number {
+   if (file === null) return null;
+   const base = file.split("/").pop();
+   if (base === undefined) return null;

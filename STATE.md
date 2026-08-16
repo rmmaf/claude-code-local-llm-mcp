@@ -5,40 +5,43 @@ Ceiling: 40 lines below this header.
 
 ## Where I stopped
 
-**The plan's three passes shipped and survived thirty adversarial rounds** on
-`claude/b12-f23-audit-register`: F23's uncapped bracket; clause 6's controls,
-emission wrapper and audit computer; pilot; register (CAS); policy blobs as GIT
-PROVENANCE, DUAL key. PR #18 open — the merge is the user's act.
+**The corpus is COMPLETE: 65 of 65** and the run is DECLARED — `manifest-config.json` now
+carries both manifests, the run ids and 6+6 abPairs, and the full dry run refuses only on
+MAC-LOCAL pins. `tests/b12-plan.test.ts` binds artifact→generator, 60 specs→plan, config→plan,
+and DERIVES the pair rule. **Both constants DECIDED** pre-data (`b086a59`).
 
 ## Next action
 
-**R8–R37 are ADJUDICATED — fifty-four findings, all but two confirmed, each
-fixed with a control shown FIRING. `FINDINGS.md` is the record round by round;
-this file does not duplicate it.** R16 and R26 were the worst: the real index
-stayed on `expectedHead`, so the next ordinary commit UNDID the registration;
-and the verdict was the ARTIFACT'S, not the audit's. After seven rounds on ONE
-surface, R35–R37 retargeted the same diff at arithmetic, attribution and
-conformance — nine findings, seven high, **none in git**.
+**DECLARED IS NOT SEALABLE — see `_beforeYouBuild`,** four decisions and one hazard. The
+hard one first: `evidence/b12-harness-seal.json` does not exist, is a barrier before ANY
+registration, must run AFTER `build`, and is create-only forever. `pinned.scoringCommand` is
+now a TEMPLATE resolved per manifest by the assembler, so A and B each carry one literal
+string — and since 2026-08-14 there is exactly ONE scoring invocation to name (R50), so the
+old problem of one string having to serve two invocations is gone. Rename the three
+`*-pending` run ids before `build`.
 
-**Two owner decisions are PRE-DECLARED in `PREMISES.md` (2026-08-11), not
-here:** `open` is accepted and no power analysis gates the run; the acceptance
-predicate, verified FAILING at base, is the WHOLE quality floor — nothing added
-after the first scored observation.
+## Measured, and worth not re-deriving
+
+- **`--deep` still is not evidence a base carries its defect**, though its `os.tmpdir()`
+  toolchain bug is fixed (`32561af`). It asserts the predicate FAILS, so every way of being
+  wrong that makes one fail reads as a defect. **Green at the parent is the trustworthy half,
+  the author checks it, and `--deep` belongs on the Mac.**
+- **7 of 30 types-only sites admit a false FIXED** — a tsc-only predicate cannot tell a
+  restored annotation from a behaviour-changing silencer. Built and run. Pairing does NOT
+  make it noise: only treatment has `repair`, which loops on the predicate alone, so
+  arm-dependent route choice is a possible treatment EFFECT. Two of the seven are paired.
+- **A rule with a tunable clause is still a discretionary choice.** The pairs are the first
+  six of each committed order because every clause I added to buy a property was the clause
+  doing the selecting. Costs taken unpatched, in `_abPairs`.
+- **The authoring machine is not the run machine.** A whole round went into routing around a
+  suite that is red on Windows only, and green on the Mac, where the predicates execute.
 
 ## Still blocking a run
 
-The A/B pass (scorer + VOID 21 and VOID 12 adjudications — **NO A/B before both
-are registered**); the task MIX, owed before the manifest is sealed; the
-65-sibling corpus; the Mac trips (policy transport, dual-key re-probe, cap probe,
-formal preflight, pilot); the platform amendment; the Phase-3 1/3 amendment
-(gate-only is CUT); contract-stability re-run; then seal → register (CAS) → 20–26
-sessions → clause-6 → verdict → A/B. **At the seal, re-pin
-`pinned.captureSha256`: editing `capture.ts` moves it.**
+**p is unmeasured:** N=30 completes 29% at 0.60, 59% at 0.667, 93% at 0.77. Unchanged: VOID
+21 and VOID 12 (**no A/B before both**); the Mac trips (policy blobs, installedChars RE-PROBE
+with the model in the key, cap probe, pilot). **At the seal, re-pin `pinned.captureSha256`.**
 
 ## Do not redo
 
-- The O-bracket is DECLINED and so are its cousins: no control-arm
-  `installedChars`, no minted VOID-21 hash, no minted verdict-precedence RULE.
-- Never back-fill an append-only record; three phase-3 run ids stay row-less.
-- `tests/fixtures/b12-run/` is TEST MATERIAL, never evidence.
-- The `// b12:emission-begin` fences ARE clause 5's fourth item.
+- A published base is RETIRED, never re-authored: `git commit` embeds committer time.

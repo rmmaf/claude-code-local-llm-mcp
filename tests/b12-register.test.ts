@@ -6,6 +6,30 @@
  * success is tied END-TO-END to the observe guard: a registration the CAS
  * installs must be one `registrationGuard` then accepts, because the same-act
  * proof holds BY CONSTRUCTION when manifests and row land in one commit.
+ *
+ * EVERY GIT-COUPLED TEST HERE CARRIES AN EXPLICIT BUDGET, and the numbers are
+ * measured rather than chosen. This file used to pass none, so all 29 ran under
+ * vitest's 5 000 ms default while shelling out to git 25–40 times each — and it
+ * was the only git-coupled oracle in the repository with no budgets at all.
+ *
+ * What was measured, over ten runs in three conditions (this file alone; with
+ * `b12-author.test.ts`; with that and `b12-corpus-refs.test.ts`): alone it is
+ * green every time, and three of the ten runs lost exactly one test. Every one
+ * of those failures was `Test timed out in 5000ms` — never an assertion, never a
+ * hook. The slowest any test ever ran was 6 771 ms, against typical maxima of
+ * 1–4 s, so 30 000 is roughly 4.4x the worst observation and not a round number
+ * picked to make a problem go away.
+ *
+ * WHAT THIS DOES NOT ESTABLISH, because a run says WHICH tests failed and never
+ * WHY: that file-level parallelism is the mechanism, or that this is the suite
+ * flake `PREMISES.md` records as mitigated-but-undiagnosed. The association is
+ * n=1 in each direction and is not a diagnosis.
+ *
+ * FOUR TESTS KEEP THE 5 s DEFAULT ON PURPOSE — the three pure predicates over
+ * literals, and the `freshBuild` one, which hands it a command that cannot spawn
+ * so `npm run build` never runs (measured: 257 / 14 / 35 / 76 ms). A pure
+ * predicate that hangs should still fail fast; giving it thirty seconds would
+ * buy nothing and hide a real hang.
  */
 
 import { spawnSync } from "node:child_process";
@@ -15,7 +39,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { makeTempRoot } from "./helpers.js";
+import { makeTempRoot, removeTempRoot } from "./helpers.js";
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -26,7 +50,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 
@@ -182,7 +206,7 @@ describe("openBRefusals — run 2 is a registration, and owes the act's precondi
     expect(openBRefusals(root, head, 7).join(" ")).toMatch(/not a safe path segment/);
     // …and a genuinely fresh run 2 passes, so the guard is not a wall.
     expect(openBRefusals(root, head, "run-r2")).toEqual([]);
-  });
+  }, 30_000);
 });
 
 describe("checkCore — the pure red reasons, firing and not firing", () => {
@@ -259,7 +283,7 @@ describe("casCommit — the act, atomic at the ref", () => {
     expect(registrationGuard(root, "run-cas", aBytes)).toEqual([]);
     // And the sync left the working tree AT the new commit for the act's paths.
     expect(await fs.readFile(path.join(root, "evidence", "run-cas.b12.tasks.json"), "utf8")).toBe(aBytes);
-  });
+  }, 30_000);
 
   it("REFUSES when the branch moved past expectedHead — nothing registered, head untouched", async () => {
     const { casCommit } = await import("../scripts/b12-register.mjs");
@@ -283,7 +307,7 @@ describe("casCommit — the act, atomic at the ref", () => {
       encoding: "utf8",
     });
     expect(probe.status).not.toBe(0);
-  });
+  }, 30_000);
 
   it("registers from a LINKED WORKTREE, where `.git` is a file, not a directory", async () => {
     const { casCommit } = await import("../scripts/b12-register.mjs");
@@ -307,7 +331,7 @@ describe("casCommit — the act, atomic at the ref", () => {
     expect(git(wt, ["show", "HEAD:evidence/run-wt.b12.tasks.json"])).toBe(`{"runId":"run-wt"}`);
     // The act landed on the worktree's OWN branch; the main checkout's did not move.
     expect(git(root, ["rev-parse", "HEAD"])).toBe(mainHead);
-  });
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -374,7 +398,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.manifest-B.tasks.json"])).toBe(bBytes.trimEnd());
     expect(registrationGuard(root, "run-r1", aBytes)).toEqual([]);
-  });
+  }, 30_000);
 
   it("REFUSES a manifest whose OWN runId is not the one being registered — and moves nothing", async () => {
     // R20: the act writes `evidence/<runId>.b12.tasks.json` and a row saying
@@ -399,7 +423,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).not.toMatch(/b12_registration/);
     expect(git(root, ["status", "--porcelain", "--", "MEASUREMENTS.jsonl"])).toBe("");
     expect(existsSync(path.join(root, "evidence", "run-r9.b12.tasks.json"))).toBe(false);
-  });
+  }, 30_000);
 
   it("REFUSES a manifest already introduced by an earlier commit — the same act is no longer possible", async () => {
     // R22#1: voidConditions 1 seals the manifest and its row in ONE commit,
@@ -433,7 +457,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     const reborn = await registerRun(root, "run-r1", { gate: greenGate });
     expect(reborn.ok).toBe(false);
     expect(redOf(reborn).join(" ")).toMatch(/was already introduced by/);
-  });
+  }, 30_000);
 
   it("registers the CAPTURED bytes — a disk mutation between validation and the act changes NOTHING", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
@@ -451,7 +475,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     // preserved for reconciliation and reported, never destroyed.
     expect(await fs.readFile(aPath, "utf8")).toMatch(/NOT JSON/);
     expect(okOf(result).postFailure).toMatch(/NOT synced/);
-  });
+  }, 30_000);
 
   it("survives the operator's NEXT ordinary commit — the index follows the branch it indexes", async () => {
     // R16, reproduced before it was believed: the act builds its tree in a
@@ -475,7 +499,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.manifest-B.tasks.json"])).not.toBe("");
     expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).toMatch(/b12_registration/);
-  });
+  }, 30_000);
 
   it("writes NO index while another git process holds the lock — and says how to repair it", async () => {
     // R17: R16's check-then-read-tree was a TOCTOU. The index is now
@@ -503,7 +527,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     } finally {
       await fs.rm(lockPath, { force: true });
     }
-  });
+  }, 30_000);
 
   it("syncs NOTHING when the branch is moved by a command the index lock cannot exclude", async () => {
     // R19. `.git/index.lock` blocks everything that would move the branch AND
@@ -540,7 +564,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(await fs.readFile(measPath, "utf8")).toBe(old);
     expect(await fs.readFile(path.join(gitDir, "index"))).toEqual(indexBefore);
     expect(git(root, ["rev-parse", "HEAD"])).toBe(before);
-  });
+  }, 30_000);
 
   it("leaves a STAGED index alone and says the registration would be reverted", async () => {
     // The other half: an index carrying someone's staged work may not be
@@ -556,7 +580,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(okOf(result).postFailure).toMatch(/would REVERT this registration/);
     // The staged work is untouched.
     expect(git(root, ["rev-parse", ":scratch.txt"])).toBe(stagedBlob);
-  });
+  }, 30_000);
 
   it("never touches the INDEX — the sync is an append, so staged work is not its business", async () => {
     // R10 conditioned the sync on disk bytes; R14 added the index; R15 found
@@ -580,7 +604,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(git(root, ["show", "HEAD:evidence/run-r1.b12.tasks.json"])).toBe(aBytes.trimEnd());
     // The staged blob is STILL the index's — the act never wrote there.
     expect(git(root, ["rev-parse", ":evidence/run-r1.b12.tasks.json"])).toBe(stagedBlob);
-  });
+  }, 30_000);
 
   it("syncs the register by APPENDING — a concurrent append is joined, never overwritten", async () => {
     // The one candidate that needs syncing is the append-only register, and
@@ -604,7 +628,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     // The drifted register is reported rather than rewritten.
     expect(okOf(result).postFailure).toMatch(/MEASUREMENTS\.jsonl/);
     expect(onDisk.endsWith(`{"metric":"concurrent-append"}\n`)).toBe(true);
-  });
+  }, 30_000);
 
   it("RE-READS after the append — a write that lands inside the read→write window is reported, not called clean", async () => {
     // R18#1. The append itself cannot overwrite, but the check that licenses
@@ -644,7 +668,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(okOf(result).postFailure).toMatch(/PREFIX/);
     expect(okOf(result).postFailure).toMatch(/MEASUREMENTS\.jsonl/);
     expect(okOf(result).postFailure).toMatch(/BY HAND/);
-  });
+  }, 30_000);
 
   it("syncs NOTHING when HEAD switched branches after the swap — another checkout is not this act's to write", async () => {
     const { casCommit } = await import("../scripts/b12-register.mjs");
@@ -665,7 +689,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     expect(result.ok).toBe(false);
     expect(whyOf(result)).toMatch(/HEAD moved from/);
     expect(existsSync(path.join(root, "evidence", "run-sync.b12.tasks.json"))).toBe(false);
-  });
+  }, 30_000);
 
   it("refuses UNCOMMITTED measurements rows at capture — the register is committed before the act", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
@@ -673,7 +697,7 @@ describe("registerRun — the act validates the captured state, and only that", 
     await fs.appendFile(path.join(root, "MEASUREMENTS.jsonl"), `{"metric":"uncommitted-suffix"}\n`, "utf8");
     const result = await registerRun(root, "run-r1", { gate: greenGate });
     expect(redOf(result).join(" ")).toMatch(/on disk differs from expectedHead/);
-  });
+  }, 30_000);
 
   it("REFUSES when a commit lands between validation and the act — the CAS fails, nothing registered", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
@@ -699,21 +723,21 @@ describe("registerRun — the act validates the captured state, and only that", 
     });
     expect(probe.status).not.toBe(0);
     expect(git(root, ["show", "HEAD:MEASUREMENTS.jsonl"])).not.toMatch(/b12_registration/);
-  });
+  }, 30_000);
 
   it("refuses a pilot that exists on disk but was never committed — old inputs come from the captured head", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
     const { root } = await registerFixture({ commitPilot: false });
     const result = await registerRun(root, "run-r1", { gate: greenGate });
     expect(redOf(result).join(" ")).toMatch(/on disk but not at expectedHead/);
-  });
+  }, 30_000);
 
   it("refuses with no seal at expectedHead — seal-harness is the barrier", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
     const { root } = await registerFixture({ withSeal: false });
     const result = await registerRun(root, "run-r1", { gate: greenGate });
     expect(redOf(result).join(" ")).toMatch(/seal-harness is the barrier/);
-  });
+  }, 30_000);
 
   it("REFUSES when HEAD switches to a DIFFERENT branch on the same commit — the swap lands only where it was validated", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
@@ -738,7 +762,7 @@ describe("registerRun — the act validates the captured state, and only that", 
       );
       expect(probe.status).not.toBe(0);
     }
-  });
+  }, 30_000);
 
   it("refuses DIRTY validator inputs — the gate may not judge with code the act does not register", async () => {
     const { registerRun } = await import("../scripts/b12-register.mjs");
@@ -751,7 +775,7 @@ describe("registerRun — the act validates the captured state, and only that", 
       encoding: "utf8",
     });
     expect(probe.status).not.toBe(0);
-  });
+  }, 30_000);
 });
 
 describe("seal-harness — create-only, explicit budgets, committed bytes", () => {
@@ -783,7 +807,7 @@ describe("seal-harness — create-only, explicit budgets, committed bytes", () =
     commitAll(root, "the seal");
     await fs.rm(path.join(root, "evidence", "b12-harness-seal.json"));
     expect(whyOf(sealHarness(root, manifestPath))).toMatch(/exists in history/);
-  });
+  }, 30_000);
 
   it("never OVERWRITES a seal that appeared while this one was being built", async () => {
     // R21#2: the existence check and the write sat either side of a git call,
@@ -807,7 +831,7 @@ describe("seal-harness — create-only, explicit budgets, committed bytes", () =
     expect(whyOf(result)).toMatch(/create-only/);
     // The winner's bytes are exactly as the winner left them.
     expect(await fs.readFile(sealAbs, "utf8")).toBe(theirs);
-  });
+  }, 30_000);
 
   it("refuses a manifest with no explicit budget declarations, and uncommitted harness bytes", async () => {
     const { sealHarness } = await import("../scripts/b12-register.mjs");
@@ -832,7 +856,7 @@ describe("seal-harness — create-only, explicit budgets, committed bytes", () =
     );
     await fs.appendFile(path.join(root, "scripts", "b12-run.mjs"), "// drifted\n", "utf8");
     expect(whyOf(sealHarness(root, manifestPath))).toMatch(/differs between disk and HEAD/);
-  });
+  }, 30_000);
 });
 
 describe("freshBuild — the anti-stale-dist gate", () => {

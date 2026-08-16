@@ -1,0 +1,16 @@
+#!/bin/sh
+# The KNOWN-HERE pin guard, at the only moment it can decide anything.
+#
+# tests/b12-plan.test.ts is the alarm that matters — CI runs it — but it hashes
+# `git show HEAD:<path>`, and here HEAD is still the PREVIOUS commit. MEASURED
+# 2026-08-14: with the harness edited and correctly re-pinned but not committed,
+# that test goes RED, and green the instant the commit exists. Locally it is
+# INVERTED — red on a correct re-pin, green on a stale one — so it cannot be the
+# thing that stops a stale pin from being committed. This can.
+#
+# Exit 1 is a verdict about a pin. Exit 2 is an unaskable tree, and it also
+# blocks: a guard that cannot read the tree has not cleared it.
+#
+# Installed by `npm run hooks:install` (and by `prepare`, so `npm install` wires
+# it). Undo with `git config --unset core.hooksPath`.
+node scripts/b12-pins-check.mjs || exit 1

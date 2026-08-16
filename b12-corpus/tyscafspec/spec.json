@@ -1,0 +1,29 @@
+{
+  "taskId": "tyscafspec",
+  "parent": "608e930bc5c3dfec550fb43c9cccee082c03e9b8",
+  "message": "b12 base: tyscafspec",
+  "fileScope": [
+    "src/tools/scaffold.ts"
+  ],
+  "patch": "defect.patch",
+  "predicate": {
+    "argv": [
+      "npx",
+      "tsc",
+      "-p",
+      "tsconfig.json",
+      "--noEmit"
+    ],
+    "expectedExit": 0,
+    "timeoutMs": 600000
+  },
+  "manifest": {
+    "verificationStratum": "types-only",
+    "expectedSubagentStratum": "solo",
+    "verificationCommands": [
+      "npx tsc -p tsconfig.json --noEmit"
+    ],
+    "gateCategory": "types",
+    "repairMaxRounds": 3
+  }
+}

@@ -1,0 +1,13 @@
+diff --git a/src/tools/gate.ts b/src/tools/gate.ts
+index 139e1df..0f9ee15 100644
+--- a/src/tools/gate.ts
++++ b/src/tools/gate.ts
+@@ -364,7 +364,7 @@ export async function runGate(
+       maxFailures,
+       runner,
+       now,
+-      Math.min(spec.timeoutMs, remaining)
++      spec.timeoutMs
+     );
+     reports.push(report);
+     rawBytes += bytes;

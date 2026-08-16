@@ -8,7 +8,7 @@ import type { ProcessResult, ProcessRunner } from "../src/exec.js";
 import { ToolError } from "../src/fs-safety.js";
 import { readTelemetry } from "../src/telemetry.js";
 import { runRepair } from "../src/tools/repair.js";
-import { chatBody, fileBlock, makeTempRoot, noLmsRunner, queuedFetch, testConfig, writeFileTree } from "./helpers.js";
+import { chatBody, fileBlock, makeTempRoot, noLmsRunner, queuedFetch, removeTempRoot, testConfig, writeFileTree } from "./helpers.js";
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -19,7 +19,7 @@ function tempRoot(): string {
 afterEach(async () => {
   while (roots.length > 0) {
     const root = roots.pop();
-    if (root !== undefined) await fs.rm(root, { recursive: true, force: true });
+    await removeTempRoot(root);
   }
 });
 
@@ -812,7 +812,11 @@ describe("repair loop", () => {
     });
 
     const detail = (await readTelemetry(root))[0]?.detail as Record<string, unknown>;
-    expect(detail.budget_seconds).toBe(300);
+    // 240 since 2026-08-14: at 300 the default WAS admissionRule 11's
+    // five-minute pacing bar exactly, and a repair that spent its budget put a
+    // B12 observation's largest inter-request gap at the edge of it. See
+    // DEFAULT_BUDGET_SECONDS for the measurement.
+    expect(detail.budget_seconds).toBe(240);
     expect(detail.max_rounds).toBe(3);
   });
 
@@ -963,9 +967,12 @@ describe("repair loop", () => {
     // A request that never comes back, honouring the abort signal exactly as
     // fetch does — so the timeout is raised where the real one is, by the
     // controller in llm-client, and not simulated by a thrown string.
-    // config.timeoutMs defaults to exactly DEFAULT_BUDGET_SECONDS, so this is
-    // the ordinary case rather than a corner: 3 of 4 `model_failed` rows in run
-    // 2026-08-03-mac-06 sat at 300-326 s against a 300 s budget.
+    // config.timeoutMs (300 s) USED to equal DEFAULT_BUDGET_SECONDS exactly, so
+    // this was the ordinary case rather than a corner: 3 of 4 `model_failed`
+    // rows in run 2026-08-03-mac-06 sat at 300-326 s against a 300 s budget.
+    // Since 2026-08-14 the budget defaults to 240 and binds first, so this test
+    // now exercises the budget cutting a generation the timeout would still
+    // have allowed — the same path, reached the other way round.
     const fetchImpl = ((_url: string, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => {
@@ -1063,8 +1070,11 @@ describe("repair loop", () => {
     // Both ceilings bind at the same instant and the budget is spent either way
     // — one iteration later the between-rounds branch would call this `budget`,
     // so calling it anything else here contradicts the loop's own accounting.
-    // Not a corner case: config.timeoutMs and DEFAULT_BUDGET_SECONDS share a
-    // default, so round 1 lands on the tie whenever the first gate is free.
+    // It WAS not a corner case: config.timeoutMs and DEFAULT_BUDGET_SECONDS
+    // shared a default of 300 s, so round 1 landed on the tie whenever the first
+    // gate was free. Since 2026-08-14 the budget defaults to 240 and the tie no
+    // longer arrives by default — which is why this test sets the ceilings
+    // itself instead of leaning on the defaults agreeing.
     let elapsed = 0;
     const fetchImpl = ((_url: string, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {

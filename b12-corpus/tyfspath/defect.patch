@@ -1,0 +1,13 @@
+diff --git a/src/fs-safety.ts b/src/fs-safety.ts
+index 5bb25e2..b2b6f07 100644
+--- a/src/fs-safety.ts
++++ b/src/fs-safety.ts
+@@ -23,7 +23,7 @@ export interface SafePath {
+   abs: string;
+ }
+ 
+-function toPosix(p: string): string {
++function toPosix(p: string): number {
+   return p.split(path.sep).join("/");
+ }
+ 

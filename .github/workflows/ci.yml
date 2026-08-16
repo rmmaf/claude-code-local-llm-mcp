@@ -9,7 +9,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # FULL HISTORY, because the B12 pins are assertions ABOUT HISTORY and a
+      # shallow clone cannot answer them. `actions/checkout` defaults to
+      # `fetch-depth: 1`, so `tests/b12-plan.test.ts`'s KNOWN-HERE pins — which
+      # compare `pinned.ratesSha256` against `git show <corpus parent>:
+      # .local-coder/rates.json` — failed with `status 128` on every run from
+      # 2026-08-13 19:56 onward, while passing locally where the history exists.
+      #
+      # NOT FIXED BY TEACHING THE TEST TO SKIP. A pin nobody compares is the
+      # thing the pin exists to prevent, and `src/checks/config.ts` states the
+      # same doctrine for the gate: a tool that quietly runs fewer checks than it
+      # was told to is worse than one that refuses to run.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20

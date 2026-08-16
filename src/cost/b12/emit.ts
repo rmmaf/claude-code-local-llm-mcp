@@ -18,10 +18,19 @@
  * command string the manifest pins is compared against the actual invocation
  * (`voidConditions` 19) in `assemble`, which receives it from here verbatim.
  *
- * The clause 4–6 audit is an INPUT (`--audit <path>`): a committed artifact
- * carrying verdict and inputs. Absent, `assemble` publishes clauses 4–6 as
- * UNCHECKED and the pre-declaration (`PREMISES.md § B12`) bars a final verdict
- * — absence is reported, never read as "clean".
+ * The clause 4–6 audit is a REQUIRED INPUT (`--audit <path>`): a committed
+ * artifact carrying verdict and inputs. Absent — or uncommitted, unparseable,
+ * or not bound to this tree — this file REFUSES and writes nothing (R50).
+ *
+ * It used to emit anyway and let `assemble` publish clauses 4–6 as UNCHECKED,
+ * on the reading that absence is reported rather than read as "clean". The
+ * reporting was real and nothing that DECIDED ever read it: a NOT-FINAL result
+ * committed by that path was accepted by the registration gate and by `open-b`.
+ * `PREMISES.md § B12` pre-declared that "the scoring invocation requires a
+ * COMMITTED clause 4–6 audit artifact"; this is that rule enforced instead of
+ * merely stated. `assemble` still publishes UNCHECKED for `{ran:false}` — it is
+ * the lower layer and other callers exist — but no artifact leaves this file
+ * under that condition, so every committed `result.json` is FINAL.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -102,9 +111,12 @@ export function committedAuditCheck(
  *       manifest A, manifest B, the suite attestation — are RE-HASHED at
  *       HEAD and must equal what the artifact recorded, because (c) cannot
  *       see a change there;
- *   (e) and so is the whole set clause 5 was COMPUTED FROM — the runlog, the
- *       counterfactual, every per-observation archive — through the digest
- *       the artifact records. R22 stopped at (d) and claimed completeness;
+ *   (e) and so is the whole set clause 5 was COMPUTED FROM — the runlog and
+ *       every per-observation archive — through the digest the artifact
+ *       records. NOT the counterfactual: it left that set when the anchor
+ *       stopped reading it (R50), because it is an OUTPUT of this emission and
+ *       an output in the input digest would make the audit unbindable the
+ *       moment its own run was committed. R22 stopped at (d) and claimed completeness;
  *       R24 showed the claim was false, because an observation appended
  *       after a clean audit changes the anchor's population and the archive
  *       being scored while the verdict rides along unchanged.
@@ -112,7 +124,7 @@ export function committedAuditCheck(
  * A refusal keeps clauses 4–6 UNCHECKED — never "clean", the same fail-closed
  * shape as an unparseable audit. Returns the reason, or null.
  */
-export function auditBindingRefusal(
+export async function auditBindingRefusal(
   repoRoot: string,
   runId: string,
   audit: GitAudit,
@@ -121,7 +133,7 @@ export function auditBindingRefusal(
    * stand-in prereg has to hand the same stand-in to both sides or it would
    * be comparing two different questions. */
   collectorOptions: CollectorOptions = {}
-): string | null {
+): Promise<string | null> {
   if (audit.ran !== true) return null;
   const inputs = audit.inputs;
   const git = (args: string[]): { ok: boolean; out: string } => {
@@ -169,9 +181,13 @@ export function auditBindingRefusal(
   }
   // AND THE EVIDENCE CLAUSE 5 WAS COMPUTED FROM (R24). Naming four evidence
   // files was not the same as covering `evidence/**`: the anchor, the
-  // offender set and the archive being scored all derive from the runlog, the
-  // counterfactual and the per-observation archives. An observation appended
-  // after a clean audit changes what is scored while the verdict rides along.
+  // offender set and the archive being scored all derive from the runlog and
+  // the per-observation archives. An observation appended after a clean audit
+  // changes what is scored while the verdict rides along.
+  //
+  // NOT the counterfactual, which left this set with R50: it is an OUTPUT of
+  // this emission, and an output inside the input digest would make the audit
+  // unbindable the moment its own run was committed.
   const recordedDigest = inputs["clause5.evidenceDigest"];
   if (recordedDigest === undefined) return "the audit records no clause-5 evidence digest — it cannot say what archive it judged";
   const current = runEvidenceDigest(runId, git);
@@ -207,15 +223,27 @@ export function auditBindingRefusal(
   // a cross-check on what it claims, never a substitute for it.
   let recomputed: Record<string, string>;
   let recomputedVerdict: "clean" | "void";
+  let recomputedReasons: string[];
   try {
-    const facts = collectAuditFacts(repoRoot, runId, collectorOptions);
+    const facts = await collectAuditFacts(repoRoot, runId, collectorOptions);
     recomputed = auditInputs(facts);
-    recomputedVerdict = decideAudit(facts).verdict;
+    const decided = decideAudit(facts);
+    recomputedVerdict = decided.verdict;
+    recomputedReasons = decided.reasons;
   } catch (error) {
     return `the audit could not be re-derived at HEAD (${error instanceof Error ? error.message : String(error)}) — an artifact this emission cannot recompute certifies nothing`;
   }
   if (recomputedVerdict !== audit.verdict) {
     return `the artifact says ${audit.verdict} and re-deriving it here says ${recomputedVerdict} — the verdict was not produced by these facts`;
+  }
+  // AND THE REASONS, which the review found unbound. Verdict and inputs were
+  // checked and `reasons` was not, so a committed audit carrying authentic
+  // facts and an authentic verdict could have its EXPLANATION rewritten or
+  // emptied — and `reasons` is what a reader is handed to understand a void.
+  // An artifact whose account of itself is forged is not the artifact that was
+  // produced, even when its answer happens to be right.
+  if (audit.reasons.join("\n") !== recomputedReasons.join("\n")) {
+    return `the audit's reasons do not survive re-derivation (${audit.reasons.length} recorded, ${recomputedReasons.length} re-derived) — the explanation was not produced by these facts`;
   }
   for (const key of AUDIT_INPUT_KEYS) {
     // The ONE key that must differ, and the audit's binding to HEAD is what
@@ -227,6 +255,16 @@ export function auditBindingRefusal(
   }
   return null;
 }
+
+/**
+ * The emission REFUSED — retryable, and it wrote nothing (R50).
+ *
+ * Distinct from a VOID on purpose, and the distinction is the point of the
+ * class: a void is a committable verdict that spends one of three attempts,
+ * while a refusal is a door that stayed shut. The operator fixes the
+ * precondition and runs the same command again.
+ */
+export class EmitRefused extends Error {}
 
 export interface EmitResult {
   counterfactualPath: string;
@@ -253,25 +291,53 @@ export async function emitRun(
 ): Promise<EmitResult> {
   const archive = await readRunArchive(repoRoot, runId);
 
-  let gitAudit: GitAudit = { ran: false };
-  if (options.auditPath != null) {
-    const committed = committedAuditCheck(repoRoot, runId, options.auditPath);
-    if (!committed.ok) {
-      archive.problems.push(`audit refused: ${committed.why ?? "unknown"} — clauses 4–6 stay UNCHECKED`);
-    } else {
-      try {
-        gitAudit = parseGitAudit(JSON.parse(committed.bytes ?? ""));
-      } catch {
-        archive.problems.push("audit refused: the committed audit does not parse — clauses 4–6 stay UNCHECKED");
-      }
-      // COMMITTED IS NOT THE SAME AS CURRENT: the artifact must still be a
-      // judgement about the tree being emitted.
-      const unbound = auditBindingRefusal(repoRoot, runId, gitAudit, options.auditCollectorOptions ?? {});
-      if (unbound !== null) {
-        archive.problems.push(`audit refused: ${unbound} — clauses 4–6 stay UNCHECKED`);
-        gitAudit = { ran: false };
-      }
-    }
+  // THE SCORING INVOCATION REFUSES; IT DOES NOT PUBLISH A QUALIFIED VERDICT
+  // (R50).
+  //
+  // This used to record the refusal on the artifact's face and emit anyway,
+  // with `gitAudit.ran` false and `final` false. The rule was "the CLI permits
+  // it and the qualification qualifies it" — and the qualification was read by
+  // nothing that decided. Two hazards came out of that:
+  //
+  //   - the pinned command carries `--audit`, so under the OLD two-emit loop
+  //     the first, bare invocation fired clause 19 and COMMITTED a
+  //     `verdict:"void"` for a run that was not void;
+  //   - and a correctly ordered invocation whose audit binding refused for any
+  //     of the legitimate drift reasons above still wrote an ordinary `open`
+  //     that was NOT FINAL, which `open-b` accepted — spending the second of
+  //     two sealed manifests on a verdict no committed audit stood behind.
+  //
+  // Under the one-invocation regime the audit no longer needs a prior
+  // emission, so there is no longer any lawful reason to score without one.
+  // Refusing writes NOTHING and is retryable; it spends no attempt. The
+  // invariant it buys is worth more than the diagnostic it removes: EVERY
+  // committed `result.json` is FINAL by construction.
+  const auditPath = options.auditPath;
+  if (auditPath == null) {
+    throw new EmitRefused(
+      "no --audit was given: the scoring invocation is the one that carries a COMMITTED clause 4–6 audit, and an emission without one would publish a verdict nothing had audited"
+    );
+  }
+  const committed = committedAuditCheck(repoRoot, runId, auditPath);
+  if (!committed.ok) {
+    throw new EmitRefused(`audit refused: ${committed.why ?? "unknown"} — nothing was written`);
+  }
+  let gitAudit: GitAudit;
+  try {
+    gitAudit = parseGitAudit(JSON.parse(committed.bytes ?? ""));
+  } catch {
+    throw new EmitRefused("audit refused: the committed audit does not parse — nothing was written");
+  }
+  if (gitAudit.ran !== true) {
+    throw new EmitRefused(
+      "audit refused: the committed audit does not survive parseGitAudit — a verdict whose inputs cannot be replayed is not an audit, and nothing was written"
+    );
+  }
+  // COMMITTED IS NOT THE SAME AS CURRENT: the artifact must still be a
+  // judgement about the tree being emitted.
+  const unbound = await auditBindingRefusal(repoRoot, runId, gitAudit, options.auditCollectorOptions ?? {});
+  if (unbound !== null) {
+    throw new EmitRefused(`audit refused: ${unbound} — nothing was written`);
   }
 
   const { counterfactual, result } = assembleRun({
@@ -302,8 +368,16 @@ export async function emitRun(
   };
 }
 
-/** `RunTelemetryCoverage.ownedBy` is a Map; JSON needs it as an object. */
-function serializeResult(_key: string, value: unknown): unknown {
+/**
+ * `RunTelemetryCoverage.ownedBy` is a Map; JSON needs it as an object.
+ *
+ * EXPORTED so the artifact's real bytes can be asserted without going through
+ * the emission gate (R50). The gate now requires a committed, bound audit —
+ * correctly — but the serializer is a separate contract, and a test that had
+ * to stand up a whole operator loop to check that a Map survives the round
+ * trip would be testing the gate instead of the thing it means to test.
+ */
+export function serializeResult(_key: string, value: unknown): unknown {
   if (value instanceof Map) return Object.fromEntries(value);
   return value;
 }
@@ -332,7 +406,10 @@ if (isMain) {
   const args = process.argv.slice(2);
   const runId = args[0];
   if (runId === undefined || runId.startsWith("--")) {
-    process.stderr.write("usage: node dist/cost/b12/emit.js <runId> [--audit <path>]\n");
+    // `--audit` IS NOT OPTIONAL any more (R50). The usage line said it was,
+    // and an operator following the usage line would have taken the exact path
+    // that committed a provisional void.
+    process.stderr.write("usage: node dist/cost/b12/emit.js <runId> --audit evidence/<runId>.b12.audit.json\n");
     process.exit(2);
   }
   let auditPath: string | null = null;
@@ -345,19 +422,22 @@ if (isMain) {
     scoringCommandActual: invocationString(repoRoot, process.argv[1]!, args),
   })
     .then((r) => {
-      // NOT FINAL IS SAID BEFORE THE VERDICT, not after it (R37#1). An
-      // operator reading `verdict: hold` off a terminal had no way to know
-      // clauses 4–6 were never checked; the pre-data rule in PREMISES.md says
-      // that verdict is not final, so the line has to say it too.
-      const mark = r.final ? "FINAL" : "NOT FINAL — clauses 4–6 UNCHECKED (no committed audit bound to this tree)";
+      // NOT FINAL IS SAID BEFORE THE VERDICT, not after it (R37#1). Under the
+      // one-invocation regime this branch is unreachable — the emission
+      // refuses rather than publishing an unaudited verdict — but the line
+      // stays, because a mark that only prints when the invariant has already
+      // broken is worth more than one that was deleted for being unreachable.
+      const mark = r.final ? "FINAL" : "NOT FINAL — clauses 4–6 UNCHECKED (this should be unreachable; report it)";
       process.stdout.write(
         `${r.resultPath}\n${r.counterfactualPath}\n${mark}\nverdict: ${r.verdict}${r.voidClause === null ? "" : ` — ${r.voidClause}`}\n`
       );
     })
     .catch((error: unknown) => {
-      // The one lawful throw is the unreadable manifest — a bug or tampering,
-      // not a run outcome; it surfaces loudly instead of minting an artifact.
+      // A REFUSAL EXITS 2 AND A BUG EXITS 1, the same two-way split the audit
+      // command uses: exit 2 says "precondition unmet, fix it and run the same
+      // command again", exit 1 says "this tree is not what the tool assumes".
+      // The one lawful throw of the second kind is the unreadable manifest.
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      process.exit(1);
+      process.exit(error instanceof EmitRefused ? 2 : 1);
     });
 }

@@ -1,0 +1,13 @@
+diff --git a/src/models-csv.ts b/src/models-csv.ts
+index 62da863..f3ce905 100644
+--- a/src/models-csv.ts
++++ b/src/models-csv.ts
+@@ -95,7 +95,7 @@ function parseCsvRecords(text: string): string[][] {
+  * empty objective (with a warning); extra columns beyond the first two are
+  * ignored. Pure and never throws.
+  */
+-export function parseModelsCsv(text: string): ModelEntry[] {
++export function parseModelsCsv(text: string): ModelEntry {
+   const entries: ModelEntry[] = [];
+   for (const record of parseCsvRecords(text)) {
+     if (record.every((f) => f.trim() === "")) continue; // blank line

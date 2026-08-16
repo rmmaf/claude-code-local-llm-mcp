@@ -1,0 +1,13 @@
+diff --git a/src/config.ts b/src/config.ts
+index 0b705a9..4b1ef5f 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -108,7 +108,7 @@ function numberFromEnv(
+   env: NodeJS.ProcessEnv,
+   name: string,
+   fallback: number,
+-  options: { allowZero?: boolean } = {}
++  options: { allowZero?: string } = {}
+ ): number {
+   const raw = env[name];
+   if (raw === undefined || raw.trim() === "") return fallback;

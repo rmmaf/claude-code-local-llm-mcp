@@ -1524,7 +1524,8 @@ defect, and it pinned four of them in place.
     `budget` with round 3 timing out**, so `aggregate` got TWO productive rounds.
     Cause, measured rather than guessed: its rounds cost **106–132 s** because it
     writes ~3,400 completion tokens, **twice `terms`' ~1,700** — and `repair`'s
-    default `budget_seconds` is 300. **NOT the window.** `aggregate`'s prompt
+    default `budget_seconds` was 300 when this ran (240 since 2026-08-14; see the
+    note below). **NOT the window.** `aggregate`'s prompt
     (20–23 k) is within 4% of `terms`' (19–20 k), and its rounds cost 128–132 s
     at 32,768 as well. The file's size is the cause, at any window.
   - **WHETHER THE THIRD ROUND WOULD HAVE MATTERED IS A HYPOTHESIS, LABELLED.**
@@ -1534,6 +1535,31 @@ defect, and it pinned four of them in place.
     **`budget_seconds` is an unregistered free parameter** that silently truncates
     the registered `max_rounds` on any unit whose output is large enough. It must
     be fixed and recorded before the next exposure, not defaulted.
+  - **2026-08-14 — THE DEFAULT MOVED, AND IT DOES NOT REACH THIS UNIT.**
+    `DEFAULT_BUDGET_SECONDS` went 300 → 240 for a B12 pacing reason that has
+    nothing to do with PHASE 3: at 300 the default was exactly `admissionRule`
+    11's five-minute bar. On the B12 corpus that is safe — 65 of 65 tasks have a
+    `fileScope` of one file and rounds cost a measured 89.4 s, so 240 still buys
+    2.7 rounds. **A PHASE 3 EXPOSURE NEVER SEES IT AT ALL**: the harness pins
+    `budget_seconds: 600` and `max_rounds: 3` in the prompt
+    (`b12-scorer-mac.sh:255`, `:933-934`), pins `LOCAL_CODER_TIMEOUT_MS: 180000`
+    into the MCP config and refuses to run if it does not land there (`:660-662`),
+    and then VOIDs any unit whose telemetry row shows other limits, or none
+    (`:1102-1110`). An explicit argument wins over the default, so 240 changes
+    nothing here.
+  - **CORRECTION, SAME DAY, TO THE BULLET ABOVE.** As first written it said the
+    240 default buys `aggregate` 1.8–2.3 rounds against 300's 2.3–2.8, and that
+    passing `budget_seconds` explicitly "is still not done". **Both halves were
+    wrong, and the second one contradicted the very next bullet of this
+    document**, which registers the paired limits as done and VERIFIED. The
+    arithmetic described a hypothetical exposure that inherits the default, and
+    the harness forbids inheriting it. Left visible rather than deleted: the
+    error was asserting a gap without reading the harness that closes it, which
+    is the same failure this file records elsewhere under a different name.
+    WHAT SURVIVES OF IT: one path still inherits — `b12-preflight-mac.sh:505`
+    asks a scratch session to call `repair` with no limits at all. That is PHASE
+    1, its unit is a one-line type error, and no reading is taken from the
+    number, so it is named here rather than fixed.
   - **PREDICTION SCORED.** Registered: "`aggregate` closes: **no**", with the
     hedge that this would be its first real observation and not necessarily a bad
     one. Both halves resolved: real, and bad.
@@ -1861,6 +1887,263 @@ defect, and it pinned four of them in place.
     sustained rule and the give-up branch are untouched. No delta existed
     when this was written: the probe refused at replicate 1, treatment,
     before any pair completed, and that refusal transcript is the evidence.
+- **Pre-declared, 2026-08-11, before the manifest is sealed — THE TASK MIX, five
+  owner decisions.** Put and answered with the reachability estimate below
+  already on the table, with `open` already accepted as an outcome, and before
+  any task exists in a manifest. `git log -p` witnesses the ordering; what makes
+  these declarations rather than rationalisations is that none of them can be
+  reached backwards from a result nobody has yet.
+  1. **THE QUESTION IS "CAN the tool pay for itself", not "does it pay here".**
+     A favourable-but-real set: tasks where delegation plausibly wins — bulky
+     build/test output, mechanical type errors, lint — every one of them honest
+     and independently verifiable. Chosen because it is falsifiable in the
+     USEFUL direction: if the tool cannot pay under conditions chosen to suit it,
+     it does not pay anywhere, and that ends the question. A representative set
+     was declined on the record: with `holdsIf`'s own ~26% estimate already
+     known, it lands in `open` too readily, and `open` there means "could not
+     tell", not "does not pay".
+  2. **WITHDRAWN 2026-08-12. It read: "TASKS COME FROM THIS REPOSITORY'S REAL
+     BACKLOG — work that would happen anyway, whose acceptance criteria are the
+     project's own tests, and which were not designed by the party doing the
+     measuring."** The text is kept above the retraction rather than deleted,
+     because a pre-data record that quietly loses a clause is worth less than one
+     that shows what it gave up.
+
+     **IT CONTRADICTED THE SEALED DESIGN, WHICH HAD ALREADY DECIDED THE SAME
+     QUESTION SIX DAYS EARLIER AND IN THE OPPOSITE DIRECTION.**
+     `evidence/2026-08-05-b12-preregistration.json` resolves it by name —
+     `conflictsResolved` MANIFEST SOURCE: "enumerated from this repository's git
+     history (precedent) versus **authored** and sealed (minimal, adversarial):
+     **authored**, stratified, with the enumeration claim deleted, because the
+     enumeration rule was MEASURED to fail here". `unrepairedFindings` item 2
+     states the ground: "There is no enumerable population of tasks here… 13 of
+     the last 20 closed items touch only governance documents, all 7 code items
+     touch `src/cost/**`, which is the instrument." **The word "backlog" occurs
+     ZERO times in the sealed document.** This clause was added 2026-08-11, after
+     the seal, and it re-decided a question the seal had closed.
+
+     **THE ENUMERATION ROUTE WAS RE-MEASURED ON 2026-08-12 AND FAILED AGAIN**, by
+     someone who did not know it had already been measured — of 381 commits only
+     35 touch eligible `src/`, 8 revert cleanly, and 3 qualify by running their
+     own tests at the reverted base. Agreement with the 08-05 finding is
+     corroboration, not new information, and the second run cost a day.
+
+     **THE SEALED TEXT ALSO NAMES A HAZARD THIS CLAUSE WOULD HAVE WALKED INTO:**
+     "Enumerating from history also puts the solutions inside the checkout the
+     arms run in." A task built by reverting a historical fix leaves the real fix
+     reachable by `git log -S` from inside the arm's own worktree. The corpus
+     would have shipped the answer with the question.
+
+     **WHAT REPLACES IT IS THE SEAL'S OWN ANSWER, NOT A NEW PERMISSION**: the
+     manifest is AUTHORED and stratified. The confound this clause was reaching
+     for is already booked as unrepaired and disclosed — `unrepairedFindings`
+     item 2 calls task selection "the largest single lever on R" and says it is
+     "left to the author", and `whatAHoldDoesNotEstablish` item 3 says the
+     manifest is authored, quotes B3's 400x split, and states that stratification
+     makes the mix visible without making it representative. Withdrawing this
+     clause therefore mints no disclosure that is not already inside the sealed
+     hash, and `voidConditions` 4 names no provenance term, so it consumes no
+     attempt.
+
+     **WHAT IS STILL OWED, AND IS NOT DECIDED HERE.** An authored corpus reopens
+     a channel the scarcity of this clause had accidentally bounded: the author
+     can run `gate` in the scratch worktree, read the score, discard low scorers
+     and re-author, leaving no artifact and spending no attempt. Nothing in the
+     frozen text closes that loop. The candidate mitigation — a pre-data
+     commitment that on an authored corpus **only a FALL is readable**, which is
+     decision 1's own logic ("if the tool cannot pay under conditions chosen to
+     suit it, it does not pay anywhere") — is NOT taken here and remains the
+     owner's.
+  3. **NOTHING THE MEASUREMENT DEPENDS ON IS ELIGIBLE.** No task may touch
+     `src/cost/**`, `src/telemetry.ts`, gate's or repair's emission, or
+     `scripts/b12-run.mjs`. This is not a new rule: those ARE `PINNED_PATHS`, and
+     clause 5 already VOIDS if they move after the first scored observation. It
+     is written here so the manifest says out loud what the clause enforces
+     silently — and because this repository IS the product under measurement, so
+     the self-reference has to be bounded explicitly rather than assumed away.
+
+     **MEASURED 2026-08-12 — "THOSE ARE `PINNED_PATHS`" IS TRUE AND MISLEADING,
+     AND NOTHING ENFORCES THIS DECISION.** The two sets are not the same set.
+     `PINNED_PATHS` (`src/cost/b12/audit.ts:61`) is `src/cost/`,
+     `src/telemetry.ts`, `scripts/b12-run.mjs`; `PROTECTED_SCOPES`
+     (`scripts/b12-run.mjs:1196`) — the list `fileScopeViolations` actually
+     refuses against, and the only scope gate a manifest passes through — is
+     `src/cost/**`, `scripts/session-token-walk.mjs`, `evidence/**` and the four
+     governance documents. **They overlap in one item.** Run against the live
+     predicate, a task scoped to `src/telemetry.ts`, `scripts/b12-run.mjs`,
+     `src/tools/gate.ts` or `src/tools/repair.ts` is **ACCEPTED**; only
+     `src/cost/**` is refused. Clause 5 is a CHANGE DETECTOR over pinned bytes,
+     not a scope fence at the manifest, so it fires after the fact and voids
+     rather than refusing up front.
+
+     Under the withdrawn decision 2 this gap was inert — the eligible pool was
+     three tasks and the author had no freedom to misuse. **Under an authored
+     corpus it is live**, because the author now picks every fileScope.
+
+     **REPAIRED 2026-08-12, owner-authorised, and only two thirds of it.**
+     `src/telemetry.ts` and `scripts/b12-run.mjs` are now in `PROTECTED_SCOPES`
+     in BOTH implementations — the harness's and the scorer's twin in
+     `src/cost/b12/filescope.ts` — which the conformance suite compares
+     case-for-case. Free under `voidConditions` 5: no manifest, no harness seal
+     and no scored observation exists at this commit.
+
+     **THE EMISSION HALF WAS ATTEMPTED AND BACKED OUT, FOR A MEASURED REASON.**
+     The first draft also added `src/tools/gate.ts` and `src/tools/repair.ts`, on
+     the argument that `fileScope` is a path grammar and cannot name a fenced
+     region, so the enforceable superset is the whole file — and that losing two
+     files would cost an authored manifest nothing. **The second half was false
+     and the suite said so:** a scope entry intersects everything beneath it, so
+     protecting those two files refuses `src/tools/` ENTIRELY, and the
+     conformance suite asserts that exact scope is lawful. `src/tools/` is where
+     gate, repair, implement, scaffold, status, models and shared live — the
+     product surface B12 measures, not two spare files. Sixteen tests went red
+     and the prediction written before the edit had said none would.
+
+     So the frozen comment beside `EMISSION_FENCED_FILES` — "the tools are the
+     subject, not the instrument" — is right, and pinning only the FENCE is what
+     keeps the subject available. **The residual is named and not closed**: a
+     task lawfully scoped to `gate.ts` may still edit inside the fence, and
+     clause 5 catches that after the fact as a VOID. No path-level gate can do
+     better, and buying it would cost the thing being measured.
+  4. **TWO STRATA BY TASK SIZE**: short-mechanical (10–30 min) and
+     closed-unit (30–90 min). The dimension is not decorative — it is the one
+     `holdsIf` names as decisive, since a short denominator is what lifts `R_lo`.
+     Three levels were declined for a measured reason: `voidConditions` 3 VOIDS
+     the run if any declared stratum holds fewer than 5 admitted observations,
+     so cells are a loss-of-everything risk rather than a loss-of-power one.
+  5. **N = 26, the ceiling.** Chosen for margin against refusals, not for
+     statistical power: at 60% admission two strata still leave ~8 per cell,
+     while sealing 20 and finding one cell short is unrecoverable after the
+     sessions are paid for.
+     **CORRECTED 2026-08-12: THE NUMBER IS 30, AND NOT BY CHOICE — 26 WAS NEVER
+     AVAILABLE.** Three frozen statements say 30: `admissionRule` 2 ("The
+     manifest fixes an ORDERED list of 30 tasks by id"), `design.artifacts` 1
+     ("carrying: 30 ordered task ids"), and `thresholdArgument` ("30 is the
+     ordered manifest length: headroom, not a threshold"). `voidConditions` 4
+     freezes the admission rule, and `scripts/b12-register.mjs:92` refuses
+     `n !== 30` — implementing that text faithfully rather than over-reading it,
+     which was tested before this correction was written and not assumed.
+     **26 is the SESSION budget** from `runPlan` phase 5, "20–26 supervised
+     sessions… Ordered manifest of 30", and this decision moved that number onto
+     the manifest length. Correcting the referent touches nothing frozen, runs
+     in the harder direction — four more task specifications, each owing an
+     acceptance predicate verified FAILING at base — and needs no amendment.
+     **THE ARITHMETIC WAS ALSO WRONG, IN THE DIRECTION THAT FLATTERED THE
+     CHOICE, AND THAT IS THE REAL FINDING.** "~8 per cell" checked the
+     per-stratum floor of 5 and never the ADMITTED floor of 20. Exact binomial,
+     P(at least 20 of N admit): at the **60% this decision assumed, N = 26
+     completes 5.6% of the time and N = 30 completes 29.1%**. At 66.7% — the
+     rate the frozen 30 barely implies — 26 gives 18.6% and **30 gives 58.6%, a
+     coin flip**. Ninety per cent needs N = 35 at 66.7%, or p ≥ 0.75 at N = 30.
+     `runPlan`'s own "20–26 sessions to score 20" implies p ≈ 0.77, where N = 30
+     completes 93%, so the frozen design is coherent with ITS assumption and not
+     with this decision's.
+     **THE EXPOSURE IS THEREFORE p, WHICH HAS NEVER BEEN MEASURED, AND NOT THE
+     LENGTH, WHICH IS FROZEN.** The amendment the numbers would justify is
+     UPWARD — N = 35 — and it is exactly as unavailable as 26. A run that walks
+     all 30 and admits 19 is VOID under `voidConditions` 3 and CONSUMES an
+     attempt under `voidConditions` 23, and there are two attempts. What is left
+     to manage is p itself: the live void classes are `task_failed` and, since
+     `run 2026-08-12-mac-b12-subagentkey-77fddca`, `pacing`.
+
+  **MEASURED 2026-08-12 — AND ITS FRAMING WAS WRONG, WHICH IS RECORDED HERE
+  RATHER THAN EDITED AWAY.** This entry was written as a BLOCKER: "the eligible
+  backlog holds three tasks against the sixty-five the corpus needs", concluding
+  that B12 could not run and that filling the gap by authoring would break
+  decision 2. **Both halves fell the same day.** Decision 2 is WITHDRAWN above —
+  it post-dated the seal and contradicted it — and the sealed design had already
+  resolved MANIFEST SOURCE to **authored**, having MEASURED the enumeration route
+  to fail on 2026-08-05. So this is not a blocker: it is a second, independent
+  confirmation of a finding the seal already carried, produced by re-running an
+  experiment that had been run six days earlier. **The numbers below stand; the
+  conclusion drawn from them does not.**
+
+  It has one further defect worth naming, because it is this project's
+  characteristic one. The entry ruled `scripts/b12-*.mjs` ineligible by reading a
+  PRINCIPLE past decision 3's enumeration, and called the opposite reading "the
+  over-reading this file keeps catching" — while doing the over-reading, in the
+  restrictive direction. That question is now moot for the pool (an authored
+  corpus does not draw from history at all) and LIVE for the fileScope gate,
+  where it is addressed under decision 3 above.
+
+  The numbers, which are what survives:
+  - Of 381 commits, **85 touched `src/cost/**`** (ineligible) and **139 touched
+    `scripts/`**; only **35 touched eligible `src/` at all**. This repository
+    spent its recent life inside its own instrument, which decision 3 excludes.
+  - Of those 35, **8 revert cleanly against HEAD**. Each was then REVERTED IN A
+    SCRATCH WORKTREE AND ITS OWN TESTS RUN — the qualification is "verified
+    failing at base", so it is measured and not read off the diff. **3 qualify**
+    (`ed99c32`, `93bfa39`, `f5aa484`, all in `src/selection.ts`, 2/4/7 tests red).
+    One shipped no test. **Four went STILL-GREEN: the fix's own tests do not
+    catch its regression** — a finding about this suite, recorded separately.
+  - The **13 `(open point)` markers in `DECISIONS.md` yield 0–1** implementable
+    test-backed items: the rest are design questions, owner decisions ("Not my
+    call", `:519`), work needing the Mac (`:395`), or already resolved in their
+    own paragraph (`:85`, `:654`).
+  - The mutation harness's **6 historical bugs are all in `src/cost/**`**, so
+    none is eligible.
+  - `scripts/b12-*.mjs` was ruled ineligible, which added nothing. **Qualifying
+    the 28 revertible `scripts/` commits the same way returned 10 — and 9 of the
+    10 are the instrument or this session's own work**: four touch
+    `scripts/b12-run.d.mts`, the pinned harness's type surface; four are
+    `b12-register.mjs`; one is the corpus-refs commit written the same morning.
+    **One** (`48e4f4c`, `scripts/smoke-test.ts`) is unambiguously eligible. So
+    the eligible pool is **4** on the permissive reading and **3** on the
+    restrictive one, and the scope argument was worth one task.
+
+  **WHAT THIS ESTABLISHES, RESTATED AFTER THE FRAMING FELL**: enumerating a
+  corpus from this repository's history does not work, for the reason the sealed
+  design gave on 2026-08-05 and for a second one it also gave — the historical
+  fix stays reachable by `git log -S` from inside the arm's own worktree, so an
+  enumerated corpus ships the answer with the question. **That is a reason to
+  author the corpus, which the seal already requires, and not a reason to decline
+  the venue.**
+
+  **WHAT IT DOES NOT ESTABLISH**: anything about the authored corpus's quality,
+  which is a different question with a different confound — named under the
+  withdrawal of decision 2 above and not closed there.
+
+  **What these decisions do NOT settle**, recorded so the gap is not mistaken
+  for a decision: the per-task acceptance predicate (each must be verified
+  FAILING at base, which restricts the corpus to test-backed work whether it is
+  enumerated or authored),
+  each task's `fileScope`, the manifest's committed task ORDER, and the real
+  admission rate — which has never been measured in this environment, so the
+  margin argument for N = 26 rests on an assumption and says so.
+- **Pre-declared, 2026-08-11, before any run exists — clause 6's "SHOWN
+  FIRING" is satisfied by MACHINE-PRODUCED evidence, and only by that.**
+  The frozen text requires the six negative controls be *shown FIRING*. The
+  audit computer checked that they were *PASSING*, which is strictly weaker: a
+  control gutted to assert nothing keeps its title and passes. Closing that is a
+  **correction** — the code reaching the sentence it already claimed to
+  implement — and corrections owe no amendment. **That covers the FIRING-vs-
+  PASSING gap and nothing else.** Everything past it is a PRE-DATA AMENDMENT and
+  is recorded as one, because review was right that the first draft of this entry
+  wanted both sides at once: a demonstration recorded BY HAND in `FINDINGS.md` is
+  also a showing, thirty such demonstrations exist, and requiring a committed
+  machine artifact at a named path, with a schema, a green baseline, an exact
+  control set, a commit relationship and a digest binding, NARROWS how "shown"
+  may be satisfied. A narrowing is a new operational condition however frozen the
+  word FIRING already was. Calling it a correction would be having it both ways,
+  and this project's whole defence against minted conditions is that the
+  distinction is not negotiable when it is inconvenient.
+  So: amendment, pre-data, declared now — before the first scored observation and
+  before any firing artifact exists on this branch. **What `git log -p` proves is
+  WHEN this text was committed, and nothing more** — an earlier draft said it
+  carried "the same standing" as the two decisions below and that the question
+  would be "unanswerable" post-data, and both overreached (R43#5). Ordering is
+  what git can witness; standing is a governance claim this file makes, not a
+  fact git establishes. Post-data adoption would be CONTAMINATED, not
+  unanswerable — the difference matters, because "unanswerable" would excuse
+  never asking. Nor is this amendment SATISFIED by anything yet: no firing
+  artifact is committed, and the audit reads self-asserted `fired` values rather
+  than executing the matrix itself.
+  Concretely: clause 6 fails unless `evidence/<runId>.b12.firing.json` is
+  committed, names the attestation's own `subjectCommit`, covers exactly
+  `CONTROL_TESTS`, records every pair FIRED over a green unmutated baseline, and
+  binds to subject bytes the audit recomputes at that commit. Post-data this
+  question would be unanswerable; the audit's own comment says the quiet part —
+  *before the first scored observation these are free*.
 - **Pre-declared, 2026-08-11, before any run exists — TWO OWNER DECISIONS on
   what this measurement is allowed to be.** Both were put and answered AFTER the
   reachability estimate below was on the table and BEFORE the first paid
@@ -1890,6 +2173,275 @@ defect, and it pinned four of them in place.
      further quality dimension may be introduced after the first scored
      observation**; doing so would be a condition minted mid-game, which is
      what this entry exists to prevent.
+
+- **Pre-declared, 2026-08-11, before the manifest is sealed — THE SIXTH OWNER
+  DECISION: the orchestrator model is `claude-opus-5`, PINNED BY IDENTITY and
+  ASSERTED PER ARM.** The five decisions above omitted it because nobody had
+  asked whether it was controlled. A full sweep says it is not: no `pinned`
+  field, no `--model` in the harness argv (`scripts/b12-run.mjs:2835`), and
+  `instructionDriftReasons` (`:1377`) compares six instruction components of
+  which none is the model. What exists is HOMOGENEITY and never IDENTITY —
+  `void(rate_key_mixed)` when a window's own requests span two keys
+  (`src/cost/b12/assemble.ts:646`) and `voidConditions` 10 requiring exactly one
+  rate key across the admitted set (`src/cost/b12/aggregate.ts:843`), where a
+  key is `model` or `model@speed` (`src/cost/rates.ts:93`). **A run entirely on
+  ANY single model satisfies both**, so the frozen text controls that the same
+  model ran throughout and records nothing about which one.
+
+  **THIS IS AN AMENDMENT, PRE-DATA, AND CALLING IT A CORRECTION WOULD BE HAVING
+  IT BOTH WAYS.** `admissionRule` 9 already forbids a `/model` or `/fast` toggle
+  and already requires one rate key; covariate 9 lists "model id" with
+  applicability `recorded`. Nothing frozen requires the model to be DECLARED, so
+  requiring it is a new operational condition — the reading the clause-6 firing
+  entry above applied to itself. It NARROWS: one model qualifies where any
+  single model qualified before, and it adds a refusal the frozen text does not
+  ask for. **It adds no new DISPOSITION LABEL and loosens nothing** — item 3
+  does add a new run-VOID TRIGGER, stated there as one rather than smuggled in
+  as an early reading of a frozen clause. Adding a trigger that fires only where
+  the frozen text is silent is the one direction a condition may be added in
+  after the fact.
+
+  1. **Both sealed manifests carry `pinned.orchestratorRateKey`, and its value
+     is the exact string `claude-opus-5`.** Registration refuses a manifest
+     whose field is absent or carries any other value — the treatment the frozen
+     cardinalities 30, 6 and 20 already get, and for the same reason.
+     **THE PINNED OBJECT IS THE RATE KEY, NOT THE MODEL ID, and that is not a
+     naming preference.** Claude Code's fast mode "bills Opus at twice the
+     standard rate while reporting the same model string" (`src/cost/rates.ts`,
+     above `rateKey`), so a pin on the model id would be SILENT on `/fast`:
+     `claude-opus-5` and `claude-opus-5@fast` share a model and are two rate
+     keys, and `voidConditions` 10 would void a run the pin had just approved.
+     Pinning the key makes this decision and the frozen clause compare the same
+     REPRESENTATION, so they cannot disagree through model-id/speed aliasing.
+     They remain different predicates on purpose: identity is deliberately
+     STRICTER than homogeneity, and a run homogeneous on a wrong key satisfies
+     the frozen clause and fails this one. For standard speed the two strings
+     coincide, so nothing about the declared value changes — only what it is
+     checked against.
+  2. **RUN-LEVEL, BEFORE THE FIRST BILLED MANIFEST REQUEST: the pre-flight
+     asserts the live key equals the declared one, and the run does not start
+     otherwise.** This is where the cheap catch lives, and the refusal PATTERN
+     already exists: `admissionRule` 10 — not `voidConditions` 7, which states
+     only the run-level consequence of version drift — has the version and
+     binary sha "asserted by the harness BEFORE each observation, which refuses
+     to run on a mismatch", shipped as `assertPinned` (`scripts/b12-run.mjs:888`,
+     called at `:2626`). The committed
+     `evidence/2026-08-09-mac-b12-283d58b.preflight.json` already carries
+     `rateKey` on its telemetry rows. **The COMPARISON is still new** — nothing
+     today compares an observed key against a declared one — and calling the
+     whole item "new machinery nowhere", as a draft did, overstated it.
+     A refusal here costs the scratch pre-flight session and NOTHING in the
+     protocol — no task has run, no runlog row exists, no disposition is owed,
+     and no attempt is touched.
+  3. **PER ARM, AND SCOPED TO ONE CASE ONLY: an arm whose own billed requests
+     carry a SINGLE key that is not the declared one VOIDS the run.** The run is
+     VOID; the arm is not re-run, and nothing is discarded and drawn again.
+     **THIS IS A NEW VOID TRIGGER AND SAYING OTHERWISE WAS THE SECOND DRAFT'S
+     ERROR.** That draft called it "`voidConditions` 10's own condition reached
+     early", which contradicts item 1 one paragraph above. Clause 10 reads "VOID
+     if the admitted set spans MORE THAN ONE rate key" — a run homogeneous on a
+     wrong key spans exactly one and satisfies it. There is nothing to reach
+     early. What is true, and is the whole licence: **it adds a TRIGGER and no
+     new DISPOSITION LABEL**, it fires only where the frozen clause is silent,
+     and silence there is what makes the pin do any work at all.
+     **THE OTHER CASES ARE NOT THIS ITEM'S AND MUST NOT BE ESCALATED INTO IT.**
+     One key equal to the declared one is the ordinary path. An arm spanning
+     SEVERAL keys is already `void(rate_key_mixed)` at OBSERVATION level
+     (`src/cost/b12/assemble.ts:646`); this item leaves it there, because
+     escalating it would kill the run on the first multi-subagent observation —
+     see the subagent bullet below, where that is an open question rather than a
+     settled one. **A first draft covered every case and would have converted a
+     handled observation-level void into a run-level one.**
+     **AN ARM WITH ZERO OWNED KEYS IS AN OPEN ENCODING GAP, AND THE SECOND DRAFT
+     CLAIMED IT WAS HANDLED WHEN IT IS NOT.** That draft said such an arm is
+     "already reachable as `execution_error`". It is not, and the mechanism is
+     specific: `execution_error` fires on `transcript.requests.length === 0` —
+     the whole rebuilt LINEAGE (`src/cost/b12/assemble.ts:599`) — while the keys
+     are read from `owned = new Set(record.originatedRequestIds)`, the arm's
+     ORIGINATED set (`:589`, `:640`). A lineage holding billed requests none of
+     which the arm originated fires neither predicate, takes the default
+     `disposition = "scored"` (`:745`), and contributes nothing to the key union
+     clause 10 counts. It can then enter `admitted` if the arm is otherwise
+     valid (`:396` — `terms !== null`, `record.valid`, within budget, under the
+     20-cap); **that conjunction is not traced here and the claim is that the
+     path is OPEN, not that it is always taken.** Stating it the other way is
+     the existential-dressed-as-universal this project has now retracted three
+     times. **This gap is the
+     harness's and predates this decision; it is named here and NOT closed here**
+     — closing it in the same breath is what the clause-6 entry above was right
+     to refuse, and it is larger than this decision because it lets an arm be
+     scored on requests it does not own.
+     **THE FIRST DRAFT OF THIS ENTRY SAID THE OPPOSITE AND WAS WRONG, in the
+     direction that flattered the decision.** It called the refusal costless —
+     "no observation exists, nothing is spent … and re-runs" — and that is false
+     twice. The key is only readable from billed requests, so the arm's session
+     is ALREADY PAID when the check can run; and an unbounded fix-and-re-run
+     there is a repeated draw at exactly the point the frozen design forbids
+     one. `admissionRule` 12's single discretionary re-run does not reach it —
+     that allowance is scoped to `execution_error`, enumerated narrowly as a
+     harness non-zero exit, an unhandled exception, or a transcript with no
+     assistant turn — and the closed disposition list has no slot for one
+     homogeneous WRONG key. **Rather than mint either an allowance or a
+     disposition, this resolves to the VOID the frozen clause already reaches.**
+     The assertion runs before the runlog append, so a mismatch costs a refusal
+     and not an uncommitted row (`scripts/b12-run.mjs:425-438`, the harness's
+     own stated pattern).
+  4. **ASSERTION RATHER THAN `--model`, and the reason is instrumental, not
+     economic.** Passing `--model` pins the INPUT and is blind to whatever
+     resolves it: this repository does not establish Claude Code's
+     model-resolution precedence, the child inherits the operator's environment
+     unscrubbed (`scripts/b12-run.mjs:45`, called at `:2857` with `{cwd,
+     timeout}` alone), and no environment variable is hashed anywhere. Asserting
+     the model the transcript REPORTS checks the outcome, so it is
+     precedence-agnostic and catches every selection channel including ones
+     nobody enumerated. That it also keeps `pinned.extraArgs` empty, and so does
+     not force an `installedChars` re-probe (`scripts/b12-run.mjs:1911`), is a
+     consequence and not the reason.
+
+  **DISCLOSURE OF WHAT WAS KNOWN WHEN THE MODEL WAS CHOSEN**, because "we picked
+  the one our artifact was already measured under" belongs on the record rather
+  than in a later finding. The committed probe
+  `evidence/2026-08-08-mac-b12-installedchars-50de3b3-144422.probe.json` ran on
+  `claude-opus-5`, so this choice AGREES with the only calibration artifact this
+  premise has. Also known: R is a ratio of input-equivalent units whose
+  structural multipliers are identical across current models — output 5x input
+  on opus-5, sonnet-5, haiku-4-5 and fable-5 (`MEASUREMENTS.jsonl:48`) — so the
+  choice does not move R through PRICE, and the argument that a dearer
+  orchestrator makes delegation pay more is true in dollars and does not
+  transfer to what B12 measures.
+
+  **THE CHANNEL THAT DOES MOVE R IS BEHAVIOURAL, AND ITS DIRECTION IS DECLARED
+  RATHER THAN CLAIMED NEUTRAL.** Whether the model reaches for `gate` and
+  `repair` at all is the largest lever on the numerator, and it has already
+  failed once: `run 2026-08-04-mac-10`, a real 8-hour session, made 36 `Bash`
+  calls and **0 `gate` calls, 0 `repair` calls** (B5). A more capable
+  orchestrator plausibly follows the routing policy more reliably, which would
+  raise R. **That is a bias toward a hold, it is not measured, and it COMPOUNDS
+  with decision 1's favourable-but-real set** rather than sitting beside it.
+  Written here so a reader does not have to assemble it from two entries.
+
+  **WHAT THIS DOES NOT SETTLE**, recorded so no gap is read as a decision:
+  - **Nothing about any other model.** A hold under `claude-opus-5` is a
+    statement about `claude-opus-5`. `whatAHoldDoesNotEstablish` item 11 scopes
+    durability to "one pinned Claude Code build" and names no model; this entry
+    supplies the missing scope for B12 and edits that artifact not at all.
+  - **The toggle gap stays open and is NOT closed here.** `admissionRule` 9 says
+    a `/model` or `/fast` toggle VOIDS the run; nothing detects a toggle. Rate-key
+    homogeneity over an observation's OWN requests is blind to a toggle
+    producing no owned billed request, to requests outside the window, and to a
+    model change confined to a dropped observation. Naming it and closing it in
+    the same breath is what the clause-6 entry above was right to refuse.
+  - **Whether `installedChars` is model-dependent.** The probe's calibration key
+    records binary sha, MCP config, environment and policy blobs, and **no
+    model**, so it would not refuse a value taken under a different one.
+    **Requirement on the experiment, never on the result: the next re-probe adds
+    the orchestrator model to the calibration key**, and a probe whose key omits
+    it may not calibrate a manifest that pins one.
+  - **The environment is still neither constrained nor hashed.** Items 2 and 3
+    catch the EFFECT of any selection channel; they do not enumerate them.
+  - **The residual this decision cannot remove: one paid arm.** The pre-flight
+    establishes the machine's key at ONE moment. A key that moves between the
+    pre-flight and an arm is readable only from that arm's billed requests, so
+    the run voids having paid for it. **That is the honest floor of a
+    post-session check and no arrangement of these items lowers it** — which is
+    exactly why item 2 exists, to make the common case (a machine that was wrong
+    all along) cost a scratch session instead of a manifest one.
+  - **Whether a subagent inside a scored session serves on a different key —
+    ANSWERED 2026-08-12, and it does not.** This was always a property of frozen
+    `voidConditions` 10 rather than something this decision creates: a window
+    spanning two keys is already `void(rate_key_mixed)`, and item 3 is scoped
+    away from it deliberately. **As first written this bullet said "no artifact
+    in this repository answers it", and named it "the largest unpriced risk this
+    decision leaves standing".** One answers it now.
+    `run 2026-08-12-mac-b12-subagentkey-77fddca` — Mac, 2.1.221, TREATMENT shape,
+    main `["claude-opus-5"]` against subagent `["claude-opus-5"]`, zero suspect
+    reasons, zero files outside the harness union. **The `multi` stratum is
+    REACHABLE** and the feared branch is closed: the frozen clause does not drop
+    every multi-subagent observation. Observed rather than hypothesised, and it
+    closes the false negative flagged before the run: subagent records carry the
+    PARENT `sessionId`, so a `sessionId`-equality filter does not drop them and
+    report no subagent forever. **n = 1 subagent, one session, one build**, over
+    a layout that is vendor-internal and has moved before.
+  - **ADDED 2026-08-12, POST-RUN, and it is the same run that closed the bullet
+    above: an observation carrying a subagent has a FIVE MINUTE pacing ceiling.**
+    That subagent wrote **9,397 tokens to the 5-minute cache class** while every
+    main-thread record in the session wrote to 1h. The consequence is derivable
+    from the code and is not a claim this entry adds: `pacingFacts` sets
+    `anyFiveMin` when ANY owned request has `cacheWrite5m > 0`, and `TTL_MS` then
+    selects **300,000 ms over 3,600,000**, while `admissionRule` 11 makes a gap
+    above the shortest TTL in play `void(pacing)`. **The arm that carries
+    subagents is the arm that calls `repair`**, whose local model measured
+    **256,479 ms** on one phase-3 call — 85% of that ceiling.
+    **This falsifies a reading taken three days earlier**, which counted the
+    installedChars probe's 7 raw records, found zero `ephemeral_5m`, and
+    concluded pacing was probably defused. Those 7 records had no subagent, and
+    the subagent is the thing that writes 5m — a number agreeing for a property
+    of the corpus rather than of the rule, which is this project's
+    characteristic failure and now its fifth instance.
+    **NOT ESTABLISHED: that every subagent writes 5m, or that any real
+    observation would exceed 300 s.** Named here, unmeasured beyond n = 1, and
+    NOT closed. It replaces the bullet above as the largest unpriced risk.
+
+  **What `git log -p` proves is WHEN this text was committed, and nothing more.**
+  Ordering is what git witnesses; standing is a claim this file makes. What is
+  independently checkable at this commit: no `evidence/*.b12.tasks.json` exists,
+  so no run is registered, no observation is scored, and there is no result this
+  decision could have been reached backwards from.
+
+- **Pre-declared, 2026-08-12, before any spec is authored — THE SEVENTH OWNER
+  DECISION: manifests A and B are DISJOINT.** The corpus is **65 distinct task
+  specifications** — 30 for A, 30 for B, 5 for the pilot — no task is measured
+  twice, and `scripts/b12-manifest.mjs` refuses to assemble a configuration whose
+  A and B lists intersect. Put to the owner with the alternative (35 specs, with
+  25 shared between the two runs) and answered: disjoint.
+
+  **NOTHING FROZEN CONSTRAINS A ∩ B, WHICH IS WHY THIS IS A DECISION AND NOT A
+  READING.** `checkCore` (`scripts/b12-register.mjs:82-135`) freezes 30 tasks per
+  manifest, 6 A/B pairs in A, five distinct pilot ids excluded from **both**
+  sealed manifests, distinct runIds, `promptSha256`, `fileScope` and four `pinned`
+  fields. Its only overlap check is pilot-versus-manifest (`:104-110`), and
+  `manifestDeclarationGaps` takes **one** manifest (`scripts/b12-run.mjs:1025`),
+  so it structurally cannot see an intersection between two. A configuration
+  repeating 25 tasks across both runs would seal, register and score without a
+  single refusal.
+
+  **IT NARROWS, AND WHAT IT NARROWS IS THE CORPUS — NOT WHAT A LAWFUL RUN IS.**
+  The distinction matters and an earlier draft of this entry blurred it by
+  borrowing the sixth decision's language wholesale. The sixth changes
+  LAWFULNESS: registration refuses a manifest without the pin. This one does not
+  — `b12-register check` would accept overlapping manifests today and would still
+  accept them after this entry, and a hand-written manifest can overlap. The
+  refusal lives in a BUILD TOOL, before anything is spent. So: it adds no
+  disposition label, adds no VOID trigger, loosens nothing, and rejects
+  configurations the frozen rules permit. That last clause is the whole of its
+  force and it is stated rather than smuggled.
+
+  **WHY IT IS ENFORCED IN THE TOOL RATHER THAN LEFT AS A CONVENTION.** An
+  accidental intersection in a hand-edited 65-entry configuration is invisible to
+  every validator in this repository, by the reading above. It would surface, if
+  at all, in the aggregate — after the sessions were paid for. A build-time
+  refusal costs nothing and catches it before the first billed request. The
+  refusal string names THIS entry, so it is contestable against a durable
+  declaration; an earlier draft cited `STATE.md`, whose own header says it is
+  overwritten every session, and a sentence in a diary is not design authority.
+
+  **WHAT THIS DOES NOT SETTLE**, recorded so no gap reads as a decision:
+  - **Not that overlap would have been unsound.** No claim is made here that a
+    shared task biases R, correlates the two runs, or would void anything.
+    Neither direction is measured. The decision is that this corpus does not use
+    overlap, taken once and before any spec exists.
+  - **Not that the tasks are independent.** Disjointness of IDs is not
+    independence of tasks: 65 defects authored by one person against one
+    repository share whatever that induces, and `whatAHoldDoesNotEstablish`
+    already scopes the venue. This entry narrows the id sets and nothing else.
+  - **Not enforced anywhere but the assembler.** Named plainly because the
+    natural misreading is that the seal now checks it. It does not.
+
+  **What `git log -p` proves is WHEN this text was committed, and nothing more.**
+  Independently checkable at this commit: no `evidence/*.b12.tasks.json` exists,
+  no `b12-corpus/` directory exists, and not one of the 65 specifications has
+  been authored — so there is no result and no corpus this could have been
+  reached backwards from.
 
 - **Pre-declared, 2026-08-08, before any run exists — the ANALYSIS SESSION and
   the clause 4–6 AUDIT.** Three obligations the UNIT 5 pass surfaced
@@ -2530,3 +3082,986 @@ total should quote its machine with it."
   against a stale `dist/`. **Always verify with `npm test`, never bare
   `npx vitest run`** — and note that `gate` made the same mistake until the
   adversarial review caught it (`DECISIONS.md § v3`).
+
+## The `stdio.test.ts` partial-line defect — predicted, measured, FALSIFIED, hardened anyway
+
+**2026-08-14.** Recorded because the prediction was wrong and the plan that carried
+it asserted something about this repository that this repository does not contain.
+
+**The prediction, written before any measurement** (plan W5, verbatim): the handler
+at `tests/stdio.test.ts:53-59` re-parsed the whole buffer on every chunk and ran
+`JSON.parse` on *every* line including the last — partial whenever a chunk boundary
+lands mid-message. The throw would happen inside a `data` handler, which vitest
+reports as an *Unhandled Error*: the suite fails with **zero failing tests**. The
+falsifiable form: "a probe counting unparseable tails will record a count > 0 in at
+least one of N runs. If it records 0 in all of them, THE MECHANISM IS NOT
+ESTABLISHED."
+
+**The measurement.** `scripts/stdio-chunking-probe.mjs`, committed so every figure below
+can be regenerated rather than trusted. It replicates the spawn and the three requests and
+applies the test's own pre-2026-08-14 parse expression, outside vitest. 20 runs,
+node v24.16.0, win32:
+
+| | |
+|---|---|
+| runs with any partial tail | **0 / 20** |
+| runs where the old expression would throw | **0 / 20** |
+| chunks per run | 3, 3, 3 … (20×) — one chunk per message, every run |
+| stdout bytes per run | 17 918, except three runs at 17 916 |
+| largest single chunk | 15 372 B |
+| non-ASCII bytes per run | 105, all 20 runs |
+
+**The prediction is falsified.** In these 20 runs every message arrived whole and no
+boundary landed mid-message. Full suite the same day: 174 suites, 858 tests, 0 failures,
+`stdio.test.ts` green — **5 tests**, not "5 assertions"; the file holds 20 static `expect`
+call sites, several inside loops.
+
+**Two figures in the first draft of this table were wrong and are corrected above.** It
+read "17 824 bytes per run, identical in all 20". That count was CHARACTERS of the decoded
+string, not bytes, and the byte total is *not* constant — it varies by two across runs. The
+committed probe measures the buffer, which is what "bytes" should always have meant here.
+
+**And the motivating observation cannot be located.** The plan said this failure form
+was "exactly the observed form". Nothing in `PREMISES.md`, `docs/b12-scorer/FINDINGS.md`
+or the registered `KNOWN_FLAKY` class records `tests/stdio.test.ts` failing this way;
+the only stdio failure on record is the five-vs-seven-tools assertion above, fixed long
+ago. **So no flake in this file is established either** — not by the probe, and not by
+the record. The premise was mine and it is withdrawn.
+
+**One lead, recorded as a lead and NOT as the cause.** `MEASUREMENTS.jsonl:249` records, at
+the parent baseline `608e930`, "**5 skipped every run (stdio server integration)**" — this
+suite, skipped, five of them. A skipped suite reports zero failing tests, which is the shape
+I mistook for the failure form. That is a plausible origin for the withdrawn premise and it
+is **not** established as one: no run linking a skip to my reading exists, and this
+repository's standing rule is that a list of outcomes says WHICH, never WHY.
+
+**What was NOT established.** That the mechanism cannot occur — 20 runs on one OS with one
+tools/list size is a weak bound, not a proof, and the margin is wide: ~15 KB of frame
+against a 64 KiB pipe buffer, so "a longer tools/list" would have to be several times
+longer, not slightly. That any of the five defects below has ever produced a red. That
+vitest scheduling, which the probe deliberately excluded, changes the chunking.
+
+**Changed anyway, as HARDENING and labelled as such** — each is a real latent defect
+independent of whether it has fired:
+
+1. **Partial-line parse.** The reader now buffers and parses only complete lines,
+   carrying the remainder. Correctness here rested on a property nothing guarantees.
+   A stream ending on an unterminated line is flushed by an `end` handler, so the one
+   input a line buffer could swallow rather than judge still reaches a verdict.
+2. **Unparseable complete lines are collected, not thrown**, and asserted empty in BOTH
+   the purity test and `afterAll`. The two places are the point: the old handler threw on
+   a bad line at any moment in the child's life, whereas a single assertion inside test 4
+   of 5 is live only while that test runs. Both reviewers found that gap, and without the
+   `afterAll` assertion this change would have been a genuine WEAKENING for stray output
+   during test 5 or teardown. It is now readable *and* temporally complete — the earlier
+   draft of this entry claimed "strictly more readable, whatever the cause", which was
+   false when written.
+3. **`spawn` moved from the `describe` body into `beforeAll`.** A describe body runs at
+   COLLECT time, so the server started during collection and survived as an orphan
+   holding its temp root if the file was collected but never run. That path is not
+   hypothetical here: see the skip figure recorded above.
+4. **`child.on("error")` added, and `afterAll` now awaits `'exit'`** (bounded at 5 s,
+   then `SIGKILL`). A spawn failure previously had no listener — an `'error'` event with
+   no listener throws — and the unwaited `kill()` could leave the temp root locked on
+   Windows. `afterAll` returns immediately on a spawn failure rather than spending the
+   full timeout waiting for an `'exit'` from a process that never existed, and a child
+   that ignores SIGTERM is now killed rather than left holding the directory.
+5. **`StringDecoder` on both streams**, replacing per-chunk `chunk.toString("utf8")`.
+   Found while the reviews were still out, and independently by BOTH of them — the
+   verifier located the source, `dist/tools/gate.js:12`, and counted 2 783 non-ASCII bytes
+   across `dist/tools/*.js`. It is the WORSE half of the defect I had
+   named. **Measured the same day: stdout carries 105 non-ASCII bytes, every one of them
+   `e2 80 94` — U+2014 EM DASH, three bytes — inside tool descriptions.** A chunk
+   boundary landing mid-sequence decodes to U+FFFD on both sides, and the resulting JSON
+   **still parses**. So that path corrupts a tool description silently and leaves the
+   stdout-purity assertion green, where the partial-line path at least threw. A decoder
+   holds back an incomplete SEQUENCE, `pending` holds back an incomplete LINE, and the
+   two boundaries are independent — neither substitutes for the other.
+
+   This defect was in the ORIGINAL code (`stdoutRaw += chunk.toString("utf8")`) and was
+   not introduced by the hardening. Like the rest of this section it has **never been
+   observed firing**, and for the same reason: at one chunk per message no boundary
+   exists to land badly.
+
+**Control shown firing, not merely green.** A `console.log` was added to `src/server.ts`
+after the imports and the suite run: `tests/stdio.test.ts` went red at the purity test with
+`AssertionError: expected 'TEMPORARY STRAY NON-PROTOCOL LINE - R…' to be ''` — one named
+test, one line number, the offending text quoted. `src/server.ts` was then restored and
+`git diff` against HEAD is empty. That message is the whole justification for the design,
+and getting it required a second firing: the first form, `expect(unparseable).toEqual([])`,
+reported `expected [ Array(1) ] to deeply equal []` and hid the stray line, so the assertion
+was changed to compare the joined string. **A guard whose failure message omits the evidence
+is a guard that fires without informing** — that is the readable-failure claim taken
+seriously rather than assumed.
+
+**ONE REVIEW FINDING DECLINED, with its reason.** Codex called the UTF-8 decoding defect
+"a real defect introduced by the hardening". The defect is confirmed and was fixed; the
+ATTRIBUTION is refused. `HEAD:54` before this change reads `stdoutRaw += chunk.toString("utf8")`
+— the identical per-chunk decode. The hardening failed to fix a pre-existing defect, which
+is a fair charge and a different one from introducing it. The independent Claude verifier
+reached the same conclusion from the same line, and the two reviews are recorded as
+disagreeing rather than merged.
+
+**What the review round changed, so the cost of skipping it is legible.** Five findings
+were confirmed and fixed after the first draft passed a green gate: the missing `end`
+flush, the single-point `unparseable` assertion, the unread `spawnError` in teardown, the
+absent force-kill, and the unreproducible figures. Two documentation errors were confirmed
+and corrected: "5 assertions" for 5 tests, and the now-false justification comment in
+`tests/helpers.ts` that cited a collection-time spawn this change had just removed. A green
+gate established none of these.
+
+## W7a — the conformance flake after R46's deadline, measured and BOUNDED
+
+**2026-08-14.** R45 measured `tests/cost-meter.test.ts` failing ~1 run in 3 SOLO,
+falsifying half the registered `KNOWN_FLAKY` class. R46 raised the F24 describe's
+deadline from vitest's 5 s default to 60 s (`tests/cost-meter.test.ts:3398`), and
+**R48 corrected R46 in the strongest terms: that is a MITIGATION THAT WORKS, NOT A
+ROOT CAUSE.** This entry adds repetition and nothing else.
+
+**The prediction, written before the runs** (and before the runner was even built):
+"If the 5 s budget was the operative constraint, 12 solo runs after the fix show 0
+failures. If ≥ 1 fails, the mitigation is insufficient and the flake persists — I
+will record WHICH tests failed and how often, and will NOT name a cause."
+
+**The measurement.** 12 consecutive solo runs at `bb5593b`, after `npm run build`,
+default reporter:
+
+| | |
+|---|---|
+| runs | **12 / 12 PASS** |
+| tests per run | 163 passed (163), every run |
+| failures | 0 |
+
+**A method correction against my own first attempt.** The first runner used
+`--reporter=json`, and R48 records that this reporter turns exactly these failures
+into the placeholder `Error: STACK_TRACE_ERROR` — it cost three rounds of reading a
+channel that erased the evidence. The run was killed and re-done on the default
+reporter before any number here was taken. (The first attempt also silently wrote
+its JSON nowhere, because a Git Bash `/tmp/...` path is not what the Windows vitest
+process resolves — it reported `NO-JSON` rather than a failure list, which is the
+same class of blindness twice over.)
+
+**WHAT THIS EXCLUDES, arithmetically.** If the old ~1/3 rate still held, twelve
+clean runs had probability **(2/3)¹² ≈ 0.77 %**. So the pre-R46 rate is excluded at
+about 99 %. That is the whole of the positive claim.
+
+**WHAT IT DOES NOT EXCLUDE, and the number is not flattering.** Twelve clean runs
+exclude only a failure rate **≥ 22 %** at 95 % confidence. Below that they are
+nearly uninformative:
+
+| true flake rate | chance it still produces 12 clean runs |
+|---|---|
+| 5 % | **54 %** |
+| 10 % | **28 %** |
+| 15 % | 14 % |
+| 22 % | 5 % |
+
+**So "the flake is gone" is NOT established, and must not be written anywhere.**
+What is established is that the rate is no longer ~1/3.
+
+**The independence objection applies to THESE runs too, and it is mine to own.**
+R48's criticism of R47 was that its clean executions were "chained on one machine
+within minutes, so their independence is unestablished". These twelve were run
+back-to-back in a single shell loop on one machine inside about ten minutes — the
+same shape. They are not twelve independent samples in the sense R48 asked for, and
+counting them as such would repeat the error the correction was written about.
+
+**Also NOT established**: any root cause. R48 named what a root cause needs —
+per-phase timings, child-process and active-handle capture at the deadline, and
+controlled load/no-load repetitions. None of that was done here, and this entry
+does not bring it closer. These twelve ran UNLOADED; R46's own check was 4/4 under
+deliberate load, and load is the variable most likely to matter for a deadline.
+
+## W8 — a fresh checkout of HEAD hashes identically, measured before it was relied on
+
+**Why it was asked.** Collapsing B12's operator loop to the ONE scoring
+invocation the frozen PHASE 6 text requires means the clause-5 freeze anchor can
+no longer be read from a COMMITTED counterfactual, because only `emit` writes
+one and that is what forced the second emit. One candidate repair scores a
+*detached checkout of HEAD* with the existing decoder, unmodified. That is only
+sound if a fresh checkout is byte-identical to the original — and
+`assemble.ts:1164-1183` makes rates byte-identity **verdict-bearing**, so a
+difference would not be cosmetic. It would flip a clause-4 comparison.
+
+**The specific hazard.** `git config core.autocrlf` on this machine returns
+**`true`**. A Windows checkout that materialises LF blobs as CRLF would hash
+differently, and `archive.ts:54-61` already exists because git performs exactly
+that transformation. This was the largest risk in the whole repair.
+
+**PREDICTION, written before measuring.** Byte-identical, because the suite is
+green on this Windows checkout and `tests/b12-plan.test.ts` already compares a
+committed blob's sha256 — which implies disk bytes equal blob bytes here. If the
+fresh checkout differed, `autocrlf` would be reaching these files and the premise
+would be wrong.
+
+**MEASURED, 2026-08-14, at `07e6b0d`.** `git worktree add --detach` into a
+scratch path, then sha256 of both copies:
+
+| File | Result |
+|---|---|
+| `.local-coder/rates.json` | SAME — `6d74cafd7fa5…` |
+| `MEASUREMENTS.jsonl` | SAME — `3d8e9dbd06aa…` |
+| `b12-corpus/manifest-config.json` | SAME — `d0e0bb2a2f4c…` |
+| `evidence/2026-08-05-b12-preregistration.json` | SAME — `5d42b19a899d…` |
+
+PREDICTION CONFIRMED. The mechanism is `.gitattributes`, which pins `eol=lf` for
+`*.json`, `*.jsonl`, `*.md`, `*.mjs`, `*.sh`, `*.patch` and `*.diff` (lines
+14-55) and so overrides `autocrlf` for every file the scorer reads. The measured
+`rates.json` digest equals the pinned `ratesSha256` exactly.
+
+**Also verified mechanically, same probe.** `git worktree add` works from INSIDE
+a linked worktree (this repository is one); the inner `HEAD` resolves to the
+detached SHA and not to the outer branch; and `git -C <tmp> show HEAD:<path>`
+reads the detached commit. The probe worktree was removed and `git worktree
+prune` run.
+
+**What this does NOT establish.** That the repair is the right one — that is a
+design question under review, not a measurement. That every input the scorer
+reads is tracked: `.local-coder/rates.json` and `MEASUREMENTS.jsonl` were
+confirmed tracked by `git ls-files --error-unmatch`, but `.gitignore` DOES
+exclude `.local-coder/telemetry.jsonl`, and any future scorer input that is
+untracked would be absent from a detached checkout and silently read as missing.
+That is a standing hazard of this approach and is written down here rather than
+discovered later.
+
+## The third NUL incursion — and the first that a fully green gate did not see
+
+**2026-08-14, `src/cost/b12/audit.ts`, four NUL bytes, line 1592.** Two template
+literals I wrote as `` `${o.taskId} ${o.arm} ${String(o.attempt)}` `` reached
+disk with the two separators as `\u0000` instead of `\u0020`.
+
+**WHY NOTHING CAUGHT IT, which is the part worth keeping.** `tsc` passed. All
+858 tests passed. The gate was GREEN twice over the corrupt bytes. It had to be:
+both sides of the comparison — the `Set` of represented keys and the lookup key
+— were built by the same two corrupted literals, so every key matched every
+other key exactly as intended. The program was CORRECT and the file was
+CORRUPT, and no test can tell those apart when the corruption is symmetrical.
+
+**What did catch it:** `grep -n "represented" src/cost/b12/audit.ts` answered
+`Binary file src/cost/b12/audit.ts matches`. A tool refusing to print the file
+was the whole signal.
+
+**The standing rule earns its place again.** Check bytes after EVERY edit, with
+`node -e "readFileSync(f).indexOf(0)"`. Not `grep -P '\x00'`, which fails on
+this locale with "supports only unibyte and UTF-8 locales" and, with
+`2>/dev/null`, prints "clean" while having measured nothing.
+
+**Count, and the trend.** Three incursions now. The first two were caught by the
+byte check with a red or unrun gate. This one is the first to pass a COMPLETE
+green gate — tsc plus the full suite — which retires the informal hope that a
+NUL would eventually announce itself through a failing test. It will not. The
+byte check is not a belt-and-braces on the gate; it measures something the gate
+is structurally unable to see.
+
+**Repaired** by rewriting the four bytes to `0x7C` (`|`), which is the separator
+the keys should always have used — it cannot occur in a taskId or an arm, where
+a space could.
+
+## PHASE 0 is CLOSED — and what that sentence is not allowed to mean
+
+**Committed record:** `evidence/2026-08-14-b12-phase0-closure.json`, written at
+`214b1cb`, with PHASE 0's frozen text extracted programmatically from the
+pre-registration rather than transcribed.
+
+**Why an artifact and not a commit message.** Until now the only assertion that
+PHASE 0 was complete lived in the message of `911d8d6` — "All ten pre-conditions
+are now in". A commit message is the one place a claim cannot be audited
+afterwards: it is not compared to anything, it is not re-read by any check, and
+it cannot be found by a reader who does not already know it exists. The four
+frozen deliverables now each carry a `file:line` a stranger can check.
+
+**CLOSED IN THE SENSE THE FROZEN TEXT DEFINES, AND IN NO WIDER SENSE.** The
+frozen `runPlan` PHASE 0 names four things — the ten `detector` repairs, the b12
+emitter, the six firing negative controls of VOID 6, and un-ignoring
+`evidence/**`. All four are present and evidenced. That is the whole claim.
+
+**What the record refuses to fold into a green light**, each named on its face:
+
+- **One of the ten repairs is under re-examination.** `wouldHaveAdded` on a
+  `byInvocation` MISS resolves against the `main` thread, which the comment
+  directly beneath it condemns. It is a frozen scoring path, so it gets its own
+  adjudication round and no edit before it. Counting it as "closed" would be
+  counting a question as an answer.
+- **The firing evidence is win32 and DIAGNOSTIC**, and `specificityClean` is
+  false: 8 off-diagonal kills. The matrix establishes SENSITIVITY, not
+  specificity, and a Mac artifact is still owed.
+- **PHASE 3 was closed at 1 of 3, INCONCLUSIVE.** The pre-registered rule said
+  the manifest may not be sealed on it. Closing it anyway was the owner's
+  decision, taken knowingly. It is recorded as an OPEN QUESTION the run carries,
+  never as a satisfied precondition — a reader who wants to discount the run on
+  that ground has the fact they need.
+- Five registered limits that never close by design (F20, F21, F17, F11, F13),
+  two open decisions rather than code (F25, F27), and six items owned by later
+  work.
+
+**One count corrected while writing it.** `b12-corpus/manifest-config.json` said
+"Every remaining null is MAC-LOCAL". There are **thirteen** null leaves under
+`pinned` and **twelve** are MAC-LOCAL: `settingsSha256s.settingsLocal` is a TRUE
+null, as `_macLocal` says in its own words ("NOT MAC-LOCAL"), measured across all
+65 corpus tags — none carries `.claude/settings.local.json`. The sentence was
+false by exactly one, and its cost was specific: it would have sent an operator
+to the Mac to fill a value no machine can supply. Found by COUNTING THE LEAVES
+rather than trusting the sentence.
+
+**And the plan's own premises did not survive contact.** W5's flake did not
+exist. W6's owed-list overstated the debt in three of six entries. W7b was
+already implemented. R47 had already run the matrix. W8's remedy, which I
+predicted was impossible, was available. Each is recorded as falsified where it
+was claimed, rather than quietly repaired — which is the only reason this record
+is worth more than the commit message it replaces.
+
+## `stdio.test.ts` failed once in the full suite, after the hardening — recorded, NOT explained
+
+**2026-08-14, at `214b1cb` plus the PHASE 0 closure record.** One full-suite run
+reported `numFailedTestSuites: 2` with **`numFailedTests: 0`** — a suite failing
+with no test failing, which is the exact shape W5 investigated. The only suite
+named was `tests/stdio.test.ts`, and its message field was EMPTY.
+
+**Measured immediately after, same bytes:**
+
+| Probe | Result |
+|---|---|
+| `tests/stdio.test.ts` SOLO, three consecutive runs | **3/3 green**, 5 tests each |
+| the FULL suite, re-run | **green**, 882 tests, zero failures |
+
+So the observed rate is **1 failure in 2 full-suite runs** and **0 in 3 solo
+runs**, on a total of five observations. That is the whole measurement.
+
+**WHAT IS NOT ESTABLISHED, and this is the point of the entry.** No cause. The
+run says WHICH suite, never WHY, and this project has made the mistake of
+naming a cause from a list of failures three times. Specifically NOT established:
+
+- that the W5 hardening failed — the hardened guard, had it fired, would have
+  printed the offending text, and the message was empty;
+- that this is the same mechanism as the `cost-meter.test.ts` flake measured in
+  W7a — different file, different signal, and the registered `KNOWN_FLAKY` class
+  does not name `stdio.test.ts` at all;
+- that it is full-suite-ONLY. Three solo runs cannot establish that; they only
+  fail to contradict it.
+
+**Why the evidence is thin, which is itself a registered defect.** R48 recorded
+that `--reporter=json` turns exactly this failure class into an empty or
+placeholder message, and the gate runs `--reporter=json`. The suite-level
+failure that the default reporter would have explained was erased before it
+reached me. That is the second time R48's defect has cost a diagnosis in this
+project, and it will cost a third unless the gate grows a way to re-run a
+failing file under the default reporter.
+
+**Status: OPEN, one occurrence, no mechanism.** Written down so the next
+occurrence is the second and not the first.
+
+## A second flake occurrence, this one INSIDE the registered class
+
+**2026-08-14, `tests/b12-audit.test.ts`, the new `blobSha` three-state control.**
+One full-suite run failed it with `Error: STACK_TRACE_ERROR`; run SOLO with the
+default reporter it passed (1 passed, 72 skipped); the full suite re-run passed.
+
+**Unlike the `stdio.test.ts` occurrence recorded above, this one MATCHES the
+registered `KNOWN_FLAKY` class on every feature:** an fs/git-heavy B12 guard,
+the `Error: STACK_TRACE_ERROR` placeholder message, and failure only in the full
+suite. The new control creates scratch repositories and runs a dozen git
+commands, so it joined that population the moment it was written.
+
+**Still no cause claimed.** Matching a registered class is not a mechanism —
+it is a reason not to treat this as a new phenomenon, and nothing more. What it
+does establish is a cost: the class now touches a control written specifically
+to prove a fail-closed property, so a spurious red there reads as "the
+three-state repair is broken" to anyone who does not know the class exists.
+
+**R48 erased the evidence for the THIRD time in this session.** The gate runs
+`--reporter=json`, which turned this into `Error: STACK_TRACE_ERROR` with no
+line and no message. Each time, recovering the real failure has meant re-running
+the file by hand under the default reporter. Three occurrences is enough to stop
+calling it an annoyance: the gate needs a way to re-run a failing file under the
+default reporter, and until it has one, every diagnosis in this suite costs an
+extra full run.
+
+## `b12-audit.test.ts` costs 217 s solo since W8 — measured, with the obvious hypothesis NOT declared
+
+**Measured 2026-08-14 at `17881dc`:** `npx vitest run tests/b12-audit.test.ts`
+alone — **73 passed, 217.22 s**. For comparison in the same session,
+`tests/b12-firing.test.ts` runs 34 tests in **1.13 s**.
+
+**What changed.** W8 made the clause-5 anchor derive from a DETACHED CHECKOUT of
+the audited commit, and `collectAuditFacts` is called from ~21 places in that
+file. A worktree add + remove was measured at **~1.45 s** earlier in this
+session, so the checkouts plausibly account for a large part of the 217 s.
+
+**THE HYPOTHESIS I AM NOT DECLARING.** In the same stretch this file failed
+twice in the FULL suite with `Error: STACK_TRACE_ERROR` and passed solo both
+times. It is tempting to say the checkouts pushed individual tests past their
+60 s / 120 s timeouts under parallel load. That is a hypothesis with a
+mechanism, and it is exactly the shape of claim this project has got wrong three
+times by reading a cause off a list of failures. NOT ESTABLISHED, and it is
+written here as a lead rather than as an explanation:
+
+- no per-test timing was captured, so which tests consume the 217 s is unknown;
+- no run was made under controlled load, and R46's own check was 4/4 loaded;
+- the file was ALREADY in the registered `KNOWN_FLAKY` class before W8, so a
+  higher rate has to be shown against a baseline nobody measured.
+
+**What IS established:** the file is now the slowest in the suite by a wide
+margin, and the cost was introduced deliberately in exchange for deriving the
+anchor from committed state rather than from a committed emitter output. If the
+flake rate is later shown to have risen, the cheapest lever is a shared checkout
+per test file rather than one per `collectAuditFacts` call — recorded now so the
+option is on the table before anyone reaches for a timeout bump.
+
+## The `stdio.test.ts` signature has now been seen TWICE, identically
+
+**Second occurrence, 2026-08-14, same session.** A full-suite run reported
+`numFailedTestSuites: 2` with **`numFailedTests: 0`**, one file named —
+`tests/stdio.test.ts` — and an **empty** message. That is byte-for-byte the
+shape of the first occurrence recorded above.
+
+**Running tally, and it is the whole of what is established:**
+
+| | full-suite runs | failures |
+|---|---|---|
+| `stdio.test.ts` | ~6 this session | 2, identical signature |
+| solo runs | 3 | 0 |
+
+**The second occurrence retires one candidate.** The first time, it was open
+whether the W5 hardening's guard had fired — it prints the offending text, so a
+guard failure would show a message. Both occurrences carry an EMPTY message and
+ZERO failing tests, twice. Whatever this is, it is not a test failing; it is the
+suite failing around the tests, which is where an unhandled rejection or a
+teardown fault lands. **That narrows the search. It does not name a cause, and
+none is named here.**
+
+**Both occurrences report TWO failed suites and name only ONE.** The second
+suite is unidentified in the payload both times. That is a fact about the
+reporter's output, not about the suites, and it is written down because a
+missing name is the kind of detail that gets read as "one suite" on a later
+skim.
+
+**Still not established:** any mechanism; whether the two occurrences share one;
+whether the rate is rising; whether it is load-dependent. Nobody has captured a
+failing run under the default reporter, because the gate uses
+`--reporter=json` and the failure lands where R48 erases it — for the fourth
+time in this session.
+
+## The Mac round of 2026-08-15 — everything it will measure, predicted BEFORE it runs
+
+Written at `0c8ff83`, before the archive left this machine. The round was going
+to be the PHASE 1 preflight alone; the owner asked what else could be measured
+now, and the answer is: quite a lot, because several owed questions need no
+manifest, no seal, and no attempt. Each prediction below is recorded so the Mac
+can falsify it rather than confirm a story written afterwards.
+
+**The rule this section exists to obey:** nothing here may be reported as a
+success unless the prediction beside it was written first. Three of this
+project's worst errors were causes read off a list of failures after the fact.
+
+### TIER 1 — no Claude session, no attempt, minutes
+
+**M1 — does the Windows-only flake exist on macOS?** Run the full suite **five**
+times and record pass/fail per run plus any file named. On Windows this session:
+`stdio.test.ts` failed 2 of ~6 full runs with an identical signature (2 failed
+suites, ZERO failed tests, empty message), and `b12-audit.test.ts` 3 times with
+`Error: STACK_TRACE_ERROR` — all passing solo.
+**PREDICTION: 5 of 5 green on macOS, zero occurrences of either signature.**
+Confidence: medium. Rationale, and it is an argument not evidence: both files
+are fs/git-heavy and macOS fs/git is far faster — this repository's own suite
+takes ~430 s on Windows and ~47 s on Linux CI. If the Mac reproduces EITHER
+signature, the "Windows timing" reading is dead and the cause is in the code.
+**This is the measurement I most want to be wrong about**, because a
+reproduction on a second platform would be worth more than five green runs.
+
+**M2 — the `runToolchain` tuple.** `node -e "console.log(process.platform,
+process.arch, process.version)"` and `npx vitest --version`.
+**PREDICTION: `darwin`, `arm64`, node and vitest majors matching this repo's
+`engines`/lockfile.** Confidence: high for platform/arch, LOW for the versions —
+the Mac's node is not known from here, and if its major.minor differs from
+Windows' 24.16 that is exactly the value the barrier needs and the reason the
+key must be filled on the run machine rather than guessed.
+
+**M3 — `claudeCodeVersion` and `claudeBinarySha256`.** `claude --version` and
+`shasum -a 256 $(which claude)`. **PREDICTION: none.** These are facts about a
+machine, not hypotheses. Recorded only so the seal stops being blocked on them.
+
+### TIER 2 — the owed Mac firing artifact, no Claude session, ~30 min
+
+**M4 — do the six negative controls fire on macOS?**
+`node scripts/b12-mutate.mjs 2026-08-15-mac-dryrun-1 --at <iso8601>`.
+The committed firing artifact is **win32 only**, and the PHASE 0 closure record
+names a Mac artifact as still owed. This spends no attempt and decides nothing;
+it is diagnostic evidence.
+**PREDICTION: all six FIRE, and `specificityClean` is FALSE with an
+off-diagonal kill count near the win32 run's 8.** Confidence: medium-high on the
+firing, LOW on the exact off-diagonal count — collateral depends on which tests
+share a fixture, and nothing establishes that is platform-invariant.
+**A control that fires on win32 and NOT on macOS would be the finding of the
+round**, because clause 6 requires the six shown firing and the run happens here.
+
+### TIER 3 — paid Claude sessions, one question each
+
+**M5 — the PHASE 1 preflight.** The planned run.
+**PREDICTION: `provenanceUnavailable === false`, `ambiguous === 0`,
+`unmatched === 0`, `excludedForeign === 0`, `savedFraction !== null`, snapshot
+slug and id counts non-zero.** Confidence: medium. The committed artifact from
+2026-08-09 is OBSOLETE — the script changed twice since — so this is a fresh
+measurement and not a re-confirmation.
+
+**M6 — THE SUBAGENT RATE-KEY PROBE, and it outranks the preflight.**
+`bash scripts/b12-subagent-key-probe-mac.sh`. The question: inside a
+`claude --print` session, do a SUBAGENT's billed requests carry the SAME rate key
+as the main thread's?
+**Why it outranks everything else here:** `voidConditions` 10 and
+`void(rate_key_mixed)` both key on `rateKey(model, speed)` over an observation's
+OWN requests. If a subagent serves on a different key, **every observation
+carrying a subagent is void at observation level**, the `multi` stratum holds
+fewer than 5 admitted observations, and `voidConditions` 3 returns `open` —
+never a hold, never a fall. That is the run being **unevaluable by
+construction**, discoverable now for the cost of one scratch session or
+discoverable after 20–26 paid sessions.
+**PREDICTION: the same rate key.** Confidence: medium-low, and I want that
+number read as the point rather than the answer. This corpus ranges 0–78%
+subagent share; if the keys differ, the design needs to know before the seal.
+
+**M7 — `clientTruncationCap`.** `bash scripts/b12-truncationcap-probe-mac.sh`.
+`voidConditions` 8 VOIDS a run with no cap measured for the version that ran.
+**PREDICTION: a cap near 30,000 CHARACTERS**, because B2 measured a Bash result
+landing in the transcript at 30,000 (30,136 raw observed) on Windows. Confidence:
+low-medium — that was a different platform AND a different Claude Code version,
+and the cap is a client behaviour that can move between releases. A materially
+different number is a real finding, not an error.
+
+**M8 — the `installedChars` re-probe.**
+`bash scripts/b12-installedchars-probe-mac.sh`. Owed with the orchestrator model
+in the calibration key. **PREDICTION: a positive per-arm delta, k = 3
+replicates, with the treatment arm larger** (it carries seven tool schemas plus
+the policy block). Confidence: medium on the sign, none on the magnitude.
+
+### What this round deliberately does NOT do
+
+**The PHASE 2 pilot.** That is executing a phase, not measuring ahead of one: it
+needs built manifests, runs five real sessions, and its output is committed
+evidence that the register reads. Doing it out of order to "get ahead" is how a
+sequencing constraint becomes a void nobody planned.
+
+**Anything requiring the seal.** `evidence/b12-harness-seal.json` does not exist,
+is a barrier before ANY registration, and is create-only forever.
+
+**And a caveat that applies to every pin measured here.** M2, M3, M7 and M8
+produce values that go into a manifest sealed LATER. They are only valid if
+nothing moves in between — `DISABLE_AUTOUPDATER=1` exists for exactly this, and
+a Claude Code update between this round and the seal invalidates M3 and M7
+together.
+
+## The Mac round, first results — M6 answered, M5 refused, and the refusal was mine
+
+Read from the operator's TERMINAL, 2026-08-15. The artifacts themselves have not
+come back yet; when they do, every number below is to be re-read from the JSON
+and any disagreement recorded rather than reconciled.
+
+### M6 — CONFIRMED, and it is the answer that mattered most
+
+```
+B12-SUBAGENT-PROBE verdict=inherits main=["claude-opus-5"] sub=["claude-opus-5"]
+INHERITS — subagents carry the main thread's rate key. The multi stratum is reachable.
+```
+
+**Predicted: the same rate key. Confidence: medium-low.** The low confidence was
+the reason to run it, and the prediction holds.
+
+**What this closes.** `voidConditions` 10 and `void(rate_key_mixed)` key on
+`rateKey(model, speed)` over an observation's OWN requests. Had the subagent
+served on a different key, every observation carrying one would be void at
+observation level, the `multi` stratum would hold fewer than 5 admitted
+observations, and `voidConditions` 3 would return `open` — never a hold, never a
+fall. On this axis the run is **not** unevaluable by construction, and it cost
+one scratch session instead of 20–26 paid ones.
+
+**WHAT IT DOES NOT CLOSE, and the probe said so itself on the way past:**
+
+> `! control shape (no --mcp-config). The primary observations are TREATMENT arm (admissionRule 13).`
+
+**The measurement is of the CONTROL shape.** The scored observations are the
+TREATMENT arm, which loads the MCP server and carries seven extra tool schemas
+plus the policy block. Nothing here establishes that a subagent under the
+treatment shape inherits the same key — that is a different session with a
+different system prompt, and "it inherited without the server" is not "it
+inherits". The script names the fix (`B12_REPO=<built checkout>` or
+`B12_MCP_CONFIG=<path>`), so this is a re-run, not a new instrument. **OWED
+before the seal**, and recorded as owed rather than counted as done.
+
+Also warned and NOT satisfied: `DISABLE_AUTOUPDATER is not 1`. The binary
+reported `2.1.221` and nothing suggests it moved mid-probe, but the guard exists
+because an auto-update would change the binary this artifact names, and it was
+off.
+
+### M2 / M3 — partially in hand, and one value contradicts the Windows box
+
+| Fact | Mac | This machine |
+|---|---|---|
+| `claudeCodeVersion` | **2.1.221** | (null) |
+| `claudeBinarySha256` | `7a181f36ed0f…` (prefix only, from the terminal) | (null) |
+| node | **v22.23.1** | 24.16 |
+| `lms` | present | absent by construction |
+
+**The node difference is the point, not a detail.** `runToolchain` compares
+`nodeMajorMinor`, so a declaration cut from this Windows box (`24.16`) would
+refuse EVERY observe on a Mac running `22.23`. The config already says not to
+guess it from here; this is that instruction earning its place with a number.
+`arch` and the vitest version are still unread — `npx vitest --version` was not
+part of the probe output.
+
+### M5 — REFUSED, and the refusal was correct
+
+The preflight stopped on ~100 tracked files showing as modified. **The archive
+was contaminated and I cut it.** `.gitattributes` pins `eol=lf` for `*.sh`,
+`*.mjs`, `*.json`, `*.jsonl`, `*.md`, `*.patch` and `*.diff` — and **not for
+`*.ts`**. With `core.autocrlf=true` on this machine every `.ts` checked out as
+CRLF, and the zip carried those bytes; on macOS git compared them against LF
+blobs and reported the whole source tree dirty.
+
+**The script was right and its guard is the reason nothing was spent:** "the
+working tree has tracked changes. Checking out over them would either fail or
+lose them, and neither belongs in a measurement run." A pre-flight that had
+continued would have measured a tree nobody could name.
+
+**Fixed by cutting the archive with `core.autocrlf=false` and `core.eol=lf`, and
+persisting both in the clone's own config** so the receiving machine does not
+re-convert. Verified before sending: **0 of 395 tracked files contain CRLF.**
+
+**AND IT EXPLAINS WHY W8's BYTE-IDENTITY MEASUREMENT MISSED THIS.** That probe
+compared `rates.json`, `MEASUREMENTS.jsonl`, `manifest-config.json` and the
+pre-registration — all `*.json`/`*.jsonl`, all covered by `.gitattributes`. It
+concluded "every probed file is byte-identical" and that conclusion was true of
+what it probed. `.ts` was never in the sample, and the generalisation I did not
+write down is the one that broke here.
+
+## `stdio.test.ts` — THIRD occurrence, and the rate is now worth stating
+
+**2026-08-15, during work that touched only `.gitignore` and an untracked
+script.** Same signature a third time: `numFailedTestSuites: 2`,
+**`numFailedTests: 0`**, one file named — `tests/stdio.test.ts` — message EMPTY.
+Re-run immediately after: green.
+
+**The running total on this machine, and it is the whole of the evidence:**
+
+| | count |
+|---|---|
+| full-suite runs observed this session | ~14 |
+| failures with this exact signature | **3** |
+| solo runs of the file | 3, all green |
+| distinct signatures seen | **1** |
+
+Roughly **1 in 5 full-suite runs**, and every occurrence identical. Three
+observations of one signature is no longer "an occurrence"; it is a rate, and it
+belongs on the record as one.
+
+**What three identical observations rule out.** A guard firing — the W5
+hardening prints the offending text and all three messages are empty. A test
+failing — `numFailedTests` is 0 in all three. Whatever this is, it happens
+*around* the tests, which is where an unhandled rejection, a worker crash or a
+teardown fault lands.
+
+**What they still do NOT establish: any mechanism.** Nobody has captured one of
+these under the default reporter, because the gate runs `--reporter=json` and
+R48 recorded that this failure class arrives there as an empty message. That is
+now **five** diagnoses this defect has cost in one session.
+
+**Why it matters more than it did an hour ago.** M1 in the Mac round runs the
+full suite five times on macOS with the prediction **5/5 green**. At a measured
+~1-in-5 rate on Windows, five macOS runs is a genuinely discriminating
+experiment rather than a formality: seeing this signature there kills the
+"Windows fs/git timing" reading outright and puts the cause back in the code.
+The prediction was written before this rate was known, and it is not being
+revised now that it is — revising a prediction after seeing data is the move
+this file exists to prevent.
+
+## The Mac round of 2026-08-15 — eight measurements against eight predictions
+
+Run at `06ee3b0` on `darwin arm64`, node `v22.23.1`, vitest `4.1.10`, Claude Code
+`2.1.221` (`7a181f36ed0f…`). Read from the returned tarball, not the terminal.
+
+| | Predicted | Measured | |
+|---|---|---|---|
+| M1 | 5/5 green | **5/5 green**, 890 tests, 38 files | CONFIRMED |
+| M2 | darwin/arm64, versions unknown | darwin arm64, node 22.23, vitest 4.1 | CONFIRMED |
+| M3 | (no prediction) | 2.1.221, `7a181f36ed0f…` | captured |
+| M4 | **all six FIRE** | **0 of 6, all `refused`** | **FALSIFIED** |
+| M5 | preflight clean | completed, 11 checks | ran |
+| M6b | same rate key | **inherits**, TREATMENT shape | CONFIRMED |
+| M7 | cap near 30,000 chars | **REFUSED** — no transcript | no answer |
+| M8 | positive per-arm delta | **REFUSED** — needs the remote | no answer |
+
+### M4 — the falsification, and it is a HARNESS defect wearing a result's clothes
+
+**0 of 6, every pair `outcome: refused`, every one with the same sentence:**
+"the assertion's stack names no frame in tests/cost-meter.test.ts".
+
+**THE CONTROLS DID GO RED.** The embedded reports — added the day before, and
+this is their first use — show m1's mutant run at 163 tests, **3 failed, 2 failed
+suites**, with the registered control's own status `failed` and its two declared
+collateral tests failed beside it. The mutation worked. What failed is the step
+that LOCATES the failure.
+
+**The mechanism, reproduced here rather than inferred.** `mkdtempSync(os.tmpdir())`
+returns `/var/folders/…` on macOS, which is a **symlink** to `/private/var/folders/…`,
+and V8 reports the RESOLVED path in stack traces. `relativeTo` compares by string
+prefix and resolves nothing:
+
+```
+relativeTo("/var/folders/…/b12-mutate-AbC",
+           "/private/var/folders/…/b12-mutate-AbC/tests/cost-meter.test.ts")  =>  null
+```
+
+Every frame missed, so every pair refused. **The win32 matrix scored 6/6 on
+identical code because Windows temp paths carry no such symlink** — verified
+here: `realpathSync` is a no-op on this machine, so the repair cannot regress it.
+
+**This is exactly the outcome the prediction named as the round's best case** —
+"a control that fires on win32 and NOT on macOS would be the finding of the
+round" — and it turned out to be a harness defect, not a fact about the controls.
+Had the artifact carried no reports, the honest reading available would have been
+"the six controls do not fire on macOS", which is false and would have been very
+expensive to believe.
+
+**REPAIRED** by resolving the worktree's realpath at creation. The Mac matrix is
+therefore **still owed** — M4 has no answer for macOS yet.
+
+### M6b — the owed re-run, done
+
+The first probe ran in CONTROL shape and said so. This one ran with `B12_REPO`
+set, in the **TREATMENT** shape that the scored observations use, and returned
+`verdict=inherits` again. `voidConditions` 10 does not sink the `multi` stratum.
+
+### M7 and M8 — no answer, and one is my planning error
+
+M7 refused because `claude` wrote no transcript for its first replicate: "the cap
+lives in the transcript, so there is nothing to measure." A real refusal about a
+real absence.
+
+**M8 refused on `git fetch` — and I put it in the round knowing the Mac cannot
+reach the remote.** I had already written the offline mode for the pre-flight
+for exactly this reason and did not check whether the other probes shared the
+dependency. The round spent its slot on a step that could not run.
+
+### What this round changes about what is owed
+
+- the Mac firing matrix (M4), after the realpath repair;
+- the cap (M7), which `voidConditions` 8 requires before a scored run;
+- `installedChars` (M8), which needs either network or the same offline
+  treatment the pre-flight got.
+
+## `stdio.test.ts` — fourth occurrence, and the macOS control now says something
+
+**2026-08-16.** Same signature a fourth time, on a commit that touched only
+`scripts/b12-installedchars-probe-mac.sh` — a shell script the suite does not
+load. Two failed suites, ZERO failed tests, empty message. Green on re-run.
+
+**Running total, Windows:** roughly **4 in ~16** full-suite runs. One signature,
+four times, never once solo.
+
+**AND THE MAC RAN IT FIVE TIMES WITH ZERO OCCURRENCES.** That is the M1
+measurement doing the job it was written for. At a 1-in-4 Windows rate, five
+clean macOS runs is not proof of absence, but it is the first evidence that
+discriminates: the probability of five consecutive misses at the Windows rate is
+about 0.24 — low enough to be worth stating, high enough that it is NOT decisive.
+
+**What is now established:** the signature is frequent on Windows, absent in
+five macOS runs and in every Linux CI run to date, and identical every time.
+**What is still NOT established: any mechanism.** Nobody has captured one under
+the default reporter, because the gate runs `--reporter=json` and R48 recorded
+that this class arrives there with an empty message. That is now the sixth
+diagnosis this has cost.
+
+**The cheapest next step, named so it is not re-derived:** run the suite on
+Windows in a loop under the DEFAULT reporter until it fires, and keep the full
+output. Nobody has done this — every occurrence so far has been noticed inside a
+gate run and re-run away before the evidence was kept.
+
+## The `stdio.test.ts` capture run — predicted before it started
+
+**2026-08-16, at `cfa89a6`.** Six occurrences of R48's evidence erasure were
+enough: this loop runs the FULL suite under the DEFAULT reporter, keeps every
+run's complete output, and stops the moment one goes red.
+
+**Why the full suite and not the file.** The file has run SOLO three times and
+been green three times. The signature has only ever appeared in a full-suite
+run, so a loop over `stdio.test.ts` alone would be a loop over the case that
+does not reproduce.
+
+**PREDICTION, written before the first run.** At the measured Windows rate —
+about 4 failures in 16 full-suite runs, so p ≈ 0.25 — the chance of NOT firing
+in N runs is 0.75^N:
+
+| N | P(no fire) |
+|---|---|
+| 4 | 0.32 |
+| 6 | 0.18 |
+| 8 | 0.10 |
+| 10 | 0.06 |
+
+**I predict it fires within 10 runs (≈94%), and most likely by run 4.** If ten
+runs come back green, that is itself a finding: either the rate is lower than
+4-in-16 suggested, or something about the loop differs from the conditions that
+produced the four — and the most obvious candidate is LOAD, since every prior
+occurrence happened while I was doing other work on this machine and this loop
+runs alone.
+
+**What I expect to learn if it fires, stated now so it cannot be adjusted
+after.** Under the default reporter a suite-level failure prints the error and
+its stack rather than the empty string `--reporter=json` yields. The three
+things I want from it: whether it names an unhandled rejection, whether it names
+a file and line inside `tests/stdio.test.ts`, and whether it mentions the child
+process or its stdio streams.
+
+**What this run cannot establish even if it fires:** a cause. It captures the
+message that has been erased six times. Naming a mechanism from one captured
+message would be the same error this project has made three times.
+
+### The result: falsified, 10 for 10
+
+**2026-08-16, 12:50–13:44 local (5m20s per run, machine otherwise idle).**
+
+```
+run  1..10: exit=0 |  Test Files  38 passed (38)
+LOOP DONE
+```
+
+**The prediction was wrong.** I said it fires within ten runs with ≈94%
+confidence and most likely by the fourth. It fired zero times. Under the rate I
+assumed (p = 0.25), ten consecutive misses has probability 0.75^10 = **0.056**.
+
+**On the preregistration, since this registry cares:** the prediction above was
+on disk at 12:50:03 local and run 1 started at 12:50:11 local — **eight
+seconds**, not the three hours I told Rodrigo in chat. I had compared a local
+mtime against a `date -u` log line. It was written before, which is what
+matters, but "eight seconds before I hit go" is the honest description, and it
+was uncommitted until now. A prediction written into an uncommitted file
+moments before the run is weaker preregistration than a commit, and calling it
+anything stronger would be the failure mode this document exists to catch.
+
+**I named LOAD in advance as the explanation if this happened. It does not
+survive contact with the arithmetic.** Working-session runs: 4 fires in ~16.
+Idle-loop runs: 0 in 10. Fisher one-sided on that 2×2 gives **p = 0.122**. That
+is not a difference; that is two groups that a coin could have produced. Having
+pre-named a hypothesis does not make weak evidence for it strong, and the
+temptation to treat the pre-naming as though it were the evidence is exactly
+what I would have done here if I had not computed the number.
+
+**The boring explanation is the better one.** The pooled Windows rate across all
+full-suite runs is now 4 in 26 = **0.15**, and the "16" in the original
+denominator was always an *about* — I never counted it, I recalled it. A rate
+estimated from four events over a remembered denominator, then spent on a 94%
+claim, is the defect. The rate was overstated. Nothing else needs to be true.
+At p = 0.067 — a plausible read of 4-in-26 — ten green runs is a coin flip.
+
+**A post-hoc candidate, labelled as post-hoc so it is never quoted as more.**
+During the working sessions I was *writing into this worktree while the suite
+ran* — edits, git operations, codex output. That is sharper than "load" and it
+would explain the exact signature (failed SUITES, zero failed TESTS, empty
+message: a file changing under a running collector). But I generated it after
+seeing the result, it is one of several stories that fit, and the experiment
+that would test it — a loop under concurrent worktree writes — is confounded,
+because writes into the tree can break the fs/git-heavy B12 tests legitimately
+and I could not tell the two apart from the outcome alone.
+
+**DECISION: stop spending on this.** Not because it is solved — it is not — but
+because of what it is and is not. In six occurrences it has never produced a
+single failed *test*; it produces failed suites with erased messages. It has
+never appeared on macOS, where the experiment actually runs. Each further data
+point costs an hour of wall clock and the discriminating experiment is
+confounded. This stays in the KNOWN_FLAKY class with the rate revised to
+**4/26** and the mechanism recorded as **unknown**. It reopens on one trigger
+and one only: if it fires during a run that counts — a sealed B12 arm — where
+an erased message would cost a real attempt rather than a re-run.
+
+**What was actually bought for the hour:** the rate, corrected downward from a
+number I had made up from memory. That is a smaller result than the captured
+stack trace I went looking for, and it is the result.
+
+### Occurrence 7 — it fired on the eleventh run, and the eleventh was the GATE
+
+**Same afternoon, minutes after the loop closed.** A routine `mcp__local-coder__gate`
+run — which invokes `npm.cmd test --silent -- --reporter=json` — came back red
+with the signature exactly: `tests/stdio.test.ts`, `numFailedTestSuites: 2`,
+`numFailedTests: 0`, `message: ""`, five assertions in the file and none of them
+failed.
+
+**This splits the data along a line I had not been looking at.** Every run in
+the loop was bare `npm test` under the DEFAULT reporter: 10 for 10 green. Every
+occurrence on record — all seven — came through the gate under
+`--reporter=json`. Zero occurrences have ever been observed under the default
+reporter on this machine.
+
+| invocation | reporter | runs | fires |
+|---|---|---|---|
+| bare `npm test` | default | 10 | 0 |
+| gate | `--reporter=json` | ~17 | 7 |
+
+**Why I am not calling this the mechanism.** The two arms are not a controlled
+comparison — they differ in reporter AND in spawn (`shell: true` via the gate)
+AND in flags (`--silent`) AND in who was at the keyboard. I did not design them
+as arms; I am reading a split out of runs collected for other reasons, which is
+the same move that produced the LOAD hypothesis I have just had to withdraw.
+
+**It is, however, the first candidate with a plausible mechanism attached rather
+than a correlation.** The failing file is a test ABOUT stdio. A runner whose own
+stdio is a pipe rather than a tty, spawned through a shell, is a materially
+different environment for a test that spawns children and asserts on their
+streams. That is a story about the code rather than about the weather.
+
+**The measurement that would settle it, stated now:** ten runs of
+`npx vitest run --reporter=json` and ten of `npx vitest run`, same shell, same
+machine, nothing else running, alternating. If the json arm fires and the
+default arm does not, the reporter is implicated on its own. That is ~100
+minutes and it is NOT being spent today: the Mac round is the work in front of
+us, and this signature has never produced a failed test or appeared on macOS,
+where the experiment actually runs. Recorded as the next step, not taken.
+
+**The revision to the entry above stands.** Ten green under the default reporter
+still falsified the 94% prediction, and LOAD is still not supported. What
+changes is that the pooled "Windows rate" of 4/26 was itself a category error —
+it averaged two invocation paths that may not have the same rate at all.
+
+## Mac round 2 — 8 of 8, and the three owed measurements exist
+
+**2026-08-16, archive `b12-mac-6c4d2a0.tgz`, cut by `b12-cut-mac-archive.mjs`,
+run by the operator as one command.** The transport itself was the first result:
+pin matched HEAD, zero tracked changes, LF throughout — after three failed
+transports in three rounds, the first archive cut by the script arrived whole.
+
+Scored against the predictions recorded before the FIRST round, which this
+round inherits:
+
+| step | predicted | measured | verdict |
+|---|---|---|---|
+| M1 | 5/5 green, zero signatures | 5/5 green | CONFIRMED — 10 consecutive green Mac full-suite runs across two rounds |
+| M2/M3 | darwin arm64, majors matching | darwin arm64, node v22.23.1, vitest 4.1.10, claude 2.1.221 | CONFIRMED |
+| M4 | all six FIRE; specificityClean FALSE, off-diagonal near 8 | **6/6 FIRED**, 13/13 runs, 0 problems; specificityClean false, offDiagonalKillCount **11** (2,0,4,0,0,5) | CONFIRMED on firing; 11 vs 8 within the LOW-confidence band the prediction drew for itself |
+| M5 | provenanceUnavailable false, ambiguous 0, unmatched 0, excludedForeign 0, savedFraction non-null | all five, plus 6 more checks ok — 11/11, tipCheck offline | CONFIRMED |
+| M6b | same rate key (medium-low) | inherits, main=sub=claude-opus-5 | CONFIRMED, second consistent run in treatment shape |
+| M7 | cap near 30,000 chars (low-medium) | **29,999 chars**, 3 replicates IDENTICAL, each a verified contiguous prefix of an 80,000-char sentinel | CONFIRMED — and the B2 Windows observation of ~30,000 now has a cross-platform partner |
+| M8 | positive delta, treatment larger (medium on sign, none on magnitude) | **+84 tokens**, 3 replicates identical, sustained; adapter 310.8 chars | CONFIRMED on sign; magnitude now exists. EXPLORATORY — no policy blobs sealed, the artifact says so itself and demands a re-take under sealed blobs |
+
+**What the round changes about PHASE 0/4 debts:**
+
+- **The Mac firing artifact exists.** `evidence/2026-08-16-mac-dryrun-6c4d2a0-174014.b12.firing.json`,
+  darwin, allFired true. The previous round's 0/6 is confirmed as the symlink
+  defect and nothing else — same controls, same machine, `realpathSync` applied,
+  all six fire. Clause 6's "shown FIRING" now has evidence from the platform the
+  experiment runs on.
+- **The cap exists.** 29,999 chars for claude 2.1.221 on binary `7a181f36…`.
+  `voidConditions` 8 wanted a cap measured for the version that runs; the
+  manifest seals `pinned.clientTruncationCap` from this artifact when it is
+  built. NOTE the coupling: the cap is FOR this binary. If the Mac's claude
+  updates before the scored runs, the probe is one command to re-take.
+- **installedChars has a magnitude** on the pinned binary, on a calibration key
+  that includes mcp-config and environment hashes. Not seal-grade — the blobs
+  are not sealed — but the harness pass can proceed on it.
+
+**Was anything NOT predicted?** One number: off-diagonal 11 vs win32's 8, with
+different per-pair distribution. Recorded, not alarming — the prediction itself
+said collateral is not established platform-invariant. And one absence worth a
+line: zero occurrences of the stdio signature in 10 Mac full-suite runs, under
+the DEFAULT reporter — consistent with the Windows split, which has never seen
+the signature under the default reporter either.
+
+**Still owed before the seal, updated:** the PHASE 2 pilot; the `*-pending`
+renames; `build → seal-harness → commit → register`; M8 re-taken under sealed
+blobs. The measurement debts of the round table are paid.

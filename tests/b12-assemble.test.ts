@@ -24,9 +24,11 @@ import {
   DISPOSITION_PRECEDENCE,
   instrumentWriteTriggers,
   pacingFacts,
+  regimeOf,
+  repairRoundsMismatches,
 } from "../src/cost/b12/assemble.js";
 import { identify } from "../src/cost/b12/coverage.js";
-import { isLocalToolResult } from "../src/cost/report.js";
+import { isLocalToolResult, scopeTelemetry } from "../src/cost/report.js";
 import type {
   ArchivedObservation,
   GitAudit,
@@ -335,6 +337,231 @@ describe("the disposition table — every predicate FIRING, with its control", (
     expect(cfOf(out, "t1")!.disposition).toBe("void(task_failed)");
   });
 
+  it("the 2026-08-14 amendment fires RUN-LEVEL on a max_rounds the manifest did not freeze", () => {
+    // THE NEGATIVE CONTROL THE AMENDMENT ITSELF DEMANDS. Its sealingPrecondition
+    // forbids registering a run until this test exists and the void is shown
+    // FIRING on a fabricated mismatch — an amendment whose rule no code applies
+    // is the same dead letter that produced it.
+    const govern = (governs: boolean): GitAudit => ({
+      ran: true,
+      verdict: "clean",
+      reasons: [],
+      inputs: {
+        head: "abc",
+        "clause5.repairRoundsAmendment.path": "evidence/2026-08-14-b12-amendment-repair-max-rounds.json",
+        "clause5.repairRoundsAmendment.governs": governs ? "yes" : "no",
+      },
+    });
+    const row = (maxRounds: number) => ({
+      // `at(0)`, NOT a real-world date. The first version of this test hardcoded
+      // 2026-08-14 and the check never fired; I blamed ownership — no tool result
+      // carrying the row's invocation id — and a review showed the real predicate
+      // was the TIMESTAMP: every fixture is stamped from EPOCH = Nov 2023, and
+      // `scopeTelemetry` admits an idless row by a ±60 s window around the
+      // observation's requests, so a row three years away is outside the window
+      // whatever its ownership. Diagnosing that from one failing assertion,
+      // without isolating, is the error this comment exists to keep visible.
+      ts: at(0),
+      tool: "repair",
+      latency_ms: 1,
+      bytes_raw: 0,
+      bytes_returned: 0,
+      turns_collapsed: 0,
+      detail: { max_rounds: maxRounds, budget_seconds: 240 },
+    });
+    // THE CONTROL THE AMENDMENT'S sealingPrecondition DEMANDS: the void FIRING
+    // on a fabricated mismatch. The manifest freezes 3; this ran at 10.
+    const mismatched = archiveOf({ observations: [obsOf("t1", { telemetry: [row(10)] })] });
+    const fired = check(assemble(mismatched, govern(true)).result, "amendment 2026-08-14");
+    expect(fired.fired).toBe(true);
+    expect(fired.detail).toMatch(/ran repair at a max_rounds other than the frozen one/);
+    expect(fired.detail).toMatch(/max_rounds 10 against a frozen repairMaxRounds of 3/);
+
+    // GOVERNANCE IS THE GATE, and these three DO bind today. An ungoverned run
+    // must not fire, and must not print the clean sentence either — "no
+    // mismatch" and "the rule was not in force" are two different clean answers,
+    // and a clause that prints one when it means the other is how a regime
+    // silently changes.
+    const ungoverned = check(assemble(mismatched, govern(false)).result, "amendment 2026-08-14");
+    expect(ungoverned.fired).toBe(false);
+    expect(ungoverned.detail).toMatch(/does not govern this run/);
+
+    // No committed audit is UNKNOWN, and may never be read as passed.
+    const unknown = check(assemble(mismatched, { ran: false }).result, "amendment 2026-08-14");
+    expect(unknown.fired).toBe(false);
+    expect(unknown.detail).toMatch(/regime is UNKNOWN/);
+
+    // THE CASE THE REVIEW FOUND, and the one that actually happens: an audit
+    // that RAN but predates the amendment's keys. The clause said UNKNOWN while
+    // `uncheckedClauses` — built from `gitAudit.ran` alone — stayed empty, so the
+    // verdict went FINAL over a rule nobody had established. It must now appear
+    // as unchecked, WITHOUT firing: an unproven rule may not kill a run any more
+    // than it may bless one.
+    const stale = assemble(mismatched, { ran: true, verdict: "clean", reasons: [], inputs: { head: "abc" } }).result;
+    expect(check(stale, "amendment 2026-08-14").fired).toBe(false);
+    expect(check(stale, "amendment 2026-08-14").detail).toMatch(/regime is UNKNOWN/);
+    expect(stale.uncheckedClauses.some((c) => /repairRoundsAmendment\.governs/.test(c))).toBe(true);
+    // Control: an audit that DOES carry the key leaves the list clean, so the
+    // assertion above cannot be passing because the list is never empty.
+    expect(assemble(mismatched, govern(true)).result.uncheckedClauses).toHaveLength(0);
+
+    // A GOVERNED run with nothing to report reaches the clean sentence, so the
+    // clause is on the face in every regime rather than appearing only when it
+    // fires — the courtesy every other clause here gets.
+    const matched = archiveOf({ observations: [obsOf("t1", { telemetry: [row(3)] })] });
+    const clean = check(assemble(matched, govern(true)).result, "amendment 2026-08-14");
+    expect(clean.fired).toBe(false);
+    expect(clean.detail).toMatch(/ran at its task's frozen max_rounds/);
+  });
+
+  it("a regime key that is PRESENT but not yes/no is UNKNOWN, never 'does not govern'", () => {
+    // THE DEFECT THIS COVERS. The clause tested `=== "yes"` for governance and
+    // `=== undefined` for unknown, so every value in between — a plausible
+    // `"true"`, a case slip, an empty string, a raw boolean, a future encoding —
+    // fell into the `!governs` branch and printed the CONFIDENT sentence "does
+    // not govern this run". A value nobody can interpret is not evidence that
+    // the amendment is inapplicable; it is evidence the question went unanswered,
+    // and answering it permissively is what `uncheckedClauses` exists to stop.
+    //
+    // The old test only ever supplied "yes" and "no", so this whole space was
+    // uncovered — which is why the gap survived its own negative control.
+    const withGoverns = (raw: unknown): GitAudit => ({
+      ran: true,
+      verdict: "clean",
+      reasons: [],
+      inputs: {
+        head: "abc",
+        "clause5.repairRoundsAmendment.path": "evidence/2026-08-14-b12-amendment-repair-max-rounds.json",
+        "clause5.repairRoundsAmendment.governs": raw,
+      } as unknown as Record<string, string>,
+    });
+    const row = (maxRounds: number) => ({
+      ts: at(0),
+      tool: "repair",
+      latency_ms: 1,
+      bytes_raw: 0,
+      bytes_returned: 0,
+      turns_collapsed: 0,
+      detail: { max_rounds: maxRounds, budget_seconds: 240 },
+    });
+    const mismatched = archiveOf({ observations: [obsOf("t1", { telemetry: [row(10)] })] });
+
+    for (const bad of ["true", "YES", "Yes", "", "1", "no ", true, 0, null]) {
+      const out = assemble(mismatched, withGoverns(bad)).result;
+      const c = check(out, "amendment 2026-08-14");
+      expect(c.fired, `${JSON.stringify(bad)} must not fire`).toBe(false);
+      expect(c.detail, `${JSON.stringify(bad)} must read UNKNOWN`).toMatch(/regime is UNKNOWN/);
+      expect(c.detail, `${JSON.stringify(bad)} must not claim non-governance`).not.toMatch(/does not govern/);
+      // And it may not be published FINAL over a rule nobody established.
+      expect(out.uncheckedClauses.some((x) => /repairRoundsAmendment\.governs/.test(x))).toBe(true);
+      expect(out.final).toBe(false);
+    }
+
+    // THE TWO CONTROLS, so the loop above cannot be passing because everything
+    // reads UNKNOWN. Only the exact strings audit.ts writes are interpreted.
+    const yes = assemble(mismatched, withGoverns("yes")).result;
+    expect(check(yes, "amendment 2026-08-14").fired).toBe(true);
+    expect(yes.uncheckedClauses).toHaveLength(0);
+    const no = assemble(mismatched, withGoverns("no")).result;
+    expect(check(no, "amendment 2026-08-14").detail).toMatch(/does not govern this run/);
+    expect(no.uncheckedClauses).toHaveLength(0);
+  });
+
+  it("regimeOf: the three readings, and that absent and invalid are the same one", () => {
+    expect(regimeOf({ k: "yes" }, "k")).toBe("governs");
+    expect(regimeOf({ k: "no" }, "k")).toBe("does-not-govern");
+    expect(regimeOf({}, "k")).toBe("unknown");
+    expect(regimeOf(null, "k")).toBe("unknown");
+    for (const bad of ["true", "YES", "", "1", " no"]) {
+      expect(regimeOf({ k: bad }, "k"), bad).toBe("unknown");
+    }
+  });
+
+  it("repairRoundsMismatches: the comparison itself, away from the scoping", () => {
+    // The clause's arithmetic, which the test above cannot reach through the
+    // fixture. Both directions are violations: a SMALLER max_rounds is a
+    // different condition, not a safer one.
+    const r = (detail: Record<string, unknown> | undefined) => ({ tool: "repair", detail });
+    expect(repairRoundsMismatches(3, [r({ max_rounds: 3 })])).toHaveLength(0);
+    expect(repairRoundsMismatches(3, [r({ max_rounds: 10 })])[0]).toMatch(/max_rounds 10 against a frozen repairMaxRounds of 3/);
+    expect(repairRoundsMismatches(3, [r({ max_rounds: 1 })])).toHaveLength(1);
+    // Fail-closed on an absent FIELD; silent on an absent ROW.
+    expect(repairRoundsMismatches(3, [r({})])[0]).toMatch(/carries no numeric detail\.max_rounds/);
+    expect(repairRoundsMismatches(3, [r(undefined)])).toHaveLength(1);
+    expect(repairRoundsMismatches(3, [])).toHaveLength(0);
+    expect(repairRoundsMismatches(3, [{ tool: "gate", detail: { max_rounds: 99 } }])).toHaveLength(0);
+    // A declared value that is not a number leaves nothing to compare against,
+    // and silence would be the worst answer available.
+    expect(repairRoundsMismatches(null, [r({ max_rounds: 3 })])[0]).toMatch(/nothing to compare against/);
+    expect(repairRoundsMismatches(null, [])).toHaveLength(0);
+  });
+
+  it("the driver and the scorer do NOT contain each other — both directions, shown", async () => {
+    // THE CONTROL W1 OWED AND DID NOT WRITE. The driver's comment used to claim
+    // "Driver ⊇ scorer, always, so the disagreement is one-directional". That
+    // was refuted in prose the same day it was written, and the prose has been
+    // right ever since — but a corrected sentence is not a control, and nothing
+    // in the suite would notice if the two scopes silently became nested again.
+    //
+    // The two axes are independent:
+    //   - the DRIVER (`repairRoundsReasons`) reads every parseable row in the
+    //     observation's own worktree log, with no session or invocation scoping;
+    //   - the SCORER runs `repairRoundsMismatches` over `scopeTelemetry`, which
+    //     admits a row on a KNOWN local invocation id OR a ±60 s window around
+    //     the transcript, over the run-wide union of treatment rows.
+    //
+    // So each set holds rows the other does not, and this proves both.
+    const { repairRoundsReasons } = await import("../scripts/b12-run.mjs");
+
+    const t0 = Date.parse("2026-08-14T12:00:00.000Z");
+    const iso = (ms: number): string => new Date(ms).toISOString();
+    // A one-request transcript, so the window is [t0 - 60s, t0 + 60s].
+    const transcript = transcriptFromRecords([
+      {
+        type: "assistant",
+        timestamp: iso(t0),
+        message: { model: "claude-opus-4", usage: { input_tokens: 10, output_tokens: 1 } },
+      },
+    ] as unknown as RawRecord[], { files: ["sess.jsonl"], skippedLines: 0 });
+    expect(transcript.requests).toHaveLength(1);
+
+    const repairRow = (id: string | undefined, ts: number): TelemetryRecord =>
+      ({ tool: "repair", ts: iso(ts), invocation_id: id, detail: { max_rounds: 99 } }) as unknown as TelemetryRecord;
+    // The driver takes plain records and the scorer takes `TelemetryRecord`.
+    // Same bytes, two type surfaces — which is part of why these two scopes
+    // could drift apart without anything noticing.
+    const asPlain = (r: TelemetryRecord): Record<string, unknown> => r as unknown as Record<string, unknown>;
+
+    // ---- DIRECTION 1: driver-only ----------------------------------------
+    // A foreign row written INTO this private worktree: no known invocation and
+    // a timestamp far outside the window. The driver sees it; the scorer's
+    // scope drops it, so the run-level clause stays silent.
+    const foreign = repairRow("an-id-this-transcript-never-saw", t0 + 3_600_000);
+    expect(repairRoundsReasons(3, [asPlain(foreign)], "t1").length).toBeGreaterThan(0);
+    expect(scopeTelemetry(transcript, [foreign])).toEqual([]);
+    expect(repairRoundsMismatches(3, scopeTelemetry(transcript, [foreign]))).toHaveLength(0);
+
+    // ---- DIRECTION 2: scorer-only, THE ONE THE OLD CLAIM DENIED -----------
+    // A row archived by ANOTHER treatment observation, so it is in the run-wide
+    // union the scorer reads but NOT in this worktree's log. Its timestamp
+    // lands inside this transcript's ±60 s window, so `scopeTelemetry` admits
+    // it and the clause FIRES — while the driver, reading only this worktree,
+    // says nothing. This is the direction the superset claim said was
+    // impossible: the driver CAN be silent where the clause fires.
+    const otherObservations = repairRow(undefined, t0 + 30_000);
+    expect(repairRoundsReasons(3, [], "t1")).toEqual([]); // this worktree's log is clean
+    expect(scopeTelemetry(transcript, [otherObservations])).toHaveLength(1);
+    expect(repairRoundsMismatches(3, scopeTelemetry(transcript, [otherObservations])).length).toBeGreaterThan(0);
+
+    // AND NEITHER SET IS A SUPERSET, stated as the single assertion the old
+    // sentence would have failed.
+    const driverOnly = repairRoundsReasons(3, [asPlain(foreign)], "t1").length > 0 &&
+      repairRoundsMismatches(3, scopeTelemetry(transcript, [foreign])).length === 0;
+    const scorerOnly = repairRoundsReasons(3, [], "t1").length === 0 &&
+      repairRoundsMismatches(3, scopeTelemetry(transcript, [otherObservations])).length > 0;
+    expect({ driverOnly, scorerOnly }).toEqual({ driverOnly: true, scorerOnly: true });
+  });
+
   it("void(pacing) on a gap longer than the shortest TTL in play, and clause 20 reports it", () => {
     const sessionId = "sess-t1-1";
     const records = [
@@ -543,9 +770,48 @@ describe("selection — the committed order, and the metamorphic pair", () => {
   });
 });
 
+/**
+ * VOIDCONDITIONS 2 — the optional-stopping guard, still unimplemented.
+ *
+ * A predicate WAS written for it on 2026-08-13 and was refuted before shipping:
+ * `admitted >= 20 || notStarted === 0`. `runPlan` phase 5 budgets 20-26
+ * supervised sessions over a manifest of 30, so 26 observations with 19 admitted
+ * and 4 tasks never reached is a LAWFUL run whose set cannot grow — and that
+ * predicate voids it, at `emit`, after every session is paid for. It also
+ * under-fires: `notStarted` counts tasks with no archived attempt, which is not
+ * the question of whether a lawful future event can still change the admitted
+ * set. `buildArchiveChecks` carries the full account.
+ *
+ * These two tests pin the honest state. If a real predicate is ever written,
+ * the first one fails, and its neighbours are where to read what the last
+ * attempt got wrong.
+ */
+describe("voidConditions 2 — unimplemented, and no longer claimed", () => {
+  const archive = (): Parameters<typeof assemble>[0] =>
+    archiveOf({ tasks: [taskOf("t1"), taskOf("t2"), taskOf("t3")], observations: [obsOf("t1")] });
+
+  it("no archive check carries clause 2's number", () => {
+    // The whole content of the 2026-08-13 change. Clause 2's number used to sit
+    // on `committedOrderReplay` — clause 3's predicate — so an unimplemented
+    // clause read as implemented on the artifact's face.
+    const claimed = assemble(archive()).result.archiveChecks.filter((c) => c.clause.startsWith("voidConditions 2 "));
+    expect(claimed.map((c) => c.clause)).toEqual([]);
+  });
+
+  it("the interim bracket IS still derivable — the half of clause 2 nothing closes", () => {
+    // NOT AN ENDORSEMENT. This asserts the hole so that closing it is a visible
+    // change rather than a silent one. `aggregate` runs before any archive
+    // check, so a run stopped at one observation of three still publishes rLo
+    // and rHi — the optional-stopping peek the clause forbids.
+    const result = assemble(archive()).result;
+    expect(typeof result.rLo).toBe("number");
+    expect(typeof result.rHi).toBe("number");
+  });
+});
+
 describe("committedOrderReplay — voidConditions 3's order half, retrospective", () => {
   const tasks = [taskOf("t1"), taskOf("t2"), taskOf("t3")];
-  // The session must be the attempt's own — the binding half of clause 2's
+  // The session must be the attempt's own — the binding half of clause 3's
   // replay refuses a row it cannot show to be an attempt's row.
   const row = (taskId: string, i: number, attempt = 1): RunlogRow => ({
     ts: at(i * 1_000),
@@ -562,7 +828,10 @@ describe("committedOrderReplay — voidConditions 3's order half, retrospective"
   it("fires when a task first ran before its predecessor", () => {
     const archive = archiveOf({ tasks, observations: [obsOf("t2")], runlogRows: [row("t2", 0)] });
     expect(committedOrderReplay(archive)).toMatch(/before its predecessor t1/);
-    expect(check(assemble(archive).result, "voidConditions 2").fired).toBe(true);
+    // CLAUSE 3, not clause 2. This predicate was pushed under clause 2's number
+    // while nothing implemented clause 2 — this describe block's own title said
+    // "voidConditions 3's order half" the whole time.
+    expect(check(assemble(archive).result, "voidConditions 3").fired).toBe(true);
   });
 
   it("a late RE-RUN is not an order event (admissionRule 12 has no temporal clause)", () => {
@@ -950,7 +1219,14 @@ describe("the clause 4–6 audit — an input, never a silent pass", () => {
       reasons: ["src/cost/report.ts changed after the first scored observation"],
       inputs: { head: "abc" },
     });
-    expect(out.result.uncheckedClauses).toHaveLength(0);
+    // Clauses 4–6 are CHECKED — that is what a committed audit buys, and it is
+    // what this test is about. The list is no longer empty, and that is not a
+    // regression: this fixture's audit predates the 2026-08-14 amendment's keys,
+    // so which regime governs repair's frozen max_rounds is genuinely unknown
+    // here. Asserted by CONTENT rather than by length, so the next clause to go
+    // unchecked cannot slip in under a number.
+    expect(out.result.uncheckedClauses.filter((c) => /voidConditions [456]/.test(c))).toHaveLength(0);
+    expect(out.result.uncheckedClauses).toEqual([expect.stringMatching(/repairRoundsAmendment\.governs/)]);
     const audit = check(out.result, "voidConditions 4–6");
     expect(audit.fired).toBe(true);
     expect(audit.detail).toMatch(/report\.ts changed/);

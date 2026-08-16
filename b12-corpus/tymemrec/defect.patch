@@ -1,0 +1,13 @@
+diff --git a/src/memory.ts b/src/memory.ts
+index a25cb3a..d3e9d64 100644
+--- a/src/memory.ts
++++ b/src/memory.ts
+@@ -48,7 +48,7 @@ export interface MemoryInfo {
+ export async function getMemoryInfo(
+   run: CommandRunner = defaultRunner,
+   platform: NodeJS.Platform = process.platform
+-): Promise<MemoryInfo | null> {
++): Promise<MemoryInfo> {
+   if (platform !== "darwin") {
+     return { totalBytes: os.totalmem(), freeBytes: os.freemem(), source: "os" };
+   }

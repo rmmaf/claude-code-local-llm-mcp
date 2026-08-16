@@ -12,13 +12,31 @@
  * entrypoint (`dist/cost/b12/audit.js`) AND this source counterpart — because
  * `dist/**` is the registered F24 hole.
  *
- * THE OPERATOR LOOP (each commit is the SESSION's act, never this file's):
- *   1. `emit` with no audit — both artifacts written, clauses 4–6 UNCHECKED;
- *   2. commit; 3. `audit <runId> --attest-suite` — writes ONLY the suite
- *   attestation and exits; 4. commit; 5. `audit <runId>` — reads COMMITTED
- *   state, writes `evidence/<runId>.b12.audit.json`; 6. commit;
- *   7. `emit <runId> --audit evidence/<runId>.b12.audit.json` — the final
- *   artifacts carry `gitAudit.ran === true`; 8. commit.
+ * THE OPERATOR LOOP — SIX STEPS AND **ONE** SCORING INVOCATION (each commit is
+ * the SESSION's act, never this file's):
+ *   1. `audit <runId> --attest-suite` — writes ONLY the suite attestation and
+ *   exits; 2. commit; 3. `audit <runId>` — reads COMMITTED state, writes
+ *   `evidence/<runId>.b12.audit.json`; 4. commit;
+ *   5. `emit <runId> --audit evidence/<runId>.b12.audit.json` — the final
+ *   artifacts, carrying `gitAudit.ran === true`; 6. commit.
+ *
+ * IT USED TO OPEN WITH A BARE `emit`, AND THAT WAS THE CONTRADICTION (R50).
+ * The frozen `runPlan` PHASE 6 says "**One** scoring invocation over the
+ * ARCHIVE … using the committed command string", and this comment prescribed
+ * two. `b12-corpus/manifest-config.json` recorded that the two texts could not
+ * both be obeyed and left the choice open. The frozen text governs; the
+ * harness is what changed.
+ *
+ * The first emit existed only because the clause-5 anchor was read out of a
+ * COMMITTED counterfactual, which only `emit` writes — a cycle. The anchor is
+ * now derived from the committed ARCHIVE, so the audit needs no prior
+ * emission, and the pinned `--audit` command is the only invocation there is.
+ * TWO HAZARDS DIED WITH IT: the pinned string can carry only one spelling, so
+ * the old first emit necessarily fired `voidConditions` 19 and COMMITTED a
+ * `verdict:"void"` for a run that was not void; and `emit` used to publish a
+ * NOT-FINAL result whenever the audit binding refused, which `open-b`
+ * accepted. `emit` now REFUSES and writes nothing, so every committed
+ * `result.json` is FINAL by construction.
  *
  * FAIL-CLOSED, IN TWO DIFFERENT WAYS. Git NOT ANSWERING — no repository, no
  * binary — is a REFUSAL: exit 2, no artifact, because an audit that could not
@@ -32,10 +50,12 @@
  */
 import { spawnSync } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { runEvidenceDigest, sha256 } from "./archive.js";
+import { readRunArchive, runEvidenceDigest, sha256 } from "./archive.js";
+import { assembleRun } from "./assemble.js";
 import type { GitAudit } from "./types.js";
 
 /** The commit the pre-registration froze at; its blob may never drift. */
@@ -187,6 +207,47 @@ export const CONFORMANCE_FILES = ["tests/cost-meter.test.ts", "tests/session-tok
 export const AMENDMENT_CONFORMANCE_PATHS = "evidence/2026-08-10-b12-amendment-conformance-paths.json";
 
 /**
+ * THE PRE-DATA AMENDMENT that makes repair's frozen `max_rounds` violable.
+ *
+ * `design.artifacts` 1 requires the manifest to CARRY the value. No frozen
+ * clause required an observation to RUN under it, and clause 4 does not reach
+ * the case: 4 fires when a frozen item CHANGES, and a session calling `repair`
+ * at another value changes nothing — the manifest still declares what it
+ * declared. A frozen item nothing can violate is not frozen.
+ *
+ * Read exactly like the conformance-paths amendment beside it: PROSPECTIVE,
+ * governing a run only when its own INTRODUCING commit is an ancestor of that
+ * run's freeze-anchor commit. Nothing here edits the frozen pre-registration.
+ *
+ * It is RUN-LEVEL by the frozen text's own reasoning, not by preference:
+ * clause 9 settled the trade and stated the ground — "run-level, so triggering
+ * it costs the run rather than buying an exclusion". `repair` is treatment-only,
+ * so a per-observation exclusion would drop treatment attempts alone and hand
+ * the vacated admission slot to the next task in committed order, a selection
+ * channel whose SIGN cannot be established before the run. This computes only
+ * WHETHER the amendment governs; `assemble.ts` owns the clause itself.
+ */
+export const AMENDMENT_REPAIR_MAX_ROUNDS = "evidence/2026-08-14-b12-amendment-repair-max-rounds.json";
+
+/**
+ * THE PRE-DATA AMENDMENT that gives a run a declared toolchain identity.
+ *
+ * IT ADDS NO VOID CONDITION, and that is not a detail — it is what the owner
+ * chose on 2026-08-14 over R43#3's proposal to void on mismatch. There are three
+ * attempts and a VOID ordinarily consumes one, so exact version equality would
+ * let a node patch bump spend one. The enforcement is a PRE-RUN BARRIER in the
+ * harness, at the same seam as the manifest's `claudeCodeVersion` pin, which
+ * REFUSES an arm rather than voiding a run.
+ *
+ * WHAT THIS FILE DOES WITH IT IS THEREFORE REPORTING ONLY. The audit runs after
+ * the data exists, where refusing is no longer available and voiding is the very
+ * thing the amendment declines to do. It records the declared identity, what each
+ * surface observed, whether they agree, and whether the amendment governed — so a
+ * disagreement is CONSPICUOUS and still decides nothing.
+ */
+export const AMENDMENT_RUN_TOOLCHAIN = "evidence/2026-08-14-b12-amendment-run-toolchain.json";
+
+/**
  * The only spellings a run id may take when it becomes a FILENAME — the same
  * grammar `b12-register.mjs` applies at its own point of use, written here
  * because this file interpolates the id into paths it then WRITES.
@@ -243,6 +304,10 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause5.amendment.sha256",
   "clause5.amendment.addedPaths",
   "clause5.amendment.governs",
+  "clause5.repairRoundsAmendment.path",
+  "clause5.repairRoundsAmendment.commit",
+  "clause5.repairRoundsAmendment.sha256",
+  "clause5.repairRoundsAmendment.governs",
   "clause5.anchor.taskId",
   "clause5.anchor.arm",
   "clause5.anchor.attempt",
@@ -270,6 +335,24 @@ export const AUDIT_INPUT_KEYS: readonly string[] = [
   "clause6.conformanceHashes",
   "clause6.lockfileClaimed",
   "clause6.lockfileAtSubject",
+  "clause6.firingPath",
+  "clause6.firingSha256",
+  "clause6.firingBaseCommit",
+  "clause6.firingPairs",
+  "clause6.firingSubjects",
+  "clause6.firingToolchain",
+  // The run-toolchain amendment. REPORTED, DECIDING NOTHING — see
+  // AMENDMENT_RUN_TOOLCHAIN. `governs` is a three-way reading, not a boolean:
+  // an unaskable ancestry refuses before it reaches here, but a run with no
+  // declared identity must not be spelled the same way as one that agrees.
+  "clause6.toolchainAmendment.path",
+  "clause6.toolchainAmendment.commit",
+  "clause6.toolchainAmendment.sha256",
+  "clause6.toolchainAmendment.governs",
+  "clause6.runToolchain.declared",
+  "clause6.runToolchain.firing",
+  "clause6.runToolchain.suite",
+  "clause6.runToolchain.agreement",
   "tool.srcSha256",
 ];
 
@@ -377,6 +460,17 @@ export interface AuditFacts {
       addedPaths: readonly string[];
       governs: boolean;
     };
+    /**
+     * The repair-max-rounds amendment's identity and whether it governs. No
+     * `addedPaths`: it widens no path set. `assemble.ts` reads `governs` and
+     * owns the clause; nothing here fires on it.
+     */
+    repairRoundsAmendment: {
+      path: string;
+      commit: string | null;
+      sha256: string | null;
+      governs: boolean;
+    };
     /** Every commit touching a pinned path: `{sha, committerDate}`. */
     commitsTouchingPinned: Array<{ sha: string; committerDate: string }>;
     /** The union of the two probes (ancestry + committer date), minus nothing. */
@@ -437,9 +531,84 @@ export interface AuditFacts {
      * attestation could name any tree it liked and still satisfy clause 6.
      */
     lockfileAtSubject: string | null;
+    /**
+     * The run-toolchain amendment's identity and whether it governs THIS run,
+     * decided by the same prospective ancestry test as the other two.
+     */
+    toolchainAmendment: { path: string; commit: string | null; sha256: string | null; governs: boolean };
+    /**
+     * REPORTED, DECIDING NOTHING: the run's DECLARED toolchain identity and what
+     * each evidentiary surface actually ran on.
+     *
+     * The declared identity is the reference, never a relation between the two
+     * proofs: comparing the firing artifact against the attestation would make
+     * those two agree with each other and bind NEITHER to the scored sessions,
+     * so two artifacts from one wrong machine would agree perfectly.
+     */
+    runToolchain: {
+      declared: ToolchainReading;
+      firing: ToolchainReading;
+      suite: ToolchainReading;
+      firingAgreement: ToolchainAgreement;
+      suiteAgreement: ToolchainAgreement;
+    };
+    /**
+     * `evidence/<runId>.b12.firing.json` at HEAD — the mutation harness's
+     * matrix. Null when absent or unparseable.
+     *
+     * THIS IS NOT A SEVENTH CONDITION. The frozen clause says the six controls
+     * must be shown **FIRING**; everything above this line checks that they are
+     * **PASSING**, which is strictly weaker, because a gutted control that keeps
+     * its title and asserts nothing passes. Reading firing evidence implements
+     * the word the clause already uses. Widening past it would owe a pre-data
+     * amendment; closing the gap between the code and the sentence the code
+     * claims to implement is a correction, and corrections owe none.
+     *
+     * That the evidence must be MACHINE-produced does narrow how "shown" may be
+     * satisfied — a hand demonstration in `FINDINGS.md` is also a showing. That
+     * narrowing is declared pre-data in `PREMISES.md`, ordered by `git log -p`,
+     * exactly as the two owner decisions of 2026-08-11 were.
+     */
+    firing: FiringEvidence | null;
+    firingSha256: string | null;
+    /**
+     * Each firing subject's blob sha256 RECOMPUTED at the evidence's own
+     * `baseCommit`, beside the digest the artifact claims. R29's lesson applied
+     * to a second producer: the attestation recorded a lockfile hash nobody ever
+     * checked, so a copied artifact could name any tree it liked. These are the
+     * same question asked of the harness.
+     */
+    firingSubjectsAtBase: Array<{ path: string; claimed: string | null; recomputed: string | null }>;
   };
   /** Content sha of this tool's own SOURCE at HEAD; null when absent. */
   toolSrcSha256: string | null;
+}
+
+/**
+ * `evidence/<runId>.b12.firing.json` — what `scripts/b12-mutate.mjs` writes.
+ *
+ * Only the fields clause 6 reads are typed here. The artifact carries more (the
+ * off-diagonal matrix, the bookends, the run budget) and a reader is meant to
+ * have it; the audit deliberately reads the narrow set it can decide on.
+ */
+export interface FiringEvidence {
+  schema: "b12-firing/1";
+  baseCommit: string;
+  controlsEvaluated: Array<{ file: string; fullName: string }>;
+  baseline: { allGreen: boolean; problems: string[] };
+  pairs: Array<{ id: string; control: { file: string; fullName: string }; fired: boolean; detail: string }>;
+  subjects: Array<{ id: string; path: string; sha256AtBase: string | null }>;
+  problems: string[];
+  allFired: boolean;
+  /**
+   * REPORTED, DECIDING NOTHING: the toolchain the matrix ran on. A control can
+   * fire on one platform and not another, and evidence produced on a different
+   * machine than the scored sessions would hide that. Turning a difference into
+   * a void would mint a condition, and WHICH platform the run is entitled to is
+   * the separate pre-data platform amendment that is still owed. Optional,
+   * because an artifact written before this field existed is not thereby void.
+   */
+  toolchain?: { platform?: string; arch?: string; nodeVersion?: string; vitest?: string | null };
 }
 
 /** `evidence/<runId>.b12.suite.json` — what `--attest-suite` writes. */
@@ -460,6 +629,135 @@ export interface SuiteAttestation {
   lockfileSha256: string;
   files: Array<{ file: string; total: number; passed: number; failed: number; skipped: number }>;
   tests: Array<{ file: string; fullName: string; status: string }>;
+  /**
+   * The runtime the suite ran on, under the run-toolchain amendment. Optional
+   * for the same reason the firing artifact's is: an attestation written before
+   * this field existed is not thereby void.
+   */
+  toolchain?: { platform?: string; arch?: string; nodeVersion?: string; vitest?: string | null };
+}
+
+// ---------------------------------------------------------------------------
+// The run toolchain identity (pre-data amendment, 2026-08-14).
+// ---------------------------------------------------------------------------
+
+/**
+ * A run's toolchain identity, NORMALISED. Compared for equality, never ordered.
+ *
+ * PATCH VERSIONS ARE ABSENT BY DESIGN, and this is the amendment's own reasoning
+ * rather than a shortcut: including them would let a node patch bump — which is
+ * irrelevant to whether a negative control fires — block a run at the barrier,
+ * reintroducing exactly the irrelevant-difference problem that made VOIDING on
+ * mismatch unattractive in the first place.
+ */
+export interface RunToolchain {
+  platform: string;
+  arch: string;
+  /** MAJOR.MINOR of the node that ran it. */
+  node: string;
+  /** MAJOR.MINOR of vitest. */
+  vitest: string;
+}
+
+/**
+ * A toolchain that could be read, or the reason it could not.
+ *
+ * THERE IS NO THIRD STATE THAT SILENTLY PASSES. An absent or malformed identity
+ * is `known: false`, and the amendment says such a reading is never a match —
+ * the same fail-closed shape as the regime-key reader in `assemble.ts`, and for
+ * the same reason: "cannot tell" must not be spelled the same way as "agrees".
+ */
+export type ToolchainReading =
+  | { readonly known: true; readonly id: RunToolchain }
+  | { readonly known: false; readonly why: string };
+
+/** Local, because this file has no shared object guard and importing one for
+ *  four call sites would couple the audit to a module it does not otherwise use. */
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+const majorMinor = (raw: unknown): string | null => {
+  if (typeof raw !== "string") return null;
+  const m = /(\d+)\.(\d+)/.exec(raw);
+  return m === null ? null : `${m[1]}.${m[2]}`;
+};
+
+/**
+ * Read a toolchain identity out of whatever shape carries it.
+ *
+ * Accepts the producers' shape (`nodeVersion`, and `vitest` as the DISPLAY
+ * STRING `"vitest/4.1.10 win32-x64 node-v24.16.0"`) and the manifest's declared
+ * shape (`node`, `vitest` as a bare version). The display string is why vitest
+ * is not simply regexed for the first number it contains: that string embeds
+ * the node version AND the platform a second time, so a naive read would make
+ * one field silently disagree with itself.
+ */
+export function normaliseToolchain(raw: unknown): ToolchainReading {
+  if (!isPlainObject(raw)) return { known: false, why: "no toolchain object" };
+  const platform = typeof raw.platform === "string" && raw.platform !== "" ? raw.platform : null;
+  const arch = typeof raw.arch === "string" && raw.arch !== "" ? raw.arch : null;
+  const node = majorMinor(raw.nodeVersion) ?? majorMinor(raw.node);
+  const vitestRaw = raw.vitest;
+  let vitest: string | null = null;
+  if (typeof vitestRaw === "string") {
+    // NO UNANCHORED FALLBACK ACROSS THE WHOLE STRING, and this is a fix rather
+    // than a preference: the display string EMBEDS the node version, so
+    // "vitest/not-a-version win32-x64 node-v24.16.0" used to fail the tagged
+    // match, scan the whole field, find 24.16 in `node-v24.16.0` and report a
+    // malformed vitest as version 24.16 — the exact self-disagreement the
+    // comment above claims to prevent. A field carrying `vitest/` must parse
+    // THROUGH the tag or it is unknown; a bare version must look like one.
+    const tagged = /vitest\/(\d+)\.(\d+)/.exec(vitestRaw);
+    if (tagged !== null) vitest = `${tagged[1]}.${tagged[2]}`;
+    else if (/vitest\//.test(vitestRaw)) vitest = null;
+    else vitest = /^\s*v?\d+\.\d+/.test(vitestRaw) ? majorMinor(vitestRaw) : null;
+  }
+  const missing: string[] = [];
+  if (platform === null) missing.push("platform");
+  if (arch === null) missing.push("arch");
+  if (node === null) missing.push("node");
+  if (vitest === null) missing.push("vitest");
+  if (missing.length > 0) return { known: false, why: `missing or unreadable: ${missing.join(", ")}` };
+  return { known: true, id: { platform: platform!, arch: arch!, node: node!, vitest: vitest! } };
+}
+
+export type ToolchainAgreement =
+  | { readonly verdict: "match" }
+  | { readonly verdict: "mismatch"; readonly differences: readonly string[] }
+  | { readonly verdict: "unknown"; readonly why: string };
+
+/**
+ * Compare an observed identity against the run's DECLARED one.
+ *
+ * The declared identity is the reference on purpose. Comparing the firing
+ * artifact against the suite attestation instead would make those two agree
+ * with each other and bind NEITHER to the sessions that were scored — two
+ * artifacts from one wrong machine would agree perfectly.
+ */
+export function toolchainAgreement(declared: ToolchainReading, observed: ToolchainReading): ToolchainAgreement {
+  if (!declared.known) return { verdict: "unknown", why: `declared identity ${declared.why}` };
+  if (!observed.known) return { verdict: "unknown", why: `observed identity ${observed.why}` };
+  const differences: string[] = [];
+  for (const k of ["platform", "arch", "node", "vitest"] as const) {
+    if (declared.id[k] !== observed.id[k]) differences.push(`${k}: declared ${declared.id[k]}, observed ${observed.id[k]}`);
+  }
+  return differences.length === 0 ? { verdict: "match" } : { verdict: "mismatch", differences };
+}
+
+/** The stable one-line spelling used on the audit's face. */
+export function toolchainLabel(r: ToolchainReading): string {
+  return r.known ? `${r.id.platform}-${r.id.arch} node-${r.id.node} vitest-${r.id.vitest}` : `(unknown: ${r.why})`;
+}
+
+/**
+ * The agreement, spelled so the THREE readings stay three. "unknown" carries its
+ * reason because a reader who cannot tell whether a run was checked will assume
+ * it was, and that assumption is the one this amendment exists to prevent.
+ */
+export function agreementLabel(a: ToolchainAgreement): string {
+  if (a.verdict === "match") return "match";
+  if (a.verdict === "unknown") return `unknown (${a.why})`;
+  return `MISMATCH [${a.differences.join("; ")}]`;
 }
 
 // ---------------------------------------------------------------------------
@@ -709,6 +1007,101 @@ export function decideAudit(facts: AuditFacts): { verdict: "clean" | "void"; rea
     }
   }
 
+  // ---- clause 6, the word FIRING ------------------------------------------
+  // Everything above checks the six controls are PASSING. Passing is strictly
+  // weaker: a control gutted to `expect(true).toBe(true)` keeps its title and
+  // passes. The frozen text says SHOWN FIRING, so the gap being closed here is
+  // between the code and the sentence the code already claims to implement —
+  // a correction, not a seventh condition. Every reason below is reported as a
+  // failure of that existing phrase, and `voidConditions` gains no entry.
+  const fire = facts.clause6.firing;
+  if (fire === null) {
+    reasons.push(
+      `clause 6: no committed firing evidence (evidence/${facts.runId}.b12.firing.json) — the six controls can be shown PASSING but not FIRING, and a gutted control passes`
+    );
+  } else if (!isFiringEvidence(fire)) {
+    // The collector validates what it reads, but this is a PURE function and
+    // can be handed anything. R41#2's control proved the point: injecting a
+    // malformed artifact straight into the facts threw a TypeError here, and an
+    // audit that throws on hostile input is one hostile input can silence.
+    reasons.push(
+      "clause 6: the firing evidence is malformed — bytes that cannot be read as evidence are not evidence, and a shape this cannot parse decides VOID rather than throwing"
+    );
+  } else {
+    if (att !== null && fire.baseCommit !== att.subjectCommit) {
+      reasons.push(
+        `clause 6: the firing evidence names base ${fire.baseCommit.slice(0, 12)} and the attestation names subject ${att.subjectCommit.slice(0, 12)} — the controls were shown firing on a tree that is not the one attested`
+      );
+    }
+    // Coverage is compared against CONTROL_TESTS here rather than inside the
+    // harness, because `allFired` quantifies over whatever control list the
+    // harness was handed (R39#1). This is where the clause's own list lives.
+    const key = (c: { file: string; fullName: string }): string => JSON.stringify([c.file, c.fullName]);
+    const evaluated = new Set(fire.controlsEvaluated.map(key));
+    for (const control of CONTROL_TESTS) {
+      if (!evaluated.has(key(control))) {
+        reasons.push(`clause 6: the firing evidence never evaluated a required control: ${control.fullName}`);
+      }
+    }
+    for (const c of fire.controlsEvaluated) {
+      if (!CONTROL_TESTS.some((k) => key(k) === key(c))) {
+        reasons.push(`clause 6: the firing evidence evaluated a control the clause does not list: ${c.fullName}`);
+      }
+    }
+    // R41#1: EXACTLY one pair per listed control, one-to-one. Without this the
+    // artifact could list all six in `controlsEvaluated` and carry `pairs: []`
+    // — every loop below stays quiet, `allFired: true` survives, and a matrix
+    // that ran nothing reads CLEAN. Same species as the empty-`subjects` hole.
+    for (const control of CONTROL_TESTS) {
+      const owning = fire.pairs.filter((p) => key(p.control) === key(control));
+      if (owning.length === 0) {
+        reasons.push(`clause 6: no pair reports on a required control: ${control.fullName}`);
+      } else if (owning.length > 1) {
+        reasons.push(`clause 6: ${owning.length} pairs report on ${control.fullName} — a control cannot be judged twice`);
+      }
+    }
+    if (new Set(fire.pairs.map((p) => p.id)).size !== fire.pairs.length) {
+      reasons.push("clause 6: the firing evidence repeats a pair id — two pairs cannot be the same act");
+    }
+    if (!fire.baseline.allGreen) {
+      reasons.push(
+        `clause 6: the firing evidence's unmutated baseline was not green (${fire.baseline.problems.slice(0, 2).join("; ")}) — a control already red proves nothing by going red`
+      );
+    }
+    for (const pair of fire.pairs) {
+      if (pair.fired !== true) {
+        reasons.push(`clause 6: control NOT shown firing under ${pair.id}: ${pair.detail}`);
+      }
+    }
+    for (const p of fire.problems) reasons.push(`clause 6: the firing evidence reports a problem: ${p}`);
+    if (fire.allFired !== true && fire.pairs.every((p) => p.fired)) {
+      // Belt and braces: the summary disagreeing with the pairs is itself a
+      // reason, because an artifact that contradicts itself decides nothing.
+      reasons.push("clause 6: the firing evidence says allFired is false while every pair reads fired — it contradicts itself");
+    }
+    // R29's question, asked of the second producer: a copied artifact could
+    // name any tree it liked unless the digests it claims are recomputed. And
+    // the digests must be REQUIRED, not merely checked when present: an
+    // artifact that simply omits `subjects` would otherwise skip this whole
+    // section and bind to nothing at all.
+    for (const pair of fire.pairs) {
+      if (!fire.subjects.some((s) => s.id === pair.id)) {
+        reasons.push(
+          `clause 6: the firing evidence names no subject bytes for ${pair.id} — a matrix that binds to no bytes cannot say WHICH tree the controls fired on`
+        );
+      }
+    }
+    for (const s of facts.clause6.firingSubjectsAtBase) {
+      if (s.recomputed === null) {
+        reasons.push(`clause 6: the firing evidence's base commit carries no readable ${s.path} — the bytes it names cannot be checked`);
+      } else if (s.claimed !== s.recomputed) {
+        reasons.push(
+          `clause 6: the firing evidence claims ${s.path} at ${String(s.claimed).slice(0, 12)} and its base commit carries ${s.recomputed.slice(0, 12)} — the matrix did not run against the bytes it names`
+        );
+      }
+    }
+  }
+
   return { verdict: reasons.length === 0 ? "clean" : "void", reasons };
 }
 
@@ -751,6 +1144,15 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     "clause5.amendment.sha256": orNone(facts.clause5.amendment.sha256),
     "clause5.amendment.addedPaths": joined(facts.clause5.amendment.addedPaths),
     "clause5.amendment.governs": facts.clause5.amendment.governs ? "yes" : "no",
+    // PUBLISHED, and the first attempt at this commit FAILED TO PUBLISH IT: the
+    // facts were computed and stored and never serialized, so `assemble.ts` read
+    // an absent key, chose UNKNOWN, and the rule could not fire on any real run.
+    // The test did not catch it because it supplies `inputs` by hand — it
+    // certified a path production cannot reach. Named 2026-08-14 by review.
+    "clause5.repairRoundsAmendment.path": facts.clause5.repairRoundsAmendment.path,
+    "clause5.repairRoundsAmendment.commit": orNone(facts.clause5.repairRoundsAmendment.commit),
+    "clause5.repairRoundsAmendment.sha256": orNone(facts.clause5.repairRoundsAmendment.sha256),
+    "clause5.repairRoundsAmendment.governs": facts.clause5.repairRoundsAmendment.governs ? "yes" : "no",
     "clause5.anchor.taskId": orNone(a?.taskId ?? null),
     "clause5.anchor.arm": orNone(a?.arm ?? null),
     "clause5.anchor.attempt": a === null ? "(none)" : String(a.attempt),
@@ -824,6 +1226,55 @@ export function auditInputs(facts: AuditFacts): Record<string, string> {
     ),
     "clause6.lockfileClaimed": orNone(typeof att?.lockfileSha256 === "string" ? att.lockfileSha256 : null),
     "clause6.lockfileAtSubject": orNone(facts.clause6.lockfileAtSubject),
+    "clause6.firingPath": `evidence/${facts.runId}.b12.firing.json`,
+    "clause6.firingSha256": orNone(facts.clause6.firingSha256),
+    "clause6.firingBaseCommit": orNone(facts.clause6.firing?.baseCommit ?? null),
+    // SORTED, both of them. R41#5: these were rendered in the artifact's own
+    // array order, so two artifacts asserting identical facts in different
+    // orders produced different canonical inputs — and the whole point of this
+    // serialization is that identical facts have ONE spelling.
+    "clause6.firingPairs": joined(
+      (facts.clause6.firing?.pairs ?? [])
+        .map((p) => `${p.id}=${p.fired ? "fired" : "NOT-FIRED"}`)
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    ),
+    // REPORTED, DECIDING NOTHING — see FiringEvidence.toolchain. It is on the
+    // artifact's face so a reader can ask which machine the controls fired on
+    // without asking a person, and it voids nothing.
+    "clause6.firingToolchain": orNone(
+      facts.clause6.firing?.toolchain === undefined
+        ? null
+        : [
+            facts.clause6.firing.toolchain.platform ?? "?",
+            facts.clause6.firing.toolchain.arch ?? "?",
+            facts.clause6.firing.toolchain.nodeVersion ?? "?",
+            facts.clause6.firing.toolchain.vitest ?? "?",
+          ].join(" ")
+    ),
+    // SERIALIZED HERE, and the comment above `clause5.repairRoundsAmendment` is
+    // why this line exists at all: that rule's facts were computed, stored and
+    // never written out, so every consumer read an absent key and the clause
+    // could not fire on any real run. The unit test missed it because it hands
+    // `inputs` in by hand — it certified a path production cannot reach. The
+    // producer path is exercised deliberately in tests/b12-audit.test.ts.
+    "clause6.toolchainAmendment.path": facts.clause6.toolchainAmendment.path,
+    "clause6.toolchainAmendment.commit": orNone(facts.clause6.toolchainAmendment.commit),
+    "clause6.toolchainAmendment.sha256": orNone(facts.clause6.toolchainAmendment.sha256),
+    "clause6.toolchainAmendment.governs": facts.clause6.toolchainAmendment.governs ? "yes" : "no",
+    "clause6.runToolchain.declared": toolchainLabel(facts.clause6.runToolchain.declared),
+    "clause6.runToolchain.firing": toolchainLabel(facts.clause6.runToolchain.firing),
+    "clause6.runToolchain.suite": toolchainLabel(facts.clause6.runToolchain.suite),
+    // One line carrying BOTH comparisons, because a reader who sees only that
+    // "something disagreed" cannot tell which surface to go and look at.
+    "clause6.runToolchain.agreement": [
+      `firing=${agreementLabel(facts.clause6.runToolchain.firingAgreement)}`,
+      `suite=${agreementLabel(facts.clause6.runToolchain.suiteAgreement)}`,
+    ].join("; "),
+    "clause6.firingSubjects": joined(
+      facts.clause6.firingSubjectsAtBase
+        .map((s) => `${s.path}=${String(s.claimed).slice(0, 12)}/${String(s.recomputed).slice(0, 12)}`)
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    ),
     "tool.srcSha256": orNone(facts.toolSrcSha256),
   };
 }
@@ -864,6 +1315,10 @@ export function buildAuditArtifact(facts: AuditFacts): {
 /** Git did not ANSWER — a refusal, never an artifact. */
 export class AuditRefused extends Error {}
 
+/** Distinguishes two anchor checkouts made by the SAME process at the SAME
+ * commit. Without it the pre-add delete can remove a live sibling checkout. */
+let anchorTreeSeq = 0;
+
 export interface CollectorOptions {
   /** Test seams only; the CLI always runs the frozen constants. The artifact
    * records what was used, so a divergence is on its face. */
@@ -874,6 +1329,9 @@ export interface CollectorOptions {
   emissionFencedFiles?: readonly string[];
   /** Test seam: where the conformance-path amendment lives. */
   amendmentPath?: string;
+  /** Test seam: where the repair-max-rounds amendment lives. */
+  repairRoundsAmendmentPath?: string;
+  runToolchainAmendmentPath?: string;
   /** Test seam: wrap or replace the git runner — how the oracle makes a
    * MANDATORY probe fail without corrupting a repository. */
   gitRunner?: Git;
@@ -893,9 +1351,102 @@ function gitIn(repoRoot: string): Git {
   };
 }
 
+/**
+ * Every nested field of a committed firing artifact, checked.
+ *
+ * R41#2. Shallow validation let malformed bytes through to the decider, where
+ * `fire.baseline.allGreen` on an absent `baseline` throws — and an audit that
+ * throws on hostile input is an audit that can be silenced by hostile input.
+ * Failing here yields `null`, which decides the same VOID as an absent
+ * artifact, because bytes that cannot be read as evidence are not evidence.
+ */
+export function isFiringEvidence(v: unknown): v is FiringEvidence {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.schema !== "b12-firing/1") return false;
+  if (typeof o.baseCommit !== "string" || o.baseCommit === "") return false;
+  if (typeof o.allFired !== "boolean") return false;
+  const strings = (x: unknown): boolean => Array.isArray(x) && x.every((s) => typeof s === "string");
+  if (!strings(o.problems)) return false;
+  const base = o.baseline as Record<string, unknown> | undefined;
+  if (typeof base !== "object" || base === null) return false;
+  if (typeof base.allGreen !== "boolean" || !strings(base.problems)) return false;
+  const ref = (x: unknown): boolean => {
+    if (typeof x !== "object" || x === null) return false;
+    const c = x as Record<string, unknown>;
+    return typeof c.file === "string" && c.file !== "" && typeof c.fullName === "string" && c.fullName !== "";
+  };
+  if (!Array.isArray(o.controlsEvaluated) || !o.controlsEvaluated.every(ref)) return false;
+  if (!Array.isArray(o.pairs)) return false;
+  for (const p of o.pairs) {
+    if (typeof p !== "object" || p === null) return false;
+    const pair = p as Record<string, unknown>;
+    if (typeof pair.id !== "string" || pair.id === "") return false;
+    if (typeof pair.fired !== "boolean" || typeof pair.detail !== "string") return false;
+    if (!ref(pair.control)) return false;
+  }
+  if (!Array.isArray(o.subjects)) return false;
+  for (const s of o.subjects) {
+    if (typeof s !== "object" || s === null) return false;
+    const sub = s as Record<string, unknown>;
+    if (typeof sub.id !== "string" || sub.id === "") return false;
+    if (typeof sub.path !== "string" || sub.path === "") return false;
+    if (sub.sha256AtBase !== null && typeof sub.sha256AtBase !== "string") return false;
+  }
+  return true;
+}
+
+/**
+ * A blob's hash, in THREE states rather than two.
+ *
+ * `git show <ref>:<path>` failing used to collapse to `null`, and `null` is a
+ * VERDICT here: clause 4 reads it as "the pre-registration is unreadable at its
+ * freeze commit", "manifest A is not in the registration commit's tree",
+ * "manifest B is ABSENT from the registration commit". Each of those is a
+ * committable VOID.
+ *
+ * SO A TRANSIENT GIT FAILURE COULD SPEND ONE OF THREE ATTEMPTS. That is the
+ * same inversion R32 caught in the anchor derivation, in the same file, and the
+ * doctrine is stated there: a refusal writes NO artifact and is retryable; a
+ * VOID is a committable verdict that kills a paid run. Git NOT ANSWERING may
+ * not be read as git answering badly.
+ *
+ * The three states, and how they are told apart:
+ *   - the REF does not resolve      -> git cannot be asked -> REFUSE;
+ *   - the ref resolves and the path is absent from its tree -> a real answer,
+ *     `sha: null`, and clause 4 is right to void on it;
+ *   - the ref resolves, the object EXISTS, and `show` still fails -> git
+ *     failing on an object it just said was there -> REFUSE.
+ *
+ * `cat-file -e` is what separates the middle case from the last, and it is
+ * asked ONLY after the ref is known good — otherwise a bad ref and a missing
+ * file are again one answer.
+ */
+type BlobAnswer = { readonly ok: true; readonly sha: string | null } | { readonly ok: false; readonly why: string };
+
+function blobShaAnswer(git: Git, ref: string, rel: string): BlobAnswer {
+  if (!git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).ok) {
+    return { ok: false, why: `${ref} does not resolve to a commit in this repository` };
+  }
+  if (!git(["cat-file", "-e", `${ref}:${rel}`]).ok) return { ok: true, sha: null };
+  const show = git(["show", `${ref}:${rel}`]);
+  if (!show.ok) return { ok: false, why: `${ref}:${rel} exists as an object but could not be read` };
+  return { ok: true, sha: sha256(show.out) };
+}
+
+/**
+ * Force the answer, REFUSING where there is none — the same shape `orRefuse`
+ * gives `CommitAnswer`, so the two unaskable-question paths in this file behave
+ * identically instead of each inventing a convention.
+ */
 const blobSha = (git: Git, ref: string, rel: string): string | null => {
-  const r = git(["show", `${ref}:${rel}`]);
-  return r.ok ? sha256(r.out) : null;
+  const answer = blobShaAnswer(git, ref, rel);
+  if (!answer.ok) {
+    throw new AuditRefused(
+      `the blob ${rel} at ${ref} cannot be read (${answer.why}) — an absent file and an unreadable repository decide different things, and guessing between them would spend an attempt on a question nobody asked`
+    );
+  }
+  return answer.sha;
 };
 
 /**
@@ -932,20 +1483,42 @@ export function runEmittedArtifacts(runId: string): readonly string[] {
 export const REEMISSION_READING =
   "population = what re-emission PRODUCES (emitRun's own write paths). The frozen quantifier says every existing evidence/ artifact for the run; read over the frozen inventory that is unsatisfiable, because the two manifests are sealed create-only and a commit touching manifest A is itself a VOID. Narrowing the quantifier is a pre-data amendment and none exists.";
 
-/** The commit that INTRODUCED a path: the last line of `git log --diff-filter=A`. */
-function introducingCommit(git: Git, rel: string): string | null {
-  const r = git(["log", "--diff-filter=A", "--format=%H", "--", rel]);
-  if (!r.ok) return null;
-  const lines = r.out.trim().split("\n").filter(Boolean);
-  return lines.length === 0 ? null : lines[lines.length - 1]!;
+/**
+ * A git question that WAS ASKED, kept distinct from one that could not be.
+ *
+ * `{ok: true, commit: null}` is an ANSWER — the history carries no such commit.
+ * `{ok: false}` is the absence of one. Both used to be `null`, and both then
+ * read as "the amendment does not govern": a repository the audit could not
+ * interrogate silently ran the PRE-AMENDMENT regime and published a verdict
+ * naming the wrong one. That is the exact shape the comment above the ancestry
+ * test already refused for `isAncestor`, applied one call earlier. Named
+ * 2026-08-14 by adversarial review, which also confirmed no test or production
+ * path depends on a command FAILURE meaning false.
+ */
+type CommitAnswer = { readonly ok: true; readonly commit: string | null } | { readonly ok: false };
+
+/** Force the answer, refusing where there is none. A refusal writes no artifact and is retryable. */
+function orRefuse(answer: CommitAnswer, question: string): string | null {
+  if (!answer.ok) {
+    throw new AuditRefused(`${question} cannot be asked of this repository — git did not answer, and guessing would publish a verdict under a regime nobody established`);
+  }
+  return answer.commit;
 }
 
-/** The most recent commit touching a path; null when none does. */
-function lastCommit(git: Git, rel: string): string | null {
+/** The commit that INTRODUCED a path: the last line of `git log --diff-filter=A`. */
+function introducingCommit(git: Git, rel: string): CommitAnswer {
+  const r = git(["log", "--diff-filter=A", "--format=%H", "--", rel]);
+  if (!r.ok) return { ok: false };
+  const lines = r.out.trim().split("\n").filter(Boolean);
+  return { ok: true, commit: lines.length === 0 ? null : lines[lines.length - 1]! };
+}
+
+/** The most recent commit touching a path; `commit: null` when none does. */
+function lastCommit(git: Git, rel: string): CommitAnswer {
   const r = git(["log", "-1", "--format=%H", "--", rel]);
-  if (!r.ok) return null;
+  if (!r.ok) return { ok: false };
   const line = r.out.trim();
-  return line === "" ? null : line;
+  return { ok: true, commit: line === "" ? null : line };
 }
 
 /**
@@ -962,7 +1535,186 @@ function isAncestor(git: Git, a: string, b: string): boolean | null {
   return false;
 }
 
-export function collectAuditFacts(repoRoot: string, runId: string, options: CollectorOptions = {}): AuditFacts {
+/**
+ * THE FREEZE ANCHOR, DERIVED FROM THE COMMITTED ARCHIVE (R50).
+ *
+ * The anchor is the FIRST ADMITTED observation in real runlog-row order —
+ * `aPlusSPositive` is `isAdmitted ? … : null` (`assemble.ts`), so "first
+ * non-null" IS "first admitted". Admission needs the terms, which needs the
+ * scorer, so the audit has to score to know where clause 5 begins.
+ *
+ * IT USED TO READ A COMMITTED COUNTERFACTUAL INSTEAD, AND THAT IS WHAT FORCED
+ * TWO SCORING INVOCATIONS — only `emit` writes a counterfactual, so the audit
+ * could not run until an emission had been committed, while the final
+ * artifacts could not be final until the audit had been. The frozen PHASE 6
+ * text says ONE invocation. So the cycle is cut here, at the input side.
+ *
+ * WHY A REAL CHECKOUT AND NOT A SECOND READER. Scoring the WORKING TREE would
+ * silently call mutable bytes a committed fact. Building a git-backed twin of
+ * `readRunArchive` would mean two decoders that must agree forever about
+ * directory grammar, missing files, identity checks and rate loading — and
+ * "almost equivalent" is the failure mode that produces an audit and an
+ * emission which disagree about the same run. A detached checkout keeps ONE
+ * decoder and makes the committed-only property structural: the directory IS
+ * the commit.
+ *
+ * EVERY GIT QUESTION HERE IS ASKED OF THE TEMPORARY WORKTREE. Mixing the two
+ * HEADs is the specific way this design fails — the original checkout's HEAD
+ * can move under a long audit, and an anchor half-derived from each would be
+ * an anchor for no tree at all.
+ */
+async function deriveAnchorFromCommittedArchive(
+  repoRoot: string,
+  runId: string,
+  headSha: string,
+  problems: string[],
+  /** The OUTER runner — possibly a test seam — used only to create and remove
+   * the checkout. Everything read INSIDE it goes through a real runner rooted
+   * at the checkout, because an injected runner is bound to `repoRoot` and
+   * would answer for the wrong tree. */
+  outerGit: Git
+): Promise<AuditFacts["clause5"]["anchor"]> {
+  // OUTSIDE THE REPOSITORY, AND UNIQUELY NAMED. Both were review findings and
+  // both are about not disturbing what the audit is measuring.
+  //
+  //   - Under `repoRoot` the checkout is an untracked directory inside the tree
+  //     being audited, and `workingTreeDirtOutsideEvidence` runs an UNSCOPED
+  //     `git status --porcelain`. One audit's scratch checkout would make a
+  //     concurrent audit refuse for dirt it did not create.
+  //   - `headSha + pid` collides for two audits of the same commit in ONE
+  //     process, and the pre-add delete below would then remove the other
+  //     call's live checkout out from under it.
+  const treeDir = path.join(
+    tmpdir(),
+    `b12-anchor-${headSha.slice(0, 12)}-${process.pid.toString(36)}-${(anchorTreeSeq++).toString(36)}`
+  );
+  rmSync(treeDir, { recursive: true, force: true });
+  const added = outerGit(["worktree", "add", "--detach", treeDir, headSha]);
+  if (!added.ok) {
+    throw new AuditRefused(
+      `a detached worktree at ${headSha.slice(0, 12)} could not be created — the anchor is derived from the COMMITTED archive and there is nothing to read it from`
+    );
+  }
+  try {
+    // The checkout must BE the commit that was resolved, not whatever the name
+    // `HEAD` means by now. Cheap, and it is the whole premise.
+    const innerGit = gitIn(treeDir);
+    const innerHead = innerGit(["rev-parse", "HEAD"]);
+    if (!innerHead.ok || innerHead.out.trim() !== headSha) {
+      throw new AuditRefused(
+        `the detached worktree resolves HEAD to ${innerHead.out.trim().slice(0, 12) || "nothing"} and the audit resolved ${headSha.slice(0, 12)} — refusing to anchor on two different trees`
+      );
+    }
+    const archive = await readRunArchive(treeDir, runId);
+    // `{ ran: false }` and a null command on purpose: neither the audit's own
+    // verdict nor clause 19 can move `aPlusSPositive`, which is a function of
+    // admission and the terms. Passing anything else would let this internal
+    // scoring pass pretend to be the run's scoring invocation.
+    const { counterfactual } = assembleRun({ archive, gitAudit: { ran: false }, scoringCommandActual: null });
+
+    // R29'S POPULATION CHECK, REBUILT AGAINST THE COMMITTED ARCHIVE.
+    //
+    // The old derivation compared the counterfactual's DECLARED directories
+    // against the committed ones in both directions. Dropping it was a
+    // REGRESSION and the review caught it: `assembleRun` emits a counterfactual
+    // observation only where terms exist (`assemble.ts`), so a committed
+    // `obs-*` directory that decodes cleanly but produces NO terms — a
+    // declaration failure such as a missing calibrated `installedChars` — would
+    // simply not appear in the walk below. The anchor would then be the first
+    // observation that DID score, which can be LATER than the run's real first
+    // execution, and a pinned-path edit in between would escape clause 5.
+    //
+    // `committedOrderReplay` does not cover it: a directory can hold a valid
+    // record, session and runlog join and still yield no terms.
+    //
+    // So every decoded observation must be represented. Fail-closed: this is an
+    // anchor problem, which decides a VOID, not a refusal — the evidence is
+    // readable and it says the population is not what the scorer could score.
+    const represented = new Set(
+      counterfactual.observations.map((o) => `${o.taskId}|${o.arm}|${String(o.attempt)}`)
+    );
+    for (const obs of archive.observations) {
+      const key = `${obs.taskId}|${obs.arm}|${String(obs.attempt)}`;
+      if (!represented.has(key)) {
+        problems.push(
+          `evidence/${runId}/obs-${obs.taskId}-${obs.arm}${obs.attempt === 1 ? "" : `-r${obs.attempt}`} is committed evidence the scorer produced no terms for — the anchor would be derived from a population that omits it (re-check the observation's declarations before auditing)`
+        );
+      }
+    }
+
+    const rows = archive.runlog.rows;
+    const joined: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; started: string }> = [];
+    for (const o of counterfactual.observations) {
+      if (o.aPlusSPositive === null || o.aPlusSPositive === undefined) continue;
+      const obs = archive.observations.find(
+        (a) => a.taskId === o.taskId && a.arm === o.arm && a.attempt === o.attempt
+      );
+      const started = obs?.record?.started ?? null;
+      const sessionId = obs?.record?.sessionId ?? null;
+      if (started === null || sessionId === null) {
+        problems.push(
+          `the admitted observation ${o.taskId}/${o.arm} attempt ${o.attempt} carries no sessionId/started in the committed archive — the join has nothing to hold`
+        );
+        continue;
+      }
+      // THE UNIQUE ROW, kept verbatim from the old derivation (R7): zero rows
+      // cannot anchor, and two rows is a collision that may not be resolved by
+      // picking one.
+      const matches = rows
+        .map((row, i) => ({ row, i }))
+        .filter(
+          ({ row }) => row.sessionId === sessionId && row.runId === runId && row.taskId === o.taskId && row.arm === o.arm
+        );
+      if (matches.length !== 1) {
+        problems.push(
+          `${matches.length} runlog rows match ${o.taskId}/${o.arm} attempt ${o.attempt} by sessionId + (runId, taskId, arm) — the bijection the anchor requires does not hold`
+        );
+        continue;
+      }
+      joined.push({ taskId: o.taskId, arm: o.arm, attempt: o.attempt, rowIndex: matches[0]!.i, started });
+    }
+    if (problems.length > 0) return null;
+    joined.sort((a, b) => a.rowIndex - b.rowIndex);
+    const first = joined[0];
+    if (first === undefined) return null;
+
+    const dir = `evidence/${runId}/obs-${first.taskId}-${first.arm}${first.attempt === 1 ? "" : `-r${first.attempt}`}`;
+    // Asked of the WORKTREE's history, which is the captured commit's history.
+    const commit = orRefuse(introducingCommit(innerGit, dir), `the commit introducing ${dir}`);
+    if (commit === null) {
+      problems.push(`${dir} has no introducing commit — scored evidence that was never committed cannot anchor the freeze`);
+      return null;
+    }
+    return { taskId: first.taskId, arm: first.arm, attempt: first.attempt, started: first.started, commit };
+  } finally {
+    // PRECISE removal, not a global prune: another worktree's registration is
+    // none of this function's business. Cleanup failure is REPORTED, never
+    // swallowed — a leaked checkout is an operational fact the operator owns.
+    //
+    // THE WHOLE THING IS WRAPPED because `gitIn` THROWS `AuditRefused` when git
+    // does not answer at all. A throw from here would skip the `rmSync`
+    // fallback AND replace whatever exception is already in flight — so a
+    // cleanup failure could mask the real reason the audit stopped.
+    let cleanupFailure: string | null = null;
+    try {
+      if (!outerGit(["worktree", "remove", "--force", treeDir]).ok) cleanupFailure = "git declined to remove it";
+    } catch (error) {
+      cleanupFailure = error instanceof Error ? error.message : String(error);
+    }
+    if (cleanupFailure !== null) {
+      try {
+        rmSync(treeDir, { recursive: true, force: true });
+      } catch {
+        // Reported below either way; the directory is scratch, not evidence.
+      }
+      process.stderr.write(
+        `b12 audit: the anchor worktree at ${treeDir} could not be removed by git (${cleanupFailure}); 'git worktree prune' may be owed\n`
+      );
+    }
+  }
+}
+
+export async function collectAuditFacts(repoRoot: string, runId: string, options: CollectorOptions = {}): Promise<AuditFacts> {
   const git = options.gitRunner ?? gitIn(repoRoot);
   const head = git(["rev-parse", "HEAD"]);
   if (!head.ok) {
@@ -975,167 +1727,21 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
 
   const manifestRel = `evidence/${runId}.b12.tasks.json`;
   const manifestBRel = `evidence/${runId}.b12.manifest-B.tasks.json`;
-  const registrationCommit = introducingCommit(git, manifestRel);
+  const registrationCommit = orRefuse(introducingCommit(git, manifestRel), `the commit introducing ${manifestRel}`);
 
-  // ---- clause 5: the anchor, from COMMITTED artifacts only ----------------
+  // ---- clause 5: the anchor, from the COMMITTED ARCHIVE (R50) -------------
+  // The runlog is still required and still fail-closed: it is the anchor's
+  // clock, and a missing one is not an empty ordering.
   const anchorProblems: string[] = [];
   let anchor: AuditFacts["clause5"]["anchor"] = null;
-  const cfShow = git(["show", `HEAD:evidence/${runId}.b12.counterfactual.json`]);
-  const runlogShow = git(["show", `HEAD:evidence/${runId}.b12.runlog.jsonl`]);
-  if (!cfShow.ok) {
-    anchorProblems.push(`HEAD carries no evidence/${runId}.b12.counterfactual.json — the anchor derivation needs the committed observations`);
-  } else if (!runlogShow.ok) {
-    anchorProblems.push(`HEAD carries no evidence/${runId}.b12.runlog.jsonl — real row order is the anchor's clock`);
+  // AGAINST THE RESOLVED SHA, not the symbolic name (review finding). `headSha`
+  // was captured above and the checkout below is made at it; asking `HEAD:` here
+  // would let a concurrent commit make this prerequisite and the derivation
+  // speak about two different trees.
+  if (!git(["cat-file", "-e", `${headSha}:evidence/${runId}.b12.runlog.jsonl`]).ok) {
+    anchorProblems.push(`${headSha.slice(0, 12)} carries no evidence/${runId}.b12.runlog.jsonl — real row order is the anchor's clock`);
   } else {
-    // THE CATCH COVERS THE COUNTERFACTUAL'S PARSE AND NOTHING ELSE (R32).
-    //
-    // It used to wrap the whole derivation below, including the MANDATORY
-    // directory probe that throws `AuditRefused` by design. A git that could
-    // not answer was therefore caught here, relabelled "the counterfactual
-    // does not parse" — a claim about a file that parsed perfectly — and
-    // `decideAudit` turned that fabricated anchor problem into a VOID. That
-    // inverts the whole doctrine: a refusal is retryable and writes no
-    // artifact; a VOID is a committable verdict that kills a paid run. A
-    // transient git failure may not spend the run.
-    type Counterfactual = {
-      observations?: Array<{ taskId?: unknown; arm?: unknown; attempt?: unknown; aPlusSPositive?: unknown }>;
-    };
-    let cf: Counterfactual | null = null;
-    try {
-      const parsed: unknown = JSON.parse(cfShow.out);
-      // `null` and scalars parse without throwing and carry no observations —
-      // the same nothing a broken file carries, said out loud rather than
-      // read as an empty population.
-      if (parsed === null || typeof parsed !== "object") throw new SyntaxError("not an object");
-      cf = parsed as Counterfactual;
-    } catch {
-      anchorProblems.push("the committed counterfactual does not parse — the anchor derivation has no observations to read");
-    }
-    if (cf !== null) {
-      const rows = runlogShow.out
-        .split("\n")
-        .filter((l) => l.trim() !== "")
-        .map((l, i) => {
-          try {
-            return { i, row: JSON.parse(l) as Record<string, unknown> };
-          } catch {
-            return null;
-          }
-        })
-        .filter((x): x is { i: number; row: Record<string, unknown> } => x !== null);
-      const joinedObs: Array<{ taskId: string; arm: string; attempt: number; rowIndex: number; sessionId: string; started: string; aPlusSPositive: unknown }> = [];
-      // THE POPULATION THE COUNTERFACTUAL CLAIMS, held against the population
-      // that is COMMITTED (R29).
-      //
-      // The anchor used to be derived from `counterfactual.observations`
-      // alone, and that list was never shown to cover anything. The
-      // counterfactual is written by the EMITTER, so an early unchecked emit
-      // followed by more observations leaves a STALE one committed: the loop
-      // below finds nothing to join, no anchor problem is raised, and clause 5
-      // reads "before the first scored observation — free". A pinned-path
-      // change made after the real first observation then gets a CLEAN audit,
-      // and the emission re-derives the same stale state and agrees with it.
-      //
-      // So the committed observation directories are enumerated and every one
-      // of them must be declared. Fail-closed: a probe that cannot answer may
-      // not wear the empty list a clean answer wears.
-      const declaredDirs = new Set<string>();
-      const dirProbe = git(["ls-tree", "-d", "--name-only", "HEAD", `evidence/${runId}/`]);
-      if (!dirProbe.ok) {
-        throw new AuditRefused(
-          `the committed observation directories under evidence/${runId}/ could not be enumerated — the anchor's population cannot be checked, and an empty answer is not a clean one`
-        );
-      }
-      const committedDirs = dirProbe.out
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l !== "" && l.includes("/obs-"));
-      for (const o of cf.observations ?? []) {
-        if (typeof o.taskId !== "string" || typeof o.arm !== "string" || typeof o.attempt !== "number") {
-          // Silently skipped until R29. A malformed entry is a counterfactual
-          // that cannot be checked against anything, not a free pass.
-          anchorProblems.push(
-            `a counterfactual observation carries no (taskId, arm, attempt) — the anchor's population cannot be joined to committed evidence`
-          );
-          continue;
-        }
-        const dir = `evidence/${runId}/obs-${o.taskId}-${o.arm}${o.attempt === 1 ? "" : `-r${o.attempt}`}`;
-        declaredDirs.add(dir);
-        const recShow = git(["show", `HEAD:${dir}/observation.json`]);
-        if (!recShow.ok) {
-          anchorProblems.push(`${dir}/observation.json is not committed — the attempt cannot be joined to its runlog row`);
-          continue;
-        }
-        let rec: Record<string, unknown>;
-        try {
-          rec = JSON.parse(recShow.out) as Record<string, unknown>;
-        } catch {
-          anchorProblems.push(`${dir}/observation.json does not parse`);
-          continue;
-        }
-        const sessionId = typeof rec.sessionId === "string" ? rec.sessionId : null;
-        const started = typeof rec.started === "string" ? rec.started : null;
-        if (sessionId === null || started === null) {
-          anchorProblems.push(`${dir}/observation.json carries no sessionId/started — the join has nothing to hold`);
-          continue;
-        }
-        // The UNIQUE row: sessionId + (runId, taskId, arm). Zero rows cannot
-        // anchor; two rows is the collision R7 named, and it may not be
-        // silently resolved by picking one.
-        const matches = rows.filter(
-          ({ row }) =>
-            row.sessionId === sessionId && row.runId === runId && row.taskId === o.taskId && row.arm === o.arm
-        );
-        if (matches.length !== 1) {
-          anchorProblems.push(
-            `${matches.length} runlog rows match ${o.taskId}/${o.arm} attempt ${o.attempt} by sessionId + (runId, taskId, arm) — the bijection the anchor requires does not hold`
-          );
-          continue;
-        }
-        joinedObs.push({
-          taskId: o.taskId,
-          arm: o.arm,
-          attempt: o.attempt,
-          rowIndex: matches[0]!.i,
-          sessionId,
-          started,
-          aPlusSPositive: o.aPlusSPositive,
-        });
-      }
-      // THE OTHER DIRECTION, and the one that was missing: committed evidence
-      // the counterfactual does not know about. One undeclared directory is
-      // enough — the list the anchor walks is not the run.
-      for (const dir of committedDirs) {
-        if (!declaredDirs.has(dir)) {
-          anchorProblems.push(
-            `${dir} is committed evidence the counterfactual does not declare — the anchor would be derived from a STALE population (re-emit before auditing)`
-          );
-        }
-      }
-      if (anchorProblems.length === 0) {
-        joinedObs.sort((a, b) => a.rowIndex - b.rowIndex);
-        const first = joinedObs.find((o) => o.aPlusSPositive !== null && o.aPlusSPositive !== undefined);
-        if (first !== undefined) {
-          const dir = `evidence/${runId}/obs-${first.taskId}-${first.arm}${first.attempt === 1 ? "" : `-r${first.attempt}`}`;
-          // `started` is CARRIED from the join, not shown and parsed a second
-          // time: the re-read was an unguarded `JSON.parse` over whatever a
-          // second `git show` returned, which is a SyntaxError wearing the
-          // counterfactual's name if HEAD moved underneath the audit.
-          const commit = introducingCommit(git, dir);
-          if (commit === null) {
-            anchorProblems.push(`${dir} has no introducing commit — scored evidence that was never committed cannot anchor the freeze`);
-          } else {
-            anchor = {
-              taskId: first.taskId,
-              arm: first.arm,
-              attempt: first.attempt,
-              started: first.started,
-              commit,
-            };
-          }
-        }
-      }
-    }
+    anchor = await deriveAnchorFromCommittedArchive(repoRoot, runId, headSha, anchorProblems, git);
   }
 
   // ---- clause 5: does the conformance-path amendment govern THIS run? -----
@@ -1144,7 +1750,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
   // whose first scored observation is committed after this artifact". An
   // amendment born later governs nothing, and saying so is the whole point.
   const amendmentPath = options.amendmentPath ?? AMENDMENT_CONFORMANCE_PATHS;
-  const amendmentCommit = introducingCommit(git, amendmentPath);
+  const amendmentCommit = orRefuse(introducingCommit(git, amendmentPath), `the commit introducing ${amendmentPath}`);
   let amendmentGoverns = false;
   if (amendmentCommit !== null && anchor !== null) {
     const anc = isAncestor(git, amendmentCommit, anchor.commit);
@@ -1156,6 +1762,49 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     amendmentGoverns = anc;
   }
   const effectivePinned = amendmentGoverns ? [...pinnedPaths, ...CONFORMANCE_FILES] : [...pinnedPaths];
+
+  // The repair-max-rounds amendment, decided by the SAME prospective test and
+  // computed here because this is the only place that holds both a git runner
+  // and the anchor. `assemble.ts` cannot ask git anything, so the answer travels
+  // to it as a fact rather than being re-derived where it is used.
+  //
+  // FAIL-CLOSED ON AN UNASKABLE ANCESTRY, exactly as above: a refusal is
+  // retryable and writes no artifact, while guessing `false` would silently run
+  // the pre-amendment regime and publish a verdict that names the wrong one.
+  const rmrPath = options.repairRoundsAmendmentPath ?? AMENDMENT_REPAIR_MAX_ROUNDS;
+  const rmrCommit = orRefuse(introducingCommit(git, rmrPath), `the commit introducing ${rmrPath}`);
+  let rmrGoverns = false;
+  if (rmrCommit !== null && anchor !== null) {
+    const anc = isAncestor(git, rmrCommit, anchor.commit);
+    if (anc === null) {
+      throw new AuditRefused(
+        `ancestry of the repair-max-rounds amendment ${rmrCommit} against the anchor commit cannot be asked — which regime governs this run cannot be decided`
+      );
+    }
+    rmrGoverns = anc;
+  }
+
+  // The run-toolchain amendment, by the SAME prospective test and with the SAME
+  // fail-closed refusal on an unaskable ancestry. What differs is what governance
+  // BUYS: this one decides nothing about the verdict. It selects whether the
+  // comparison below is published as a governed regime's finding or as a bare
+  // observation, and nothing else — the amendment adds no void condition, so
+  // there is no branch here that can make a run void.
+  const toolchainAmendmentPath = options.runToolchainAmendmentPath ?? AMENDMENT_RUN_TOOLCHAIN;
+  const toolchainAmendmentCommit = orRefuse(
+    introducingCommit(git, toolchainAmendmentPath),
+    `the commit introducing ${toolchainAmendmentPath}`
+  );
+  let toolchainGoverns = false;
+  if (toolchainAmendmentCommit !== null && anchor !== null) {
+    const anc = isAncestor(git, toolchainAmendmentCommit, anchor.commit);
+    if (anc === null) {
+      throw new AuditRefused(
+        `ancestry of the run-toolchain amendment ${toolchainAmendmentCommit} against the anchor commit cannot be asked — which regime governs this run cannot be decided`
+      );
+    }
+    toolchainGoverns = anc;
+  }
 
   // ---- clause 5: the two probes, in union ---------------------------------
   const commitsTouchingPinned: Array<{ sha: string; committerDate: string }> = [];
@@ -1195,7 +1844,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       for (const offender of offenders) {
         let excused = true;
         for (const rel of artifacts) {
-          const last = lastCommit(git, rel);
+          const last = orRefuse(lastCommit(git, rel), `the last commit touching ${rel}`);
           if (last === null || isAncestor(git, offender, last) !== true) {
             excused = false;
             break;
@@ -1283,7 +1932,7 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
         emissionDrifted.push(`${sha} ${rel}`);
         let excused = true;
         for (const relArtifact of artifacts) {
-          const last = lastCommit(git, relArtifact);
+          const last = orRefuse(lastCommit(git, relArtifact), `the last commit touching ${relArtifact}`);
           if (last === null || isAncestor(git, sha, last) !== true) {
             excused = false;
             break;
@@ -1352,6 +2001,59 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
     }
   }
 
+  // ---- clause 6: the committed FIRING evidence ----------------------------
+  // Same shape as the attestation above, and read the same way: from HEAD, by
+  // its own name, parsed narrowly, fail-closed on anything it cannot answer.
+  const firingRel = `evidence/${runId}.b12.firing.json`;
+  const firingShow = git(["show", `HEAD:${firingRel}`]);
+  let firing: FiringEvidence | null = null;
+  let firingSha256: string | null = null;
+  if (firingShow.ok) {
+    firingSha256 = sha256(firingShow.out);
+    try {
+      const candidate = JSON.parse(firingShow.out) as FiringEvidence;
+      // R41#2: the guard used to stop at the top level, so a committed artifact
+      // with a missing `baseline` or a null row reached the decider and THREW —
+      // an exception where a deterministic VOID belongs. Every nested field is
+      // checked here, and anything that fails becomes `null`, which is the same
+      // VOID as "no evidence": malformed committed bytes are not evidence.
+      if (isFiringEvidence(candidate)) firing = candidate;
+    } catch {
+      firing = null;
+    }
+  }
+  // THE DECLARED IDENTITY, read from manifest A at HEAD. It is the reference the
+  // other two are compared against, so it is read from the run's own declaration
+  // rather than inferred from either proof — a proof cannot be its own reference.
+  // Unreadable, unparseable or undeclared all arrive as `known: false`, which the
+  // amendment says is never a match.
+  const manifestAShow = git(["show", `HEAD:evidence/${runId}.b12.tasks.json`]);
+  let declaredToolchain: ToolchainReading = { known: false, why: "manifest A is unreadable at HEAD" };
+  if (manifestAShow.ok) {
+    try {
+      const parsed = JSON.parse(manifestAShow.out) as unknown;
+      const pinned = isPlainObject(parsed) ? parsed.pinned : undefined;
+      declaredToolchain = isPlainObject(pinned)
+        ? normaliseToolchain(pinned.runToolchain)
+        : { known: false, why: "manifest A carries no pinned block" };
+    } catch {
+      declaredToolchain = { known: false, why: "manifest A does not parse" };
+    }
+  }
+  const firingToolchain: ToolchainReading =
+    firing === null ? { known: false, why: "no firing artifact" } : normaliseToolchain(firing.toolchain);
+  const suiteToolchain: ToolchainReading =
+    attestation === null ? { known: false, why: "no suite attestation" } : normaliseToolchain(attestation.toolchain);
+
+  const firingSubjectsAtBase =
+    firing === null
+      ? []
+      : firing.subjects.map((s) => ({
+          path: s.path,
+          claimed: s.sha256AtBase,
+          recomputed: blobSha(git, firing.baseCommit, s.path),
+        }));
+
   return {
     runId,
     head: headSha,
@@ -1381,6 +2083,16 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
         addedPaths: CONFORMANCE_FILES,
         governs: amendmentGoverns,
       },
+      // A SIBLING, NOT A MEMBER of clause 5's amendment above: this one widens
+      // no path set and moves no clock. It sits inside `clause5` only because
+      // that is where the anchor and the git runner already are, and its own
+      // clause lives in `assemble.ts`.
+      repairRoundsAmendment: {
+        path: rmrPath,
+        commit: rmrCommit,
+        sha256: blobSha(git, "HEAD", rmrPath),
+        governs: rmrGoverns,
+      },
       commitsTouchingPinned,
       offenders,
       excusedByReemission,
@@ -1401,6 +2113,22 @@ export function collectAuditFacts(repoRoot: string, runId: string, options: Coll
       subjectIsAncestor,
       nonEvidenceDrift,
       lockfileAtSubject: attestation === null ? null : blobSha(git, attestation.subjectCommit, "package-lock.json"),
+      firing,
+      firingSha256,
+      firingSubjectsAtBase,
+      toolchainAmendment: {
+        path: toolchainAmendmentPath,
+        commit: toolchainAmendmentCommit,
+        sha256: blobSha(git, "HEAD", toolchainAmendmentPath),
+        governs: toolchainGoverns,
+      },
+      runToolchain: {
+        declared: declaredToolchain,
+        firing: firingToolchain,
+        suite: suiteToolchain,
+        firingAgreement: toolchainAgreement(declaredToolchain, firingToolchain),
+        suiteAgreement: toolchainAgreement(declaredToolchain, suiteToolchain),
+      },
       // Reported beside the verdict, never inside it.
       conformance: CONFORMANCE_FILES.map((file) => ({
         file,
@@ -1616,7 +2344,7 @@ if (isMain) {
       writeFileSync(out, JSON.stringify(attestation, null, 2) + "\n", "utf8");
       process.stdout.write(`${out}\n(commit it; the audit reads the COMMITTED bytes)\n`);
     } else {
-      const facts = collectAuditFacts(repoRoot, runId);
+      const facts = await collectAuditFacts(repoRoot, runId);
       const { artifact } = buildAuditArtifact(facts);
       const out = evidenceArtifactPath(repoRoot, runId, ".b12.audit.json");
       writeFileSync(out, JSON.stringify(artifact, null, 2) + "\n", "utf8");

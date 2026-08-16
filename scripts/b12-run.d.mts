@@ -320,6 +320,18 @@ export function instructionDriftReasons(
 ): string[];
 
 /**
+ * Invalidity reasons for a repair call that did not run at the manifest's frozen
+ * `repairMaxRounds` (artifact 1). Compares `detail.max_rounds` on every archived
+ * `repair` telemetry row against the declared value; fail-closed when the field
+ * is absent, empty when there are no repair rows at all. Pure.
+ */
+export function repairRoundsReasons(
+  declared: number | null | undefined,
+  telemetry: ReadonlyArray<Record<string, unknown>> | null | undefined,
+  taskId: string
+): string[];
+
+/**
  * sha256 over sorted (relative path, content sha256) pairs, separators
  * normalised to "/". A missing or empty directory hashes as the empty list
  * with `files: 0`.
@@ -363,3 +375,35 @@ export function validateInstalledCharsProbe(
     extraArgs: readonly string[];
   }
 ): InstalledCharsRecord;
+
+/** A normalised run toolchain identity — major.minor only, by amendment. */
+export interface BarrierToolchain {
+  platform: string;
+  arch: string;
+  node: string;
+  vitest: string;
+}
+
+/** This machine's toolchain, in the producers' shape. */
+export function runToolchainNow(): {
+  platform: string;
+  arch: string;
+  nodeVersion: string;
+  vitest: string | null;
+};
+
+/** Normalise either the producers' or the manifest's shape; null when unreadable. */
+export function normaliseToolchainForBarrier(raw: unknown): BarrierToolchain | null;
+
+/**
+ * The barrier's verdict: a refusal message, or null when there is nothing to
+ * refuse. An UNDECLARED `runToolchain` returns null — the amendment does not
+ * reach a manifest that never declared one — while a DECLARED but unreadable
+ * one refuses, because silence must not be mistaken for agreement.
+ */
+export function runToolchainRefusal(
+  /** The manifest's whole `pinned` block — it carries many other keys, and the
+   *  ABSENCE of `runToolchain` among them is what means "not governed". */
+  pin: Readonly<Record<string, unknown>> | null | undefined,
+  observedRaw: unknown
+): string | null;

@@ -1,0 +1,13 @@
+diff --git a/src/fs-safety.ts b/src/fs-safety.ts
+index 5bb25e2..8819742 100644
+--- a/src/fs-safety.ts
++++ b/src/fs-safety.ts
+@@ -29,7 +29,7 @@ function toPosix(p: string): string {
+ 
+ function isContained(root: string, target: string): boolean {
+   const relative = path.relative(root, target);
+-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
++  return relative !== "" && !relative.endsWith("..") && !path.isAbsolute(relative);
+ }
+ 
+ /** Deepest ancestor of `abs` that exists on disk (used to realpath not-yet-created paths). */

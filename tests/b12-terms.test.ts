@@ -220,9 +220,19 @@ describe("computeTerms — every constant derived by hand", () => {
     // And they are not lost.
     expect(result.unattributedRefusals.unverifiable.count).toBe(1);
     expect(result.unattributedRefusals.excludedForeign.count).toBe(1);
-    // Sized, not merely counted -- a refusal reported without its magnitude is
-    // the silent exclusion the counters exist to prevent.
-    expect(result.unattributedRefusals.unverifiable.units).toBeGreaterThan(0);
+    // COUNTED AND CARRIED, and now UNSIZED rather than sized (W10/R51). Both
+    // rows here have unknown threads — one carries no `invocation_id` at all,
+    // the other an id this transcript does not know — and `wouldHaveAdded` used
+    // to price them against "main" and report the result as known. It returns
+    // `null` now, so the magnitude lands in `unsized`.
+    //
+    // The property this test defends is unchanged: a refusal must not be
+    // reported without SOMETHING standing where its magnitude goes, because a
+    // bare count is the silent exclusion the counters exist to prevent.
+    // `unsized` is that something, and it is the honest one.
+    expect(result.unattributedRefusals.unverifiable.units).toBe(0);
+    expect(result.unattributedRefusals.unverifiable.unsized).toBe(1);
+    expect(result.unattributedRefusals.excludedForeign.unsized).toBe(1);
     // The credited arithmetic is untouched by either of them.
     expect(result.sHi).toBeCloseTo(17_243.243243243243, 6);
 

@@ -38,7 +38,7 @@ import {
 } from "../report.js";
 import { rateKey } from "../rates.js";
 import type { Transcript } from "../transcript.js";
-import { aggregate } from "./aggregate.js";
+import { aggregate, ADMITTED_OBSERVATIONS } from "./aggregate.js";
 import { runCoverage } from "./coverage.js";
 import { fileScopeViolations } from "./filescope.js";
 import { computeTerms } from "./terms.js";
@@ -168,6 +168,14 @@ interface Assessed {
   declReasons: string[];
   terms: ObservationTerms | null;
   pacing: PacingFacts | null;
+  /**
+   * Artifact 1's frozen `max_rounds` against what this observation's repair
+   * calls ran under. A FACT and not a disposition: the amendment that makes it
+   * violable is RUN-LEVEL, so nothing here excludes this observation — the
+   * clause reads the union across all of them. Empty means "no disagreement
+   * among the rows that exist", which is not the same as "no repair ran".
+   */
+  repairRounds: string[];
   provenanceUnavailable: boolean | null;
   requestsPerSegment: Array<{ thread: string; segment: number; requests: number }>;
 }
@@ -398,7 +406,10 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
       a.disposition === "scored" &&
       a.obs.record?.valid === true &&
       !overBudget.has(a) &&
-      admitted.length < 20;
+      // The SAME constant clause 2's closure test reads. A bare 20 here and a
+      // named one there is two spellings of one rule, and the pair drifting
+      // would make the closure test silently wrong about when the cap is hit.
+      admitted.length < ADMITTED_OBSERVATIONS;
     if (admissible) {
       admitted.push(a.terms!);
       admittedAssessed.push(a);
@@ -426,6 +437,7 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     checks,
     scoringCommandActual: input.scoringCommandActual,
     duplicatedTaskIds,
+    gitAudit,
     brackets: { rLo: base.rLo, rHi: base.rHi, uncappedBracket: base.uncappedBracket },
   });
 
@@ -436,6 +448,23 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
         "voidConditions 5",
         "voidConditions 6",
       ];
+  // A COMMITTED AUDIT THAT CANNOT SAY WHICH REGIME APPLIES LEAVES A CLAUSE
+  // UNCHECKED, and this list is the only thing that says so. Found 2026-08-14 by
+  // review: the repair-max-rounds clause printed "the regime is UNKNOWN" inside
+  // an unfired check while `uncheckedClauses` — computed from `gitAudit.ran`
+  // alone — stayed empty, so `final` went true and `emit` printed FINAL over a
+  // rule nobody had established. An audit predating the amendment's keys is
+  // exactly that case, and it is not hypothetical: every audit committed before
+  // this key existed is one.
+  //
+  // NOT A VOID. An unproven rule may not kill a run any more than it may bless
+  // one; what it may do is stop the verdict being called FINAL, which is the
+  // same distinction `{ran: false}` already carries for clauses 4–6.
+  if (gitAudit.ran && regimeOf(gitAudit.inputs, REPAIR_ROUNDS_GOVERNS) === "unknown") {
+    uncheckedClauses.push(
+      "amendment 2026-08-14 (repair's frozen max_rounds) — the committed audit carries no USABLE clause5.repairRoundsAmendment.governs (absent, or not one of \"yes\"/\"no\"), so which regime applies is unknown"
+    );
+  }
   if (gitAudit.ran && gitAudit.verdict === "void") {
     checks.push({
       clause: "voidConditions 4–6 — the git audit",
@@ -468,7 +497,9 @@ export function assembleRun(input: AssembleInput): AssembleOutput {
     .filter((a) => a.terms !== null)
     .map((a) => counterfactualOf(a, admitted.includes(a.terms!), admittedSumAPlusSLo));
 
-  // not_started: lawful, and reported with its disposition (`admissionRule` 2).
+  // not_started: lawful, and reported with its disposition — the preregistration
+  // lists it in the closed set beside `scored` and the eight voids, and
+  // UNIT-5.md says a manifest task with no observation directory IS lawful.
   // These are manifest entries with NO observation — they never had terms, so
   // they are appended here rather than synthesised as zero-valued observations
   // (a zero A_o is a measurement; absence is not).
@@ -580,6 +611,10 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
       declReasons,
       terms: null,
       pacing: null,
+      // No disposition could be decided here, so there is nothing for a fact to
+      // qualify. Empty is the honest value: it says nothing was compared, and the
+      // run-level clause reads a union that this contributes nothing to.
+      repairRounds: [],
       provenanceUnavailable: null,
       requestsPerSegment: [],
     };
@@ -702,6 +737,10 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
       declReasons,
       terms: null,
       pacing,
+      // No disposition could be decided here, so there is nothing for a fact to
+      // qualify. Empty is the honest value: it says nothing was compared, and the
+      // run-level clause reads a union that this contributes nothing to.
+      repairRounds: [],
       provenanceUnavailable: report.provenanceUnavailable,
       requestsPerSegment: requestsPerSegment(transcript, owned),
     };
@@ -729,6 +768,10 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
       declReasons,
       terms: null,
       pacing,
+      // No disposition could be decided here, so there is nothing for a fact to
+      // qualify. Empty is the honest value: it says nothing was compared, and the
+      // run-level clause reads a union that this contributes nothing to.
+      repairRounds: [],
       provenanceUnavailable: report.provenanceUnavailable,
       requestsPerSegment: requestsPerSegment(transcript, owned),
     };
@@ -780,9 +823,92 @@ function assessObservation(obs: ArchivedObservation, ctx: AssessContext): Assess
     declReasons,
     terms,
     pacing,
+    repairRounds: repairRoundsMismatches(ctx.task?.repairMaxRounds ?? null, scopedRecords),
     provenanceUnavailable: report.provenanceUnavailable,
     requestsPerSegment: requestsPerSegment(transcript, owned),
   };
+}
+
+/**
+ * Artifact 1's frozen `max_rounds` against the rows that say what ran.
+ *
+ * Read over the SCOPED telemetry — the same subset the counterfactual is priced
+ * from — and not over the whole worktree log the harness sees. That is the
+ * difference that matters between this and its driver-side twin in
+ * `scripts/b12-run.mjs`: a row this run does not own cannot reach a verdict from
+ * here, so the scoring side cannot void a run on a foreign row.
+ *
+ * FAIL-CLOSED ON AN ABSENT FIELD. A repair row carrying no numeric
+ * `detail.max_rounds` cannot be compared, and "cannot tell" may not wear the
+ * same answer as "matched".
+ *
+ * BUT NOT ON AN ABSENT ROW, and the amendment says so in its own text: the
+ * telemetry writer swallows append failures by design, and a tool whose preflight
+ * refuses emits no row while its result still sits in the transcript. Absence of
+ * a row is therefore not evidence of compliance, and no guard can be built on
+ * the contrary premise without voiding lawful observations.
+ */
+/** Which regime a committed audit establishes. Absent and invalid are the same. */
+export type Regime = "governs" | "does-not-govern" | "unknown";
+
+/**
+ * The key the REPAIR-MAX-ROUNDS amendment's governance answer is published under.
+ * NOT a shared key: the conformance-paths amendment publishes
+ * `clause5.amendment.governs`, and — checked 2026-08-14 — nothing reads that one
+ * as a regime switch here. Its governance is decided inside `audit.ts` from the
+ * boolean fact and drives `effectivePinned` there; the serialized key is replay
+ * evidence. So this is the only governance key `assemble` interprets, and saying
+ * "every amendment" invited a reader to look for a second one.
+ */
+export const REPAIR_ROUNDS_GOVERNS = "clause5.repairRoundsAmendment.governs";
+
+/**
+ * PRESENCE IS NOT VALIDITY, and reading it as validity was the defect.
+ *
+ * `audit.ts` writes this key with `facts…governs ? "yes" : "no"`, so those two
+ * strings are the entire domain. The first version tested `=== "yes"` for
+ * governance and `=== undefined` for unknown, which leaves everything in
+ * between — `"true"`, `"YES"`, `""`, a boolean surviving a hand-built `inputs`,
+ * a typo, a future encoding — landing in the `!governs` branch and printing the
+ * CONFIDENT sentence "does not govern this run". A value nobody can interpret is
+ * not evidence that the amendment is inapplicable; it is evidence that the
+ * question was not answered, and answering it the permissive way is exactly what
+ * `uncheckedClauses` exists to prevent. Named 2026-08-14 by adversarial review.
+ *
+ * Both readers go through here so they cannot drift: the clause that decides and
+ * the `uncheckedClauses` entry that stops the verdict being called FINAL.
+ */
+export function regimeOf(inputs: Readonly<Record<string, string>> | null, key: string): Regime {
+  if (inputs === null) return "unknown";
+  const raw = inputs[key];
+  if (raw === "yes") return "governs";
+  if (raw === "no") return "does-not-govern";
+  return "unknown";
+}
+
+export function repairRoundsMismatches(
+  declared: number | null,
+  scoped: ReadonlyArray<{ tool: string; detail?: Record<string, unknown> | undefined }>
+): string[] {
+  const rows = scoped.filter((r) => r.tool === "repair");
+  if (rows.length === 0) return [];
+  if (declared === null || !Number.isFinite(declared)) {
+    return [
+      `${rows.length} repair row(s) exist but the manifest declares repairMaxRounds ${String(declared)}, which is not a number — artifact 1's frozen max_rounds has nothing to compare against`,
+    ];
+  }
+  const out: string[] = [];
+  rows.forEach((row, i) => {
+    const got = row.detail?.max_rounds;
+    if (typeof got !== "number" || !Number.isFinite(got)) {
+      out.push(
+        `repair row ${i + 1} of ${rows.length} carries no numeric detail.max_rounds, so the frozen repairMaxRounds (${declared}) cannot be checked against what ran`
+      );
+    } else if (got !== declared) {
+      out.push(`repair ran at max_rounds ${got} against a frozen repairMaxRounds of ${declared}`);
+    }
+  });
+  return out;
 }
 
 /** First match in the registered precedence; the full list is published beside it. */
@@ -873,6 +999,13 @@ interface ChecksContext {
   scoringCommandActual: string | null;
   duplicatedTaskIds: ReadonlySet<string>;
   /**
+   * Which regime governs. Only the repair-max-rounds amendment's `governs` is
+   * read here; the whole audit is passed rather than the boolean so the clause
+   * can print the amendment's PATH, and a reader of the face can tell WHICH
+   * document did or did not apply without holding this file open.
+   */
+  gitAudit: GitAudit;
+  /**
    * The four bracket bounds off the aggregate result, for clause 8's live
    * predicate — checked as VALUES on the constructed result, because NaN
    * survives every sum and serializes as `null`.
@@ -881,10 +1014,18 @@ interface ChecksContext {
 }
 
 /**
- * The archive-level clauses of UNIT-5.md step 7 — 2, 7, 8, 9, 11, 12, 13, 14,
- * 19, 20 — plus artifact 1's manifest facts and the rates byte-identity, each
- * with its own predicate over the archive, each on the face fired or not.
- * `aggregate`'s `decide()` already owns 1, 3, 10, 16, 17, 18.
+ * The archive-level clauses of UNIT-5.md step 7 — 3's order half, 7, 8, 9, 11,
+ * 12, 13, 14, 19, 20 — plus artifact 1's manifest facts and the rates
+ * byte-identity, each with its own predicate over the archive, each on the face
+ * fired or not. `aggregate`'s `decide()` owns 1, 3's count half, 10, 16, 17, 18.
+ *
+ * CLAUSE 3 IS SPLIT ACROSS THE TWO AND SAYS SO. Its count half ("fewer than 20
+ * admitted", "a stratum under 5") is arithmetic over the finished set and lives
+ * in `decide()`; its ORDER half is a replay over the runlog and lives here.
+ *
+ * CLAUSE 2 IS OWNED BY NEITHER. Its number used to sit on clause 3's order
+ * predicate, which made an unimplemented clause look implemented; the number
+ * has been moved and the gap is now stated where the check would go.
  */
 function buildArchiveChecks(ctx: ChecksContext): void {
   const { archive, assessed, checks } = ctx;
@@ -956,13 +1097,68 @@ function buildArchiveChecks(ctx: ChecksContext): void {
         : "committedness is UNSHOWABLE — git could not answer, and absence of proof is never read as clean"
   );
 
-  // voidConditions 2 — the committed order, replayed from the runlog.
+  // VOIDCONDITIONS 2 IS NOT IMPLEMENTED HERE, AND THE OBVIOUS PREDICATE IS
+  // WRONG. Read this before writing one.
+  //
+  // The clause is an optional-stopping guard — the preregistration names the
+  // property in the PILOT's words, "mechanically incapable of optional
+  // stopping". Nothing implements it. The check that used to carry its number
+  // ran `committedOrderReplay`, which is clause 3's predicate by that
+  // function's own docstring, and its detail said the partial-set half was
+  // "carried by the analysis-session obligations" — by a person. The number is
+  // now on the right predicate, so the gap is at least visible.
+  //
+  // WHAT IS STILL OPEN. `aggregate` runs unconditionally above, before any
+  // check here, so an operator can `emit` mid-run and read rLo, rHi and rHiPlus
+  // off the artifact even though the verdict is void. That is the peek.
+  //
+  // THE PREDICATE THAT LOOKS RIGHT AND IS NOT. `admittedCount >= 20 ||
+  // notStartedCount === 0` was written, reviewed and REFUTED on 2026-08-13. It
+  // over-fires on a lawful shape and costs the run: `runPlan` phase 5 budgets
+  // 20-26 supervised sessions over an ordered manifest of 30 (PREMISES.md), so
+  // 26 completed observations with 19 admitted and 4 tasks never reached is a
+  // run that genuinely cannot grow — and that predicate voids it, at `emit`,
+  // after every session is paid for. It also under-fires: `notStartedCount`
+  // counts tasks with no ARCHIVED ATTEMPT, which is not the same question as
+  // whether a lawful future event can still change the admitted set —
+  // `admissionRule` 12's discretionary re-run, an observation whose disposition
+  // is null, and invalid or dropped attempts all leave the set mutable while
+  // reading as observed.
+  //
+  // WHAT A CORRECT ONE MUST ACCOUNT FOR: the 20-admission cap, the 26-session
+  // ceiling, remaining discretionary and version-drift re-runs, disposition
+  // EXISTENCE rather than `byTask` membership, and manifest cardinality — this
+  // file has no `tasks.length === 30` check, so an undersized manifest reaches
+  // the cap trivially.
+  //
+  // THE FROZEN TEXT DOES NOT CONTRADICT ITSELF, and an earlier version of this
+  // comment said it did. Clause 2's "partial set" is a set that CAN STILL GROW;
+  // `admissionRule` 1's "partial bracket" is a bracket published WITHOUT the
+  // verdict it would have carried, which is PREMISES.md's own use of the word
+  // ("the artifact reads `partial` and renders no verdict"). Registered
+  // 2026-08-13 in docs/b12-scorer/FINDINGS.md, under the rationale that document
+  // already registered for the pilot's "No units": what must not exist is
+  // anything a STOPPING DECISION could read. `narrowPriorRun` had already chosen
+  // it — "the partial bracket either way" — and PREMISES.md assigns the disputed
+  // case elsewhere by name: "A run that walks all 30 and admits 19 is VOID under
+  // `voidConditions` 3". Cardinality is clause 3's; clause 2 is not a duplicate
+  // of it.
+  //
+  // So the predicate is not blocked on an amendment. It is just not written, and
+  // the half with teeth is not here anyway: "no interim bracket is derivable
+  // from committed data" is a property of the run's COMMIT HISTORY — the commit
+  // first introducing a bracket must be the one carrying the verdict — which
+  // `git log` decides and this function cannot see.
+
+  // voidConditions 3's ORDER half, replayed from the runlog. Its count half is
+  // `decide()`'s, at aggregate.ts's frozen-count refusal — two mechanisms, one
+  // clause number, in two different containers: this one lands in
+  // `archiveChecks`, that one in `voidClause`.
   const orderProblem = committedOrderReplay(archive);
   push(
-    "voidConditions 2 — committed order",
+    "voidConditions 3 — committed order",
     orderProblem !== null,
-    orderProblem ??
-      "every first execution in the runlog respects the manifest's committed order; the partial-set half is carried by the analysis-session obligations (PREMISES.md § B12)"
+    orderProblem ?? "every first execution in the runlog respects the manifest's committed order"
   );
 
   // voidConditions 4 — rates.json byte-identity, the one clause-4 item the
@@ -1195,6 +1391,58 @@ function buildArchiveChecks(ctx: ChecksContext): void {
       : paced.length > 0
         ? `${paced.length} observation(s) exceeded a pacing ceiling`
         : "every observation is inside the gap and cacheWrite-share ceilings"
+  );
+
+  // THE 2026-08-14 PRE-DATA AMENDMENT — repair's frozen max_rounds, run-level.
+  //
+  // Not one of the 23 frozen conditions and never described as one. It is named
+  // here as an amendment so a reader of the face can always tell which regime
+  // produced the verdict, which is the same courtesy the conformance-paths
+  // amendment gets in the audit artifact.
+  //
+  // GATED ON `governs`, which `audit.ts` computed against the run's freeze
+  // anchor. An ungoverned run reaches the same line and is told, in the detail,
+  // that the amendment exists and did not apply to it — because "no mismatch"
+  // and "the rule was not in force" are two different clean answers, and a
+  // clause that prints one when it means the other is how a regime silently
+  // changes.
+  //
+  // RUN-LEVEL AND NOT AN EXCLUSION, on voidConditions 9's own stated ground:
+  // triggering it costs the run rather than buying an exclusion. `repair` is
+  // treatment-only, so dropping the offending observation instead would drop
+  // treatment attempts alone and hand the vacated admission slot to the next
+  // task in committed order — a selection channel whose sign cannot be
+  // established before the run. Every observation keeps its disposition here;
+  // what dies is the run.
+  // Read off the COMMITTED audit's published face, the same flat input map every
+  // other git fact arrives through — never re-derived here, because this file
+  // cannot ask git anything and a second derivation is a second answer.
+  //
+  // `{ran: false}` IS NOT "does not govern" AND IS NOT "governs". With no
+  // committed audit the regime is UNKNOWN, and the clause says so rather than
+  // picking the reading that fires nothing. It still does not fire — an unproven
+  // rule may not void a run — but the detail refuses to call that a clean pass,
+  // which is the distinction `uncheckedClauses` exists to preserve.
+  const rmrInputs = ctx.gitAudit.ran ? ctx.gitAudit.inputs : null;
+  const rmrPath = rmrInputs?.["clause5.repairRoundsAmendment.path"] ?? "(no committed audit)";
+  const rmrRegime = regimeOf(rmrInputs, REPAIR_ROUNDS_GOVERNS);
+  const rmrGoverns = rmrRegime === "governs";
+  const rmrUnknown = rmrRegime === "unknown";
+  const offenders = assessed.filter((a) => a.repairRounds.length > 0);
+  const wouldHave =
+    offenders.length > 0 ? `; ${offenders.length} observation(s) WOULD have fired it, reported and deciding nothing` : "";
+  push(
+    "amendment 2026-08-14 — repair's frozen max_rounds",
+    rmrGoverns && offenders.length > 0,
+    rmrUnknown
+      ? `no committed audit says whether the repair-max-rounds amendment governs this run, so the regime is UNKNOWN and this clause may not be read as passed${wouldHave}`
+      : !rmrGoverns
+        ? `the amendment (${rmrPath}) does not govern this run — its introducing commit is not an ancestor of the freeze anchor, so artifact 1's max_rounds is carried but not enforced here${wouldHave}`
+        : offenders.length > 0
+        ? `${offenders.length} observation(s) ran repair at a max_rounds other than the frozen one: ${offenders
+            .map((a) => `${a.obs.taskId}/${a.obs.arm} — ${a.repairRounds.join("; ")}`)
+            .join(" | ")}`
+        : "every repair row that exists ran at its task's frozen max_rounds (a call whose row never landed is invisible to this, by the amendment's own text)"
   );
 }
 

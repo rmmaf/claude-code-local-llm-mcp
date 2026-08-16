@@ -1,0 +1,26 @@
+{
+  "specRoot": "b12-corpus",
+  "ratesSha256": "6d74cafd7fa5702352d068825be2f75f3ae7dd0ef3df77cc9ff7f04826730c94",
+  "tasks": [
+    {
+      "id": "pilot-csvcomment",
+      "specDir": "b12-corpus/pilot-csvcomment"
+    },
+    {
+      "id": "pilot-csvreturn",
+      "specDir": "b12-corpus/pilot-csvreturn"
+    },
+    {
+      "id": "pilot-lmsguard",
+      "specDir": "b12-corpus/pilot-lmsguard"
+    },
+    {
+      "id": "pilot-normalizeid",
+      "specDir": "b12-corpus/pilot-normalizeid"
+    },
+    {
+      "id": "pilot-usablefree",
+      "specDir": "b12-corpus/pilot-usablefree"
+    }
+  ]
+}

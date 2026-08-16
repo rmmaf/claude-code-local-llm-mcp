@@ -1,0 +1,13 @@
+diff --git a/src/fs-safety.ts b/src/fs-safety.ts
+index 5bb25e2..b921036 100644
+--- a/src/fs-safety.ts
++++ b/src/fs-safety.ts
+@@ -332,7 +332,7 @@ export function enforceOutputCap(
+   // caller builds by hand — not against a live path, which is worth saying
+   // rather than leaving a reader to assume there is one.
+   if (window === undefined) return;
+-  const { contextTokens } = window;
++  const contextTokens: number = window.contextTokens;
+   if (typeof contextTokens !== "number" || !Number.isFinite(contextTokens) || contextTokens <= 0) {
+     return;
+   }

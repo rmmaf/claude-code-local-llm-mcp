@@ -1,0 +1,13 @@
+diff --git a/src/tools/models.ts b/src/tools/models.ts
+index 1ca1386..7e26b40 100644
+--- a/src/tools/models.ts
++++ b/src/tools/models.ts
+@@ -97,7 +97,7 @@ export async function runModels(
+       ? {
+           total_gb: bytesToGb(memory.totalBytes),
+           free_gb: bytesToGb(memory.freeBytes),
+-          usable_free_gb: usable === null ? null : bytesToGb(usable),
++          usable_free_gb: bytesToGb(usable),
+           source: memory.source,
+           fit_fraction: config.memFitFraction,
+         }

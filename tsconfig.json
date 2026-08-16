@@ -31,5 +31,8 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  // `vitest.config.ts` is listed for the reason this file's header gives: a `.ts` file
+  // nothing type-checks is the hole that let every test file drift unchecked, and adding
+  // a second one at the root would be that hole with a config file in front of it.
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
 }

@@ -362,7 +362,7 @@ The turn-collapse tool, and the largest single lever here. Snapshots the exact b
 | `spec` | string | What must be true once the checks pass. Required. |
 | `checks` | `"all" \| "lint" \| "types" \| "test"` | Which checks gate the loop. |
 | `max_rounds` | number | Default 3, max 10. |
-| `budget_seconds` | number | Wall-clock ceiling, default 300. |
+| `budget_seconds` | number | Wall-clock ceiling, default 240. |
 | `context_files`, `model` | string[], string | As in `implement`. |
 
 **Safety.** If the loop cannot reach green, every file is restored to its original bytes and the best attempt is returned as an *unapplied* diff alongside the remaining failures. A round that makes things worse cannot discard a round that made them better — the best state seen is what gets returned. The working tree is never left broken.

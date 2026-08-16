@@ -896,6 +896,107 @@ function assertPinned(manifest, binary) {
   if (process.env.DISABLE_AUTOUPDATER !== "1") {
     refuse("DISABLE_AUTOUPDATER is not 1 — an update mid-run splits the observation set across layouts");
   }
+  assertRunToolchain(pin);
+}
+
+/**
+ * THE BARRIER of the run-toolchain amendment
+ * (`evidence/2026-08-14-b12-amendment-run-toolchain.json`).
+ *
+ * IT REFUSES; IT NEVER VOIDS, and the difference is the whole reason this lives
+ * here and not in the audit. There are three attempts and a VOID ordinarily
+ * consumes one, so a node patch bump — irrelevant to whether a control fires —
+ * must not be able to spend one. Refusing costs time and acts while the answer
+ * can still be fixed. That is why this sits beside the `claudeCodeVersion` pin,
+ * which has always refused an arm rather than voiding a run.
+ *
+ * UNDECLARED IS NOT A VIOLATION. A manifest with no `runToolchain` is a run the
+ * amendment does not reach — pre-amendment manifests exist and are not thereby
+ * unusable. A DECLARED but unreadable one IS a violation, because a declaration
+ * nobody can parse is the one case where silence would be mistaken for agreement.
+ *
+ * PATCH VERSIONS ARE EXCLUDED, matching `normaliseToolchain` in
+ * `src/cost/b12/audit.ts`. The two readers must agree or the barrier passes runs
+ * the audit reports as mismatched, so both are major.minor and a test pins it.
+ */
+export function runToolchainNow() {
+  let vitest = null;
+  try {
+    const r = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", ["vitest", "--version"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      shell: process.platform === "win32",
+    });
+    if (r.status === 0 && typeof r.stdout === "string") vitest = r.stdout.trim();
+  } catch {
+    vitest = null;
+  }
+  return { platform: process.platform, arch: process.arch, nodeVersion: process.version, vitest };
+}
+
+/** major.minor, or null. The audit's `majorMinor` in one line, kept identical. */
+const mm = (raw) => {
+  if (typeof raw !== "string") return null;
+  const m = /(\d+)\.(\d+)/.exec(raw);
+  return m === null ? null : `${m[1]}.${m[2]}`;
+};
+
+/** Both shapes, normalised the same way the audit normalises them. */
+export function normaliseToolchainForBarrier(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const platform = typeof raw.platform === "string" && raw.platform !== "" ? raw.platform : null;
+  const arch = typeof raw.arch === "string" && raw.arch !== "" ? raw.arch : null;
+  const node = mm(raw.nodeVersion) ?? mm(raw.node);
+  // Snapshotted ONCE, matching the audit's reader exactly. Reading the property
+  // twice let a side-effecting accessor hand the two normalisers different
+  // answers — unreachable through JSON, and removed anyway because "the two
+  // readers agree" is a claim worth not qualifying.
+  const vitestRaw = raw.vitest;
+  let vitest = null;
+  if (typeof vitestRaw === "string") {
+    // See normaliseToolchain in src/cost/b12/audit.ts: no unanchored fallback,
+    // because the display string embeds the node version and a malformed vitest
+    // would otherwise borrow it and read as a valid identity.
+    const tagged = /vitest\/(\d+)\.(\d+)/.exec(vitestRaw);
+    if (tagged !== null) vitest = `${tagged[1]}.${tagged[2]}`;
+    else if (/vitest\//.test(vitestRaw)) vitest = null;
+    else vitest = /^\s*v?\d+\.\d+/.test(vitestRaw) ? mm(vitestRaw) : null;
+  }
+  if (platform === null || arch === null || node === null || vitest === null) return null;
+  return { platform, arch, node, vitest };
+}
+
+export function runToolchainRefusal(pin, observedRaw) {
+  // ABSENCE OF THE KEY is "not governed". An explicit `"runToolchain": null` is
+  // NOT absence — it is a declaration nobody can read, and it falls through to
+  // the unreadable branch below. Spelling the two the same way let a manifest
+  // opt out of the barrier by declaring nothing, which is the one shape an
+  // opt-in barrier must not accept.
+  if (pin === null || pin === undefined || !Object.prototype.hasOwnProperty.call(pin, "runToolchain")) return null;
+  const declaredRaw = pin.runToolchain;
+  if (declaredRaw === undefined) return null; // the key exists but was never set
+  const declared = normaliseToolchainForBarrier(declaredRaw);
+  if (declared === null) {
+    return "manifest pins runToolchain but it is not readable as {platform, arch, node|nodeVersion, vitest} — a declaration nobody can parse cannot be shown to agree with anything, and the amendment says an unreadable identity is never a match";
+  }
+  const observed = normaliseToolchainForBarrier(observedRaw);
+  if (observed === null) {
+    return `manifest pins runToolchain ${JSON.stringify(declared)} and THIS machine's toolchain could not be read — refusing rather than spending a session whose environment cannot be named`;
+  }
+  const diff = ["platform", "arch", "node", "vitest"].filter((k) => declared[k] !== observed[k]);
+  if (diff.length === 0) return null;
+  return (
+    `toolchain mismatch on ${diff.join(", ")} — manifest declares ` +
+    `${declared.platform}-${declared.arch} node-${declared.node} vitest-${declared.vitest}, ` +
+    `this machine is ${observed.platform}-${observed.arch} node-${observed.node} vitest-${observed.vitest}. ` +
+    `REFUSING BEFORE SPENDING (the run-toolchain amendment): this is not a VOID and costs no attempt — ` +
+    `either run on the declared toolchain or change the declaration before registering`
+  );
+}
+
+function assertRunToolchain(pin) {
+  const why = runToolchainRefusal(pin, runToolchainNow());
+  if (why !== null) refuse(why);
 }
 
 function assertRatesFrozen(manifest, cwd) {
@@ -1201,6 +1302,37 @@ export const PROTECTED_SCOPES = [
   "ROADMAP.md",
   "DECISIONS.md",
   "STATE.md",
+  // ADDED 2026-08-12, BECAUSE THIS LIST DID NOT ENFORCE THE DECISION THAT NAMED
+  // IT. Task-mix decision 3 forbids a task touching `src/cost/**`,
+  // `src/telemetry.ts`, gate's or repair's emission, or `scripts/b12-run.mjs`,
+  // and says "those ARE `PINNED_PATHS`". True, and misleading: `PINNED_PATHS`
+  // (`src/cost/b12/audit.ts`) and this list overlapped in ONE item, and THIS is
+  // the list a manifest actually passes through. Measured before the change — a
+  // task scoped to `src/telemetry.ts`, `scripts/b12-run.mjs`, `src/tools/gate.ts`
+  // or `src/tools/repair.ts` was ACCEPTED. Clause 5 is a change DETECTOR over
+  // pinned bytes; it fires after the fact and VOIDS, so it is not this gate.
+  "src/telemetry.ts",
+  "scripts/b12-run.mjs",
+  // GATE.TS AND REPAIR.TS ARE DELIBERATELY *NOT* HERE, AND THE FIRST DRAFT PUT
+  // THEM IN. The argument for adding them was that decision 3 forbids "gate's or
+  // repair's emission" while `fileScope` is a path grammar that cannot name a
+  // fenced region, so the enforceable superset is the whole file — and that
+  // losing two files would cost an authored manifest nothing.
+  //
+  // MEASURED, AND THE SECOND HALF WAS FALSE. A scope entry intersects every file
+  // beneath it, so protecting those two files refuses `src/tools/` ENTIRELY —
+  // the conformance suite asserts that exact scope is lawful
+  // (`tests/cost-meter.test.ts`, "the two admissionRule-7 implementations agree,
+  // case for case"), and `src/tools/` is where gate, repair, implement, scaffold,
+  // status, models and shared all live. That is the product surface B12 exists to
+  // measure the effect on, not two spare files.
+  //
+  // So the frozen comment beside `EMISSION_FENCED_FILES` — "the tools are the
+  // subject, not the instrument" — is right, and pinning only the FENCE is what
+  // keeps the subject available. The residual is real and is named rather than
+  // closed: a task lawfully scoped to gate.ts may still edit inside the fence,
+  // and clause 5 catches that AFTER the fact, as a VOID. No path-level gate can
+  // do better, and buying it would cost the thing being measured.
 ];
 
 /**
@@ -1374,6 +1506,121 @@ export function runlogBarrierViolation(diskText, headText) {
  * `installedChars` calibration key with it. Null-to-hash transitions compare
  * like any other difference.
  */
+/**
+ * ARTIFACT 1'S "repair's frozen max_rounds", ENFORCED RATHER THAN ONLY DECLARED.
+ *
+ * ADDED 2026-08-14, PRE-DATA, after an adversarial review found the clause was a
+ * dead letter. `repairMaxRounds` is refused when absent (`b12-manifest.mjs:457`),
+ * carried into the manifest (`:480`) and archived (`archive.ts:256`) — and then
+ * NOTHING transmitted or checked it. The session is handed `task.prompt` alone,
+ * no corpus prompt mentions `repair` at all, and an observation matched the
+ * declared 3 only by COINCIDENCE of the tool's own default. A session calling
+ * `max_rounds: 10` archived clean.
+ *
+ * VERIFIED, NOT DELIVERED, and that is the whole design. Telling the session the
+ * number means changing what an arm is handed — the prompt is frozen by
+ * `promptSha256` and the per-arm policy comes from the committed out-of-repo
+ * blob — so delivering it would move the experiment's own input in order to
+ * satisfy a check. This reads what the call did, after the fact, and changes
+ * nothing either arm sees.
+ *
+ * INVALID RATHER THAN REFUSED. The artifact is still written and the reason
+ * travels in `invalidReasons`, because admission already requires
+ * `record.valid === true` (`assemble.ts`). A refusal writes nothing, and an
+ * attempt that leaves no trace is retryable without limit — a forking path
+ * bought to close a check.
+ *
+ * FAIL-CLOSED ON ABSENCE OF THE FIELD. A repair row carrying no numeric
+ * `detail.max_rounds` predates the field or came from somewhere else, and
+ * "cannot tell" may not wear the same answer as "matched" — the mistake
+ * `limits-unverifiable` exists for in `b12-scorer-mac.sh`.
+ *
+ * BUT NOT FAIL-CLOSED ON ABSENCE OF THE ROW, and that is a real hole rather than
+ * an oversight. Zero repair rows returns []: the control arm has no such tool, a
+ * treatment session is free not to call it, and — the case that makes a guard
+ * impossible — a tool whose PREFLIGHT refuses emits no row at all while its
+ * result still sits in the transcript, so "every local invocation has a row" is
+ * FALSE on a path the design intends (`capture.ts`, which publishes
+ * `invocationsWithoutRow` as REPORTED, DECIDING NOTHING, and says why). A
+ * `repair` whose telemetry append failed — the writer swallows it by design,
+ * `telemetry.ts` — therefore escapes this check entirely. THIS DETECTOR IS
+ * COMPLETE OVER ROWS THAT EXIST AND OVER NOTHING ELSE. Named 2026-08-14 by an
+ * adversarial review, after the commit that added it claimed completeness.
+ *
+ * IT READS A DIFFERENT SET FROM THE SCORER — NOT A SUPERSET — AND ONLY THE
+ * SCORER DECIDES. `repairRoundsMismatches` in `src/cost/b12/assemble.ts` runs the
+ * same comparison, but over a different universe: the run-wide union of the
+ * treatment observations' identified rows (`assemble.ts:283`), narrowed per
+ * observation by `scopeTelemetry` (`assemble.ts:688`). NOT "every VALID treatment
+ * observation" — that was this comment's second wrong version, corrected the same
+ * day: the union filters SUSPECT integrity sources (`assemble.ts:256`), while
+ * `record.valid` is consulted later and only for admission (`:407`). This one
+ * runs over one worktree's own log. THE TWO SCOPING AXES ARE INDEPENDENT, so each
+ * set holds rows the other does not:
+ *   - driver-only: a foreign row written into this private worktree that is
+ *     neither a known invocation nor inside the scorer's window;
+ *   - scorer-only: a row archived by ANOTHER treatment observation whose
+ *     timestamp lands in this transcript's ±60 s window, or whose invocation id
+ *     this transcript recognises.
+ *
+ * THIS CORRECTS WHAT THIS COMMENT SAID BEFORE. It read "Driver ⊇ scorer, always,
+ * so the disagreement is one-directional: this can warn where the run-level
+ * clause stays silent, and it can never be silent where that clause fires." Both
+ * halves are false — the containment does not hold in either direction, so the
+ * driver CAN be silent where the clause fires. Introduced 2026-08-14 in the
+ * commit that claimed to state the two detectors' relation, and refuted the same
+ * day by adversarial review. The paragraph immediately below already said the
+ * scope was "not scoped by session or by invocation ownership", which contradicts
+ * a superset claim standing four lines above it.
+ *
+ * Left rather than closed, and that part survives: the two are not doing the same
+ * job — this one warns an operator mid-run and decides nothing, and narrowing it
+ * to the scored set would hide from the operator exactly the stray rows they are
+ * the only one positioned to explain.
+ *
+ * SCOPE, ALSO NARROWER THAN IT LOOKS. `archive.telemetry` is every parseable row
+ * in the observation's worktree log up to the acceptance boundary
+ * (`capture.ts:561`) — it is NOT scoped by session or by invocation ownership
+ * the way scoring's `scopeTelemetry` is (`assemble.ts:688`). Each observation
+ * gets a fresh worktree, so a foreign row has to be written INTO that private
+ * tree to appear here, but if one is, this invalidates an observation scoring
+ * would have excluded as foreign. A false positive, visible in the reason text.
+ *
+ * `budget_seconds` IS DELIBERATELY NOT CHECKED. It is an unregistered free
+ * parameter (F7) — nothing freezes it, so there is no declared value to compare
+ * against, and inventing one here would register a condition by side effect. It
+ * is archived verbatim on the row either way.
+ */
+export function repairRoundsReasons(declared, telemetry, taskId) {
+  const rows = (Array.isArray(telemetry) ? telemetry : []).filter((r) => r !== null && typeof r === "object" && r.tool === "repair");
+  if (rows.length === 0) return [];
+  if (typeof declared !== "number" || !Number.isFinite(declared)) {
+    // `tneed` at the manifest gate should make this unreachable; if it is
+    // reached, the comparison has no right-hand side and silence is the worst
+    // answer available.
+    return [
+      `${rows.length} repair telemetry row(s) exist but the manifest declares repairMaxRounds ${String(declared)} ` +
+        `for ${taskId}, which is not a number — artifact 1's frozen max_rounds has nothing to compare against`,
+    ];
+  }
+  const reasons = [];
+  rows.forEach((row, i) => {
+    const got = row.detail?.max_rounds;
+    if (typeof got !== "number" || !Number.isFinite(got)) {
+      reasons.push(
+        `repair telemetry row ${i + 1} of ${rows.length} carries no numeric detail.max_rounds, so the manifest's frozen ` +
+          `repairMaxRounds (${declared}) cannot be checked against what ran (artifact 1: "repair's frozen max_rounds")`
+      );
+    } else if (got !== declared) {
+      reasons.push(
+        `repair ran at max_rounds ${got} while the manifest freezes repairMaxRounds ${declared} for ${taskId} ` +
+          `(artifact 1: "repair's frozen max_rounds") — this attempt is not an observation of the registered condition`
+      );
+    }
+  });
+  return reasons;
+}
+
 export function instructionDriftReasons(pre, post) {
   const cites = {
     claudeMd: "voidConditions 12: the in-repo CLAUDE.md blob hash moved between arm start and end",
@@ -3053,12 +3300,67 @@ async function observe(args, pilotMode = false) {
     );
   }
 
+  // Artifact 1's frozen `max_rounds`, compared against what the call actually
+  // ran under. The doctrine is on the function.
+  //
+  // REPORTED, DECIDING NOTHING — and that is a RETREAT from 8fedebc, which
+  // pushed these into `invalid`. The retreat is the point. No clause of the
+  // frozen pre-registration covers "the call did not honour the frozen
+  // max_rounds": clause 4 fires when a FROZEN ITEM CHANGES, and `repairMaxRounds`
+  // is still declared 3 in the manifest — nothing moved. So invalidating here
+  // excluded an observation by a route the registration cannot name, and
+  // `assemble.ts` still published it as `scored` (its disposition falls through
+  // to "scored" when no void fires) while `record.valid !== true` kept it out of
+  // the admitted set, with its terms landing in `dropped` and moving R_all/R_hi+.
+  // An unregistered exclusion route is the exact researcher degree of freedom
+  // this apparatus exists to remove, so a check that creates one is worse than
+  // the gap it closes.
+  //
+  // INTERIM, decided 2026-08-14: record and do not decide. The fact is on the
+  // observation, an operator cannot miss it, and NOTHING is excluded by it. A
+  // pre-data amendment naming the violation — the `b12-amendment/1` route the
+  // conformance-paths amendment already took, prospective and editing no frozen
+  // byte — is owed BEFORE PHASE 4, and until it governs, this stays a covariate.
+  const repairRoundsFindings = repairRoundsReasons(task.repairMaxRounds, archive.telemetry, task.id);
+  // Said HERE rather than beside the invalidity block at the end, because the
+  // pilot path returns before that block and a pilot observation can break the
+  // registered condition exactly as a scored one can. On its own prefix, never
+  // `INVALID:`, because it decides nothing and must not read as if it did — and
+  // louder than its consequence on purpose: nothing acts on it yet, so an
+  // operator reading past it is the only way it gets lost.
+  for (const finding of repairRoundsFindings) {
+    process.stderr.write(`  CONDITION NOT AS REGISTERED: ${finding}` + String.fromCharCode(10));
+  }
+  if (repairRoundsFindings.length > 0) {
+    process.stderr.write(
+      "  ^ recorded in observation.repairRoundsFindings and DECIDING NOTHING here. The rule that acts" +
+        String.fromCharCode(10) +
+        "    on it is the 2026-08-14 pre-data amendment, raised RUN-LEVEL at scoring time over a" +
+        String.fromCharCode(10) +
+        "    DIFFERENT set: the run-wide union of archived treatment rows, narrowed per observation." +
+        String.fromCharCode(10) +
+        "    NEITHER SET CONTAINS THE OTHER. A row can appear here and be excluded there as foreign," +
+        String.fromCharCode(10) +
+        "    and a row that VOIDS THE RUN can be absent here — so this staying quiet is not that" +
+        String.fromCharCode(10) +
+        "    clause's assent. Explain the row." +
+        String.fromCharCode(10)
+    );
+  }
+
   const observation = {
     valid: invalid.length === 0,
     // Which case the run fell into, named. A boolean records that something was
     // wrong; this records what, and it is what a re-adjudication reads.
     outcome: verdict.outcome,
     invalidReasons: invalid,
+    // NOT invalidity, and kept in its own field so it can never be mistaken for
+    // it: artifact 1's frozen `max_rounds` against what the call ran under.
+    // Empty on a compliant observation AND on one where the row never landed —
+    // see the function's own note on what it cannot see. Non-empty means the
+    // attempt is not an observation of the registered condition, which is a fact
+    // no clause currently acts on; a pre-data amendment is owed before PHASE 4.
+    repairRoundsFindings,
     ts: stamp(),
     runId: manifest.runId ?? null,
     manifestSha256: manifestSha,

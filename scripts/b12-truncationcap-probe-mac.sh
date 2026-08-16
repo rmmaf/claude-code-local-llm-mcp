@@ -184,6 +184,22 @@ TMP_MINE=1
 SESS_CWD="$TMP_DIR/session-cwd"
 mkdir -p "$SESS_CWD" || refuse "could not create the throwaway session cwd"
 
+# RESOLVED, AND THIS IS THE THIRD TIME THIS SYMLINK HAS COST A MEASUREMENT.
+#
+# `mktemp -d` returns a path under /var/folders/..., and on macOS /var is a
+# symlink to /private/var. Claude Code names its transcript directory after the
+# session's PHYSICAL cwd, so the transcript lands under
+# `~/.claude/projects/-private-var-folders-.../`. `extract.cjs` builds the same
+# slug from the STRING it is handed — and `-var-folders-...` is a different
+# directory that does not exist. The probe then refuses "claude wrote no
+# transcript", having already spent a paid session whose transcript is sitting
+# on disk under the other name.
+#
+# Same defect as the one that made the mutation matrix read 0/6 and the round
+# script look for a doubled path. Fixed at the source here: everything
+# downstream receives the physical path.
+SESS_CWD=$(cd "$SESS_CWD" && pwd -P) || refuse "could not resolve the throwaway session cwd"
+
 # ---------------------------------------------------------------------------
 next "The sentinel"
 

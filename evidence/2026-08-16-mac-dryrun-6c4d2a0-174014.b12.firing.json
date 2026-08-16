@@ -1,0 +1,1181 @@
+{
+  "schema": "b12-firing/1",
+  "baseCommit": "6c4d2a0e479d406a35cddd484ee4d723d2ad49df",
+  "generatedAt": "2026-08-16T17:40:14Z",
+  "controlsEvaluated": [
+    {
+      "file": "tests/cost-meter.test.ts",
+      "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control"
+    },
+    {
+      "file": "tests/cost-meter.test.ts",
+      "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is"
+    },
+    {
+      "file": "tests/cost-meter.test.ts",
+      "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero"
+    },
+    {
+      "file": "tests/cost-meter.test.ts",
+      "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control"
+    },
+    {
+      "file": "tests/cost-meter.test.ts",
+      "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides"
+    },
+    {
+      "file": "tests/cost-meter.test.ts",
+      "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control"
+    }
+  ],
+  "baseline": {
+    "allGreen": true,
+    "problems": []
+  },
+  "pairs": [
+    {
+      "id": "m1-failed-repair",
+      "control": {
+        "file": "tests/cost-meter.test.ts",
+        "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control"
+      },
+      "subject": "src/cost/report.ts",
+      "fired": true,
+      "outcome": "fired",
+      "detail": "assertion failed at tests/cost-meter.test.ts:1805, inside the control's own body",
+      "offDiagonal": [
+        {
+          "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        }
+      ],
+      "offDiagonalFailures": [
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual prices a subagent's tool call against the subagent's own thread",
+          "annotation": "its subagent row is zero-byte, so skipping zero rows removes the call it prices"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual values a collapsed turn as the context re-read it avoided",
+          "annotation": "a collapsed turn is credited at zero bytes by construction — the same row this mutation drops"
+        }
+      ],
+      "specificityClean": false,
+      "problems": []
+    },
+    {
+      "id": "m2-clamp-restored",
+      "control": {
+        "file": "tests/cost-meter.test.ts",
+        "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is"
+      },
+      "subject": "src/cost/report.ts",
+      "fired": true,
+      "outcome": "fired",
+      "detail": "assertion failed at tests/cost-meter.test.ts:1748, inside the control's own body",
+      "offDiagonal": [
+        {
+          "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        }
+      ],
+      "offDiagonalFailures": [],
+      "specificityClean": true,
+      "problems": []
+    },
+    {
+      "id": "m3-unsized-as-zero",
+      "control": {
+        "file": "tests/cost-meter.test.ts",
+        "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero"
+      },
+      "subject": "src/cost/report.ts",
+      "fired": true,
+      "outcome": "fired",
+      "detail": "assertion failed at tests/cost-meter.test.ts:1495, inside the control's own body",
+      "offDiagonal": [
+        {
+          "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        }
+      ],
+      "offDiagonalFailures": [
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual does not borrow another thread's request to size a subagent's refusal",
+          "annotation": "it asserts on the same `unsized` channel this mutation empties — the one that must not read 0"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual does not count a saving whose row cannot point at a transcript entry",
+          "annotation": null
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the cost-meter CLI shows withheld rows even when nothing at all was counted",
+          "annotation": null
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the four B12 scoring seams gives excludedForeign a ROW and an UNSIZED count, because its thread is unknown",
+          "annotation": null
+        }
+      ],
+      "specificityClean": false,
+      "problems": []
+    },
+    {
+      "id": "m4-sibling-inheritance",
+      "control": {
+        "file": "tests/cost-meter.test.ts",
+        "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control"
+      },
+      "subject": "src/cost/b12/assemble.ts",
+      "fired": true,
+      "outcome": "fired",
+      "detail": "assertion failed at tests/cost-meter.test.ts:3166, inside the control's own body",
+      "offDiagonal": [
+        {
+          "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        }
+      ],
+      "offDiagonalFailures": [],
+      "specificityClean": true,
+      "problems": []
+    },
+    {
+      "id": "m5-count-both-ownership",
+      "control": {
+        "file": "tests/cost-meter.test.ts",
+        "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides"
+      },
+      "subject": "src/cost/report.ts",
+      "fired": true,
+      "outcome": "fired",
+      "detail": "assertion failed at tests/cost-meter.test.ts:1055, inside the control's own body",
+      "offDiagonal": [
+        {
+          "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        }
+      ],
+      "offDiagonalFailures": [],
+      "specificityClean": true,
+      "problems": []
+    },
+    {
+      "id": "m6-counts-not-populations",
+      "control": {
+        "file": "tests/cost-meter.test.ts",
+        "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control"
+      },
+      "subject": "scripts/b12-run.mjs",
+      "fired": true,
+      "outcome": "fired",
+      "detail": "assertion failed at tests/cost-meter.test.ts:3219, inside the control's own body",
+      "offDiagonal": [
+        {
+          "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        },
+        {
+          "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+          "status": "passed",
+          "declared": null,
+          "ok": true
+        }
+      ],
+      "offDiagonalFailures": [
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the B12 harness keeps a budget timeout as a censored observation, not an invalid one",
+          "annotation": "MECHANISM: its fixture calls classify() with coveredSlugs=[a,b,c] against writtenSlugs=[a]; the mutation reads that valid SUBSET as outside coverage and poisons the run before the test's own outcome assertion is reached"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the B12 harness refuses an arm the CLI abandoned partway, however much it had already done",
+          "annotation": "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the B12 harness gives a failure the same verdict however late it happened",
+          "annotation": "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the B12 harness does not censor a child that finished, whatever the timer says",
+          "annotation": "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the B12 harness names every outcome, so an unhandled combination cannot become a default",
+          "annotation": "same mechanism: a valid subset read as outside coverage, poisoning the run before the outcome assertion"
+        }
+      ],
+      "specificityClean": false,
+      "problems": []
+    }
+  ],
+  "firedCount": 6,
+  "registeredCount": 6,
+  "problems": [],
+  "allFired": true,
+  "specificityClean": false,
+  "offDiagonalKillCount": 11,
+  "runId": "2026-08-16-mac-dryrun-6c4d2a0-174014",
+  "subjects": [
+    {
+      "id": "m1-failed-repair",
+      "kind": "historical",
+      "path": "src/cost/report.ts",
+      "sha256AtBase": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "sha256InTree": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "why": "an aborted repair writes bytes_raw:0/bytes_returned:0 and the meter must CREDIT it at exactly zero, never drop it",
+      "mutation": {
+        "find": "    const signed = entry.bytes_raw - entry.bytes_returned;",
+        "replace": "    if (entry.bytes_raw === 0 && entry.bytes_returned === 0) continue;\n    const signed = entry.bytes_raw - entry.bytes_returned;",
+        "occurrences": 1
+      }
+    },
+    {
+      "id": "m2-clamp-restored",
+      "kind": "historical",
+      "path": "src/cost/report.ts",
+      "sha256AtBase": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "sha256InTree": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "why": "THE SHIPPED DEFECT, restored at its source: max(0, raw - returned) turns a call that COST bytes into one that saved nothing",
+      "mutation": {
+        "find": "    const signed = entry.bytes_raw - entry.bytes_returned;",
+        "replace": "    const signed = Math.max(0, entry.bytes_raw - entry.bytes_returned);",
+        "occurrences": 1
+      }
+    },
+    {
+      "id": "m3-unsized-as-zero",
+      "kind": "historical",
+      "path": "src/cost/report.ts",
+      "sha256AtBase": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "sha256InTree": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "why": "folding an unsizeable refusal in as 0 reads as 'we refused nothing worth having'",
+      "mutation": {
+        "find": "    if (magnitude === null) into.unsized++;",
+        "replace": "    if (magnitude === null) into.units += 0;",
+        "occurrences": 1
+      }
+    },
+    {
+      "id": "m4-sibling-inheritance",
+      "kind": "historical",
+      "path": "src/cost/b12/assemble.ts",
+      "sha256AtBase": "32dd364dd7ebe79f7811f09b907fd50af33f908bf98adef6748c119eaae6ce28",
+      "sha256InTree": "32dd364dd7ebe79f7811f09b907fd50af33f908bf98adef6748c119eaae6ce28",
+      "why": "dropping the inherited>0 rejection lets a resumed session claim ids a sibling worktree already held",
+      "mutation": {
+        "find": "  if (inherited.length > 0) {",
+        "replace": "  if (false) {",
+        "occurrences": 1
+      }
+    },
+    {
+      "id": "m5-count-both-ownership",
+      "kind": "invariant",
+      "path": "src/cost/report.ts",
+      "sha256AtBase": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "sha256InTree": "645fd025ffa386fb470a811bc84f986a2975c310ba6dda2542163a81666cfe0b",
+      "why": "count-both for a doubly-owned invocation id: no id is ambiguous, so two sessions each credit the same call instead of both refusing",
+      "mutation": {
+        "find": "  for (const [id, groups] of owners) if (groups.size > 1) ambiguous.add(id);",
+        "replace": "  for (const [id, groups] of owners) if (groups.size > 99) ambiguous.add(id);",
+        "occurrences": 1
+      }
+    },
+    {
+      "id": "m6-counts-not-populations",
+      "kind": "historical",
+      "path": "scripts/b12-run.mjs",
+      "sha256AtBase": "2bcbe172bf3db48f18ffe0eb5d573304ab0654ef2dc1db56e1996f9e9ed102fa",
+      "sha256InTree": "2bcbe172bf3db48f18ffe0eb5d573304ab0654ef2dc1db56e1996f9e9ed102fa",
+      "why": "counts instead of populations — the control's own comment says the slug COUNT grows 1→2 here, so a count reads nothing",
+      "mutation": {
+        "find": "    const outside = writtenSlugs.filter((s) => !covered.has(s));",
+        "replace": "    const outside = writtenSlugs.length < coveredSlugs.length ? writtenSlugs : [];",
+        "occurrences": 1
+      }
+    }
+  ],
+  "conformance": [
+    {
+      "file": "tests/cost-meter.test.ts",
+      "sha256AtBase": "e93075f6997feb30f36fde153d595ba6d5c8e55143fc96661a28ddd55d83bd97",
+      "sha256InTree": "e93075f6997feb30f36fde153d595ba6d5c8e55143fc96661a28ddd55d83bd97"
+    }
+  ],
+  "bookends": [
+    {
+      "id": "m1-failed-repair",
+      "green": true,
+      "why": null,
+      "failed": []
+    },
+    {
+      "id": "m2-clamp-restored",
+      "green": true,
+      "why": null,
+      "failed": []
+    },
+    {
+      "id": "m3-unsized-as-zero",
+      "green": true,
+      "why": null,
+      "failed": []
+    },
+    {
+      "id": "m4-sibling-inheritance",
+      "green": true,
+      "why": null,
+      "failed": []
+    },
+    {
+      "id": "m5-count-both-ownership",
+      "green": true,
+      "why": null,
+      "failed": []
+    },
+    {
+      "id": "m6-counts-not-populations",
+      "green": true,
+      "why": null,
+      "failed": []
+    }
+  ],
+  "reports": {
+    "baseline": {
+      "sha256": "6c1ff6e32ec6acf8672ad52ae7418c0d6ea3d3bc1283c62675f1d8944c3240e2",
+      "totals": {
+        "tests": 163,
+        "suites": 1,
+        "reportedTotal": 163,
+        "reportedFailed": 0,
+        "reportedFailedSuites": 0
+      },
+      "notPassed": [],
+      "registeredControls": [
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+          "status": "passed"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+          "status": "passed"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+          "status": "passed"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+          "status": "passed"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+          "status": "passed"
+        },
+        {
+          "file": "tests/cost-meter.test.ts",
+          "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+          "status": "passed"
+        }
+      ]
+    },
+    "bookends": {
+      "m1-failed-repair": {
+        "sha256": "4c59944e7bd4ab3729fdf8ae4a0d535b5775fd3681110b61746a950cf92515dd",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 0,
+          "reportedFailedSuites": 0
+        },
+        "notPassed": [],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m2-clamp-restored": {
+        "sha256": "200ea5d1ca30ff129c53f221a151e1ccef50fa2c0b77fd879863e92dcc0564b6",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 0,
+          "reportedFailedSuites": 0
+        },
+        "notPassed": [],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m3-unsized-as-zero": {
+        "sha256": "726e6622c3c005e90128c7a9b42f458ba98819ef631dbb0554fe5d3121fe3bdf",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 0,
+          "reportedFailedSuites": 0
+        },
+        "notPassed": [],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m4-sibling-inheritance": {
+        "sha256": "9fd5a9c2f8ad7912c5ede655644f40762a1ccdc0e338c222b6b494ec4b1f60e0",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 0,
+          "reportedFailedSuites": 0
+        },
+        "notPassed": [],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m5-count-both-ownership": {
+        "sha256": "9a5b2dcee9d2d4bd37395a406611eb458258c9151ec0ab39695afb733f445ee4",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 0,
+          "reportedFailedSuites": 0
+        },
+        "notPassed": [],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m6-counts-not-populations": {
+        "sha256": "7c727979b65c0cc5a794e36c6fcb1a4e83c16fb3888e913eba900d0a0e19af2f",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 0,
+          "reportedFailedSuites": 0
+        },
+        "notPassed": [],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      }
+    },
+    "mutants": {
+      "m1-failed-repair": {
+        "sha256": "438bfa34d85a7a358cb1f056307fd28171131d2339d8c4d30e8b411ba2058b65",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 3,
+          "reportedFailedSuites": 2
+        },
+        "notPassed": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual prices a subagent's tool call against the subagent's own thread",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual values a collapsed turn as the context re-read it avoided",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "failed"
+          }
+        ],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m2-clamp-restored": {
+        "sha256": "f5fbb8df0aed826d3987fb401161e15aa553cfc3cf11a511cb025c0a9e0543b8",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 1,
+          "reportedFailedSuites": 2
+        },
+        "notPassed": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "failed"
+          }
+        ],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m3-unsized-as-zero": {
+        "sha256": "d0749c76764bf98760a3937510e3c259e512a44b55753463540d31302e95d1ae",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 5,
+          "reportedFailedSuites": 4
+        },
+        "notPassed": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual does not borrow another thread's request to size a subagent's refusal",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual does not count a saving whose row cannot point at a transcript entry",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the cost-meter CLI shows withheld rows even when nothing at all was counted",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the four B12 scoring seams gives excludedForeign a ROW and an UNSIZED count, because its thread is unknown",
+            "status": "failed"
+          }
+        ],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m4-sibling-inheritance": {
+        "sha256": "2f5f37c9bf6bb660aaf89c1fad53380e7c997f8a8a457fbcddb9d8683d0608e9",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 1,
+          "reportedFailedSuites": 2
+        },
+        "notPassed": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "failed"
+          }
+        ],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m5-count-both-ownership": {
+        "sha256": "50f7512a89444f4c2f3347d69e22ef20297dd0ed75b6c317ca744ac69f0c2157",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 1,
+          "reportedFailedSuites": 2
+        },
+        "notPassed": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "failed"
+          }
+        ],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "passed"
+          }
+        ]
+      },
+      "m6-counts-not-populations": {
+        "sha256": "0f7556a76a27215ed264071a1d5230a987ff2e7e98aea47e2327126110c4b08d",
+        "totals": {
+          "tests": 163,
+          "suites": 1,
+          "reportedTotal": 163,
+          "reportedFailed": 6,
+          "reportedFailedSuites": 2
+        },
+        "notPassed": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness keeps a budget timeout as a censored observation, not an invalid one",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness refuses an arm the CLI abandoned partway, however much it had already done",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness gives a failure the same verdict however late it happened",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness does not censor a child that finished, whatever the timer says",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness names every outcome, so an unhandled combination cannot become a default",
+            "status": "failed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "failed"
+          }
+        ],
+        "registeredControls": [
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual credits a failed repair row at zero units — clause 6's failed-repair control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual keeps a call that ADDED bytes as the negative it is",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual counts a refusal it cannot size instead of summing the unknown as zero",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a resumed session whose ids came from a sibling worktree — clause 6's two-worktree control",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "telemetry and the counterfactual refuses a call whose invocation id two sessions both carry, on both sides",
+            "status": "passed"
+          },
+          {
+            "file": "tests/cost-meter.test.ts",
+            "fullName": "the B12 harness rejects a run whose snapshot covered fewer slugs than it wrote to — clause 6's slug-coverage control",
+            "status": "failed"
+          }
+        ]
+      }
+    }
+  },
+  "tooling": [
+    {
+      "path": "scripts/b12-mutate.mjs",
+      "role": "runner",
+      "sha256AtBase": "96f28f86b02795ca07f4f7771a64371865aa942f9de7139621a70c3b9e5ba7aa",
+      "sha256InTree": "96f28f86b02795ca07f4f7771a64371865aa942f9de7139621a70c3b9e5ba7aa"
+    },
+    {
+      "path": "scripts/b12-firing.mjs",
+      "role": "evaluator",
+      "sha256AtBase": "75c1b0d5fd9229eba80a2a3fa135456a026dcdcb53641ad228e640176d890d56",
+      "sha256InTree": "75c1b0d5fd9229eba80a2a3fa135456a026dcdcb53641ad228e640176d890d56"
+    }
+  ],
+  "runsSpent": 13,
+  "runsBudgeted": 13,
+  "toolchain": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "nodeVersion": "v22.23.1",
+    "vitest": "vitest/4.1.10 darwin-arm64 node-v22.23.1"
+  }
+}

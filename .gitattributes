@@ -29,3 +29,27 @@
 *.jsonl text eol=lf
 *.json  text eol=lf
 *.md    text eol=lf
+
+# THE DEFECT PATCHES, WHOSE WHOLE JOB IS TO PRODUCE ONE EXACT TREE.
+#
+# `scripts/b12-author.mjs` applies a spec's patch twice — once in a scratch
+# worktree, once against a temporary index over the parent's tree — and compares
+# the results. Review argued that CRLF would be harmless here, since `git apply`
+# accepts CRLF framing and both routes canonicalize; that was worth settling
+# rather than debating, so it was MEASURED on a scratch repo with
+# `core.autocrlf=true` and no attribute:
+#
+#   the committed patch checks out with CR bytes, the WORKTREE route applies it,
+#   the INDEX route refuses it outright ("patch does not apply"), and authoring
+#   refuses. Not a subtle tree divergence — a hard stop.
+#
+# So the hazard is real and the mechanism is the opposite of harmless. Without
+# this line `git check-attr text eol -- <anything>.patch` answers `unspecified`
+# on both, and `core.autocrlf=true` supplies the CR.
+#
+# Written BEFORE any patch is tracked: `git ls-files "*.patch" "*.diff"` is empty
+# today, so this line matches nothing that exists and needs no `--renormalize`.
+# It is cheaper to pin the hazard shut than to spend an authoring cycle
+# rediscovering it 65 times.
+*.patch text eol=lf
+*.diff  text eol=lf

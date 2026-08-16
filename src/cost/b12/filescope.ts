@@ -53,6 +53,15 @@ export const PROTECTED_SCOPES: readonly string[] = [
   "ROADMAP.md",
   "DECISIONS.md",
   "STATE.md",
+  // ADDED 2026-08-12 — the harness twin carries the reasoning in full. In short:
+  // this list is the gate a manifest passes through, and it did not enforce
+  // task-mix decision 3, which names it. `PINNED_PATHS` and this list overlapped
+  // in ONE item, and a task scoped to either of the two below was ACCEPTED
+  // (measured). `src/tools/gate.ts` and `src/tools/repair.ts` are deliberately
+  // NOT here: a scope entry intersects everything beneath it, so protecting them
+  // would refuse `src/tools/` entirely — the product surface B12 measures.
+  "src/telemetry.ts",
+  "scripts/b12-run.mjs",
 ];
 
 export type ParsedScope =

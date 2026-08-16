@@ -1,0 +1,13 @@
+diff --git a/src/selection.ts b/src/selection.ts
+index 5ea2208..99c471a 100644
+--- a/src/selection.ts
++++ b/src/selection.ts
+@@ -10,7 +10,7 @@ export type MatchQuality = "exact" | "fuzzy" | "none";
+ 
+ /** Lowercase, trim, backslashes → forward slashes. */
+ export function normalizeId(s: string): string {
+-  return s.trim().toLowerCase().replace(/\\/g, "/");
++  return s.trim().replace(/\\/g, "/");
+ }
+ 
+ // Quant/format/precision tokens that distinguish the same base model. Stripped

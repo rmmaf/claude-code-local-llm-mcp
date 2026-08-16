@@ -1323,12 +1323,39 @@ ok "all three oracles restored"
 if [ -n "$(git status --porcelain -- src/cost/b12 2>/dev/null)" ] || [ -f "$ART" ]; then
   git add src/cost/b12 >/dev/null 2>&1
   [ -f "$ART" ] && git add "$ART" >/dev/null 2>&1
-  git commit -q -m "wip: scorer bodies authored by repair on the Mac ($RUN_ID)
+  # THE PIN GUARD RUNS BY NAME, NOT BY HOOK. The pre-commit hook is tracked and
+  # `npm ci` points core.hooksPath at it, but a hook file without +x is
+  # SILENTLY SKIPPED by git — and executable bits are exactly what archive
+  # transport keeps losing. A guard whose execution depends on a file mode
+  # surviving a zip is not a guard.
+  # The guard's own words are SHOWN, not swallowed: exit 2 here can be a pin
+  # refusal or an operational failure (unreadable index, missing config), and a
+  # message that collapses both into "refused the staged bytes" sends the
+  # operator to un-stage work that a broken environment never inspected. And
+  # the diff is written BEFORE any claim about it, in the one order that cannot
+  # claim a file that does not exist yet.
+  if ! PINS_OUT=$(node scripts/b12-pins-check.mjs 2>&1); then
+    warn "b12-pins-check did NOT pass the staged bytes — NOT committing. Its own words:"
+    printf '%s\n' "$PINS_OUT" | sed 's/^/      /'
+    git diff --cached > "$OUT/staged-uncommitted.diff" 2>/dev/null
+    [ -s "$OUT/staged-uncommitted.diff" ] && warn "staged diff written to staged-uncommitted.diff" \
+      || warn "and the staged diff is EMPTY — nothing was staged, nothing leaves this machine"
+  elif git commit -q -m "wip: scorer bodies authored by repair on the Mac ($RUN_ID)
 
 $CLOSED of $ATTEMPTED attempted units closed here. Written by scripts/b12-scorer-mac.sh; the
 bodies under src/cost/b12/ are the local model's, not a human's. Reviewed on the
-other machine before this reaches main." >/dev/null 2>&1 &&
-    ok "committed $(git rev-parse --short HEAD)" || warn "commit failed; the diff is still in the archive"
+other machine before this reaches main." >/dev/null 2>&1; then
+    ok "committed $(git rev-parse --short HEAD)"
+  else
+    # HEAD did not move, so the bundle and changes.diff below will both be
+    # EMPTY of this work — the old message claimed "the diff is still in the
+    # archive" while the archive carried nothing. The staged diff is captured
+    # HERE, the one place that still has it.
+    warn "commit FAILED — capturing the staged diff, since the bundle below cannot"
+    git diff --cached > "$OUT/staged-uncommitted.diff" 2>/dev/null
+    [ -s "$OUT/staged-uncommitted.diff" ] && warn "staged diff written to staged-uncommitted.diff — apply with 'git apply'" \
+      || warn "and the staged diff is EMPTY — the bodies did NOT leave this machine; run git status by hand"
+  fi
 else
   info "nothing to commit — no unit changed a file"
 fi
