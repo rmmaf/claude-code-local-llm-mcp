@@ -81,6 +81,20 @@ const clone = run(staging, "git", [
 ]);
 if (!clone.ok) refuse(`git clone failed: ${clone.err || clone.out}`);
 
+// WRITTEN INTO THE CLONE'S OWN CONFIG, because `git clone -c` does not persist
+// it. Verified: the settings above govern the clone's checkout — which is why
+// the files land as LF — but `git config --local core.autocrlf` in the result
+// comes back EMPTY. The archive then inherits whatever the receiving machine's
+// global config says. macOS defaults make that harmless today, and the
+// pre-flight does its own `git checkout` on arrival, so "harmless today"
+// depends on a setting nobody on that end has any reason to keep.
+for (const [k, v] of [["core.autocrlf", "false"], ["core.eol", "lf"]]) {
+  if (!git(tree, ["config", "--local", k, v]).ok) {
+    rmSync(staging, { recursive: true, force: true });
+    refuse(`could not write ${k} into the clone's config`);
+  }
+}
+
 // THE CLONE MUST BE THE COMMIT WE PINNED. Cloning a branch takes its tip, and
 // the tip is HEAD only because the check above proved the tree clean. Verified
 // rather than assumed: this is the one fact the whole round rests on.
