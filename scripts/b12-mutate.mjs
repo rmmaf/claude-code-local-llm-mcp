@@ -769,6 +769,30 @@ if (isMain) {
     process.exit(2);
   }
   const repoRoot = git(process.cwd(), ["rev-parse", "--show-toplevel"]).out;
+
+  // EVIDENCE IS APPEND-ONLY, and this was the one writer that did not know it.
+  // The sibling probes refuse on an existing artifact; this one overwrote.
+  //
+  // What it would have cost: `b12-mac-round.sh` passed a HARDCODED runId, so a
+  // second Mac round silently rewrites the FIRST round's committed artifact —
+  // one run_id naming two different runs — and leaves a tracked modification
+  // that makes the preflight and the installedChars probe each refuse "the
+  // working tree has tracked changes" several steps later. Three misleading
+  // refusals downstream of one missing check.
+  //
+  // CHECKED BEFORE THE HARNESS RUNS, not before the write. The matrix is the
+  // expensive part; refusing after paying for it would be a correct verdict
+  // delivered too late to be worth anything.
+  const artifactPath = path.join(repoRoot, "evidence", `${runId}.b12.firing.json`);
+  if (existsSync(artifactPath)) {
+    console.error(
+      `REFUSED: evidence/${runId}.b12.firing.json already exists, and nothing was run.\n` +
+        `  One run_id names one run. Overwriting it would leave a committed artifact\n` +
+        `  describing a run that no longer happened. Pass a runId not already used.`
+    );
+    process.exit(2);
+  }
+
   runHarness({ repoRoot, commit, runId, generatedAt: at })
     .then((artifact) => {
       const dir = path.join(repoRoot, "evidence");

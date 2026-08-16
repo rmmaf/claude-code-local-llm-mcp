@@ -44,6 +44,18 @@ if [ "${1:-}" != "" ]; then REPO="$1"; else REPO=$(git rev-parse --show-toplevel
 [ -n "${REPO:-}" ] || { printf 'REFUSED — no git work tree here, and no path given.\n'; exit 2; }
 cd "$REPO" || { printf 'REFUSED — cannot cd to %s\n' "$REPO"; exit 2; }
 
+# CANONICALISE, AND DO IT HERE. Every "$REPO/..." path below is built AFTER this
+# cd, so a RELATIVE argument doubles the prefix: run as
+# `bash b12-mac/scripts/b12-mac-round.sh b12-mac` — the exact shape of the
+# unpack-and-run one-liner I handed over — and the gate looks for
+# `b12-mac/b12-mac/.b12-round-pin`, finds nothing, and refuses while blaming the
+# archive. It cost a Mac session, and it never reproduced here because every
+# local test passed an absolute path.
+#
+# `pwd -P` and not `pwd`: it also resolves /var -> /private/var, the macOS
+# symlink that made M4 read 0/6 and look like a scientific result.
+REPO=$(pwd -P)
+
 OUT="$REPO/b12-mac-round"
 LOGS="$OUT/logs"
 rm -rf "$OUT"; mkdir -p "$LOGS" || { printf 'REFUSED — cannot create %s\n' "$OUT"; exit 2; }
@@ -52,6 +64,16 @@ rm -rf "$OUT"; mkdir -p "$LOGS" || { printf 'REFUSED — cannot create %s\n' "$O
 # end. A flat file rather than an array so bash 3.2 is not a constraint.
 LEDGER="$OUT/ledger.tsv"
 : > "$LEDGER"
+
+# THE ROUND'S ZERO MARK. Everything the packaging step gathers must be NEWER
+# than this file. The Desktop and evidence/ both hold artifacts from earlier
+# rounds and from the Windows machine, and the old bare globs swept them into
+# the tarball as though this round had produced them — including, in a round
+# where the pre-flight refused and wrote nothing, a preflight.json from a
+# different day. A returned artifact that cannot say which run made it is not
+# evidence of that run.
+MARKER="$OUT/.round-start"
+: > "$MARKER"
 
 say()   { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()    { printf '   + %s\n' "$*"; }
@@ -168,10 +190,36 @@ fi
 # ---------------------------------------------------------------------------
 say "M4 — the mutation matrix (the Mac firing artifact)"
 if wanted M4; then
-  node scripts/b12-mutate.mjs "2026-08-15-mac-dryrun-1" --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOGS/M4.txt" 2>&1
+  # THE RUN ID IS PER-ROUND, NOT HARDCODED. It used to read
+  # "2026-08-15-mac-dryrun-1" — the id of a round that has since been COMMITTED.
+  # Running this a second time overwrote that committed artifact, and the
+  # resulting tracked change then made M5 and M8 both refuse with "the working
+  # tree has tracked changes": three failures, none of them naming the cause.
+  # `b12-mutate.mjs` now refuses on an existing artifact; this makes sure the
+  # honest case never has to hit that refusal. "dryrun" stays in the name
+  # because that is what this is, and the audit reads the id.
+  # ONE `date` call, then split it: two calls can straddle a second boundary and
+  # put a date and a time from different seconds into the same id.
+  RUN_STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)     # 2026-08-16T17:05:03Z
+  RUN_DATE="${RUN_STAMP%%T*}"                  # 2026-08-16
+  RUN_HMS="${RUN_STAMP#*T}"; RUN_HMS="${RUN_HMS%Z}"
+  RUN_TIME=$(printf '%s' "$RUN_HMS" | tr -d ':')
+  RUN_ID="$RUN_DATE-mac-dryrun-$(git rev-parse --short HEAD)-$RUN_TIME"
+  ok "run id $RUN_ID"
+  node scripts/b12-mutate.mjs "$RUN_ID" --at "$RUN_STAMP" > "$LOGS/M4.txt" 2>&1
   rc=$?
   tail -4 "$LOGS/M4.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M4 ran 0 "matrix completed" || record M4 ran "$rc" "matrix did NOT complete — see logs/M4.txt"
+  # EXIT 1 MEANS THE MATRIX RAN AND NOT EVERY CONTROL FIRED — which is the
+  # EXPECTED Mac outcome while the m4 pair stands withdrawn. Reporting that as
+  # "did NOT complete" is how the 2026-08-15 summary came to contradict its own
+  # log, which ended "NOT ALL FIRED (5/6)". 2 is a refusal before any work, 3 a
+  # refusal during it; only those two mean nothing was measured.
+  case "$rc" in
+    0) record M4 ran 0 "matrix completed — ALL controls fired" ;;
+    1) record M4 ran 1 "matrix COMPLETED, not all controls fired — see logs/M4.txt (this is a result, not a failure)" ;;
+    2) record M4 failed 2 "refused before running — see logs/M4.txt" ;;
+    *) record M4 failed "$rc" "matrix did NOT complete — see logs/M4.txt" ;;
+  esac
 else
   warn "$(why_not M4)"; record M4 skipped "" "$(why_not M4)"
 fi
@@ -185,7 +233,7 @@ if wanted M6b; then
   B12_REPO="$REPO" bash scripts/b12-subagent-key-probe-mac.sh > "$LOGS/M6b.txt" 2>&1
   rc=$?
   grep -E "verdict=|INHERITS|DIFFERS|control shape" "$LOGS/M6b.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M6b ran 0 "$(grep -o 'verdict=[a-z]*' "$LOGS/M6b.txt" | head -1)" || record M6b ran "$rc" "probe failed — see logs/M6b.txt"
+  [ "$rc" -eq 0 ] && record M6b ran 0 "$(grep -o 'verdict=[a-z]*' "$LOGS/M6b.txt" | head -1)" || record M6b failed "$rc" "probe failed — see logs/M6b.txt"
 else
   warn "$(why_not M6b)"; record M6b skipped "" "$(why_not M6b)"
 fi
@@ -196,7 +244,7 @@ if wanted M5; then
   B12_EXPECT_SHA="$EXPECT_SHA" bash scripts/b12-preflight-mac.sh > "$LOGS/M5.txt" 2>&1
   rc=$?
   tail -6 "$LOGS/M5.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M5 ran 0 "pre-flight completed" || record M5 ran "$rc" "pre-flight refused or failed — see logs/M5.txt"
+  [ "$rc" -eq 0 ] && record M5 ran 0 "pre-flight completed" || record M5 failed "$rc" "pre-flight refused or failed — see logs/M5.txt"
 else
   warn "$(why_not M5)"; record M5 skipped "" "$(why_not M5)"
 fi
@@ -207,7 +255,7 @@ if wanted M7; then
   bash scripts/b12-truncationcap-probe-mac.sh > "$LOGS/M7.txt" 2>&1
   rc=$?
   tail -4 "$LOGS/M7.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M7 ran 0 "cap probe completed" || record M7 ran "$rc" "cap probe failed — see logs/M7.txt"
+  [ "$rc" -eq 0 ] && record M7 ran 0 "cap probe completed" || record M7 failed "$rc" "cap probe failed — see logs/M7.txt"
 else
   warn "$(why_not M7)"; record M7 skipped "" "$(why_not M7)"
 fi
@@ -221,7 +269,7 @@ if wanted M8; then
   B12_EXPECT_SHA="$EXPECT_SHA" bash scripts/b12-installedchars-probe-mac.sh > "$LOGS/M8.txt" 2>&1
   rc=$?
   tail -4 "$LOGS/M8.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M8 ran 0 "probe completed" || record M8 ran "$rc" "probe failed — see logs/M8.txt"
+  [ "$rc" -eq 0 ] && record M8 ran 0 "probe completed" || record M8 failed "$rc" "probe failed — see logs/M8.txt"
 else
   warn "$(why_not M8)"; record M8 skipped "" "$(why_not M8)"
 fi
@@ -238,6 +286,23 @@ const rows = readFileSync(ledger, "utf8").split("\n").filter(Boolean).map((l) =>
   const [id, status, exit, note] = l.split("\t");
   return { id, status, exit: exit === "" ? null : Number(exit), note };
 });
+// THE VOCABULARY IS CLOSED, AND ANYTHING OUTSIDE IT IS A DEFECT — not a row to
+// drop. The reader used to partition on "ran" and "skipped" only, so a third
+// status would have appeared in neither list and vanished from the summary
+// while still sitting in the ledger. A step that ran and is reported nowhere is
+// worse than one reported as failed.
+const KNOWN = ["ran", "failed", "skipped"];
+const unknown = rows.filter((r) => !KNOWN.includes(r.status));
+if (unknown.length) {
+  console.error(
+    `REFUSED: ledger carries ${unknown.length} row(s) with a status this reader does not ` +
+      `know (${[...new Set(unknown.map((r) => r.status))].join(", ")}). ` +
+      `A summary that silently omits a measured step is worse than no summary.`
+  );
+  process.exit(2);
+}
+// "ran" means the step produced an answer, INCLUDING an answer of "not all
+// controls fired" — see M4's exit-1 case. "failed" means it did not.
 const ran = rows.filter((r) => r.status === "ran");
 const summary = {
   document: "b12-mac-round",
@@ -248,12 +313,17 @@ const summary = {
   // NAMED, not counted. "6 of 8" invites a reader to assume the other two were
   // unimportant; the ids say which questions have no answer in this round.
   ranIds: ran.map((r) => r.id),
-  failedIds: ran.filter((r) => r.exit !== 0).map((r) => r.id),
+  failedIds: rows.filter((r) => r.status === "failed").map((r) => r.id),
   skippedIds: rows.filter((r) => r.status === "skipped").map((r) => r.id),
 };
 writeFileSync(out, JSON.stringify(summary, null, 2) + "\n", "utf8");
 for (const r of rows) {
-  const mark = r.status === "skipped" ? "  -  " : r.exit === 0 ? "  ok " : " FAIL";
+  // KEYED ON STATUS, like the lists above. Keying the printed mark on the exit
+  // code while the lists key on status is how the printed round and its own
+  // summary.json came to disagree: M1 answering "2 of 5 red" and M4 answering
+  // "5 of 6 fired" both exit nonzero, and both are ANSWERS. They were printed
+  // as FAIL directly above a FAILED: line that did not name them.
+  const mark = r.status === "skipped" ? "  -  " : r.status === "failed" ? " FAIL" : "  ok ";
   console.log(`  ${mark} ${r.id.padEnd(4)} ${r.note}`);
 }
 console.log("");
@@ -261,14 +331,28 @@ if (summary.failedIds.length) console.log(`  FAILED: ${summary.failedIds.join(",
 if (summary.skippedIds.length) console.log(`  NO ANSWER THIS ROUND: ${summary.skippedIds.join(", ")}`);
 JS
 
-# Artifacts the probes write outside the repo, gathered so one file carries all.
-for f in "$HOME/b12-subagent-key-probe.json" "$HOME/Desktop"/*.preflight.json; do
-  [ -f "$f" ] && cp "$f" "$OUT/" 2>/dev/null
-done
-mkdir -p "$OUT/evidence" && cp evidence/*.firing.json "$OUT/evidence/" 2>/dev/null
+# Artifacts the probes write outside $OUT, gathered so one file carries all.
+#
+# `-newer "$MARKER"` everywhere, and *.probe.json added. The old version used
+# bare globs and omitted `*.probe.json` entirely — which meant M7's cap artifact
+# and M8's installedChars artifact, the two the committing machine actually
+# needs, stayed on the Mac while the tarball claimed to carry "the artifacts".
+# The logs name their paths; the logs are not the JSON.
+mkdir -p "$OUT/evidence"
+GATHERED=0
+gather() {  # gather <dest-subdir> <file>
+  [ -f "$2" ] || return 0
+  [ "$2" -nt "$MARKER" ] || return 0
+  cp "$2" "$OUT/$1/" 2>/dev/null && GATHERED=$((GATHERED + 1))
+}
+gather "" "$HOME/b12-subagent-key-probe.json"
+for f in "$HOME/Desktop"/*.preflight.json; do gather "" "$f"; done
+for f in "$REPO/evidence"/*.firing.json; do gather evidence "$f"; done
+for f in "$REPO/evidence"/*.probe.json;  do gather evidence "$f"; done
+ok "$GATHERED artifact(s) produced by THIS round gathered"
 
 say "Send this one file back"
 TARBALL="$HOME/b12-mac-round-$(git rev-parse --short HEAD).tgz"
 rm -f "$TARBALL"
 tar -czf "$TARBALL" -C "$REPO" b12-mac-round 2>/dev/null && ok "$TARBALL" || warn "could not write $TARBALL — send $OUT instead"
-printf '\n   It carries the summary, every step log, and the artifacts.\n   git status of the clone is NOT included; run it if asked.\n\n'
+printf '\n   It carries the summary, every step log, and the %s artifact(s) THIS round\n   produced. Artifacts already on the machine from earlier rounds are NOT\n   swept in — a tarball that cannot say which run made a file is not evidence\n   of that run. git status of the clone is not included; run it if asked.\n\n' "$GATHERED"

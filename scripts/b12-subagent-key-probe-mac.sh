@@ -84,8 +84,26 @@ CLAUDE_BIN="$(command -v claude)"
 # BSD readlink has no -f. The fallback is the PATH entry, which `shasum`
 # follows, so the HASH is of the target's bytes either way — but the recorded
 # path is then the launcher, not the canonical target, and the artifact says so.
-CLAUDE_REAL="$(readlink -f "$CLAUDE_BIN" 2>/dev/null || echo "$CLAUDE_BIN")"
-[ "$CLAUDE_REAL" = "$CLAUDE_BIN" ] && PATH_CANONICAL=false || PATH_CANONICAL=true
+#
+# THE OLD TEST WAS BACKWARDS in the case that actually happens. It read
+# `[ "$CLAUDE_REAL" = "$CLAUDE_BIN" ] && PATH_CANONICAL=false`, folding two
+# different situations onto one answer: readlink FAILED (BSD without -f, so the
+# fallback echoed the input), and readlink SUCCEEDED and resolved the path to
+# itself — which means the PATH entry IS canonical and the field should say
+# true. On a modern macOS with a non-symlinked binary it reported false about a
+# path that was canonical.
+#
+# Resolved separately now: did readlink work, and did it change anything. The
+# field stays a boolean and stays FAIL-CLOSED — "could not establish" reads as
+# not-canonical, because a field named IsCanonical must never claim more than
+# was checked — but it is no longer wrong in the ordinary case.
+if CLAUDE_RESOLVED="$(readlink -f "$CLAUDE_BIN" 2>/dev/null)" && [ -n "$CLAUDE_RESOLVED" ]; then
+  CLAUDE_REAL="$CLAUDE_RESOLVED"
+  [ "$CLAUDE_REAL" = "$CLAUDE_BIN" ] && PATH_CANONICAL=true || PATH_CANONICAL=false
+else
+  CLAUDE_REAL="$CLAUDE_BIN"
+  PATH_CANONICAL=false
+fi
 CLAUDE_VER="$(claude --version 2>/dev/null | head -1)"
 [ -n "$CLAUDE_VER" ] || refuse "claude --version produced nothing"
 CLAUDE_SHA="$(shasum -a 256 "$CLAUDE_REAL" 2>/dev/null | awk '{print $1}')"
