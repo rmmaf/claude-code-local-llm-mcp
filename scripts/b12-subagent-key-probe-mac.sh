@@ -157,7 +157,14 @@ fi
 
 if [ -n "${B12_MCP_CONFIG:-}" ]; then
   [ -f "$B12_MCP_CONFIG" ] || refuse "B12_MCP_CONFIG=$B12_MCP_CONFIG does not exist"
-  MCP_PATH="$B12_MCP_CONFIG"
+  # ABSOLUTE BEFORE ANY cd. The probe checks and hashes this file with its cwd
+  # in the repo, then invokes claude from a scratch directory — a RELATIVE path
+  # passes every check against one file and hands claude a nonexistent one, and
+  # claude exits zero anyway, so the round records a treatment verdict measured
+  # with no MCP config at all. Same class as the round's own doubled-prefix bug.
+  MCP_PATH=$(cd "$(dirname "$B12_MCP_CONFIG")" && pwd -P)/$(basename "$B12_MCP_CONFIG") \
+    || refuse "cannot resolve B12_MCP_CONFIG=$B12_MCP_CONFIG to an absolute path"
+  [ -f "$MCP_PATH" ] || refuse "resolved $MCP_PATH does not exist"
   MCP_SOURCE="supplied"
 elif [ -n "${B12_REPO:-}" ]; then
   [ -d "$B12_REPO" ] || refuse "B12_REPO=$B12_REPO is not a directory"

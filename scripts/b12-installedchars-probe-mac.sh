@@ -405,10 +405,6 @@ POLICY_T_SHA=""
 POLICY_C_SHA=""
 TREATMENT_POLICY=""
 CONTROL_POLICY=""
-policy_blob_sha() {
-  # $1 path inside the policy repo. Bytes from the object store, hashed as bytes.
-  git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$1" 2>/dev/null | shasum -a 256 | cut -d' ' -f1
-}
 if [ $POLICY_SET -eq 1 ]; then
   case "$POLICY_COMMIT" in
     ????????????????????????????????????????) : ;;
@@ -418,17 +414,30 @@ if [ $POLICY_SET -eq 1 ]; then
   POLICY_SHALLOW=$(git -C "$POLICY_REPO" rev-parse --is-shallow-repository 2>/dev/null)
   [ "$POLICY_SHALLOW" = "false" ] || refuse "the policy repo at $POLICY_REPO is shallow or not a git repository — an object store that cannot prove its history cannot prove the sealed commit"
   git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT^{commit}" 2>/dev/null || refuse "sealed commit $POLICY_COMMIT is not reachable in $POLICY_REPO"
-  git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null || refuse "$POLICY_COMMIT:$POLICY_T_PATH is not readable in $POLICY_REPO"
-  git -C "$POLICY_REPO" cat-file -e "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null || refuse "$POLICY_COMMIT:$POLICY_C_PATH is not readable in $POLICY_REPO"
+  # TYPE, NOT EXISTENCE. `cat-file -e` accepts a TREE — point either path at a
+  # directory and the existence check passes, the blob read then fails, and the
+  # old pipeline hashed its EMPTY stdout as e3b0c442..., delivering six paid
+  # sessions with an empty policy while reporting "policy blobs resolved".
+  T_TYPE=$(git -C "$POLICY_REPO" cat-file -t "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null)
+  [ "$T_TYPE" = "blob" ] || refuse "$POLICY_COMMIT:$POLICY_T_PATH is ${T_TYPE:-unreadable}, not a blob — a policy path must name a FILE in the sealed commit"
+  C_TYPE=$(git -C "$POLICY_REPO" cat-file -t "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null)
+  [ "$C_TYPE" = "blob" ] || refuse "$POLICY_COMMIT:$POLICY_C_PATH is ${C_TYPE:-unreadable}, not a blob — a policy path must name a FILE in the sealed commit"
   # Content EXACT, trailing newlines preserved: bare $(cat) strips them, and
   # the run harness (b12-run.mjs) delivers the blob byte-exactly — a probe
   # that delivered different bytes would calibrate a different system prompt.
-  TREATMENT_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null; printf x)
+  # `&& printf x`, so a failed read leaves no x and the guard refuses — the old
+  # `; printf x` form appended the x unconditionally and a failure became an
+  # empty policy delivered as though it were the sealed one.
+  TREATMENT_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_T_PATH" 2>/dev/null && printf x) \
+    || refuse "could not read the treatment blob $POLICY_COMMIT:$POLICY_T_PATH from the object store"
   TREATMENT_POLICY=${TREATMENT_POLICY%x}
-  CONTROL_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null; printf x)
+  CONTROL_POLICY=$(git -C "$POLICY_REPO" cat-file blob "$POLICY_COMMIT:$POLICY_C_PATH" 2>/dev/null && printf x) \
+    || refuse "could not read the control blob $POLICY_COMMIT:$POLICY_C_PATH from the object store"
   CONTROL_POLICY=${CONTROL_POLICY%x}
-  POLICY_T_SHA=$(policy_blob_sha "$POLICY_T_PATH")
-  POLICY_C_SHA=$(policy_blob_sha "$POLICY_C_PATH")
+  # Hashed from the BYTES JUST CAPTURED — the same bytes the sessions deliver —
+  # not from a second git read that could disagree with the first.
+  POLICY_T_SHA=$(printf '%s' "$TREATMENT_POLICY" | shasum -a 256 | cut -d' ' -f1)
+  POLICY_C_SHA=$(printf '%s' "$CONTROL_POLICY" | shasum -a 256 | cut -d' ' -f1)
   printf '%s' "$POLICY_T_SHA" | grep -qE '^[0-9a-f]{64}$' || refuse "could not hash the treatment policy blob"
   printf '%s' "$POLICY_C_SHA" | grep -qE '^[0-9a-f]{64}$' || refuse "could not hash the control policy blob"
   ok "policy blobs resolved — treatment $(printf '%s' "$POLICY_T_SHA" | cut -c1-12)…, control $(printf '%s' "$POLICY_C_SHA" | cut -c1-12)…"

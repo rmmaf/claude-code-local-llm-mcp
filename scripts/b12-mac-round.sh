@@ -58,7 +58,16 @@ REPO=$(pwd -P)
 
 OUT="$REPO/b12-mac-round"
 LOGS="$OUT/logs"
-rm -rf "$OUT"; mkdir -p "$LOGS" || { printf 'REFUSED — cannot create %s\n' "$OUT"; exit 2; }
+# A PRIOR ROUND'S STATE IS MOVED ASIDE, NEVER DELETED. `rm -rf "$OUT"` here
+# used to make every re-run destructive: run M2 only, then run M1 only, and the
+# second invocation silently erased the first's ledger and logs — evidence of
+# paid measurements, gone, with the summary claiming they were never requested.
+if [ -e "$OUT" ]; then
+  PREV="$OUT-prev-$(date -u +%H%M%S)"
+  mv "$OUT" "$PREV" || { printf 'REFUSED — %s exists and cannot be moved aside\n' "$OUT"; exit 2; }
+  printf '   ! a previous round left state at %s — moved to %s, nothing deleted\n' "$OUT" "$PREV"
+fi
+mkdir -p "$LOGS" || { printf 'REFUSED — cannot create %s\n' "$OUT"; exit 2; }
 
 # One line per step: "ID<TAB>STATUS<TAB>EXIT<TAB>NOTE". Read back by node at the
 # end. A flat file rather than an array so bash 3.2 is not a constraint.
@@ -133,7 +142,14 @@ ok "at the pinned commit $(git rev-parse --short HEAD) (pin from $PIN_FROM)"
 # TRACKED changes only. Untracked files are the operator's business; tracked
 # ones mean the source is not what the commit says, which is the CRLF trap that
 # already refused one pre-flight in this round.
-DIRTY=$(git status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' ')
+# THE EXIT CODE IS CHECKED BEFORE THE COUNT. The old pipeline discarded git's
+# status: a failing `git status` printed nothing, `wc -l` said 0, and the gate
+# declared an UNINSPECTED tree clean — fail-open in the one check whose whole
+# job is to fail closed. The preflight got this right; the gate did not.
+GIT_STATUS_OUT=$(git status --porcelain --untracked-files=no 2>&1)
+GIT_STATUS_RC=$?
+[ "$GIT_STATUS_RC" -eq 0 ] || die "git status failed (exit $GIT_STATUS_RC): $GIT_STATUS_OUT — an uninspected tree must not read as a clean one"
+DIRTY=$(printf '%s\n' "$GIT_STATUS_OUT" | grep -c '[^[:space:]]' || true)
 [ "$DIRTY" = "0" ] || {
   git status --porcelain --untracked-files=no | head -20
   die "$DIRTY tracked file(s) differ from the commit. If they are all source files, the archive was cut with CRLF line endings — ask for a re-cut rather than committing over it."
@@ -146,134 +162,16 @@ npm run build --silent >/dev/null 2>&1 || die "npm run build failed — run it b
 [ -f "dist/cost/cli.js" ] || die "dist/cost/cli.js missing after a build that reported success"
 ok "installed and built"
 
-# ---------------------------------------------------------------------------
-say "M2/M3 — the machine's own facts"
-if wanted M2; then
-  {
-    printf 'platform_arch_node: '; node -e "console.log(process.platform, process.arch, process.version)"
-    printf 'vitest: ';             npx vitest --version 2>&1 | tail -1
-    printf 'claude: ';             claude --version 2>&1 | tail -1
-    printf 'claude_sha256: ';      shasum -a 256 "$(command -v claude)" 2>/dev/null | awk '{print $1}'
-    printf 'lms: ';                (command -v lms >/dev/null 2>&1 && echo present) || echo absent
-  } > "$LOGS/M2-M3.txt" 2>&1
-  cat "$LOGS/M2-M3.txt" | sed 's/^/   /'
-  record M2 ran 0 "machine facts captured"
-  record M3 ran 0 "version and binary digest captured"
-else
-  warn "$(why_not M2)"; record M2 skipped "" "$(why_not M2)"; record M3 skipped "" "$(why_not M3)"
-fi
 
 # ---------------------------------------------------------------------------
-say "M1 — the full suite, $SUITE_RUNS times"
-if wanted M1; then
-  M1_FAILS=0
-  i=1
-  while [ "$i" -le "$SUITE_RUNS" ]; do
-    printf '   run %s/%s ... ' "$i" "$SUITE_RUNS"
-    # FULL output kept per run, not a tail. The Windows signature is TWO failed
-    # suites with ZERO failed tests and an EMPTY message; a tail shows the
-    # counts and throws away the only thing that could name a cause.
-    npm test > "$LOGS/M1-run$i.txt" 2>&1
-    rc=$?
-    if [ "$rc" -eq 0 ]; then printf 'green\n'; else printf 'RED (exit %s) — see logs/M1-run%s.txt\n' "$rc" "$i"; M1_FAILS=$((M1_FAILS+1)); fi
-    i=$((i+1))
-  done
-  if [ "$M1_FAILS" -eq 0 ]; then
-    record M1 ran 0 "$SUITE_RUNS/$SUITE_RUNS green"
-  else
-    record M1 ran 1 "$M1_FAILS of $SUITE_RUNS RED — the prediction was $SUITE_RUNS/$SUITE_RUNS green, so this FALSIFIES it"
-  fi
-else
-  warn "$(why_not M1)"; record M1 skipped "" "$(why_not M1)"
-fi
-
-# ---------------------------------------------------------------------------
-say "M4 — the mutation matrix (the Mac firing artifact)"
-if wanted M4; then
-  # THE RUN ID IS PER-ROUND, NOT HARDCODED. It used to read
-  # "2026-08-15-mac-dryrun-1" — the id of a round that has since been COMMITTED.
-  # Running this a second time overwrote that committed artifact, and the
-  # resulting tracked change then made M5 and M8 both refuse with "the working
-  # tree has tracked changes": three failures, none of them naming the cause.
-  # `b12-mutate.mjs` now refuses on an existing artifact; this makes sure the
-  # honest case never has to hit that refusal. "dryrun" stays in the name
-  # because that is what this is, and the audit reads the id.
-  # ONE `date` call, then split it: two calls can straddle a second boundary and
-  # put a date and a time from different seconds into the same id.
-  RUN_STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)     # 2026-08-16T17:05:03Z
-  RUN_DATE="${RUN_STAMP%%T*}"                  # 2026-08-16
-  RUN_HMS="${RUN_STAMP#*T}"; RUN_HMS="${RUN_HMS%Z}"
-  RUN_TIME=$(printf '%s' "$RUN_HMS" | tr -d ':')
-  RUN_ID="$RUN_DATE-mac-dryrun-$(git rev-parse --short HEAD)-$RUN_TIME"
-  ok "run id $RUN_ID"
-  node scripts/b12-mutate.mjs "$RUN_ID" --at "$RUN_STAMP" > "$LOGS/M4.txt" 2>&1
-  rc=$?
-  tail -4 "$LOGS/M4.txt" | sed 's/^/   /'
-  # EXIT 1 MEANS THE MATRIX RAN AND NOT EVERY CONTROL FIRED — which is the
-  # EXPECTED Mac outcome while the m4 pair stands withdrawn. Reporting that as
-  # "did NOT complete" is how the 2026-08-15 summary came to contradict its own
-  # log, which ended "NOT ALL FIRED (5/6)". 2 is a refusal before any work, 3 a
-  # refusal during it; only those two mean nothing was measured.
-  case "$rc" in
-    0) record M4 ran 0 "matrix completed — ALL controls fired" ;;
-    1) record M4 ran 1 "matrix COMPLETED, not all controls fired — see logs/M4.txt (this is a result, not a failure)" ;;
-    2) record M4 failed 2 "refused before running — see logs/M4.txt" ;;
-    *) record M4 failed "$rc" "matrix did NOT complete — see logs/M4.txt" ;;
-  esac
-else
-  warn "$(why_not M4)"; record M4 skipped "" "$(why_not M4)"
-fi
-
-# ---------------------------------------------------------------------------
-say "M6b — the subagent rate-key probe, TREATMENT shape"
-if wanted M6b; then
-  # THE RE-RUN THE FIRST ONE OWED. The earlier probe ran in CONTROL shape and
-  # said so; the scored observations are the treatment arm, which loads the MCP
-  # server. B12_REPO is what makes it generate the config.
-  B12_REPO="$REPO" bash scripts/b12-subagent-key-probe-mac.sh > "$LOGS/M6b.txt" 2>&1
-  rc=$?
-  grep -E "verdict=|INHERITS|DIFFERS|control shape" "$LOGS/M6b.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M6b ran 0 "$(grep -o 'verdict=[a-z]*' "$LOGS/M6b.txt" | head -1)" || record M6b failed "$rc" "probe failed — see logs/M6b.txt"
-else
-  warn "$(why_not M6b)"; record M6b skipped "" "$(why_not M6b)"
-fi
-
-# ---------------------------------------------------------------------------
-say "M5 — the PHASE 1 pre-flight"
-if wanted M5; then
-  B12_EXPECT_SHA="$EXPECT_SHA" bash scripts/b12-preflight-mac.sh > "$LOGS/M5.txt" 2>&1
-  rc=$?
-  tail -6 "$LOGS/M5.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M5 ran 0 "pre-flight completed" || record M5 failed "$rc" "pre-flight refused or failed — see logs/M5.txt"
-else
-  warn "$(why_not M5)"; record M5 skipped "" "$(why_not M5)"
-fi
-
-# ---------------------------------------------------------------------------
-say "M7 — the client truncation cap"
-if wanted M7; then
-  bash scripts/b12-truncationcap-probe-mac.sh > "$LOGS/M7.txt" 2>&1
-  rc=$?
-  tail -4 "$LOGS/M7.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M7 ran 0 "cap probe completed" || record M7 failed "$rc" "cap probe failed — see logs/M7.txt"
-else
-  warn "$(why_not M7)"; record M7 skipped "" "$(why_not M7)"
-fi
-
-# ---------------------------------------------------------------------------
-say "M8 — the installedChars re-probe"
-if wanted M8; then
-  # THE PIN REACHES THIS ONE TOO. On 2026-08-15 M8 refused on `git fetch` while
-  # the pre-flight beside it ran offline, because only the pre-flight had been
-  # given the mode. Passing it here is what makes the repair reach the round.
-  B12_EXPECT_SHA="$EXPECT_SHA" bash scripts/b12-installedchars-probe-mac.sh > "$LOGS/M8.txt" 2>&1
-  rc=$?
-  tail -4 "$LOGS/M8.txt" | sed 's/^/   /'
-  [ "$rc" -eq 0 ] && record M8 ran 0 "probe completed" || record M8 failed "$rc" "probe failed — see logs/M8.txt"
-else
-  warn "$(why_not M8)"; record M8 skipped "" "$(why_not M8)"
-fi
-
+# PACKAGING IS A FUNCTION, DEFINED BEFORE ANY MEASUREMENT RUNS — because the
+# signal handler must be able to call it. A round killed by Ctrl-C after three
+# paid sessions used to exit with no ledger row for the dying step, no
+# summary.json and no tarball: everything already measured became invisible,
+# and the natural next move (re-run) then deleted the logs it needed.
+# Bodies NOT re-indented: the summary heredoc's JS terminator must sit at
+# column 0, and bash does not care about the rest.
+package_round() {
 # ---------------------------------------------------------------------------
 say "Summary"
 
@@ -356,3 +254,160 @@ TARBALL="$HOME/b12-mac-round-$(git rev-parse --short HEAD).tgz"
 rm -f "$TARBALL"
 tar -czf "$TARBALL" -C "$REPO" b12-mac-round 2>/dev/null && ok "$TARBALL" || warn "could not write $TARBALL — send $OUT instead"
 printf '\n   It carries the summary, every step log, and the %s artifact(s) THIS round\n   produced. Artifacts already on the machine from earlier rounds are NOT\n   swept in — a tarball that cannot say which run made a file is not evidence\n   of that run. git status of the clone is not included; run it if asked.\n\n' "$GATHERED"
+
+}
+
+# The step currently RUNNING, for the signal handler. Set before each
+# measurement; the handler adds a row only if the dying step never wrote its own.
+CURRENT_STEP=""
+on_signal() {
+  trap - INT TERM
+  if [ -n "$CURRENT_STEP" ] && ! grep -q "^$CURRENT_STEP$(printf '	')" "$LEDGER" 2>/dev/null; then
+    record "$CURRENT_STEP" failed 130 "interrupted by signal mid-step"
+  fi
+  warn "interrupted — packaging the measurements that already ran"
+  package_round
+  exit 130
+}
+trap on_signal INT TERM
+
+# ---------------------------------------------------------------------------
+say "M2/M3 — the machine's own facts"
+CURRENT_STEP=M2
+if wanted M2; then
+  {
+    printf 'platform_arch_node: '; node -e "console.log(process.platform, process.arch, process.version)"
+    printf 'vitest: ';             npx vitest --version 2>&1 | tail -1
+    printf 'claude: ';             claude --version 2>&1 | tail -1
+    printf 'claude_sha256: ';      shasum -a 256 "$(command -v claude)" 2>/dev/null | awk '{print $1}'
+    printf 'lms: ';                (command -v lms >/dev/null 2>&1 && echo present) || echo absent
+  } > "$LOGS/M2-M3.txt" 2>&1
+  cat "$LOGS/M2-M3.txt" | sed 's/^/   /'
+  record M2 ran 0 "machine facts captured"
+  record M3 ran 0 "version and binary digest captured"
+else
+  warn "$(why_not M2)"; record M2 skipped "" "$(why_not M2)"; record M3 skipped "" "$(why_not M3)"
+fi
+
+# ---------------------------------------------------------------------------
+say "M1 — the full suite, $SUITE_RUNS times"
+CURRENT_STEP=M1
+if wanted M1; then
+  M1_FAILS=0
+  i=1
+  while [ "$i" -le "$SUITE_RUNS" ]; do
+    printf '   run %s/%s ... ' "$i" "$SUITE_RUNS"
+    # FULL output kept per run, not a tail. The Windows signature is TWO failed
+    # suites with ZERO failed tests and an EMPTY message; a tail shows the
+    # counts and throws away the only thing that could name a cause.
+    npm test > "$LOGS/M1-run$i.txt" 2>&1
+    rc=$?
+    if [ "$rc" -eq 0 ]; then printf 'green\n'; else printf 'RED (exit %s) — see logs/M1-run%s.txt\n' "$rc" "$i"; M1_FAILS=$((M1_FAILS+1)); fi
+    i=$((i+1))
+  done
+  if [ "$M1_FAILS" -eq 0 ]; then
+    record M1 ran 0 "$SUITE_RUNS/$SUITE_RUNS green"
+  else
+    record M1 ran 1 "$M1_FAILS of $SUITE_RUNS RED — the prediction was $SUITE_RUNS/$SUITE_RUNS green, so this FALSIFIES it"
+  fi
+else
+  warn "$(why_not M1)"; record M1 skipped "" "$(why_not M1)"
+fi
+
+# ---------------------------------------------------------------------------
+say "M4 — the mutation matrix (the Mac firing artifact)"
+CURRENT_STEP=M4
+if wanted M4; then
+  # THE RUN ID IS PER-ROUND, NOT HARDCODED. It used to read
+  # "2026-08-15-mac-dryrun-1" — the id of a round that has since been COMMITTED.
+  # Running this a second time overwrote that committed artifact, and the
+  # resulting tracked change then made M5 and M8 both refuse with "the working
+  # tree has tracked changes": three failures, none of them naming the cause.
+  # `b12-mutate.mjs` now refuses on an existing artifact; this makes sure the
+  # honest case never has to hit that refusal. "dryrun" stays in the name
+  # because that is what this is, and the audit reads the id.
+  # ONE `date` call, then split it: two calls can straddle a second boundary and
+  # put a date and a time from different seconds into the same id.
+  RUN_STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)     # 2026-08-16T17:05:03Z
+  RUN_DATE="${RUN_STAMP%%T*}"                  # 2026-08-16
+  RUN_HMS="${RUN_STAMP#*T}"; RUN_HMS="${RUN_HMS%Z}"
+  RUN_TIME=$(printf '%s' "$RUN_HMS" | tr -d ':')
+  RUN_ID="$RUN_DATE-mac-dryrun-$(git rev-parse --short HEAD)-$RUN_TIME"
+  ok "run id $RUN_ID"
+  node scripts/b12-mutate.mjs "$RUN_ID" --at "$RUN_STAMP" > "$LOGS/M4.txt" 2>&1
+  rc=$?
+  tail -4 "$LOGS/M4.txt" | sed 's/^/   /'
+  # EXIT 1 MEANS THE MATRIX RAN AND NOT EVERY CONTROL FIRED — which is the
+  # EXPECTED Mac outcome while the m4 pair stands withdrawn. Reporting that as
+  # "did NOT complete" is how the 2026-08-15 summary came to contradict its own
+  # log, which ended "NOT ALL FIRED (5/6)". 2 is a refusal before any work, 3 a
+  # refusal during it; only those two mean nothing was measured.
+  case "$rc" in
+    0) record M4 ran 0 "matrix completed — ALL controls fired" ;;
+    1) record M4 ran 1 "matrix COMPLETED, not all controls fired — see logs/M4.txt (this is a result, not a failure)" ;;
+    2) record M4 failed 2 "refused before running — see logs/M4.txt" ;;
+    *) record M4 failed "$rc" "matrix did NOT complete — see logs/M4.txt" ;;
+  esac
+else
+  warn "$(why_not M4)"; record M4 skipped "" "$(why_not M4)"
+fi
+
+# ---------------------------------------------------------------------------
+say "M6b — the subagent rate-key probe, TREATMENT shape"
+CURRENT_STEP=M6b
+if wanted M6b; then
+  # THE RE-RUN THE FIRST ONE OWED. The earlier probe ran in CONTROL shape and
+  # said so; the scored observations are the treatment arm, which loads the MCP
+  # server. B12_REPO is what makes it generate the config.
+  # B12_MCP_CONFIG is CLEARED: this step's claim is "the round's own generated
+  # treatment config", and an ambient override would be recorded as if it were.
+  B12_MCP_CONFIG="" B12_REPO="$REPO" bash scripts/b12-subagent-key-probe-mac.sh > "$LOGS/M6b.txt" 2>&1
+  rc=$?
+  grep -E "verdict=|INHERITS|DIFFERS|control shape" "$LOGS/M6b.txt" | sed 's/^/   /'
+  [ "$rc" -eq 0 ] && record M6b ran 0 "$(grep -o 'verdict=[a-z]*' "$LOGS/M6b.txt" | head -1)" || record M6b failed "$rc" "probe failed — see logs/M6b.txt"
+else
+  warn "$(why_not M6b)"; record M6b skipped "" "$(why_not M6b)"
+fi
+
+# ---------------------------------------------------------------------------
+say "M5 — the PHASE 1 pre-flight"
+CURRENT_STEP=M5
+if wanted M5; then
+  B12_EXPECT_SHA="$EXPECT_SHA" bash scripts/b12-preflight-mac.sh > "$LOGS/M5.txt" 2>&1
+  rc=$?
+  tail -6 "$LOGS/M5.txt" | sed 's/^/   /'
+  [ "$rc" -eq 0 ] && record M5 ran 0 "pre-flight completed" || record M5 failed "$rc" "pre-flight refused or failed — see logs/M5.txt"
+else
+  warn "$(why_not M5)"; record M5 skipped "" "$(why_not M5)"
+fi
+
+# ---------------------------------------------------------------------------
+say "M7 — the client truncation cap"
+CURRENT_STEP=M7
+if wanted M7; then
+  bash scripts/b12-truncationcap-probe-mac.sh > "$LOGS/M7.txt" 2>&1
+  rc=$?
+  tail -4 "$LOGS/M7.txt" | sed 's/^/   /'
+  [ "$rc" -eq 0 ] && record M7 ran 0 "cap probe completed" || record M7 failed "$rc" "cap probe failed — see logs/M7.txt"
+else
+  warn "$(why_not M7)"; record M7 skipped "" "$(why_not M7)"
+fi
+
+# ---------------------------------------------------------------------------
+say "M8 — the installedChars re-probe"
+CURRENT_STEP=M8
+if wanted M8; then
+  # THE PIN REACHES THIS ONE TOO. On 2026-08-15 M8 refused on `git fetch` while
+  # the pre-flight beside it ran offline, because only the pre-flight had been
+  # given the mode. Passing it here is what makes the repair reach the round.
+  B12_EXPECT_SHA="$EXPECT_SHA" bash scripts/b12-installedchars-probe-mac.sh > "$LOGS/M8.txt" 2>&1
+  rc=$?
+  tail -4 "$LOGS/M8.txt" | sed 's/^/   /'
+  [ "$rc" -eq 0 ] && record M8 ran 0 "probe completed" || record M8 failed "$rc" "probe failed — see logs/M8.txt"
+else
+  warn "$(why_not M8)"; record M8 skipped "" "$(why_not M8)"
+fi
+
+CURRENT_STEP=""
+trap - INT TERM
+package_round
