@@ -3846,3 +3846,30 @@ dependency. The round spent its slot on a step that could not run.
 - the cap (M7), which `voidConditions` 8 requires before a scored run;
 - `installedChars` (M8), which needs either network or the same offline
   treatment the pre-flight got.
+
+## `stdio.test.ts` — fourth occurrence, and the macOS control now says something
+
+**2026-08-16.** Same signature a fourth time, on a commit that touched only
+`scripts/b12-installedchars-probe-mac.sh` — a shell script the suite does not
+load. Two failed suites, ZERO failed tests, empty message. Green on re-run.
+
+**Running total, Windows:** roughly **4 in ~16** full-suite runs. One signature,
+four times, never once solo.
+
+**AND THE MAC RAN IT FIVE TIMES WITH ZERO OCCURRENCES.** That is the M1
+measurement doing the job it was written for. At a 1-in-4 Windows rate, five
+clean macOS runs is not proof of absence, but it is the first evidence that
+discriminates: the probability of five consecutive misses at the Windows rate is
+about 0.24 — low enough to be worth stating, high enough that it is NOT decisive.
+
+**What is now established:** the signature is frequent on Windows, absent in
+five macOS runs and in every Linux CI run to date, and identical every time.
+**What is still NOT established: any mechanism.** Nobody has captured one under
+the default reporter, because the gate runs `--reporter=json` and R48 recorded
+that this class arrives there with an empty message. That is now the sixth
+diagnosis this has cost.
+
+**The cheapest next step, named so it is not re-derived:** run the suite on
+Windows in a loop under the DEFAULT reporter until it fires, and keep the full
+output. Nobody has done this — every occurrence so far has been noticed inside a
+gate run and re-run away before the evidence was kept.
