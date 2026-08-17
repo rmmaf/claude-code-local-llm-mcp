@@ -4097,6 +4097,16 @@ is now FIXED at ~/b12-tree and asserted before anything spends). The committed
 2026-08-16 probe (blobs null/null) is unusable for the pilot BY DESIGN — the
 refusal that keeps the re-take rule from being forgotten.
 
+**Transport, both modes:** weekends the tree arrives as the cut archive with
+`.b12-round-pin` inside; WEEKDAYS the Mac has git, so the tree arrives as
+`git clone --branch <branch>` at ~/b12-tree and the operator hands P1 the pin
+as `B12_EXPECT_SHA=<sha>` — P1 verifies HEAD against it and then PERSISTS it
+to `.b12-round-pin`, so P2 and Q are transport-blind. The 65 corpus tags are
+on origin (verified: ls-remote counts 130 refs = 65 annotated + peeled), so a
+fresh clone carries the detached bases `verify-corpus --deep` needs. Results
+travel home as the Q tarball in both modes — the Mac never pushes. The policy
+repo still crosses as its 1.6KB bundle.
+
 **The choreography:** P1 (gate → verify-corpus --deep → policy bundle clone →
 mcp/snapshot asserts → model measurement → CHECKPOINT 1, spends nothing) →
 P2 (optional pin commit → M8 re-probe, 7 cheap sessions → local commit of the

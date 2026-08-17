@@ -127,8 +127,20 @@ case "$EXPECT_SHA" in
 esac
 
 HEAD_SHA=$(git rev-parse HEAD 2>/dev/null)
-[ "$HEAD_SHA" = "$EXPECT_SHA" ] || die "HEAD is \"$HEAD_SHA\" but $PIN_FROM says \"$EXPECT_SHA\". This is not the archive it claims to be — re-cut and re-send it rather than measuring an unknown tree"
+[ "$HEAD_SHA" = "$EXPECT_SHA" ] || die "HEAD is \"$HEAD_SHA\" but $PIN_FROM says \"$EXPECT_SHA\". This is not the tree it claims to be — re-cut (archive mode) or re-clone and re-check the pinned sha (clone mode) rather than measuring an unknown tree"
 ok "at the pinned commit $(git rev-parse --short HEAD) (pin from $PIN_FROM)"
+
+# CLONE MODE PERSISTS THE PIN. A weekday round arrives by `git clone`, not by
+# archive, so no cut script ever wrote .b12-round-pin — the operator passes
+# B12_EXPECT_SHA once, to THIS phase. P2 and Q read the file as their fallback,
+# and a forgotten env var there would refuse a round P1 already verified; the
+# file is written only AFTER the HEAD check above proved the sha names this
+# very tree, which is exactly the fact the cut script proves before writing it.
+if [ "$PIN_FROM" = "B12_EXPECT_SHA" ] && [ ! -f "$PIN_FILE" ]; then
+  printf '%s\n' "$EXPECT_SHA" > "$PIN_FILE" \
+    || die "could not persist the pin to $PIN_FILE — P2 and Q would each need B12_EXPECT_SHA by hand"
+  ok "pin persisted to .b12-round-pin for P2 and Q (clone mode)"
+fi
 
 # TRACKED changes only; EXIT CODE checked before the count; stderr kept out of
 # the porcelain stream (all three lessons at b12-mac-round.sh:146-166).
