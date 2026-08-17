@@ -44,6 +44,18 @@ const refuse = (msg) => {
 const argv = process.argv.slice(2);
 const outDir = argv.includes("--out") ? argv[argv.indexOf("--out") + 1] : path.join(homedir(), "Desktop");
 
+// --dest <mac-path> changes ONLY the printed "On the Mac:" instructions — the
+// unpack path and the script the operator runs there. Packing and verification
+// are untouched: the archive's bytes do not depend on where it will land. The
+// pilot needs this because its gate insists on ~/b12-tree exactly (the pinned
+// .b12-mcp.json embeds that path), and instructions that name ~/Downloads
+// would send the operator to a path P1 refuses.
+const destIdx = argv.indexOf("--dest");
+const destDir = destIdx === -1 ? null : argv[destIdx + 1];
+if (destIdx !== -1 && (!destDir || destDir.startsWith("--"))) {
+  refuse("--dest requires a Mac path argument (e.g. --dest '~/b12-tree')");
+}
+
 const repoRoot = git(process.cwd(), ["rev-parse", "--show-toplevel"]).out;
 if (!repoRoot) refuse("not inside a git work tree");
 
@@ -155,7 +167,24 @@ if (!listing.ok) {
 const entries = new Set(
   listing.out.split("\n").map((l) => l.trim().replace(/^\.\//, "").replace(/\/$/, ""))
 );
-const required = [".b12-round-pin", ".git/HEAD", "scripts/b12-mac-round.sh", "package.json"];
+// The pilot surface is REQUIRED BY NAME (both 2026-08-17 audits, independently):
+// every one of these was untracked the day the list was extended, and the cut
+// clones committed state only — so "forgot to commit one" would certify an
+// archive whose printed instructions name a script it does not carry, and the
+// failure would surface on the Mac as `No such file or directory` after a
+// transport round trip. Dot-prefixed names are the class habitually missed.
+const required = [
+  ".b12-round-pin",
+  ".git/HEAD",
+  "scripts/b12-mac-round.sh",
+  "package.json",
+  ".b12-mcp.json",
+  "b12-corpus/memory-snapshot/MEMORY.md",
+  "scripts/b12-pilot-p1-mac.sh",
+  "scripts/b12-pilot-p2-mac.sh",
+  "scripts/b12-pilot-run-mac.sh",
+  "scripts/b12-fill-mac-pins.mjs",
+];
 const missing = required.filter((r) => !entries.has(r));
 if (missing.length) {
   rmSync(staging, { recursive: true, force: true });
@@ -167,8 +196,13 @@ rmSync(staging, { recursive: true, force: true });
 console.log(`cut     ${archive}`);
 console.log(`pin     ${head}`);
 console.log(`from    ${branch}`);
-console.log(`entries ${entries.size}, all four required paths present`);
+console.log(`entries ${entries.size}, all ${required.length} required paths present`);
 console.log("");
 console.log("On the Mac:");
-console.log(`  mkdir -p ~/Downloads/${treeName} && tar -xzf ~/Downloads/${treeName}.tgz -C ~/Downloads/${treeName}`);
-console.log(`  cd ~/Downloads/${treeName} && bash scripts/b12-mac-round.sh`);
+if (destDir === null) {
+  console.log(`  mkdir -p ~/Downloads/${treeName} && tar -xzf ~/Downloads/${treeName}.tgz -C ~/Downloads/${treeName}`);
+  console.log(`  cd ~/Downloads/${treeName} && bash scripts/b12-mac-round.sh`);
+} else {
+  console.log(`  mkdir -p ${destDir} && tar -xzf ~/Downloads/${treeName}.tgz -C ${destDir}`);
+  console.log(`  cd ${destDir} && bash scripts/b12-pilot-p1-mac.sh`);
+}
