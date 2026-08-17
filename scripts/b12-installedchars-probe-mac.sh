@@ -71,6 +71,9 @@
 # this probe measures — (treatment blob − control blob) rides alongside the
 # MCP installation. To calibrate a manifest that seals blobs, this probe must
 # run UNDER those blobs. Provide all four, or none:
+#   B12_MCP_CONFIG             absolute path to the MCP config to hash and hand
+#                              to the sessions (the manifest-pinned bytes);
+#                              absent = generate a temp exploratory config
 #   B12_POLICY_REPO            path to the policy repo clone (full, not shallow)
 #   B12_POLICY_COMMIT          the sealed commit, full 40-hex
 #   B12_POLICY_TREATMENT_PATH  path inside the repo, e.g. treatment.md
@@ -319,17 +322,43 @@ TMP_DIR=$(mktemp -d -t b12ic)
 [ -n "$TMP_DIR" ] || refuse "mktemp -d produced no directory"
 TMP_MINE=1
 
-MCP_CFG="$TMP_DIR/mcp.json"
-cat > "$MCP_CFG" <<JSON
+# B12_MCP_CONFIG OVERRIDE — the M6b pattern (b12-subagent-key-probe-mac.sh).
+# The pilot pins ONE committed config whose sha enters the calibration key, so
+# the probe must hash THE SAME BYTES the sessions will receive — two generators
+# required to agree byte-for-byte is the defect class this repo keeps finding.
+# Supplied: canonicalise to an absolute path BEFORE any cd (a relative path
+# passes every check here and hands claude a nonexistent file from the scratch
+# cwd), and require args[0] to BE this checkout's dist/server.js by STRING
+# EQUALITY — existsSync alone would bless a config pointing at some other
+# build's server, and the delta would credit this commit for it. Absent:
+# generate the temp config as before (the exploratory shape).
+MCP_SOURCE="generated"
+if [ -n "${B12_MCP_CONFIG:-}" ]; then
+  [ -f "$B12_MCP_CONFIG" ] || refuse "B12_MCP_CONFIG=$B12_MCP_CONFIG does not exist"
+  MCP_CFG=$(cd "$(dirname "$B12_MCP_CONFIG")" && pwd -P)/$(basename "$B12_MCP_CONFIG") \
+    || refuse "cannot resolve B12_MCP_CONFIG=$B12_MCP_CONFIG to an absolute path"
+  [ -f "$MCP_CFG" ] || refuse "resolved $MCP_CFG does not exist"
+  node -e '
+const c = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+const s = c.mcpServers && c.mcpServers["local-coder"];
+if (!s || s.command !== "node" || !Array.isArray(s.args) || s.args[0] !== process.argv[2]) process.exit(1);
+' "$MCP_CFG" "$REPO/dist/server.js" 2>/dev/null \
+    || refuse "B12_MCP_CONFIG $MCP_CFG must name command \"node\" and args[0] EXACTLY $REPO/dist/server.js — a config pointing anywhere else would measure some other server (unpack the round at ~/b12-tree so the committed config matches this checkout)"
+  MCP_SOURCE="supplied"
+  ok "using the supplied --mcp-config $MCP_CFG (its sha enters the calibration key as the SEALED component)"
+else
+  MCP_CFG="$TMP_DIR/mcp.json"
+  cat > "$MCP_CFG" <<JSON
 {"mcpServers":{"local-coder":{"type":"stdio","command":"node","args":["$REPO/dist/server.js"],"env":{}}}}
 JSON
-node -e '
+  node -e '
 const c = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
 const s = c.mcpServers && c.mcpServers["local-coder"];
 if (!s || !Array.isArray(s.args) || !require("node:fs").existsSync(s.args[0])) process.exit(1);
 ' "$MCP_CFG" 2>/dev/null || refuse "the temporary --mcp-config is not a usable config pointing at $REPO/dist/server.js (a quote or backslash in the checkout path will do this)"
+  ok "wrote a temporary --mcp-config (your global Claude config is untouched)"
+fi
 MCP_SHA=$(shasum -a 256 "$MCP_CFG" | cut -d' ' -f1)
-ok "wrote a temporary --mcp-config (your global Claude config is untouched)"
 
 # ---------------------------------------------------------------------------
 next "Environment hash — what must not move between arms"
@@ -787,7 +816,7 @@ const artifact = {
     argvShape: {
       treatment: `claude --print --session-id <id> --strict-mcp-config --mcp-config <cfg>${e.B12_POLICY_T_SHA ? " --append-system-prompt <treatment policy>" : ""} --output-format json -- <prompt>`,
       control: `claude --print --session-id <id> --strict-mcp-config${e.B12_POLICY_C_SHA ? " --append-system-prompt <control policy>" : ""} --output-format json -- <prompt>`,
-      note: "mirrors observe()'s arm flags and option order in scripts/b12-run.mjs (both arms strict since 2026-08-08 — the first probe run found ~30 claude.ai account connectors on the work Mac, unremovable by claude mcp remove; strict on both makes them arm-invariant: excluded from both, or present in both and cancelled by the paired subtraction). NOT byte-for-byte — no manifest exists, so no pinned.extraArgs and no sealed MCP config.",
+      note: `mirrors observe()'s arm flags and option order in scripts/b12-run.mjs (both arms strict since 2026-08-08 — the first probe run found ~30 claude.ai account connectors on the work Mac, unremovable by claude mcp remove; strict on both makes them arm-invariant: excluded from both, or present in both and cancelled by the paired subtraction).${e.B12_MCP_SOURCE === "supplied" ? " MCP config SUPPLIED via B12_MCP_CONFIG — the same bytes the manifest pins, so mcpConfigSha256 above is the sealed component, not an exploratory stand-in; still no pinned.extraArgs (none declared)." : " NOT byte-for-byte — no manifest exists, so no pinned.extraArgs and no sealed MCP config."}`,
     },
     mcpJsonPresentInClone: e.B12_MCP_JSON_PRESENT === "true",
     mcpList: e.B12_MCP_LIST,
@@ -817,7 +846,7 @@ VERDICT_OUT=$(B12_SHA="$LOCAL_SHA" B12_SHA_SHORT="$(git rev-parse --short HEAD)"
   B12_BRANCH="$BRANCH" B12_CLAUDE_VER="$CLAUDE_VER" B12_CLAUDE_BIN="$CLAUDE_BIN" \
   B12_CLAUDE_SHA="$CLAUDE_SHA" B12_MCP_SHA="$MCP_SHA" B12_ENV_HASH="$ENV_HASH_0" B12_REPO="$REPO" \
   B12_PROMPT="$PROMPT" B12_PROOF_PROMPT="$PROOF_PROMPT" B12_MCP_LIST="$MCP_LIST" \
-  B12_MCP_JSON_PRESENT="$MCP_JSON_PRESENT" \
+  B12_MCP_JSON_PRESENT="$MCP_JSON_PRESENT" B12_MCP_SOURCE="$MCP_SOURCE" \
   B12_EXPECT_VER="${B12_EXPECT_CLAUDE_VERSION:-}" B12_EXPECT_CLAUDE_SHA="${B12_EXPECT_CLAUDE_SHA256:-}" \
   B12_POLICY_REPO="$POLICY_REPO" B12_POLICY_COMMIT="$POLICY_COMMIT" \
   B12_POLICY_T_PATH="$POLICY_T_PATH" B12_POLICY_C_PATH="$POLICY_C_PATH" \
