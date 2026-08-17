@@ -292,8 +292,20 @@ ok "corpus verified"
 # ---------------------------------------------------------------------------
 say "M-POLICY — the out-of-repo policy bundle, cloned and proven"
 CURRENT_STEP=M-POLICY
-BUNDLE="${B12_POLICY_BUNDLE:-$HOME/Downloads/b12-policy.bundle}"
-[ -f "$BUNDLE" ] || fail_step M-POLICY 1 "no policy bundle at $BUNDLE — copy b12-policy.bundle to ~/Downloads (or set B12_POLICY_BUNDLE=<path>), then re-run"
+# Resolution order: explicit env, then the COMMITTED copy (the weekday default
+# — it rides the clone, so the one-command entry needs no side files), then the
+# legacy ~/Downloads drop. What must stay OUT of this repo is the CLONED policy
+# repo at ~/b12-policy (findPolicyBlob refuses an in-repo resolution); the
+# bundle is transport bytes, and the blobs' provenance is the policy repo
+# commit it carries, not the medium it rode.
+if [ -n "${B12_POLICY_BUNDLE:-}" ]; then
+  BUNDLE="$B12_POLICY_BUNDLE"
+elif [ -f "$REPO/b12-corpus/policy-transport/b12-policy.bundle" ]; then
+  BUNDLE="$REPO/b12-corpus/policy-transport/b12-policy.bundle"
+else
+  BUNDLE="$HOME/Downloads/b12-policy.bundle"
+fi
+[ -f "$BUNDLE" ] || fail_step M-POLICY 1 "no policy bundle at $BUNDLE — expected it committed at b12-corpus/policy-transport/ (or copy one to ~/Downloads, or set B12_POLICY_BUNDLE=<path>), then re-run"
 
 # The sidecar sha256 is verified when present. Both formats tolerated:
 # `<hex>  <name>` (shasum -c style) and a bare hex line.

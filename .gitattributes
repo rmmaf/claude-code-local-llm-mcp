@@ -53,3 +53,11 @@
 # rediscovering it 65 times.
 *.patch text eol=lf
 *.diff  text eol=lf
+
+# THE POLICY BUNDLE IS BINARY AND SAYS SO. b12-corpus/policy-transport/ carries
+# the b12-policy git bundle so the weekday clone is the ONLY transport step; a
+# git bundle is a pack stream, and any text filter touching it corrupts it in
+# a way that surfaces as `git clone <bundle>` failing on the Mac. Git's NUL
+# heuristic would almost certainly classify it binary anyway — "almost
+# certainly" is what this file exists to replace.
+*.bundle -text
