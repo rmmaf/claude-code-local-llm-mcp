@@ -142,6 +142,15 @@ if [ "$PIN_FROM" = "B12_EXPECT_SHA" ] && [ ! -f "$PIN_FILE" ]; then
   ok "pin persisted to .b12-round-pin for P2 and Q (clone mode)"
 fi
 
+# THE EOL SETTINGS ARE WRITTEN INTO THE CLONE'S OWN CONFIG, both modes. The
+# cut script does this for archive mode because `git clone -c` does not
+# persist; a weekday `git clone` arrives with an EMPTY local config, and M4's
+# pristine worktrees check out under whatever this repo's config says — so an
+# unset value falls through to the machine's global autocrlf. Idempotent for
+# archive mode (the cut already wrote the same values).
+git config --local core.autocrlf false || die "cannot write core.autocrlf into the clone's config"
+git config --local core.eol lf || die "cannot write core.eol into the clone's config"
+
 # TRACKED changes only; EXIT CODE checked before the count; stderr kept out of
 # the porcelain stream (all three lessons at b12-mac-round.sh:146-166).
 GIT_STATUS_ERR="$OUT/.git-status-stderr"
