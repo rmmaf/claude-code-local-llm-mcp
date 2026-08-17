@@ -4065,3 +4065,74 @@ the signature under the default reporter either.
 **Still owed before the seal, updated:** the PHASE 2 pilot; the `*-pending`
 renames; `build → seal-harness → commit → register`; M8 re-taken under sealed
 blobs. The measurement debts of the round table are paid.
+
+---
+
+## 2026-08-17 — PHASE 2 prepared end to end; the pilot now costs one Mac visit
+
+**What was built, in one sentence:** everything the pilot needs that a Windows
+machine can produce — content, pins, and a three-phase Mac choreography — so
+the visit spends its budget on measurements, not on discovering conventions.
+
+**The owner's decision that shaped it (AskUserQuestion, 2026-08-17):** MEASURE
+BEFORE PINNING the local model. The treatment policy blob shipped WITHOUT the
+model-pin clause (`b12-policy` @ 3d0bccb, treatment.md 74feef2e…, control.md
+30c024fe…); phase P1 takes a targeted model-fit measurement (`lms unload --all`
+→ runStatus: fits, availability, what auto-selection would take and why) and
+the pin is decided at CHECKPOINT 1 with fresh data — `B12_PIN_MODEL=<id>`
+appends the clause, commits in ~/b12-policy, and THAT commit is what the fill
+script pins. Blob text is free to change until checkpoint 1; after M8 it costs
+a re-probe. Consequence: `policyBlobs` is Mac-filled BY DECISION; the
+Windows-fillable pins (mcpConfig 2acd39a0…, memorySnapshot b1a18515…) were
+filled here, leaving five MAC-LOCAL nulls plus the true settingsLocal null.
+
+**The calibration-key chain that ordered the steps** (all verified in code):
+`validateInstalledCharsProbe` compares the probe's recorded {binary, mcp-config,
+BOTH policy blobs, extraArgs} against the live resolved values, and
+`committedEvidenceCheck` requires the probe committed at the running clone's
+HEAD — so the M8 re-probe runs AFTER the blob decision, under the SAME
+committed `.b12-mcp.json` the manifests pin (its bytes embed
+/Users/rodrigomonteiro/b12-tree/dist/server.js, which is why the unpack path
+is now FIXED at ~/b12-tree and asserted before anything spends). The committed
+2026-08-16 probe (blobs null/null) is unusable for the pilot BY DESIGN — the
+refusal that keeps the re-take rule from being forgotten.
+
+**The choreography:** P1 (gate → verify-corpus --deep → policy bundle clone →
+mcp/snapshot asserts → model measurement → CHECKPOINT 1, spends nothing) →
+P2 (optional pin commit → M8 re-probe, 7 cheap sessions → local commit of the
+artifact → `b12-fill-mac-pins.mjs` → local commit of the config → plan+build
+--pilot-only → M5 scratch session → five manifest preflights → CHECKPOINT 2,
+GO/NO-GO) → Q (lock scan → identity-based fresh/resume gate → five paid
+`b12-run.mjs pilot` sessions classified by exit+marker (REFUSED stops the
+round; INVALID: is a recorded result and continues) → assertPilotShape →
+return tarball read back against a required-name list). NOT SUSTAINED at M8 is
+the pre-declared retract branch: a `ran` row, a durable `.retract` marker all
+three gates refuse on (including P1's move-aside — the outcome-shopping bypass
+a verifier caught), and a STOP checkpoint; nothing is committed.
+
+**How it was reviewed, because the review DID the work:** plan → codex xhigh
+(REVISE, 7 findings, all accepted — among them: preflight's mandatory scratch
+session, M8's offline B12_EXPECT_SHA route, the non-idempotent JSON round-trip
+that forced the runToolchain pre-format). Scripts → codex xhigh AND an
+independent Fable audit in parallel (9 + 7 findings, 2 overlapping: the cut's
+required-name list and the M8 exit-contract error in MY OWN spec — the probe
+exits 0 for BOTH verdicts, so the spec'd retract branch was dead code).
+Fixes → codex re-review (REVISE: 7 residual, 5 deviations accepted, 1
+rejected) → six more fixes → a six-verifier parallel pass (5 hold; R1's
+verifier found the P1 move-aside bypass, closed same session). Every finding
+was adjudicated against code before any edit; the audit trail is the two task
+prompts and four reports in the session record.
+
+**stdio, occurrence 8:** during this session's first full gate run,
+`tests/stdio.test.ts` failed as a SUITE with zero failing tests and no
+message — under `--reporter=json` via the gate, as all seven previous
+occurrences were. The tests-only re-run passed 891/891. Consistent with the
+reporter/spawn-shape candidate; still unclaimed, still parked.
+
+**Still owed before the seal, updated:** the PHASE 2 pilot — now ONE MAC VISIT
+away (P1 → checkpoint → P2 → checkpoint → Q → tarball home → reconciliation by
+bytes); the M8 re-take under sealed blobs — folded INTO that visit as P2's
+first paid step; the `*-pending` renames for A/B; `build → seal-harness →
+commit → register`. The pilot's reconciliation commits (probe artifact +
+measurementsRow, config fill, pilot record) happen here when the tarball
+returns.
