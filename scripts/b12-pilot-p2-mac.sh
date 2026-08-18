@@ -558,7 +558,7 @@ DIFF_COUNT=$(printf '%s\n' "$DIFF_NAMES" | grep -c '[^[:space:]]' || true)
 # into the config — never the environment and never the policy repo's HEAD.
 SEALED_REF=$(node -e '
 const c = JSON.parse(require("node:fs").readFileSync("b12-corpus/manifest-config.json", "utf8"));
-const t = c.policyBlobs && c.policyBlobs.treatment;
+const t = c.pinned && c.pinned.policyBlobs && c.pinned.policyBlobs.treatment;
 if (!t || typeof t.commit !== "string" || !t.commit || typeof t.path !== "string" || !t.path) process.exit(1);
 process.stdout.write(t.commit + ":" + t.path);
 ' 2>/dev/null)
