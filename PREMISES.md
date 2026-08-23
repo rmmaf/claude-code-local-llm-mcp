@@ -4146,3 +4146,58 @@ first paid step; the `*-pending` renames for A/B; `build → seal-harness →
 commit → register`. The pilot's reconciliation commits (probe artifact +
 measurementsRow, config fill, pilot record) happen here when the tarball
 returns.
+
+---
+
+## 2026-08-18 — a THIRD machine, and the two things it cannot inherit
+
+**The proposal (owner):** a personal Windows laptop — Intel Core 5 210H, 16 GB
+RAM, RTX 4050 mobile — running LM Studio with SMALL models and unrestricted
+Claude Code sessions, on the argument that *good results with small models
+imply at least as good with the large ones on the Mac*.
+
+**What is portable, verified rather than assumed:** the server and its tools
+are platform-neutral — this repository is AUTHORED on Windows and its suite
+ran 891/891 here this session — and `getMemoryInfo` (`src/memory.ts:52`) has an
+explicit non-darwin branch. What is NOT portable is B12 itself, by design:
+`pinned.runToolchain` declares `darwin/arm64` and `assertRunToolchain` refuses
+on `win32` BEFORE spending, and the binary sha, the truncation cap, the
+`installedChars` calibration key and `.b12-mcp.json`'s absolute path are all
+Mac-bound. Those refusals are the design working; the laptop is a DEVELOPMENT
+and LOWER-BOUND machine, never a scored one.
+
+**THE MONOTONICITY PREMISE IS ONE-SIDED, AND THE COUNTER-MECHANISM IS IN THIS
+REPO.** "Small model good ⟹ large model at least as good" holds for
+CAPABILITY and fails for THROUGHPUT: larger models are slower, and B12's bars
+include time (`repair`'s 300,000 ms budget, `perArmTimeoutMs` 45 min, and
+`scripts/b12-repair-pace.mjs`, which exists because reaching that budget is an
+open question). A small fast model can pass a bar a large slow one fails. What
+DOES hold: the laptop is pessimistic on both axes at once — weaker model AND
+slower execution — so a laptop SUCCESS is a genuine floor, while a laptop
+FAILURE condemns nothing. Same asymmetry as F27's pilot screen, in the
+opposite direction. Registered as a premise, not adopted as an equivalence.
+
+**A DEFECT FOUND WHILE CHECKING PORTABILITY, unmeasured on hardware and
+therefore stated as a mechanism, not a magnitude.** `usableFree()`
+(`src/selection.ts:121`) is `freeBytes × memFitFraction`, and NOTHING in the
+memory or selection path knows about VRAM. On Apple silicon that proxy is
+sound because memory is unified — free RAM IS the GPU budget, which is why
+`selection` has never been wrong on mac-01. On a discrete-GPU machine the
+binding constraint is VRAM (4050 mobile: verify, commonly 6 GB) while
+`os.freemem()` reports system RAM, so `selection` will call a 10 GB model a
+fit, LM Studio will load it with partial CPU offload, and it will run at a
+fraction of the speed — correct output, wrecked throughput, and NO SIGNAL
+ANYWHERE. The fit rule is unsound off unified memory; whether it should learn
+VRAM or refuse to guess is a decision, not a bug fix, and is left open.
+
+**A second, smaller one, same class:** `src/lms.ts:140` shells `run("lms", …)`
+with a BARE command name while every other call site in this repo branches
+(`npx.cmd`, `npm.cmd`, `git.exe`), and `lms.ts` CATCHES the failure and returns
+`null` — degrading to "sizes unknown / fits: null" instead of erroring. If the
+Windows LM Studio CLI is not resolvable that way, the laptop measures a silent
+fallback. First thing to test there.
+
+**Recorded for the laptop:** `docs/laptop-onboarding.md` — the guardrails (the
+pilot branch is Mac territory; pins do not move to suit the machine in front of
+you; the `LOCAL_CODER_MODELS_CSV` route stays closed per `1eba3dc`) and the
+three questions above as its opening work.
