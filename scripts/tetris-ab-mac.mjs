@@ -46,8 +46,23 @@ function lmsEnv() {
   };
 }
 
+function resolveBin(name) {
+  if (name === "lms") {
+    const home = path.join(os.homedir(), ".lmstudio", "bin", "lms");
+    if (fileIfExists(home)) return home;
+  }
+  const hit = findOnPath(name);
+  if (hit) return hit;
+  if (process.platform === "win32") {
+    const cmd = findOnPath(`${name}.cmd`);
+    if (cmd) return cmd;
+  }
+  return null;
+}
+
 function runCapture(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, {
+  const resolved = path.isAbsolute(cmd) ? cmd : resolveBin(cmd) || cmd;
+  const r = spawnSync(resolved, args, {
     encoding: "utf8",
     env: opts.env || lmsEnv(),
     timeout: opts.timeout ?? 60_000,
@@ -63,7 +78,12 @@ function runCapture(cmd, args, opts = {}) {
 }
 
 function fileIfExists(p) {
-  return p && fs.existsSync(p) ? p : null;
+  if (!p) return null;
+  try {
+    return fs.statSync(p).isFile() ? p : null;
+  } catch {
+    return null;
+  }
 }
 
 function findOnPath(name) {
@@ -85,8 +105,8 @@ function requireNode22() {
 
 function findClaude() {
   if (process.env.CLAUDE_BIN) {
-    if (!fs.existsSync(process.env.CLAUDE_BIN)) {
-      die(`CLAUDE_BIN não existe: ${process.env.CLAUDE_BIN}`);
+    if (!fileIfExists(process.env.CLAUDE_BIN)) {
+      die(`CLAUDE_BIN não existe ou não é um arquivo: ${process.env.CLAUDE_BIN}`);
     }
     return process.env.CLAUDE_BIN;
   }
@@ -97,6 +117,12 @@ function findClaude() {
     "/opt/homebrew/bin/claude",
     "/usr/local/bin/claude",
   ];
+  const versionsDir = path.join(os.homedir(), ".local", "share", "claude", "versions");
+  if (fs.existsSync(versionsDir)) {
+    for (const name of fs.readdirSync(versionsDir).sort()) {
+      candidates.push(path.join(versionsDir, name));
+    }
+  }
   for (const p of candidates) {
     if (fileIfExists(p)) return p;
   }
@@ -115,8 +141,42 @@ function findClaude() {
 }
 
 function claudeVersion(bin) {
-  const r = runCapture(bin, ["--version"], { timeout: 15000 });
+  const r = runCapture(bin, ["--version"], { timeout: 15000, env: process.env });
   return (r.stdout || r.stderr).trim().split(/\n/)[0] || "unknown";
+}
+
+function inspectClaude(bin) {
+  const r = runCapture(bin, ["--help"], { timeout: 20000, env: process.env });
+  const help = `${r.stdout}\n${r.stderr}`;
+  return {
+    help,
+    streamJson: /stream-json/.test(help),
+    verbose: /--verbose\b/.test(help),
+    skipPerms: /dangerously-skip-permissions/.test(help),
+    print: /--print\b/.test(help),
+  };
+}
+
+function buildClaudeArgs({ claudeBin, mcpPath, sessionId, prompt, append }) {
+  const caps = inspectClaude(claudeBin);
+  if (!caps.print && caps.help.trim() !== "") {
+    info("claude --help não listou --print; seguindo mesmo assim (binários pinados às vezes omitem flags no help)");
+  }
+  const format = caps.streamJson ? "stream-json" : "json";
+  const args = ["--print", "--output-format", format];
+  if (format === "stream-json" && caps.verbose) args.push("--verbose");
+  args.push(
+    "--model",
+    "opus",
+    "--strict-mcp-config",
+    "--mcp-config",
+    mcpPath,
+    "--permission-mode",
+    "bypassPermissions"
+  );
+  if (caps.skipPerms) args.push("--dangerously-skip-permissions");
+  args.push("--session-id", sessionId, "--append-system-prompt", append, "--", prompt);
+  return { args, format, caps };
 }
 
 function parseJsonLoose(text) {
@@ -158,10 +218,15 @@ async function fetchServedIds() {
   return body.data.map((m) => m.id).filter((id) => typeof id === "string");
 }
 
+function firstJsonValue(text) {
+  const start = text.search(/[\[{]/);
+  if (start < 0) return null;
+  return parseJsonLoose(text.slice(start));
+}
+
 function listLmsDownloaded() {
   const r = runCapture("lms", ["ls", "--json"]);
-  if (r.status !== 0) return [];
-  const parsed = parseJsonLoose(r.stdout);
+  const parsed = firstJsonValue(r.stdout) || firstJsonValue(r.stderr);
   if (parsed === null) return [];
   const ids = [];
   for (const row of rowsOf(parsed)) {
@@ -172,8 +237,7 @@ function listLmsDownloaded() {
 
 function listLmsLoaded() {
   const r = runCapture("lms", ["ps", "--json"]);
-  if (r.status !== 0) return [];
-  const parsed = parseJsonLoose(r.stdout);
+  const parsed = firstJsonValue(r.stdout) || firstJsonValue(r.stderr);
   if (parsed === null) return [];
   return rowsOf(parsed).flatMap((row) => idsOfRow(row));
 }
@@ -299,13 +363,35 @@ function writeHarness(dir, arm, prompt, append, sessionId) {
   fs.writeFileSync(path.join(runDir, "mcp.json"), `${JSON.stringify(mcp, null, 2)}\n`);
 }
 
-function extractResult(streamPath) {
-  if (!fs.existsSync(streamPath)) return null;
-  const lines = fs.readFileSync(streamPath, "utf8").split(/\n/).filter(Boolean);
+function emptyExtra() {
+  return { tools: {}, timeouts: 0, malformed: 0 };
+}
+
+function accumulateExtra(extra, o) {
+  const content = o?.message?.content;
+  if (Array.isArray(content)) {
+    for (const c of content) {
+      if (c.type === "tool_use") extra.tools[c.name] = (extra.tools[c.name] || 0) + 1;
+    }
+  }
+  if (o?.type === "user") {
+    const blob = JSON.stringify(o);
+    if (blob.includes("llm_timeout")) extra.timeouts += 1;
+    if (blob.includes("model_output_malformed")) extra.malformed += 1;
+  }
+}
+
+function coerceResult(o) {
+  if (!o || typeof o !== "object") return null;
+  if (o.type === "result") return o;
+  if (typeof o.total_cost_usd === "number" || typeof o.session_id === "string") return o;
+  return null;
+}
+
+function extractFromText(text) {
+  const extra = emptyExtra();
   let result = null;
-  const tools = {};
-  let timeouts = 0;
-  let malformed = 0;
+  const lines = text.split(/\n/).filter((l) => l.trim());
   for (const line of lines) {
     let o;
     try {
@@ -313,22 +399,44 @@ function extractResult(streamPath) {
     } catch {
       continue;
     }
-    if (o.type === "result") result = o;
-    const content = o.message?.content;
-    if (Array.isArray(content)) {
-      for (const c of content) {
-        if (c.type === "tool_use") {
-          tools[c.name] = (tools[c.name] || 0) + 1;
-        }
+    accumulateExtra(extra, o);
+    const coerced = coerceResult(o);
+    if (coerced) result = coerced;
+  }
+  if (!result) {
+    const parsed = parseJsonLoose(text.trim()) || firstJsonValue(text);
+    if (Array.isArray(parsed)) {
+      for (const row of parsed) {
+        accumulateExtra(extra, row);
+        const coerced = coerceResult(row);
+        if (coerced) result = coerced;
       }
-    }
-    if (o.type === "user") {
-      const blob = JSON.stringify(o);
-      if (blob.includes("llm_timeout")) timeouts += 1;
-      if (blob.includes("model_output_malformed")) malformed += 1;
+    } else {
+      const coerced = coerceResult(parsed);
+      if (coerced) result = coerced;
     }
   }
-  return result ? { ...result, extra: { tools, timeouts, malformed } } : null;
+  return result ? { ...result, extra } : null;
+}
+
+function extractResult(streamPath) {
+  if (!fs.existsSync(streamPath)) return null;
+  return extractFromText(fs.readFileSync(streamPath, "utf8"));
+}
+
+function parserSelfCheck() {
+  const stream = extractFromText(
+    '{"type":"assistant"}\n{"type":"result","total_cost_usd":1.25,"num_turns":3,"session_id":"s"}\n'
+  );
+  const envelope = extractFromText(
+    '{"total_cost_usd":4.36,"session_id":"s","num_turns":38,"usage":{"output_tokens":1}}\n'
+  );
+  if (!stream || stream.total_cost_usd !== 1.25 || stream.num_turns !== 3) {
+    die("parser interno falhou no formato stream-json");
+  }
+  if (!envelope || envelope.total_cost_usd !== 4.36 || envelope.num_turns !== 38) {
+    die("parser interno falhou no envelope --output-format json (Claude 2.1.221 no Mac)");
+  }
 }
 
 function opusBlock(result) {
@@ -538,14 +646,20 @@ async function pickModel(rl, models) {
   }
 }
 
+function npmBin() {
+  const npm = resolveBin("npm");
+  if (!npm) die("npm não está no PATH deste processo. Abra um terminal onde `npm -v` funcione.");
+  return npm;
+}
+
 function ensureBuilt() {
-  if (!findOnPath("npm")) die("npm não está no PATH deste processo. Abra um terminal onde `npm -v` funcione.");
   const server = path.join(REPO, "dist", "server.js");
   const selection = path.join(REPO, "dist", "selection.js");
   const needCi = !fs.existsSync(path.join(REPO, "node_modules", "undici"));
+  const npm = npmBin();
   if (needCi) {
     info("npm ci --ignore-scripts");
-    const r = spawnSync("npm", ["ci", "--ignore-scripts"], {
+    const r = spawnSync(npm, ["ci", "--ignore-scripts"], {
       cwd: REPO,
       stdio: "inherit",
       env: process.env,
@@ -554,7 +668,7 @@ function ensureBuilt() {
   }
   if (!fs.existsSync(server) || !fs.existsSync(selection) || envFlag("TETRIS_AB_REBUILD")) {
     info("npm run build");
-    const r = spawnSync("npm", ["run", "build"], {
+    const r = spawnSync(npm, ["run", "build"], {
       cwd: REPO,
       stdio: "inherit",
       env: process.env,
@@ -562,14 +676,26 @@ function ensureBuilt() {
     if (r.status !== 0) die("npm run build falhou");
   }
   if (!fs.existsSync(server)) die("dist/server.js ausente depois do build");
+  if (!fs.existsSync(path.join(REPO, "node_modules", "undici"))) {
+    die("undici não instalou. LOCAL_CODER_TIMEOUT_MS=600000 cairia no teto de 300 s do fetch do Node.");
+  }
+}
+
+async function verifyBuiltArtifacts() {
+  const { matchModel } = await import(pathToFileURL(path.join(REPO, "dist", "selection.js")).href);
+  if (typeof matchModel !== "function") die("dist/selection.js não exporta matchModel");
+  const undici = await import("undici");
+  if (typeof undici.Agent !== "function" || typeof undici.fetch !== "function") {
+    die("undici importou mas Agent/fetch não estão disponíveis");
+  }
 }
 
 async function ensureLmsUp() {
   let ids = await fetchServedIds();
   if (ids !== null) return;
   info("tentando `lms server start`");
-  runCapture("lms", ["server", "start"], { timeout: 30_000 });
-  for (let i = 0; i < 20; i++) {
+  runCapture("lms", ["server", "start"], { timeout: 120_000 });
+  for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 500));
     ids = await fetchServedIds();
     if (ids !== null) return;
@@ -592,7 +718,8 @@ function loadModel(id) {
 }
 
 async function waitServed(id) {
-  for (let i = 0; i < 60; i++) {
+  const deadline = Date.now() + 12 * 60 * 1000;
+  while (Date.now() < deadline) {
     const ids = await fetchServedIds();
     if (ids) {
       const { matchModel } = await import(
@@ -603,7 +730,7 @@ async function waitServed(id) {
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
-  die(`timeout esperando ${id} aparecer em /v1/models`);
+  die(`timeout de 12 min esperando ${id} aparecer em /v1/models (load de 30B no Mac pode ser lento)`);
 }
 
 function gitHead() {
@@ -617,28 +744,16 @@ async function runClaude({ claudeBin, dir, sessionId, prompt, append }) {
   const errPath = path.join(runDir, "stderr.txt");
   const out = fs.createWriteStream(streamPath, { flags: "w" });
   const err = fs.createWriteStream(errPath, { flags: "w" });
-  const args = [
-    "--print",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--model",
-    "opus",
-    "--strict-mcp-config",
-    "--mcp-config",
-    path.join(runDir, "mcp.json"),
-    "--permission-mode",
-    "bypassPermissions",
-    "--dangerously-skip-permissions",
-    "--session-id",
+  const { args, format } = buildClaudeArgs({
+    claudeBin,
+    mcpPath: path.join(runDir, "mcp.json"),
     sessionId,
-    "--append-system-prompt",
-    append,
-    "--",
     prompt,
-  ];
+    append,
+  });
+  fs.writeFileSync(path.join(runDir, "claude-argv.json"), `${JSON.stringify({ format, args: args.filter((a) => a !== prompt && a !== append) }, null, 2)}\n`);
   const started = Date.now();
-  info(`claude --print em ${dir}`);
+  info(`claude --print (${format}) em ${dir}`);
   const child = spawn(claudeBin, args, {
     cwd: dir,
     env: {
@@ -669,7 +784,7 @@ async function runClaude({ claudeBin, dir, sessionId, prompt, append }) {
           }
         }
       } catch {
-        /* stream noise */
+        /* json envelope is one blob; parsed after exit */
       }
     }
   });
@@ -738,6 +853,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     return;
   }
   if (argv.includes("--demo-table")) {
+    parserSelfCheck();
     console.log(renderTable(DEMO_CONTROL, DEMO_TREATMENT));
     return;
   }
@@ -746,16 +862,20 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   }
 
   requireNode22();
+  parserSelfCheck();
   ensureBuilt();
+  await verifyBuiltArtifacts();
   const claudeBin = findClaude();
   if (!claudeBin) {
     die(
-      "claude CLI não encontrado no PATH. No Mac: instale o Claude Code (o B12 usa `command -v claude`) ou defina CLAUDE_BIN."
+      "claude CLI não encontrado no PATH. No Mac B12 ele costuma estar em ~/.local/bin/claude ou ~/.local/share/claude/versions/<ver>. Defina CLAUDE_BIN se preciso."
     );
   }
   const version = claudeVersion(claudeBin);
+  const caps = inspectClaude(claudeBin);
   info(`claude: ${claudeBin}`);
   info(`versão: ${version}`);
+  info(`flags: output=${caps.streamJson ? "stream-json" : "json"} skipPerms=${caps.skipPerms ? "sim" : "não (só bypassPermissions)"}`);
   info(`commit: ${gitHead()}`);
   info(`node: v${process.versions.node}`);
 
@@ -763,13 +883,20 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   if (argv.includes("--preflight")) {
     const models = await collectModels();
     if (models.length === 0) {
-      die("preflight: LM Studio responde, mas nenhum modelo na lista. Baixe um no app.");
+      die("preflight: LM Studio responde, mas nenhum modelo na lista. Baixe um no app (Developer > lms ls).");
     }
+    const authHint = ["/.claude.json", "/.config/claude", "/.claude"]
+      .map((rel) => path.join(os.homedir(), rel.replace(/^\//, "")))
+      .some((p) => fs.existsSync(p));
     console.log("preflight ok");
     console.log(`  node     v${process.versions.node}`);
     console.log(`  claude   ${version}`);
+    console.log(`  output   ${caps.streamJson ? "stream-json" : "json"}  (2.1.221 no Mac usa json)`);
+    console.log(`  skipPerm ${caps.skipPerms ? "dangerously-skip-permissions" : "bypassPermissions only"}`);
     console.log(`  commit   ${gitHead()}`);
+    console.log(`  undici   ok`);
     console.log(`  lms      ${LMS_URL}  (${models.length} modelo(s))`);
+    if (!authHint) console.log("  aviso    não achei ~/.claude.json — confirme `claude` logado antes do teste");
     for (const m of models) {
       console.log(`            ${m.loaded ? "*" : " "} ${m.id}`);
     }
@@ -814,6 +941,10 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   fs.mkdirSync(controlDir);
   fs.mkdirSync(treatDir);
   fs.mkdirSync(outDir);
+  for (const d of [controlDir, treatDir]) {
+    const g = spawnSync(resolveBin("git") || "git", ["init"], { cwd: d, encoding: "utf8" });
+    if (g.status !== 0) info(`git init em ${d} falhou (${g.stderr.trim() || g.status})`);
+  }
   const controlSid = crypto.randomUUID();
   const treatSid = crypto.randomUUID();
   writeHarness(controlDir, "control", prompt, controlAppend(), controlSid);
