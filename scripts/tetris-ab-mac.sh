@@ -19,7 +19,11 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 export PATH="${HOME}/.lmstudio/bin:${PATH}"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "node não está no PATH. Instale Node ≥ 18 e rode de novo." >&2
+  echo "node não está no PATH. Instale Node 22.19+ (o Mac B12 usa v22.23) e rode de novo." >&2
+  exit 1
+fi
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm não está no PATH. Ele vem com o Node; abra um terminal onde \`node\` e \`npm\` funcionem." >&2
   exit 1
 fi
 

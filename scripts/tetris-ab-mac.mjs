@@ -62,6 +62,27 @@ function runCapture(cmd, args, opts = {}) {
   };
 }
 
+function fileIfExists(p) {
+  return p && fs.existsSync(p) ? p : null;
+}
+
+function findOnPath(name) {
+  for (const dir of (process.env.PATH || "").split(path.delimiter)) {
+    if (!dir) continue;
+    const hit = fileIfExists(path.join(dir, name));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function requireNode22() {
+  const [maj, min] = process.versions.node.split(".").map(Number);
+  if (maj > 22 || (maj === 22 && min >= 19)) return;
+  die(
+    `Node ${process.versions.node} é antigo demais. undici 8 (timeout local de 600 s) pede ≥ 22.19. O toolchain do Mac B12 é v22.23.`
+  );
+}
+
 function findClaude() {
   if (process.env.CLAUDE_BIN) {
     if (!fs.existsSync(process.env.CLAUDE_BIN)) {
@@ -69,9 +90,16 @@ function findClaude() {
     }
     return process.env.CLAUDE_BIN;
   }
-  const fromPath = runCapture("bash", ["-lc", "command -v claude"]);
-  const p = fromPath.stdout.trim();
-  if (p && fs.existsSync(p)) return p;
+  const candidates = [
+    findOnPath("claude"),
+    path.join(os.homedir(), ".local", "bin", "claude"),
+    path.join(os.homedir(), ".claude", "local", "claude"),
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+  ];
+  for (const p of candidates) {
+    if (fileIfExists(p)) return p;
+  }
   const extRoot = path.join(os.homedir(), ".cursor", "extensions");
   if (fs.existsSync(extRoot)) {
     const hits = [];
@@ -83,8 +111,6 @@ function findClaude() {
     hits.sort();
     if (hits.length > 0) return hits[hits.length - 1];
   }
-  const local = path.join(os.homedir(), ".local", "bin", "claude");
-  if (fs.existsSync(local)) return local;
   return null;
 }
 
@@ -513,6 +539,7 @@ async function pickModel(rl, models) {
 }
 
 function ensureBuilt() {
+  if (!findOnPath("npm")) die("npm não está no PATH deste processo. Abra um terminal onde `npm -v` funcione.");
   const server = path.join(REPO, "dist", "server.js");
   const selection = path.join(REPO, "dist", "selection.js");
   const needCi = !fs.existsSync(path.join(REPO, "node_modules", "undici"));
@@ -523,7 +550,7 @@ function ensureBuilt() {
       stdio: "inherit",
       env: process.env,
     });
-    if (r.status !== 0) die("npm ci falhou");
+    if (r.status !== 0) die("npm ci falhou (rede ou lockfile).");
   }
   if (!fs.existsSync(server) || !fs.existsSync(selection) || envFlag("TETRIS_AB_REBUILD")) {
     info("npm run build");
@@ -703,6 +730,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
 --strict-mcp-config. Controle: MCP vazio. Tratamento: local-coder + o modelo escolhido.
 
   --demo-table     imprime a tabela do laptop-01 sem gastar API
+  --preflight      confere Node, npm, build, claude, LM Studio e sai (não gasta Opus)
   TETRIS_AB_MODEL  id do modelo (pula o menu)
   TETRIS_AB_YES=1  não pede confirmação
   CLAUDE_BIN       caminho do claude
@@ -717,15 +745,37 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     die("este harness é o teste do Mac. No outro SO: TETRIS_AB_ALLOW_NON_DARWIN=1");
   }
 
+  requireNode22();
   ensureBuilt();
   const claudeBin = findClaude();
-  if (!claudeBin) die("claude CLI não encontrado. Instale o Claude Code ou defina CLAUDE_BIN.");
+  if (!claudeBin) {
+    die(
+      "claude CLI não encontrado no PATH. No Mac: instale o Claude Code (o B12 usa `command -v claude`) ou defina CLAUDE_BIN."
+    );
+  }
   const version = claudeVersion(claudeBin);
   info(`claude: ${claudeBin}`);
   info(`versão: ${version}`);
   info(`commit: ${gitHead()}`);
+  info(`node: v${process.versions.node}`);
 
   await ensureLmsUp();
+  if (argv.includes("--preflight")) {
+    const models = await collectModels();
+    if (models.length === 0) {
+      die("preflight: LM Studio responde, mas nenhum modelo na lista. Baixe um no app.");
+    }
+    console.log("preflight ok");
+    console.log(`  node     v${process.versions.node}`);
+    console.log(`  claude   ${version}`);
+    console.log(`  commit   ${gitHead()}`);
+    console.log(`  lms      ${LMS_URL}  (${models.length} modelo(s))`);
+    for (const m of models) {
+      console.log(`            ${m.loaded ? "*" : " "} ${m.id}`);
+    }
+    console.log("rode de novo sem --preflight para gastar os dois braços Opus.");
+    return;
+  }
   const models = await collectModels();
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   const picked = await pickModel(rl, models);

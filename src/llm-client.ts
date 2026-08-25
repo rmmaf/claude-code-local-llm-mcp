@@ -1,7 +1,42 @@
+import { createRequire } from "node:module";
+
 import { ToolError } from "./fs-safety.js";
 import { log } from "./logger.js";
 
+const require = createRequire(import.meta.url);
+
 export type FetchLike = typeof fetch;
+
+type TimeoutAgent = { close(): Promise<void> };
+
+type TimedUndici = {
+  timeoutMs: number;
+  agent: TimeoutAgent;
+  fetch: FetchLike;
+};
+
+let cachedDispatcher: TimedUndici | null = null;
+
+function timedUndici(timeoutMs: number): TimedUndici | null {
+  if (cachedDispatcher?.timeoutMs === timeoutMs) return cachedDispatcher;
+  try {
+    const undici = require("undici") as {
+      Agent: new (opts: { headersTimeout: number; bodyTimeout: number }) => TimeoutAgent;
+      fetch: FetchLike;
+    };
+    const agent = new undici.Agent({ headersTimeout: timeoutMs, bodyTimeout: timeoutMs });
+    cachedDispatcher = { timeoutMs, agent, fetch: undici.fetch.bind(undici) };
+    log.debug(`undici Agent headersTimeout=${timeoutMs} ms`);
+    return cachedDispatcher;
+  } catch (error) {
+    log.warn(
+      `undici Agent unavailable; Node fetch headersTimeout stays 300 s: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return null;
+  }
+}
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -45,8 +80,22 @@ async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // undici's default headersTimeout is 300_000 ms. A non-streaming completion
+  // sends no headers until generation finishes, so that ceiling fires before
+  // AbortSignal when LOCAL_CODER_TIMEOUT_MS is raised past 300 s. Use undici's
+  // own fetch + Agent together — Node's global fetch ignores a foreign Agent.
+  // Skip when tests inject a fake fetch.
+  const requestInit: RequestInit = { ...init, signal: controller.signal };
+  let doFetch = fetchImpl;
+  if (fetchImpl === fetch) {
+    const timed = timedUndici(timeoutMs);
+    if (timed) {
+      doFetch = timed.fetch;
+      Object.assign(requestInit, { dispatcher: timed.agent });
+    }
+  }
   try {
-    return await fetchImpl(url, { ...init, signal: controller.signal });
+    return await doFetch(url, requestInit);
   } catch (error) {
     if (controller.signal.aborted) {
       throw new ToolError(
