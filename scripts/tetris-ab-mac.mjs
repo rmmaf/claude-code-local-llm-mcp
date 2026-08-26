@@ -850,6 +850,29 @@ async function runClaude({ claudeBin, dir, sessionId, prompt, append }) {
   return { code, result, observedWallMs, streamPath };
 }
 
+function probeClaudeAuth(claudeBin) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tetris-ab-auth-"));
+  spawnSync(resolveBin("git") || "git", ["init"], { cwd: tmp, encoding: "utf8" });
+  info("checando OAuth no modo --print (é o que os braços usam)");
+  const r = spawnSync(
+    claudeBin,
+    ["--print", "--output-format", "json", "--", "Reply with the single word: ok"],
+    {
+      cwd: tmp,
+      encoding: "utf8",
+      timeout: 90_000,
+      env: { ...process.env, DISABLE_AUTOUPDATER: "1" },
+      maxBuffer: 2 * 1024 * 1024,
+    }
+  );
+  const blob = `${r.stdout || ""}\n${r.stderr || ""}`;
+  if (/OAuth session expired|Failed to authenticate|authentication_error|token has expired/i.test(blob)) {
+    die(
+      `Claude Code recusou --print: sessão OAuth expirada.\n${blob.trim().slice(0, 600)}\n\nNo Mac, num terminal interativo:\n  1. unset ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN\n  2. claude\n  3. /login  (completa no browser)\n  4. saia e prove:  claude --print --output-format json -- "ok"\nSó depois rode de novo o A/B.`
+    );
+  }
+}
+
 async function confirm(rl, lines) {
   if (envFlag("TETRIS_AB_YES")) return;
   if (!process.stdin.isTTY) die("sem TTY: exporte TETRIS_AB_YES=1 para seguir");
@@ -908,6 +931,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   info(`node: v${process.versions.node}`);
 
   await ensureLmsUp();
+  probeClaudeAuth(claudeBin);
   if (argv.includes("--preflight")) {
     const models = await collectModels();
     if (models.length === 0) {
