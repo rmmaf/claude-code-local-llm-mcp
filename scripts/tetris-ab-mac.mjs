@@ -22,6 +22,31 @@ const LMS_URL = process.env.LM_STUDIO_URL?.replace(/\/$/, "") || "http://127.0.0
 const CONTEXT_LENGTH = Number(process.env.TETRIS_AB_CONTEXT_LENGTH || 16384);
 const TIMEOUT_MS = Number(process.env.LOCAL_CODER_TIMEOUT_MS || 600000);
 const MCP_TIMEOUT = process.env.MCP_TIMEOUT || "900000";
+// Company Mac: never --dangerously-skip-permissions / bypassPermissions.
+// B12 on this same machine pre-approves tools with --allowed-tools and
+// --permission-mode acceptEdits. Mac 042623Z passed only bypassPermissions,
+// got permission_denials, and the 30B never ran.
+// --allowed-tools is variadic: one comma-separated value, then a flag that
+// starts with `-`, plus `--` before the prompt.
+const PERMISSION_MODE = process.env.TETRIS_AB_PERMISSION_MODE || "acceptEdits";
+const ALLOWED_TOOLS = [
+  "Bash",
+  "Write",
+  "Edit",
+  "Read",
+  "Glob",
+  "Grep",
+  "WebSearch",
+  "WebFetch",
+  "Agent",
+  "mcp__local-coder__status",
+  "mcp__local-coder__models",
+  "mcp__local-coder__scaffold",
+  "mcp__local-coder__implement",
+  "mcp__local-coder__gate",
+  "mcp__local-coder__repair",
+  "mcp__local-coder__fix",
+].join(",");
 
 function die(msg) {
   console.error(`erro: ${msg}`);
@@ -153,8 +178,36 @@ function inspectClaude(bin) {
     streamJson: /stream-json/.test(help),
     verbose: /--verbose\b/.test(help),
     skipPerms: /dangerously-skip-permissions/.test(help),
+    allowedTools: /--allowed-tools\b|--allowedTools\b/.test(help),
     print: /--print\b/.test(help),
   };
+}
+
+function permissionFlags() {
+  if (/bypass|dangerously/i.test(PERMISSION_MODE)) {
+    die(
+      "TETRIS_AB_PERMISSION_MODE não pode ser bypass/skip: no Mac da empresa --dangerously-skip-permissions é bloqueado. Use acceptEdits (default) ou default. As ferramentas entram por --allowed-tools, como no B12."
+    );
+  }
+  return ["--allowed-tools", ALLOWED_TOOLS, "--permission-mode", PERMISSION_MODE];
+}
+
+function writeClaudePermissions(dir) {
+  const claudeDir = path.join(dir, ".claude");
+  fs.mkdirSync(claudeDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeDir, "settings.json"),
+    `${JSON.stringify(
+      {
+        permissions: {
+          defaultMode: PERMISSION_MODE,
+          allow: ALLOWED_TOOLS.split(","),
+        },
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 function buildClaudeArgs({ claudeBin, mcpPath, sessionId, prompt, append }) {
@@ -168,17 +221,12 @@ function buildClaudeArgs({ claudeBin, mcpPath, sessionId, prompt, append }) {
   const args = ["--print"];
   if (format === "stream-json") args.push("--verbose");
   args.push("--output-format", format);
-  args.push(
-    "--model",
-    "opus",
-    "--strict-mcp-config",
-    "--mcp-config",
-    mcpPath,
-    "--permission-mode",
-    "bypassPermissions"
-  );
-  if (caps.skipPerms) args.push("--dangerously-skip-permissions");
+  args.push("--model", "opus", "--strict-mcp-config", "--mcp-config", mcpPath);
+  args.push(...permissionFlags());
   args.push("--session-id", sessionId, "--append-system-prompt", append, "--", prompt);
+  if (args.includes("--dangerously-skip-permissions")) {
+    die("argv interno tentou --dangerously-skip-permissions; isso é recusado neste Mac.");
+  }
   return { args, format, caps };
 }
 
@@ -191,12 +239,18 @@ function claudeFailureText(dir, result, code) {
     : "";
   const msg = String(result?.result || result?.errors || "");
   const weekly = /weekly limit|429/i.test(`${msg}\n${stderr}`);
+  const denials = denialsOf(result);
+  const denialNames = [...new Set(denials.map((d) => d.tool_name).filter(Boolean))];
   return {
     weekly,
+    denials: denials.length,
     text: [
       `exit=${code}`,
       result?.is_error != null ? `is_error=${result.is_error}` : "",
       result?.stop_reason ? `stop_reason=${result.stop_reason}` : "",
+      denials.length
+        ? `permission_denials=${denials.length} (${denialNames.join(", ") || "tools"})`
+        : "",
       msg ? `result: ${msg.slice(0, 800)}` : "",
       stderr ? `stderr: ${stderr.slice(-1500)}` : "",
       !stderr && head ? `stdout: ${head}` : "",
@@ -204,6 +258,23 @@ function claudeFailureText(dir, result, code) {
       .filter(Boolean)
       .join("\n"),
   };
+}
+
+function denialsOf(result) {
+  const d = result?.permission_denials;
+  return Array.isArray(d) ? d : [];
+}
+
+function hasDenials(result) {
+  return denialsOf(result).length > 0;
+}
+
+function armFailed(run) {
+  if (!run) return true;
+  if (run.result?.is_error) return true;
+  if (!run.result && run.code !== 0) return true;
+  if (hasDenials(run.result)) return true;
+  return false;
 }
 
 function parseJsonLoose(text) {
@@ -358,6 +429,7 @@ async function resolveServedId(wanted) {
 }
 
 function writeHarness(dir, arm, prompt, append, sessionId) {
+  writeClaudePermissions(dir);
   const runDir = path.join(dir, ".run");
   fs.mkdirSync(runDir, { recursive: true });
   fs.writeFileSync(path.join(runDir, "user-prompt.txt"), `${prompt}\n`);
@@ -568,6 +640,9 @@ function outputCell(result) {
 }
 
 function entregaCell(result, tests) {
+  if (hasDenials(result)) {
+    return `permissões negadas (${denialsOf(result).length})`;
+  }
   if (result?.is_error) {
     const msg = String(result.result || result.errors || "");
     if (/weekly limit|429/i.test(msg)) {
@@ -842,6 +917,7 @@ async function runClaude({ claudeBin, dir, sessionId, prompt, append }) {
       usage: result.usage,
       modelUsage: result.modelUsage,
       extra: result.extra,
+      permission_denials: denialsOf(result),
       observed_wall_ms: observedWallMs,
       exit_code: code,
     };
@@ -873,6 +949,81 @@ function probeClaudeAuth(claudeBin) {
   }
 }
 
+function probeClaudePermissions(claudeBin) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tetris-ab-perm-"));
+  spawnSync(resolveBin("git") || "git", ["init"], { cwd: tmp, encoding: "utf8" });
+  const sid = crypto.randomUUID();
+  writeHarness(tmp, "treatment", "probe", "probe", sid);
+  info("checando --allowed-tools no --print (sem --dangerously-skip-permissions)");
+  const mcpPath = path.join(tmp, ".run", "mcp.json");
+  const prompt =
+    "Call mcp__local-coder__status exactly once. Then call Bash exactly once with command echo PERM_OK. Reply with the single token PERM_OK if both tools ran. If a tool is denied, reply DENIED and the tool name. Do not ask the user to approve anything.";
+  const args = [
+    "--print",
+    "--output-format",
+    "json",
+    "--model",
+    process.env.TETRIS_AB_PROBE_MODEL || "haiku",
+    "--strict-mcp-config",
+    "--mcp-config",
+    mcpPath,
+    ...permissionFlags(),
+    "--",
+    prompt,
+  ];
+  if (args.includes("--dangerously-skip-permissions")) {
+    die("probe recusou argv com --dangerously-skip-permissions");
+  }
+  const r = spawnSync(claudeBin, args, {
+    cwd: tmp,
+    encoding: "utf8",
+    timeout: 120_000,
+    env: { ...process.env, DISABLE_AUTOUPDATER: "1" },
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const blob = `${r.stdout || ""}\n${r.stderr || ""}`;
+  if (/unknown option.*dangerously-skip|bypassPermissions.*disabled|disableBypassPermissionsMode/i.test(blob)) {
+    die(
+      `Claude recusou um modo de bypass. Este harness não envia --dangerously-skip-permissions.\n${blob.trim().slice(0, 600)}`
+    );
+  }
+  if (/OAuth session expired|Failed to authenticate|authentication_error|token has expired/i.test(blob)) {
+    die(`probe de permissão: OAuth recusou --print.\n${blob.trim().slice(0, 600)}`);
+  }
+  if (/model.*not found|unknown model|invalid model/i.test(blob) && /haiku/i.test(args.join(" "))) {
+    info("haiku indisponível no probe; tentando o modelo default");
+    const i = args.indexOf("--model");
+    if (i >= 0) args.splice(i, 2);
+    const r2 = spawnSync(claudeBin, args, {
+      cwd: tmp,
+      encoding: "utf8",
+      timeout: 120_000,
+      env: { ...process.env, DISABLE_AUTOUPDATER: "1" },
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return finishPermProbe(`${r2.stdout || ""}\n${r2.stderr || ""}`);
+  }
+  finishPermProbe(blob);
+}
+
+function finishPermProbe(blob) {
+  const result = extractFromText(blob);
+  const denials = denialsOf(result);
+  const text = String(result?.result || blob);
+  if (denials.length > 0) {
+    const names = [...new Set(denials.map((d) => d.tool_name).filter(Boolean))];
+    die(
+      `Ferramentas ainda negadas no --print — é a falha do Mac 042623Z.\nEste Mac de empresa não usa --dangerously-skip-permissions. O harness pré-aprova via --allowed-tools + --permission-mode ${PERMISSION_MODE} (igual B12).\npermission_denials=${denials.length} (${names.join(", ")})\n${text.slice(0, 600)}\nSe o managed settings bloquear até o allowlist, o A/B não roda neste CLI.`
+    );
+  }
+  if (/\bDENIED\b/.test(text) || !/PERM_OK/.test(text)) {
+    die(
+      `probe de permissão não obteve PERM_OK (Bash + mcp__local-coder__status).\n${text.slice(0, 800)}\nNão inicie o A/B: o 30B seria o mesmo abort do 042623Z.`
+    );
+  }
+  info("probe de permissão ok (--allowed-tools, sem skip-permissions)");
+}
+
 async function confirm(rl, lines) {
   if (envFlag("TETRIS_AB_YES")) return;
   if (!process.stdin.isTTY) die("sem TTY: exporte TETRIS_AB_YES=1 para seguir");
@@ -895,11 +1046,13 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
 --strict-mcp-config. Controle: MCP vazio. Tratamento: local-coder + o modelo escolhido.
 
   --demo-table     imprime a tabela do laptop-01 sem gastar API
-  --preflight      confere Node, npm, build, claude, LM Studio e sai (não gasta Opus)
+  --preflight      Node, npm, build, claude, LM Studio e probe de permissão
+                   (--allowed-tools; NÃO usa --dangerously-skip-permissions)
   TETRIS_AB_MODEL  id do modelo (pula o menu)
   TETRIS_AB_YES=1  não pede confirmação
   CLAUDE_BIN       caminho do claude
   TETRIS_AB_STREAM_JSON=1  usa stream-json+verbose (laptop); default é json
+  TETRIS_AB_PERMISSION_MODE  default acceptEdits (B12). bypass/skip recusados
 `);
     return;
   }
@@ -926,12 +1079,16 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   const caps = inspectClaude(claudeBin);
   info(`claude: ${claudeBin}`);
   info(`versão: ${version}`);
-  info(`flags: output=json skipPerms=${caps.skipPerms ? "sim" : "não (só bypassPermissions)"}`);
+  info(`flags: output=json allowed-tools + permission-mode=${PERMISSION_MODE} (sem skip-permissions)`);
+  if (!caps.allowedTools) {
+    info("claude --help não listou --allowed-tools; passando mesmo assim (é o que o B12 usa neste Mac)");
+  }
   info(`commit: ${gitHead()}`);
   info(`node: v${process.versions.node}`);
 
   await ensureLmsUp();
   probeClaudeAuth(claudeBin);
+  probeClaudePermissions(claudeBin);
   if (argv.includes("--preflight")) {
     const models = await collectModels();
     if (models.length === 0) {
@@ -944,7 +1101,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     console.log(`  node     v${process.versions.node}`);
     console.log(`  claude   ${version}`);
     console.log("  output   json  (stream-json só com TETRIS_AB_STREAM_JSON=1)");
-    console.log(`  skipPerm ${caps.skipPerms ? "dangerously-skip-permissions" : "bypassPermissions only"}`);
+    console.log("  perms    --allowed-tools + acceptEdits (B12; sem skip-permissions)");
     console.log(`  commit   ${gitHead()}`);
     console.log(`  undici   ok`);
     console.log(`  lms      ${LMS_URL}  (${models.length} modelo(s))`);
@@ -1031,8 +1188,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     prompt,
     append: controlAppend(),
   });
-  const controlFailed =
-    controlRun.result?.is_error || (!controlRun.result && controlRun.code !== 0);
+  const controlFailed = armFailed(controlRun);
   if (controlFailed && !envFlag("TETRIS_AB_CONTINUE_ON_ERROR")) {
     const testsC = countTests(controlDir);
     const table = renderTable(
@@ -1044,7 +1200,9 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     const fail = claudeFailureText(controlDir, controlRun.result, controlRun.code);
     const why = fail.weekly
       ? "controle recusou com limite semanal / 429. Tratamento não iniciado."
-      : "controle caiu antes de trabalho equivalente (não foi cota). Tratamento não iniciado.";
+      : fail.denials
+        ? "controle bloqueado por permissão (mesmo modo do 042623Z). Tratamento não iniciado."
+        : "controle caiu antes de trabalho equivalente (não foi cota). Tratamento não iniciado.";
     die(`${why}\n${fail.text}\nTETRIS_AB_CONTINUE_ON_ERROR=1 para forçar o 2º braço.`);
   }
 
@@ -1080,6 +1238,11 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   if (treatRun.result?.extra) {
     console.error(
       `tratamento: timeouts=${treatRun.result.extra.timeouts} malformed=${treatRun.result.extra.malformed}`
+    );
+  }
+  if (hasDenials(treatRun.result)) {
+    console.error(
+      `tratamento: permission_denials=${denialsOf(treatRun.result).length} — o 30B não rodou`
     );
   }
 }
