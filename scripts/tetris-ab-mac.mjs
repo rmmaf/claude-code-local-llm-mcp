@@ -162,9 +162,12 @@ function buildClaudeArgs({ claudeBin, mcpPath, sessionId, prompt, append }) {
   if (!caps.print && caps.help.trim() !== "") {
     info("claude --help não listou --print; seguindo mesmo assim (binários pinados às vezes omitem flags no help)");
   }
-  const format = caps.streamJson ? "stream-json" : "json";
-  const args = ["--print", "--output-format", format];
-  if (format === "stream-json" && caps.verbose) args.push("--verbose");
+  // json is the Mac B12 envelope. stream-json in --help is not enough: Claude 2.1.x
+  // then requires --verbose, and a missing pair exits in one turn at USD 0.
+  const format = envFlag("TETRIS_AB_STREAM_JSON") ? "stream-json" : "json";
+  const args = ["--print"];
+  if (format === "stream-json") args.push("--verbose");
+  args.push("--output-format", format);
   args.push(
     "--model",
     "opus",
@@ -177,6 +180,30 @@ function buildClaudeArgs({ claudeBin, mcpPath, sessionId, prompt, append }) {
   if (caps.skipPerms) args.push("--dangerously-skip-permissions");
   args.push("--session-id", sessionId, "--append-system-prompt", append, "--", prompt);
   return { args, format, caps };
+}
+
+function claudeFailureText(dir, result, code) {
+  const errPath = path.join(dir, ".run", "stderr.txt");
+  const streamPath = path.join(dir, ".run", "stream.jsonl");
+  const stderr = fs.existsSync(errPath) ? fs.readFileSync(errPath, "utf8").trim() : "";
+  const head = fs.existsSync(streamPath)
+    ? fs.readFileSync(streamPath, "utf8").trim().slice(0, 800)
+    : "";
+  const msg = String(result?.result || result?.errors || "");
+  const weekly = /weekly limit|429/i.test(`${msg}\n${stderr}`);
+  return {
+    weekly,
+    text: [
+      `exit=${code}`,
+      result?.is_error != null ? `is_error=${result.is_error}` : "",
+      result?.stop_reason ? `stop_reason=${result.stop_reason}` : "",
+      msg ? `result: ${msg.slice(0, 800)}` : "",
+      stderr ? `stderr: ${stderr.slice(-1500)}` : "",
+      !stderr && head ? `stdout: ${head}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  };
 }
 
 function parseJsonLoose(text) {
@@ -849,6 +876,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   TETRIS_AB_MODEL  id do modelo (pula o menu)
   TETRIS_AB_YES=1  não pede confirmação
   CLAUDE_BIN       caminho do claude
+  TETRIS_AB_STREAM_JSON=1  usa stream-json+verbose (laptop); default é json
 `);
     return;
   }
@@ -875,7 +903,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
   const caps = inspectClaude(claudeBin);
   info(`claude: ${claudeBin}`);
   info(`versão: ${version}`);
-  info(`flags: output=${caps.streamJson ? "stream-json" : "json"} skipPerms=${caps.skipPerms ? "sim" : "não (só bypassPermissions)"}`);
+  info(`flags: output=json skipPerms=${caps.skipPerms ? "sim" : "não (só bypassPermissions)"}`);
   info(`commit: ${gitHead()}`);
   info(`node: v${process.versions.node}`);
 
@@ -891,7 +919,7 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     console.log("preflight ok");
     console.log(`  node     v${process.versions.node}`);
     console.log(`  claude   ${version}`);
-    console.log(`  output   ${caps.streamJson ? "stream-json" : "json"}  (2.1.221 no Mac usa json)`);
+    console.log("  output   json  (stream-json só com TETRIS_AB_STREAM_JSON=1)");
     console.log(`  skipPerm ${caps.skipPerms ? "dangerously-skip-permissions" : "bypassPermissions only"}`);
     console.log(`  commit   ${gitHead()}`);
     console.log(`  undici   ok`);
@@ -979,7 +1007,9 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     prompt,
     append: controlAppend(),
   });
-  if (controlRun.result?.is_error && !envFlag("TETRIS_AB_CONTINUE_ON_ERROR")) {
+  const controlFailed =
+    controlRun.result?.is_error || (!controlRun.result && controlRun.code !== 0);
+  if (controlFailed && !envFlag("TETRIS_AB_CONTINUE_ON_ERROR")) {
     const testsC = countTests(controlDir);
     const table = renderTable(
       armRow(controlRun.result, testsC, controlRun.observedWallMs),
@@ -987,7 +1017,11 @@ Os dois braços usam o mesmo prompt de Tetris (24/08/2026), --model opus,
     );
     fs.writeFileSync(path.join(outDir, "table.md"), `${table}\n`);
     console.log(table);
-    die("controle terminou com erro (limite semanal?). Tratamento não iniciado. TETRIS_AB_CONTINUE_ON_ERROR=1 para forçar.");
+    const fail = claudeFailureText(controlDir, controlRun.result, controlRun.code);
+    const why = fail.weekly
+      ? "controle recusou com limite semanal / 429. Tratamento não iniciado."
+      : "controle caiu antes de trabalho equivalente (não foi cota). Tratamento não iniciado.";
+    die(`${why}\n${fail.text}\nTETRIS_AB_CONTINUE_ON_ERROR=1 para forçar o 2º braço.`);
   }
 
   info("braço 2/2 — Opus + local-coder");
